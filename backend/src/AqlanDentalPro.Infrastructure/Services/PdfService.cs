@@ -41,7 +41,6 @@ public class PdfService : IPdfService
         lock (_fontLock)
         {
             if (_fontRegistered) return;
-            _fontRegistered = true;
 
             QuestPDF.Settings.License = LicenseType.Community;
 
@@ -78,6 +77,13 @@ public class PdfService : IPdfService
             {
                 Console.Error.WriteLine("[PdfService] WARNING: Arabic bold font 'NotoNaskhArabic-Bold.ttf' not found. " +
                     "Bold Arabic text will use regular weight as fallback.");
+            }
+
+            // Only mark as registered if at least the regular font was found,
+            // so that subsequent calls can retry if the first attempt failed entirely.
+            if (regularRegistered)
+            {
+                _fontRegistered = true;
             }
 
             // Also try to register common system fonts as fallbacks for QuestPDF

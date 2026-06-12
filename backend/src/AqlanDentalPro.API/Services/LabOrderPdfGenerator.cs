@@ -102,16 +102,16 @@ public static class LabOrderPdfGenerator
                 row.RelativeItem().Column(col =>
                 {
                     col.Item().Text("بيانات المريض").Bold().FontSize(11).FontFamily(FontName);
-                    col.Item().Text($"الاسم: {order.Patient?.FirstName} {order.Patient?.LastName}").FontFamily(FontName);
-                    col.Item().Text($"رقم الملف: {order.Patient?.PatientNumber}").FontFamily(FontName);
-                    col.Item().Text($"الطبيب: {order.Doctor?.Name ?? "—"}").FontFamily(FontName);
+                    col.Item().Text($"الاسم: {(order.Patient != null ? $"{order.Patient.FirstName} {order.Patient.LastName}" : "غير محدد")}").FontFamily(FontName);
+                    col.Item().Text($"رقم الملف: {order.Patient?.PatientNumber ?? "غير محدد"}").FontFamily(FontName);
+                    col.Item().Text($"الطبيب: {order.Doctor?.Name ?? "غير محدد"}").FontFamily(FontName);
                 });
                 row.RelativeItem().Column(col =>
                 {
                     col.Item().Text("بيانات المعمل").Bold().FontSize(11).FontFamily(FontName);
-                    col.Item().Text($"الاسم: {order.Lab?.Name ?? order.LabName ?? "—"}").FontFamily(FontName);
-                    col.Item().Text($"الهاتف: {order.Lab?.Phone ?? "—"}").FontFamily(FontName);
-                    col.Item().Text($"تاريخ الاستلام المتوقع: {order.ExpectedDate?.ToString("yyyy-MM-dd") ?? "—"}").FontFamily(FontName);
+                    col.Item().Text($"الاسم: {order.Lab?.Name ?? order.LabName ?? "غير محدد"}").FontFamily(FontName);
+                    col.Item().Text($"الهاتف: {order.Lab?.Phone ?? "غير محدد"}").FontFamily(FontName);
+                    col.Item().Text($"تاريخ الاستلام المتوقع: {order.ExpectedDate?.ToString("yyyy-MM-dd") ?? "غير محدد"}").FontFamily(FontName);
                 });
             });
 
@@ -149,9 +149,9 @@ public static class LabOrderPdfGenerator
                     {
                         var item = items[i];
                         table.Cell().Element(CellStyle).Text($"{i + 1}").FontFamily(FontName);
-                        table.Cell().Element(CellStyle).Text(item.WorkType?.Name ?? "—").FontFamily(FontName);
-                        table.Cell().Element(CellStyle).Text(item.ToothNumber ?? "—").FontFamily(FontName);
-                        table.Cell().Element(CellStyle).Text(item.Shade ?? "—").FontFamily(FontName);
+                        table.Cell().Element(CellStyle).Text(item.WorkType?.Name ?? "غير محدد").FontFamily(FontName);
+                        table.Cell().Element(CellStyle).Text(item.ToothNumber ?? "غير محدد").FontFamily(FontName);
+                        table.Cell().Element(CellStyle).Text(item.Shade ?? "غير محدد").FontFamily(FontName);
                         table.Cell().Element(CellStyle).Text($"{item.UnitsCount}").FontFamily(FontName);
                         table.Cell().Element(CellStyle).Text(item.UnitPrice.HasValue ? $"{item.UnitPrice:N0}" : "—").FontFamily(FontName);
                         table.Cell().Element(CellStyle).Text(item.TotalPrice.HasValue ? $"{item.TotalPrice:N0}" : "—").FontFamily(FontName);

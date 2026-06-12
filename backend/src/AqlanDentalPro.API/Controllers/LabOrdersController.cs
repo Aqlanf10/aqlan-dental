@@ -145,6 +145,32 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
         ["cancelled"] = new(StringComparer.OrdinalIgnoreCase),
     };
 
+    /// <summary>
+    /// Checks if an exception is caused by a missing database table or column (PostgreSQL 42P01/42703).
+    /// This allows graceful fallback when LabOrderItems or related tables don't exist yet.
+    /// </summary>
+    private static bool IsMissingTableOrColumnError(Exception ex)
+    {
+        // Direct PostgresException
+        if (ex is PostgresException pgEx)
+            return pgEx.SqlState is "42P01" or "42703"; // undefined_table or undefined_column
+
+        // Wrapped in another exception (e.g., InvalidOperationException from EF Core)
+        if (ex.InnerException is PostgresException innerPgEx)
+            return innerPgEx.SqlState is "42P01" or "42703";
+
+        // Deeper nesting (e.g., DbUpdateException wrapping NpgsqlException)
+        var inner = ex.InnerException?.InnerException;
+        if (inner is PostgresException deepPgEx)
+            return deepPgEx.SqlState is "42P01" or "42703";
+
+        // Fallback: check message for common PostgreSQL error patterns
+        var msg = ex.InnerException?.Message ?? ex.Message;
+        return msg.Contains("does not exist", StringComparison.OrdinalIgnoreCase)
+            && (msg.Contains("LabOrderItems", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("LabWorkTypes", StringComparison.OrdinalIgnoreCase));
+    }
+
     private Task<bool> CanAsync(string action) => PermissionGuard.HasAsync(db, currentUser, "lab_orders", action);
 
     private static string CanonicalStatus(string status)
@@ -426,13 +452,32 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     {
         if (!await CanAsync("view")) return Forbid();
 
-        var order = await db.LabOrders
-            .Include(l => l.Patient)
-            .Include(l => l.OrthoCase)
-            .Include(l => l.Doctor)
-            .Include(l => l.Lab)
-            .Include(l => l.Items).ThenInclude(i => i.WorkType)
-            .FirstOrDefaultAsync(l => l.Id == id);
+        LabOrder? order;
+        try
+        {
+            order = await db.LabOrders
+                .Include(l => l.Patient)
+                .Include(l => l.OrthoCase)
+                .Include(l => l.Doctor)
+                .Include(l => l.Lab)
+                .Include(l => l.Items).ThenInclude(i => i.WorkType)
+                .FirstOrDefaultAsync(l => l.Id == id);
+        }
+        catch (Exception ex) when (IsMissingTableOrColumnError(ex))
+        {
+            logger.LogWarning(ex, "LabOrderItems/WorkType query failed (schema mismatch) — falling back to query without Items for lab order {OrderId}. Error: {ErrorMsg}", id, ex.InnerException?.Message ?? ex.Message);
+            order = await db.LabOrders
+                .Include(l => l.Patient)
+                .Include(l => l.OrthoCase)
+                .Include(l => l.Doctor)
+                .Include(l => l.Lab)
+                .FirstOrDefaultAsync(l => l.Id == id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error loading lab order {OrderId}: {ErrorType} — {ErrorMsg}", id, ex.GetType().Name, ex.InnerException?.Message ?? ex.Message);
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل أمر المختبر", detail = ex.InnerException?.Message ?? ex.Message, type = ex.GetType().Name });
+        }
 
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
 
@@ -695,13 +740,32 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
         if (!validationResult.IsValid)
             return BadRequest(new { message = string.Join("; ", validationResult.Errors.Select(e => e.ErrorMessage)) });
 
-        var order = await db.LabOrders
-            .Include(l => l.Patient)
-            .Include(l => l.OrthoCase)
-            .Include(l => l.Doctor)
-            .Include(l => l.Lab)
-            .Include(l => l.Items).ThenInclude(i => i.WorkType)
-            .FirstOrDefaultAsync(l => l.Id == id);
+        LabOrder? order;
+        try
+        {
+            order = await db.LabOrders
+                .Include(l => l.Patient)
+                .Include(l => l.OrthoCase)
+                .Include(l => l.Doctor)
+                .Include(l => l.Lab)
+                .Include(l => l.Items).ThenInclude(i => i.WorkType)
+                .FirstOrDefaultAsync(l => l.Id == id);
+        }
+        catch (Exception ex) when (IsMissingTableOrColumnError(ex))
+        {
+            logger.LogWarning(ex, "LabOrderItems/WorkType query failed (schema mismatch) — falling back to query without Items for lab order update {OrderId}. Error: {ErrorMsg}", id, ex.InnerException?.Message ?? ex.Message);
+            order = await db.LabOrders
+                .Include(l => l.Patient)
+                .Include(l => l.OrthoCase)
+                .Include(l => l.Doctor)
+                .Include(l => l.Lab)
+                .FirstOrDefaultAsync(l => l.Id == id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error loading lab order for update {OrderId}: {ErrorType} — {ErrorMsg}", id, ex.GetType().Name, ex.InnerException?.Message ?? ex.Message);
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل أمر المختبر للتحديث", detail = ex.InnerException?.Message ?? ex.Message, type = ex.GetType().Name });
+        }
 
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
 
@@ -1178,13 +1242,32 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     {
         if (!await CanAsync("export")) return Forbid();
 
-        var order = await db.LabOrders
-            .Include(l => l.Patient)
-            .Include(l => l.Doctor)
-            .Include(l => l.Lab)
-            .Include(l => l.Items).ThenInclude(i => i.WorkType)
-            .Include(l => l.Visit)
-            .FirstOrDefaultAsync(l => l.Id == id);
+        LabOrder? order;
+        try
+        {
+            order = await db.LabOrders
+                .Include(l => l.Patient)
+                .Include(l => l.Doctor)
+                .Include(l => l.Lab)
+                .Include(l => l.Items).ThenInclude(i => i.WorkType)
+                .Include(l => l.Visit)
+                .FirstOrDefaultAsync(l => l.Id == id);
+        }
+        catch (Exception ex) when (IsMissingTableOrColumnError(ex))
+        {
+            logger.LogWarning(ex, "LabOrderItems/WorkType query failed (schema mismatch) — falling back to query without Items for lab order PDF {OrderId}. Error: {ErrorMsg}", id, ex.InnerException?.Message ?? ex.Message);
+            order = await db.LabOrders
+                .Include(l => l.Patient)
+                .Include(l => l.Doctor)
+                .Include(l => l.Lab)
+                .Include(l => l.Visit)
+                .FirstOrDefaultAsync(l => l.Id == id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error loading lab order for PDF {OrderId}: {ErrorType} — {ErrorMsg}", id, ex.GetType().Name, ex.InnerException?.Message ?? ex.Message);
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل أمر المختبر للطباعة", detail = ex.InnerException?.Message ?? ex.Message, type = ex.GetType().Name });
+        }
 
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
 
@@ -1199,7 +1282,7 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to generate PDF for lab order {OrderId}", id);
+            logger.LogError(ex, "Failed to generate PDF for lab order {OrderId}: {ErrorType} — {ErrorMsg}", id, ex.GetType().Name, ex.Message);
             return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إنشاء أمر العمل", detail = ex.Message, type = ex.GetType().Name });
         }
     }

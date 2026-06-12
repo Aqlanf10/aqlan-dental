@@ -1813,14 +1813,14 @@ public static class StartupDatabaseMaintenance
                             "Id"              uuid                      NOT NULL DEFAULT gen_random_uuid(),
                             "LabOrderId"      uuid                      NOT NULL,
                             "WorkTypeId"      uuid                      NOT NULL,
-                            "ToothNumber"     character varying(20)     NULL,
-                            "Arch"            character varying(20)     NULL,
+                            "ToothNumber"     character varying(50)     NULL,
+                            "Arch"            character varying(10)     NULL,
                             "Shade"           character varying(50)     NULL,
                             "RestorationType" character varying(100)    NULL,
                             "UnitsCount"      integer                   NOT NULL DEFAULT 1,
                             "UnitPrice"       numeric                   NULL,
                             "TotalPrice"      numeric                   NULL,
-                            "Instructions"    text                      NULL,
+                            "Instructions"    character varying(2000)   NULL,
                             "SortOrder"       integer                   NOT NULL DEFAULT 0,
                             "CreatedAt"       timestamp with time zone  NOT NULL DEFAULT now(),
                             "UpdatedAt"       timestamp with time zone  NOT NULL DEFAULT now(),
@@ -1831,6 +1831,21 @@ public static class StartupDatabaseMaintenance
                         );
                         CREATE INDEX "IX_LabOrderItems_LabOrderId" ON "LabOrderItems" ("LabOrderId");
                         CREATE INDEX "IX_LabOrderItems_WorkTypeId" ON "LabOrderItems" ("WorkTypeId");
+                    END IF;
+                    -- Fix column type mismatches if table already exists
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'LabOrderItems') THEN
+                        -- ToothNumber: widen from varchar(20) to varchar(50) to match EF config
+                        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrderItems' AND column_name = 'ToothNumber' AND character_maximum_length < 50) THEN
+                            ALTER TABLE "LabOrderItems" ALTER COLUMN "ToothNumber" TYPE character varying(50);
+                        END IF;
+                        -- Arch: narrow from varchar(20) to varchar(10) to match EF config
+                        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrderItems' AND column_name = 'Arch' AND character_maximum_length > 10) THEN
+                            ALTER TABLE "LabOrderItems" ALTER COLUMN "Arch" TYPE character varying(10);
+                        END IF;
+                        -- Instructions: change from text to varchar(2000) to match EF config
+                        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrderItems' AND column_name = 'Instructions' AND data_type = 'text') THEN
+                            ALTER TABLE "LabOrderItems" ALTER COLUMN "Instructions" TYPE character varying(2000);
+                        END IF;
                     END IF;
                     -- FK: LabOrderItems → LabOrders
                     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_LabOrderItems_LabOrders_LabOrderId') THEN
@@ -1986,6 +2001,28 @@ public static class StartupDatabaseMaintenance
             """);
 
             ltLogger.LogInformation("HOTFIX: Lab tables (Labs, LabWorkTypes, LabOrderItems, LabWorkPrices, LabOrderStatusHistories, LabOrderAttachments, LabPayables) schema ensured (idempotent)");
+
+            // Diagnostic: check if LabOrderItems table was actually created/found
+            try
+            {
+                using var diagConn = ltDb.Database.GetDbConnection();
+                await diagConn.OpenAsync();
+                using var diagCmd = diagConn.CreateCommand();
+                diagCmd.CommandText = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'LabOrderItems'";
+                var itemsCount = Convert.ToInt32(await diagCmd.ExecuteScalarAsync());
+                if (itemsCount == 0)
+                {
+                    ltLogger.LogWarning("HOTFIX: LabOrderItems table was NOT found after schema maintenance. Lab order PDF endpoints will work without Items (fallback to 'غير محدد'). Controller IsMissingTableOrColumnError will handle gracefully.");
+                }
+                else
+                {
+                    ltLogger.LogInformation("HOTFIX: LabOrderItems table verified present after schema maintenance");
+                }
+            }
+            catch (Exception diagEx)
+            {
+                ltLogger.LogWarning(diagEx, "HOTFIX: Could not verify LabOrderItems table existence (non-fatal diagnostic)");
+            }
         }
         catch (Exception ex)
         {

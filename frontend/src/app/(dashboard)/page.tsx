@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Calendar, Users, Activity, FlaskConical, AlertTriangle, Wallet, Plus, ListOrdered } from "lucide-react";
 import Link from "next/link";
 import { StatsCard } from "@/components/dashboard/StatsCard";
+import { AttentionAlerts } from "@/components/dashboard/AttentionAlerts";
 import { DashboardCharts } from "@/components/dashboard/DashboardCharts";
 import { TodaySchedule } from "@/components/dashboard/TodaySchedule";
 import type { DashboardStats } from "@/types/dashboard";
@@ -55,6 +56,9 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-5 page-content">
+      {/* Attention alerts — "يحتاج انتباهك" */}
+      <AttentionAlerts />
+
       {/* Stats row — 4 column grid matching ZIP */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
         <StatsCard

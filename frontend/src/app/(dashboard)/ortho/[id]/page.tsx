@@ -15,6 +15,7 @@ import {
   ClipboardCheck,
   FileText,
   GitBranch,
+  Images,
   Info,
   ListChecks,
   Plus,
@@ -75,6 +76,7 @@ import {
 import { TreatmentStagesPanel } from "@/components/ortho/TreatmentStagesPanel";
 import { ImagePreviewModal } from "@/components/shared/ImagePreviewModal";
 import { OrthoVisitTimeline } from "@/components/ortho/OrthoVisitTimeline";
+import { OrthoBeforeAfterCompare } from "@/components/ortho/OrthoBeforeAfterCompare";
 import api from "@/lib/api";
 
 /* ------------------------------------------------------------------ */
@@ -84,6 +86,7 @@ import api from "@/lib/api";
 type Tab =
   | "overview"
   | "records"
+  | "compare"
   | "exam"
   | "problems"
   | "diagnosis"
@@ -101,6 +104,7 @@ type Tab =
 const TABS: { key: Tab; label: string; icon: typeof Activity }[] = [
   { key: "overview", label: "الملخص", icon: Activity },
   { key: "records", label: "السجلات", icon: Camera },
+  { key: "compare", label: "مقارنة قبل/بعد", icon: Images },
   { key: "exam", label: "الفحص", icon: Stethoscope },
   { key: "problems", label: "المشاكل", icon: ListChecks },
   { key: "diagnosis", label: "التشخيص", icon: ClipboardCheck },
@@ -2314,6 +2318,7 @@ export default function OrthoCaseDetailPage() {
             <OverviewPanel caseId={id} patientId={orthoCase.patientId} setActiveTab={setActiveTab} />
           )}
           {activeTab === "records" && <RecordsPanel caseId={id} />}
+          {activeTab === "compare" && <OrthoBeforeAfterCompare caseId={id} />}
           {activeTab === "exam" && <ClinicalExamPanel caseId={id} />}
           {activeTab === "problems" && <ProblemsPanel caseId={id} />}
           {activeTab === "diagnosis" && <DiagnosisPanel caseId={id} />}

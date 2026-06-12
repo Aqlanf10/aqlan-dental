@@ -73,7 +73,135 @@ export interface ClinicalExam {
   habits?: string;
   notes?: string;
   doctorId?: string;
+
+  // ── المرحلة 3 — الفحص السريري المُهيكل (كلها اختيارية / إضافية) ──
+
+  // الإطباق: تقسيم يمين/يسار + قياسات إضافية
+  /** ClassI | ClassII | ClassIII */
+  molarRelationRight?: string;
+  molarRelationLeft?: string;
+  canineRelationRight?: string;
+  canineRelationLeft?: string;
+  /** ClassI | ClassIIDiv1 | ClassIIDiv2 | ClassIII */
+  incisorRelation?: string;
+  overbitePercent?: number;
+  deepBite?: boolean;
+  /** Anterior | PosteriorUnilateralRight | PosteriorUnilateralLeft | PosteriorBilateral */
+  crossbiteType?: string;
+  scissorBite?: boolean;
+  /** mm موقعة: + = انحراف يمين */
+  midlineUpperShiftMm?: number;
+  midlineLowerShiftMm?: number;
+  upperCrowdingMm?: number;
+  lowerCrowdingMm?: number;
+  lowerSpacingMm?: number;
+  /** Normal | Deep | Reverse */
+  curveOfSpee?: string;
+  /** Ovoid | Tapered | Square */
+  archFormUpper?: string;
+  archFormLower?: string;
+  boltonDiscrepancyNote?: string;
+
+  // إضافات خارج الفم
+  /** Competent | PotentiallyCompetent | Incompetent */
+  lipCompetenceGrade?: string;
+  /** Normal | Acute | Obtuse */
+  nasolabialAngle?: string;
+  /** Normal | Prominent | Retruded */
+  chinPosition?: string;
+  functionalShift?: string;
+  gummySmile?: boolean;
+
+  // العادات الفموية كحقول مُهيكلة (نص habits القديم محفوظ)
+  thumbSucking?: boolean;
+  mouthBreathing?: boolean;
+  tongueThrust?: boolean;
+  lipBiting?: boolean;
+  nailBiting?: boolean;
+  bruxism?: boolean;
+
+  // صحة الفم
+  /** Good | Fair | Poor */
+  oralHygiene?: string;
+  gingivalCondition?: string;
+  periodontalConcerns?: string;
+  /** أرقام FDI مفصولة بفواصل، مثال: "11,21" */
+  missingTeethFdi?: string;
+  retainedDeciduousFdi?: string;
+  impactedTeethFdi?: string;
+  supernumeraryNote?: string;
+  ectopicEruptionNote?: string;
+  frenumNote?: string;
+  tongueNote?: string;
+  cariesNote?: string;
 }
+
+/** تسميات أصناف Angle (علاقة الأرحاء/الأنياب يمين ويسار) */
+export const ANGLE_CLASS_LABELS: Record<string, string> = {
+  ClassI: "صنف أول",
+  ClassII: "صنف ثانٍ",
+  ClassIII: "صنف ثالث",
+};
+
+export const INCISOR_RELATION_LABELS: Record<string, string> = {
+  ClassI: "صنف أول",
+  ClassIIDiv1: "صنف ثانٍ قسم 1",
+  ClassIIDiv2: "صنف ثانٍ قسم 2",
+  ClassIII: "صنف ثالث",
+};
+
+export const CROSSBITE_TYPE_LABELS: Record<string, string> = {
+  Anterior: "أمامية",
+  PosteriorUnilateralRight: "خلفية أحادية يمين",
+  PosteriorUnilateralLeft: "خلفية أحادية يسار",
+  PosteriorBilateral: "خلفية ثنائية",
+};
+
+export const CURVE_OF_SPEE_LABELS: Record<string, string> = {
+  Normal: "طبيعي",
+  Deep: "عميق",
+  Reverse: "معكوس",
+};
+
+export const ARCH_FORM_LABELS: Record<string, string> = {
+  Ovoid: "بيضاوي",
+  Tapered: "مدبب",
+  Square: "مربع",
+};
+
+export const LIP_COMPETENCE_LABELS: Record<string, string> = {
+  Competent: "منطبقة",
+  PotentiallyCompetent: "منطبقة بجهد",
+  Incompetent: "غير منطبقة",
+};
+
+export const ORAL_HYGIENE_LABELS: Record<string, string> = {
+  Good: "جيدة",
+  Fair: "متوسطة",
+  Poor: "ضعيفة",
+};
+
+export const NASOLABIAL_LABELS: Record<string, string> = {
+  Normal: "طبيعية",
+  Acute: "حادة",
+  Obtuse: "منفرجة",
+};
+
+export const CHIN_POSITION_LABELS: Record<string, string> = {
+  Normal: "طبيعي",
+  Prominent: "بارز",
+  Retruded: "متراجع",
+};
+
+/** العادات الفموية المُهيكلة (المفتاح في ClinicalExam → التسمية العربية) */
+export const HABIT_LABELS: Record<string, string> = {
+  thumbSucking: "مص الإبهام",
+  mouthBreathing: "تنفس فموي",
+  tongueThrust: "دفع اللسان",
+  lipBiting: "عض الشفة",
+  nailBiting: "قضم الأظافر",
+  bruxism: "صرير الأسنان",
+};
 
 export interface ProblemListItem {
   id: string;

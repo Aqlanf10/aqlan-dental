@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import type { CephAnalysis, CephLandmark, CephDiagnosis, AnalysisType } from "@/types/ceph";
 import { ANALYSIS_GROUPS, ANALYSIS_TYPE_AR } from "@/types/ceph";
-import { buildMeasurementList } from "@/lib/cephMath";
+import { buildMeasurementList, applyNormOverrides, type ApiNorm } from "@/lib/cephMath";
 import { CephCanvas, LANDMARK_DEFS, LANDMARK_ORDER, SIMULATION_SCENARIOS } from "@/components/ceph/CephCanvas";
 import { AnalysisReport } from "@/components/ceph/AnalysisReport";
 import api from "@/lib/api";
@@ -41,6 +41,22 @@ export default function CephAnalysisPage() {
   const [rightTab, setRightTab]       = useState<RightTab>('landmarks');
   const [diagnosis, setDiagnosis]     = useState<CephDiagnosis | null>(null);
   const [imageSize, setImageSize]     = useState({ w: 800, h: 600 });
+  // Configurable norms from DB (overlaid on built-ins; built-ins are the fallback).
+  const [normsVersion, setNormsVersion] = useState(0);
+  // Honest-simulation state: the template tool is NOT AI and must say so.
+  const [simNotice, setSimNotice]     = useState<string | null>(null);
+  const [simError, setSimError]       = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get<ApiNorm[]>("/api/ceph-norms")
+      .then((r) => {
+        if (Array.isArray(r.data) && r.data.length) {
+          applyNormOverrides(r.data);
+          setNormsVersion((v) => v + 1);
+        }
+      })
+      .catch(() => { /* keep built-in norms silently */ });
+  }, []);
 
   useEffect(() => {
     api.get<CephAnalysis>(`/api/ceph/${id}`)
@@ -73,7 +89,8 @@ export default function CephAnalysisPage() {
     const pts: Record<string, { x: number; y: number }> = {};
     landmarks.forEach(l => { pts[l.key] = { x: l.x, y: l.y }; });
     return buildMeasurementList(pts, pixelsPerMm, analysisGroups);
-  }, [landmarks, pixelsPerMm, analysisGroups]);
+    // normsVersion: recompute when DB norm overrides arrive.
+  }, [landmarks, pixelsPerMm, analysisGroups, normsVersion]);
 
   const activeReportData = (analysis?.measurements?.length && !isDirty)
     ? analysis.measurements
@@ -87,16 +104,29 @@ export default function CephAnalysisPage() {
     setIsDirty(true);
   }, []);
 
-  const handleAiDetect = async () => {
+  const handleTemplateSimulation = async () => {
     setDetecting(true);
+    setSimError(null);
     try {
-      const res = await api.post<CephLandmark[]>(`/api/ceph/${id}/simulate`, {
-        imageWidth: imageSize.w, imageHeight: imageSize.h, pixelsPerMm: pixelsPerMm ?? 0,
-      });
-      setLandmarks(res.data);
+      const res = await api.post<{ isSimulation: boolean; simulationNotice: string; landmarks: CephLandmark[] } | CephLandmark[]>(
+        `/api/ceph/${id}/simulate`,
+        { imageWidth: imageSize.w, imageHeight: imageSize.h, pixelsPerMm: pixelsPerMm ?? 0 },
+      );
+      const data = res.data;
+      const lms = Array.isArray(data) ? data : data.landmarks;
+      setLandmarks(lms ?? []);
+      setSimNotice(
+        !Array.isArray(data) && data.simulationNotice
+          ? data.simulationNotice
+          : "مواضع المعالم الحالية ناتجة عن محاكاة تجريبية وليست ذكاءً اصطناعيًا — يجب ضبط كل معلم يدويًا قبل الاعتماد.",
+      );
       setIsDirty(true);
       setSaveStatus('idle');
-    } catch { /* ignore */ } finally { setDetecting(false); }
+    } catch (err) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setSimError(msg ?? "تعذر تشغيل المحاكاة التجريبية");
+      setSimNotice(null);
+    } finally { setDetecting(false); }
   };
 
   const handleSaveAndCompute = async () => {
@@ -167,10 +197,18 @@ export default function CephAnalysisPage() {
 
         {/* Toolbar */}
         <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
-          <button onClick={handleAiDetect} disabled={detecting}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-60 transition">
-            {detecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
-            {detecting ? 'جارٍ الكشف...' : 'كشف AI'}
+          <button onClick={handleTemplateSimulation} disabled={detecting}
+            title="قالب تجريبي لمواضع المعالم — ليس ذكاءً اصطناعيًا"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-60 transition">
+            {detecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
+            {detecting ? 'جارٍ التوليد...' : 'محاكاة تجريبية (ليست AI)'}
+          </button>
+
+          <button disabled
+            title="التتبع الآلي بالذكاء الاصطناعي يتطلب نموذج رؤية متخصص — قيد التطوير"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-gray-200 text-gray-400 cursor-not-allowed">
+            <Brain className="w-3.5 h-3.5" />
+            تتبع آلي AI (قريبًا)
           </button>
 
           <button onClick={handleSaveAndCompute} disabled={saving || !landmarks.length}
@@ -206,6 +244,19 @@ export default function CephAnalysisPage() {
           )}
         </div>
       </div>
+
+      {/* Honest-simulation banners */}
+      {simNotice && (
+        <div className="flex-shrink-0 mx-1 mb-2 flex items-start justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span>⚠️ {simNotice}</span>
+          <button onClick={() => setSimNotice(null)} className="text-amber-600 hover:text-amber-800 font-bold flex-shrink-0">✕</button>
+        </div>
+      )}
+      {simError && (
+        <div className="flex-shrink-0 mx-1 mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {simError}
+        </div>
+      )}
 
       {/* Simulation scenario bar */}
       {showSim && (

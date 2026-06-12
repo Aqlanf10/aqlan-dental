@@ -116,3 +116,43 @@ public class AiSimulateRequest
     public int ImageHeight { get; set; }
     public double PixelsPerMm { get; set; } = 1.0;
 }
+
+/// <summary>
+/// Result of the template-based landmark simulation. Explicitly labeled as a
+/// simulation (NOT AI) — the notice must always reach the client.
+/// </summary>
+public class CephSimulationResultDto
+{
+    public bool IsSimulation { get; set; } = true;
+    public string SimulationNotice { get; set; } = string.Empty;
+    public List<CephLandmarkDto> Landmarks { get; set; } = [];
+}
+
+public class CephNormDto
+{
+    public Guid Id { get; set; }
+    public string MeasurementName { get; set; } = string.Empty;
+    public string? NameAr { get; set; }
+    public string AnalysisGroup { get; set; } = string.Empty;
+    public decimal NormalValue { get; set; }
+    public decimal StdDeviation { get; set; }
+    public decimal? MinNormal { get; set; }
+    public decimal? MaxNormal { get; set; }
+    public string Unit { get; set; } = "°";
+    public string? Category { get; set; }
+    public string? InterpretationBelow { get; set; }
+    public string? InterpretationNormal { get; set; }
+    public string? InterpretationAbove { get; set; }
+    public int SortOrder { get; set; }
+}
+
+public class UpdateCephNormRequest
+{
+    public decimal NormalValue { get; set; }
+    public decimal StdDeviation { get; set; }
+    public decimal? MinNormal { get; set; }
+    public decimal? MaxNormal { get; set; }
+    public string? InterpretationBelow { get; set; }
+    public string? InterpretationNormal { get; set; }
+    public string? InterpretationAbove { get; set; }
+}

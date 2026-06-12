@@ -99,7 +99,10 @@ function ClinicTab() {
     setSaving(true);
     setSaved(false);
     try {
-      const clinicFields = ["clinic.name", "clinic.location", "clinic.phones"] as const;
+      const clinicFields = [
+        "clinic.name", "clinic.location", "clinic.phones",
+        "clinic.lead_doctor", "clinic.lead_doctor_title", "clinic.lead_doctor_credentials",
+      ] as const;
       await Promise.all(
         clinicFields.map((key) =>
           api.put(`/api/settings/${encodeURIComponent(key)}`, {
@@ -149,6 +152,37 @@ function ClinicTab() {
           placeholder="04-253028، 770XXXXXX"
           dir="ltr"
         />
+      </div>
+      <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-4">
+        <p className="text-sm font-semibold text-gray-700">هوية الطبيب على التقارير</p>
+        <p className="text-xs text-gray-500">تظهر هذه البيانات في ترويسة وتوقيع تقارير السيفالومتري والتقويم وكل ملفات PDF.</p>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">اسم الطبيب</label>
+          <input
+            value={settings["clinic.lead_doctor"] ?? ""}
+            onChange={(e) => setSettings({ ...settings, "clinic.lead_doctor": e.target.value })}
+            className={inputCls}
+            placeholder="د. عقلان الكامل"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">التخصص</label>
+          <input
+            value={settings["clinic.lead_doctor_title"] ?? ""}
+            onChange={(e) => setSettings({ ...settings, "clinic.lead_doctor_title": e.target.value })}
+            className={inputCls}
+            placeholder="أخصائي تقويم الأسنان"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">المؤهل العلمي (يظهر تحت التخصص)</label>
+          <input
+            value={settings["clinic.lead_doctor_credentials"] ?? ""}
+            onChange={(e) => setSettings({ ...settings, "clinic.lead_doctor_credentials": e.target.value })}
+            className={inputCls}
+            placeholder="جامعة مانيلا المركزية — الفلبين"
+          />
+        </div>
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1.5">بادئة رقم المريض</label>

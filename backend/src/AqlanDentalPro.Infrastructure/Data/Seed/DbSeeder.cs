@@ -559,10 +559,15 @@ public static class DbSeeder
     {
         var settings = new[]
         {
-            new Setting { Key = "clinic.name",     Value = "مركز د. عقلان الكامل لطب وتقويم الأسنان", Category = "clinic" },
+            // Official clinic name per the owner — appears on all reports/PDFs.
+            new Setting { Key = "clinic.name",     Value = "مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان", Category = "clinic" },
             new Setting { Key = "clinic.location",  Value = "تعز، اليمن — شارع التحرير الأعلى",         Category = "clinic" },
             new Setting { Key = "clinic.phones",    Value = "04-253028 · 770-245745 · 711-752823",       Category = "clinic" },
             new Setting { Key = "clinic.currency",  Value = "YER",                                       Category = "clinic" },
+            // Lead doctor identity for report headers/signatures (owner decision).
+            new Setting { Key = "clinic.lead_doctor",             Value = "د. عقلان الكامل",                          Category = "clinic" },
+            new Setting { Key = "clinic.lead_doctor_title",       Value = "أخصائي تقويم الأسنان",                     Category = "clinic" },
+            new Setting { Key = "clinic.lead_doctor_credentials", Value = "جامعة مانيلا المركزية — الفلبين",          Category = "clinic" },
             new Setting { Key = "patient.number_prefix",          Value = "GM",  Category = "patients" },
             new Setting { Key = "appointment.default_duration",   Value = "30",  Category = "appointments" },
             new Setting { Key = "appointment.reminder_hours",     Value = "24,2", Category = "appointments" },

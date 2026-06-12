@@ -2001,6 +2001,28 @@ public static class StartupDatabaseMaintenance
             """);
 
             ltLogger.LogInformation("HOTFIX: Lab tables (Labs, LabWorkTypes, LabOrderItems, LabWorkPrices, LabOrderStatusHistories, LabOrderAttachments, LabPayables) schema ensured (idempotent)");
+
+            // Diagnostic: check if LabOrderItems table was actually created/found
+            try
+            {
+                using var diagConn = ltDb.Database.GetDbConnection();
+                await diagConn.OpenAsync();
+                using var diagCmd = diagConn.CreateCommand();
+                diagCmd.CommandText = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'LabOrderItems'";
+                var itemsCount = Convert.ToInt32(await diagCmd.ExecuteScalarAsync());
+                if (itemsCount == 0)
+                {
+                    ltLogger.LogWarning("HOTFIX: LabOrderItems table was NOT found after schema maintenance. Lab order PDF endpoints will work without Items (fallback to 'غير محدد'). Controller IsMissingTableOrColumnError will handle gracefully.");
+                }
+                else
+                {
+                    ltLogger.LogInformation("HOTFIX: LabOrderItems table verified present after schema maintenance");
+                }
+            }
+            catch (Exception diagEx)
+            {
+                ltLogger.LogWarning(diagEx, "HOTFIX: Could not verify LabOrderItems table existence (non-fatal diagnostic)");
+            }
         }
         catch (Exception ex)
         {

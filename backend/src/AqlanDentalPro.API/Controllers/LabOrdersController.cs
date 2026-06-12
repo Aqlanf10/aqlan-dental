@@ -761,6 +761,11 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
                 .Include(l => l.Lab)
                 .FirstOrDefaultAsync(l => l.Id == id);
         }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error loading lab order for update {OrderId}: {ErrorType} — {ErrorMsg}", id, ex.GetType().Name, ex.InnerException?.Message ?? ex.Message);
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل أمر المختبر للتحديث", detail = ex.InnerException?.Message ?? ex.Message, type = ex.GetType().Name });
+        }
 
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
 

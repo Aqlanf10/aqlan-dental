@@ -119,7 +119,12 @@ export async function downloadPdfFromApi(url: string, filename: string): Promise
 export async function printPdfFromApi(url: string, filename: string): Promise<void> {
   // Open the print window IMMEDIATELY (before any async work) so the browser
   // associates it with the user gesture and doesn't block it as a popup.
-  const printWindow = window.open("", "_blank", "noopener,noreferrer");
+  // NOTE: Do NOT use "noopener,noreferrer" here — we need to write content into
+  // the opened window via document.write(), and noopener prevents the opener
+  // from accessing the new window's DOM in Chrome/Edge (Chromium).  Since we
+  // control all content written into the window (not an untrusted URL), the
+  // noopener security benefit does not apply here.
+  const printWindow = window.open("", "_blank");
 
   if (!printWindow) {
     throw new Error(

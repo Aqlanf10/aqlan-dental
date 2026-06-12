@@ -577,22 +577,35 @@ public partial class FinanceV3Controller(
     public async Task<IActionResult> RejectExpense(Guid id, [FromBody] RejectExpenseRequest req)
     {
         if (string.IsNullOrWhiteSpace(req.Reason)) return BadRequest(new { message = "سبب الرفض مطلوب" });
-        var expense = await db.OperationalExpenses.FindAsync(id);
-        if (expense == null || !expense.IsActive) return NotFound(new { message = "المصروف غير موجود" });
-        if (expense.ApprovalStatus != ApprovalStatus.Pending) return BadRequest(new { message = "هذا المصروف لا يحتاج إلى اعتماد أو تمت معالجته مسبقاً" });
 
-        var userId = currentUser.UserId ?? Guid.Empty;
-        expense.ApprovalStatus = ApprovalStatus.Rejected;
-        expense.ApprovedById = userId;
-        expense.ApprovedAt = DateTime.UtcNow;
-        expense.ApprovalNotes = req.Reason.Trim();
-        expense.IsActive = false;
-        expense.DeletedAt = DateTime.UtcNow;
-        expense.DeletedBy = userId;
+        // Same row-lock pattern as ApproveExpense: without it, a concurrent approve
+        // could post the expense to the ledger while this request marks it rejected.
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            if (db.Database.IsRelational())
+                await db.Database.ExecuteSqlRawAsync(@"SELECT 1 FROM ""OperationalExpenses"" WHERE ""Id"" = {0} FOR UPDATE", id);
 
-        await db.SaveChangesAsync();
-        await audit.LogAsync(AuditAction.Update, "OperationalExpense", id, details: "Expense rejected via V3");
-        return Ok(new { message = "تم رفض المصروف وإلغاؤه بنجاح", expense.Id, expense.ExpenseNumber, ApprovalStatus = expense.ApprovalStatus.ToString() });
+            var expense = await db.OperationalExpenses.FindAsync(id);
+            if (expense == null || !expense.IsActive) { await tx.RollbackAsync(); return NotFound(new { message = "المصروف غير موجود" }); }
+            if (expense.ApprovalStatus != ApprovalStatus.Pending) { await tx.RollbackAsync(); return BadRequest(new { message = "هذا المصروف لا يحتاج إلى اعتماد أو تمت معالجته مسبقاً" }); }
+
+            var userId = currentUser.UserId ?? Guid.Empty;
+            expense.ApprovalStatus = ApprovalStatus.Rejected;
+            expense.ApprovedById = userId;
+            expense.ApprovedAt = DateTime.UtcNow;
+            expense.ApprovalNotes = req.Reason.Trim();
+            expense.IsActive = false;
+            expense.DeletedAt = DateTime.UtcNow;
+            expense.DeletedBy = userId;
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            await audit.LogAsync(AuditAction.Update, "OperationalExpense", id, details: "Expense rejected via V3");
+            return Ok(new { message = "تم رفض المصروف وإلغاؤه بنجاح", expense.Id, expense.ExpenseNumber, ApprovalStatus = expense.ApprovalStatus.ToString() });
+        }
+        catch { await tx.RollbackAsync(); throw; }
     }
 
     /// <summary>

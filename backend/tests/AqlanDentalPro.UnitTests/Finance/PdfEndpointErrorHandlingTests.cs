@@ -162,7 +162,7 @@ public class PdfEndpointErrorHandlingTests
     }
 
     [Fact]
-    public void LabOrderPdf_ReturnsArabic500WithDetail()
+    public void LabOrderPdf_ReturnsArabic500WithoutExceptionDetails()
     {
         var backendSrcDir = Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..",
@@ -175,11 +175,13 @@ public class PdfEndpointErrorHandlingTests
 
         var content = File.ReadAllText(labOrdersController);
         content.Should().Contain("حدث خطأ غير متوقع أثناء إنشاء أمر العمل",
-            "LabOrdersController.PrintPdf must return Arabic 500 message with detail");
-        content.Should().Contain("detail = ex.Message",
-            "LabOrdersController.PrintPdf 500 response must include exception detail for debugging");
-        content.Should().Contain("type = ex.GetType().Name",
-            "LabOrdersController.PrintPdf 500 response must include exception type for debugging");
+            "LabOrdersController.PrintPdf must return an Arabic 500 message");
+        // Security: exception internals must never be sent to clients.
+        // Full details are written to the server log via logger.LogError.
+        content.Should().NotContain("detail = ex.Message",
+            "500 responses must not leak exception messages to clients");
+        content.Should().NotContain("type = ex.GetType().Name",
+            "500 responses must not leak exception type names to clients");
     }
 
     [Fact]

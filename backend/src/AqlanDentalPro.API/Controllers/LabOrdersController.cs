@@ -476,7 +476,7 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
         catch (Exception ex)
         {
             logger.LogError(ex, "Unexpected error loading lab order {OrderId}: {ErrorType} — {ErrorMsg}", id, ex.GetType().Name, ex.InnerException?.Message ?? ex.Message);
-            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل أمر المختبر", detail = ex.InnerException?.Message ?? ex.Message, type = ex.GetType().Name });
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل أمر المختبر" });
         }
 
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
@@ -764,7 +764,7 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
         catch (Exception ex)
         {
             logger.LogError(ex, "Unexpected error loading lab order for update {OrderId}: {ErrorType} — {ErrorMsg}", id, ex.GetType().Name, ex.InnerException?.Message ?? ex.Message);
-            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل أمر المختبر للتحديث", detail = ex.InnerException?.Message ?? ex.Message, type = ex.GetType().Name });
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل أمر المختبر للتحديث" });
         }
 
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
@@ -1266,7 +1266,7 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
         catch (Exception ex)
         {
             logger.LogError(ex, "Unexpected error loading lab order for PDF {OrderId}: {ErrorType} — {ErrorMsg}", id, ex.GetType().Name, ex.InnerException?.Message ?? ex.Message);
-            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل أمر المختبر للطباعة", detail = ex.InnerException?.Message ?? ex.Message, type = ex.GetType().Name });
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل أمر المختبر للطباعة" });
         }
 
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
@@ -1283,7 +1283,7 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to generate PDF for lab order {OrderId}: {ErrorType} — {ErrorMsg}", id, ex.GetType().Name, ex.Message);
-            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إنشاء أمر العمل", detail = ex.Message, type = ex.GetType().Name });
+            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إنشاء أمر العمل" });
         }
     }
 }

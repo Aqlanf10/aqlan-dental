@@ -710,7 +710,7 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
         catch (Exception ex)
         {
             logger.LogError(ex, "Unexpected error generating invoice PDF for invoice {InvoiceId}", id);
-            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إنشاء الفاتورة", detail = ex.Message, type = ex.GetType().Name });
+            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إنشاء الفاتورة" });
         }
     }
 

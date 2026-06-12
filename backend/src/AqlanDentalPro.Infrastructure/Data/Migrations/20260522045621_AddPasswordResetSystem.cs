@@ -12,6 +12,16 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                 -- ============================================================
                 -- AddColumn: InvoiceLineItems commission/billing fields
                 -- ============================================================
+                -- FRESH-INSTALL FIX: InvoiceLineItems is created later in the
+                -- chain (20260531000000), so on a brand-new database this block
+                -- must be skipped — 20260606000000_AddDoctorCommissionSystem
+                -- adds these columns at the right point. On databases that
+                -- already ran this migration nothing changes (it is recorded
+                -- in __EFMigrationsHistory and never re-executed).
+
+                DO $fix$
+                BEGIN
+                IF to_regclass('public.""InvoiceLineItems""') IS NOT NULL THEN
 
                 ALTER TABLE ""InvoiceLineItems"" ADD COLUMN IF NOT EXISTS ""CenterShareAmount"" numeric NOT NULL DEFAULT 0;
                 ALTER TABLE ""InvoiceLineItems"" ADD COLUMN IF NOT EXISTS ""CommissionApprovedAt"" timestamp with time zone NULL;
@@ -29,9 +39,18 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                 ALTER TABLE ""InvoiceLineItems"" ADD COLUMN IF NOT EXISTS ""NetCommissionableAmount"" numeric NOT NULL DEFAULT 0;
                 ALTER TABLE ""InvoiceLineItems"" ADD COLUMN IF NOT EXISTS ""OtherDirectCost"" numeric NOT NULL DEFAULT 0;
 
+                END IF;
+                END $fix$;
+
                 -- ============================================================
                 -- AddColumn: ClinicServices commission fields
                 -- ============================================================
+                -- FRESH-INSTALL FIX: same guard — ClinicServices is created by
+                -- a later migration on fresh databases.
+
+                DO $fix$
+                BEGIN
+                IF to_regclass('public.""ClinicServices""') IS NOT NULL THEN
 
                 ALTER TABLE ""ClinicServices"" ADD COLUMN IF NOT EXISTS ""CommissionBaseRule"" integer NOT NULL DEFAULT 0;
                 ALTER TABLE ""ClinicServices"" ADD COLUMN IF NOT EXISTS ""CommissionRecognitionMode"" integer NOT NULL DEFAULT 0;
@@ -40,9 +59,20 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                 ALTER TABLE ""ClinicServices"" ADD COLUMN IF NOT EXISTS ""DefaultMaterialCost"" numeric NOT NULL DEFAULT 0;
                 ALTER TABLE ""ClinicServices"" ADD COLUMN IF NOT EXISTS ""DefaultMaterialCostType"" integer NOT NULL DEFAULT 0;
 
+                END IF;
+                END $fix$;
+
                 -- ============================================================
                 -- CreateTable: DoctorCommissionPayments
                 -- ============================================================
+                -- FRESH-INSTALL FIX: only create on legacy databases (where
+                -- InvoiceLineItems already exists). On fresh databases the
+                -- table is created by 20260606000000_AddDoctorCommissionSystem,
+                -- which would otherwise fail with ""already exists"".
+
+                DO $fix$
+                BEGIN
+                IF to_regclass('public.""InvoiceLineItems""') IS NOT NULL THEN
 
                 CREATE TABLE IF NOT EXISTS ""DoctorCommissionPayments"" (
                     ""Id"" uuid NOT NULL,
@@ -62,6 +92,9 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     CONSTRAINT ""FK_DoctorCommissionPayments_Doctors_DoctorId""
                         FOREIGN KEY (""DoctorId"") REFERENCES ""Doctors""(""Id"") ON DELETE CASCADE
                 );
+
+                END IF;
+                END $fix$;
 
                 -- ============================================================
                 -- CreateTable: PasswordResetRequests
@@ -109,9 +142,20 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                 -- CreateIndex (non-unique)
                 -- ============================================================
 
-                CREATE INDEX IF NOT EXISTS ""IX_InvoiceLineItems_DoctorId"" ON ""InvoiceLineItems"" (""DoctorId"");
-                CREATE INDEX IF NOT EXISTS ""IX_InvoiceLineItems_LabOrderId"" ON ""InvoiceLineItems"" (""LabOrderId"");
-                CREATE INDEX IF NOT EXISTS ""IX_DoctorCommissionPayments_DoctorId"" ON ""DoctorCommissionPayments"" (""DoctorId"");
+                DO $fix$
+                BEGIN
+                IF to_regclass('public.""InvoiceLineItems""') IS NOT NULL THEN
+                    CREATE INDEX IF NOT EXISTS ""IX_InvoiceLineItems_DoctorId"" ON ""InvoiceLineItems"" (""DoctorId"");
+                    CREATE INDEX IF NOT EXISTS ""IX_InvoiceLineItems_LabOrderId"" ON ""InvoiceLineItems"" (""LabOrderId"");
+                END IF;
+                END $fix$;
+
+                DO $fix$
+                BEGIN
+                IF to_regclass('public.""DoctorCommissionPayments""') IS NOT NULL THEN
+                    CREATE INDEX IF NOT EXISTS ""IX_DoctorCommissionPayments_DoctorId"" ON ""DoctorCommissionPayments"" (""DoctorId"");
+                END IF;
+                END $fix$;
                 CREATE INDEX IF NOT EXISTS ""IX_PasswordResetRequests_ApprovedByUserId"" ON ""PasswordResetRequests"" (""ApprovedByUserId"");
                 CREATE INDEX IF NOT EXISTS ""IX_PasswordResetRequests_Status"" ON ""PasswordResetRequests"" (""Status"");
                 CREATE INDEX IF NOT EXISTS ""IX_PasswordResetRequests_UserId"" ON ""PasswordResetRequests"" (""UserId"");
@@ -129,7 +173,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                 DO $$
                 BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_InvoiceLineItems_Doctors_DoctorId') THEN
+                    IF to_regclass('public.""InvoiceLineItems""') IS NOT NULL
+                       AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_InvoiceLineItems_Doctors_DoctorId') THEN
                         ALTER TABLE ""InvoiceLineItems""
                             ADD CONSTRAINT ""FK_InvoiceLineItems_Doctors_DoctorId""
                             FOREIGN KEY (""DoctorId"") REFERENCES ""Doctors""(""Id"");
@@ -142,7 +187,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                 DO $$
                 BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_InvoiceLineItems_LabOrders_LabOrderId') THEN
+                    IF to_regclass('public.""InvoiceLineItems""') IS NOT NULL
+                       AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_InvoiceLineItems_LabOrders_LabOrderId') THEN
                         ALTER TABLE ""InvoiceLineItems""
                             ADD CONSTRAINT ""FK_InvoiceLineItems_LabOrders_LabOrderId""
                             FOREIGN KEY (""LabOrderId"") REFERENCES ""LabOrders""(""Id"");

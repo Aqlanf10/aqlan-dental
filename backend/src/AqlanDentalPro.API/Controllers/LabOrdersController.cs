@@ -559,6 +559,18 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
                         return BadRequest(new { message = "المعمل المحدد غير موجود أو غير مفعل" });
                 }
 
+                // LabOrder.DoctorId references Doctors.Id, NOT Users.Id — when the
+                // client omits doctorId, resolve the Doctor row of the current user
+                // instead of writing the UserId (which violated the FK).
+                var resolvedDoctorId = req.DoctorId;
+                if (!resolvedDoctorId.HasValue && currentUser.UserId.HasValue)
+                {
+                    resolvedDoctorId = await db.Doctors
+                        .Where(d => d.UserId == currentUser.UserId.Value && d.IsActive)
+                        .Select(d => (Guid?)d.Id)
+                        .FirstOrDefaultAsync();
+                }
+
                 var hasExplicitSentDate = !string.IsNullOrWhiteSpace(req.SentDate);
                 var order = new LabOrder
                 {
@@ -575,7 +587,7 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
                     Priority      = req.Priority,
                     Instructions  = req.Instructions,
                     Cost          = req.Cost,
-                    DoctorId      = req.DoctorId ?? currentUser.UserId,
+                    DoctorId      = resolvedDoctorId,
                     Status        = hasExplicitSentDate ? "sent" : "draft",
                     // Sprint 2 — new fields
                     Shade            = req.Shade,

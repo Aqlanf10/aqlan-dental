@@ -5,11 +5,12 @@ using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.API.Services;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using LabEntity = AqlanDentalPro.Domain.Entities.Lab;
 
 namespace AqlanDentalPro.UnitTests.LabOrders;
 
 /// <summary>
-/// PR #350 regression tests for lab order PDF endpoint stabilization.
+/// PR #351 regression tests for lab order PDF endpoint stabilization.
 /// Covers: IsMissingTableOrColumnError, 404 handling, PDF generation resilience,
 /// Arabic fallbacks for null navigation properties, and schema error graceful degradation.
 /// </summary>
@@ -193,7 +194,6 @@ public class LabOrderPdfStabilizationTests
 
         // Act & Assert: Generate should NOT throw
         var act = () => LabOrderPdfGenerator.Generate(order, "عيادة الأسنان", "0501234567", "الرياض");
-
         act.Should().NotThrow("PDF generation should handle null Items gracefully");
     }
 
@@ -206,7 +206,6 @@ public class LabOrderPdfStabilizationTests
 
         // Act & Assert: Generate should NOT throw
         var act = () => LabOrderPdfGenerator.Generate(order, "عيادة الأسنان", "0501234567", "الرياض");
-
         act.Should().NotThrow("PDF generation should handle empty Items list gracefully");
     }
 
@@ -215,11 +214,10 @@ public class LabOrderPdfStabilizationTests
     {
         // Arrange: LabOrder with null Patient navigation property
         var order = CreateSampleLabOrder();
-        order.Patient = null;
+        order.Patient = null!; // Intentionally null to test fallback
 
         // Act & Assert: Generate should NOT throw — uses fallback "غير محدد"
         var act = () => LabOrderPdfGenerator.Generate(order, "عيادة الأسنان", "0501234567", "الرياض");
-
         act.Should().NotThrow("PDF generation should handle null Patient with Arabic fallback");
     }
 
@@ -228,11 +226,10 @@ public class LabOrderPdfStabilizationTests
     {
         // Arrange: LabOrder with null Doctor navigation property
         var order = CreateSampleLabOrder();
-        order.Doctor = null;
+        order.Doctor = null!; // Intentionally null to test fallback
 
         // Act & Assert: Generate should NOT throw — uses fallback "غير محدد"
         var act = () => LabOrderPdfGenerator.Generate(order, "عيادة الأسنان", "0501234567", "الرياض");
-
         act.Should().NotThrow("PDF generation should handle null Doctor with Arabic fallback");
     }
 
@@ -241,11 +238,10 @@ public class LabOrderPdfStabilizationTests
     {
         // Arrange: LabOrder with null Lab navigation property
         var order = CreateSampleLabOrder();
-        order.Lab = null;
+        order.Lab = null!; // Intentionally null to test fallback
 
         // Act & Assert: Generate should NOT throw — uses fallback "غير محدد"
         var act = () => LabOrderPdfGenerator.Generate(order, "عيادة الأسنان", "0501234567", "الرياض");
-
         act.Should().NotThrow("PDF generation should handle null Lab with Arabic fallback");
     }
 
@@ -254,9 +250,9 @@ public class LabOrderPdfStabilizationTests
     {
         // Arrange: worst case — all navigation properties null
         var order = CreateSampleLabOrder();
-        order.Patient = null;
-        order.Doctor = null;
-        order.Lab = null;
+        order.Patient = null!;
+        order.Doctor = null!;
+        order.Lab = null!;
         order.Items = null!;
         order.LabName = null;
 
@@ -278,7 +274,7 @@ public class LabOrderPdfStabilizationTests
             new()
             {
                 WorkTypeId = Guid.NewGuid(),
-                WorkType = new LabWorkType { Id = Guid.NewGuid(), Name = "تاج خزفي" },
+                WorkType = new LabWorkType { Id = Guid.NewGuid(), Name = "تاج خزفي", IsActive = true },
                 ToothNumber = "12",
                 Arch = "علوي",
                 Shade = "A2",
@@ -300,19 +296,19 @@ public class LabOrderPdfStabilizationTests
 
     // ─── Arabic Fallback Tests ────────────────────────────────────────────
 
-    [Theory]
-    [InlineData(null, null, "غير محدد")]
-    [InlineData("", "", "غير محدد")]
-    public void ArabicFallback_NullPatientName_ShowsGhairMuhaddad(
-        string? firstName, string? lastName, string expected)
+    [Fact]
+    public void ArabicFallback_NullPatientName_ShowsGhairMuhaddad()
     {
         // The PDF generator uses: order.Patient != null ? $"{order.Patient.FirstName} {order.Patient.LastName}" : "غير محدد"
         // When Patient is null, the fallback is "غير محدد"
-        var display = (firstName != null && lastName != null)
-            ? $"{firstName} {lastName}"
-            : expected;
+        var order = CreateSampleLabOrder();
+        order.Patient = null!;
 
-        display.Should().Contain("غير محدد");
+        var display = order.Patient != null
+            ? $"{order.Patient.FirstName} {order.Patient.LastName}"
+            : "غير محدد";
+
+        display.Should().Be("غير محدد");
     }
 
     [Fact]
@@ -336,7 +332,7 @@ public class LabOrderPdfStabilizationTests
     {
         // The PDF generator uses: order.Lab?.Name ?? order.LabName ?? "غير محدد"
         var order = CreateSampleLabOrder();
-        order.Lab = null;
+        order.Lab = null!;
         order.LabName = null;
 
         var display = order.Lab?.Name ?? order.LabName ?? "غير محدد";
@@ -414,7 +410,7 @@ public class LabOrderPdfStabilizationTests
                 Name = "د. خالد",
                 IsActive = true
             },
-            Lab = new Lab
+            Lab = new LabEntity
             {
                 Id = Guid.NewGuid(),
                 Name = "معمل الأسنان المتقدم",
@@ -426,13 +422,9 @@ public class LabOrderPdfStabilizationTests
 
     /// <summary>
     /// Creates a PostgresException with the specified SqlState.
-    /// Uses reflection since PostgresException doesn't have a public constructor
-    /// with SqlState parameter in all Npgsql versions.
     /// </summary>
     private static PostgresException CreatePostgresException(string sqlState)
     {
-        // PostgresException has a public constructor in Npgsql 8+:
-        // new PostgresException(message, severity, invariantSeverity, sqlState)
         return new PostgresException(
             $"PostgreSQL error: {sqlState}",
             "ERROR",
@@ -467,5 +459,3 @@ public class LabOrderPdfStabilizationTests
                 || msg.Contains("LabWorkTypes", StringComparison.OrdinalIgnoreCase));
     }
 }
-
-

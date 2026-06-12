@@ -19,6 +19,8 @@ public sealed class CreateDocumentRequest
     public long? FileSize { get; init; }
     public string? MimeType { get; init; }
     public string? Notes { get; init; }
+    /// <summary>Optional link to an orthodontic case (standardized records — Phase 2).</summary>
+    public Guid? OrthoCaseId { get; init; }
 }
 
 public sealed class UpdateDocumentRequest
@@ -38,7 +40,7 @@ public class DocumentsController(AppDbContext db, ICurrentUserService currentUse
 {
     // ─── GET /api/documents?patientId={patientId} ─────────────────────────────
     [HttpGet]
-    public async Task<IActionResult> GetDocuments([FromQuery] Guid? patientId, [FromQuery] string? documentType, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
+    public async Task<IActionResult> GetDocuments([FromQuery] Guid? patientId, [FromQuery] string? documentType, [FromQuery] Guid? orthoCaseId, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
     {
         pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var query = db.Documents.AsQueryable();
@@ -48,6 +50,9 @@ public class DocumentsController(AppDbContext db, ICurrentUserService currentUse
 
         if (!string.IsNullOrWhiteSpace(documentType))
             query = query.Where(d => d.DocumentType == documentType);
+
+        if (orthoCaseId.HasValue)
+            query = query.Where(d => d.OrthoCaseId == orthoCaseId);
 
         var total = await query.CountAsync();
 
@@ -69,6 +74,7 @@ public class DocumentsController(AppDbContext db, ICurrentUserService currentUse
                 d.UploadedBy,
                 d.Signed,
                 SignedAt = d.SignedAt != null ? d.SignedAt.Value.ToString("yyyy-MM-dd") : null,
+                d.OrthoCaseId,
                 d.IsActive,
                 CreatedAt = d.CreatedAt.ToString("yyyy-MM-dd"),
                 UpdatedAt = d.UpdatedAt.ToString("yyyy-MM-dd"),
@@ -98,6 +104,7 @@ public class DocumentsController(AppDbContext db, ICurrentUserService currentUse
                 d.UploadedBy,
                 d.Signed,
                 SignedAt = d.SignedAt != null ? d.SignedAt.Value.ToString("yyyy-MM-dd") : null,
+                d.OrthoCaseId,
                 d.IsActive,
                 CreatedAt = d.CreatedAt.ToString("yyyy-MM-dd"),
                 UpdatedAt = d.UpdatedAt.ToString("yyyy-MM-dd"),
@@ -124,6 +131,10 @@ public class DocumentsController(AppDbContext db, ICurrentUserService currentUse
         if (string.IsNullOrWhiteSpace(req.Title))
             return BadRequest(new { message = "عنوان المستند مطلوب" });
 
+        if (req.OrthoCaseId.HasValue &&
+            !await db.OrthoCases.AnyAsync(c => c.Id == req.OrthoCaseId.Value))
+            return BadRequest(new { message = "الحالة التقويمية غير موجودة" });
+
         var document = new Document
         {
             PatientId = req.PatientId,
@@ -135,6 +146,7 @@ public class DocumentsController(AppDbContext db, ICurrentUserService currentUse
             MimeType = req.MimeType,
             Notes = req.Notes,
             UploadedBy = currentUser.UserId,
+            OrthoCaseId = req.OrthoCaseId,
         };
 
         db.Documents.Add(document);

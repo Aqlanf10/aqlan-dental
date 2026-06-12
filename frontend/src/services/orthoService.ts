@@ -14,6 +14,7 @@ import type {
   RetentionVisit,
   TreatmentPlan,
   TreatmentStage,
+  UpdateOrthoPhotoRequest,
 } from "@/types/ortho";
 
 const BASE = "/api/ortho-cases";
@@ -73,6 +74,8 @@ export const orthoService = {
   getPhotos: (caseId: string) => api.get<OrthoPhoto[]>(`${BASE}/${caseId}/photos`),
   addPhoto: (caseId: string, data: Partial<OrthoPhoto>) =>
     api.post<OrthoPhoto>(`${BASE}/${caseId}/photos`, data),
+  updatePhoto: (caseId: string, photoId: string, data: UpdateOrthoPhotoRequest) =>
+    api.patch<OrthoPhoto>(`${BASE}/${caseId}/photos/${photoId}`, data),
   deletePhoto: (caseId: string, photoId: string) =>
     api.delete(`${BASE}/${caseId}/photos/${photoId}`),
 

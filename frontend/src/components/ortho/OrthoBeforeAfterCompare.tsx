@@ -5,6 +5,7 @@ import { ArrowLeftRight } from "lucide-react";
 import { useOrthoPhotos } from "@/hooks/useOrtho";
 import { formatArabicDate } from "@/lib/utils";
 import type { OrthoPhoto } from "@/types/ortho";
+import { TREATMENT_PHASE_LABELS, orthoSubtypeLabel } from "@/types/ortho";
 
 const PHOTO_TYPE_LABELS: Record<string, string> = {
   Intraoral: "داخل الفم",
@@ -25,6 +26,13 @@ function resolveImageUrl(url: string) {
 function photoLabel(photo: OrthoPhoto) {
   const type = PHOTO_TYPE_LABELS[photo.photoType] ?? photo.photoType;
   const parts = [type];
+  // مرحلة العلاج (قبل/أثناء/بعد) والنوع الفرعي عند توفر الوسوم
+  const phase = photo.treatmentPhase
+    ? TREATMENT_PHASE_LABELS[photo.treatmentPhase]
+    : undefined;
+  if (phase) parts.push(phase);
+  const subtype = orthoSubtypeLabel(photo.subtype);
+  if (subtype) parts.push(subtype);
   if (photo.caption) parts.push(photo.caption);
   if (photo.takenAt) parts.push(formatArabicDate(photo.takenAt));
   return parts.join(" — ");
@@ -101,13 +109,20 @@ export function OrthoBeforeAfterCompare({ caseId }: { caseId: string }) {
   const [beforeId, setBeforeId] = useState<string | null>(null);
   const [afterId, setAfterId] = useState<string | null>(null);
 
-  // Sensible defaults: oldest as "قبل", newest as "بعد"
+  // Sensible defaults — phase-aware when photos carry treatmentPhase tags:
+  // «قبل» = أول صورة موسومة Initial (وإلا الأقدم)، «بعد» = آخر صورة موسومة Final (وإلا الأحدث)
   useEffect(() => {
     if (sorted.length < 2) return;
     const ids = new Set(sorted.map((p) => p.id));
-    if (!beforeId || !ids.has(beforeId)) setBeforeId(sorted[0].id);
-    if (!afterId || !ids.has(afterId))
-      setAfterId(sorted[sorted.length - 1].id);
+    if (!beforeId || !ids.has(beforeId)) {
+      const firstInitial = sorted.find((p) => p.treatmentPhase === "Initial");
+      setBeforeId((firstInitial ?? sorted[0]).id);
+    }
+    if (!afterId || !ids.has(afterId)) {
+      const finals = sorted.filter((p) => p.treatmentPhase === "Final");
+      const lastFinal = finals.length > 0 ? finals[finals.length - 1] : undefined;
+      setAfterId((lastFinal ?? sorted[sorted.length - 1]).id);
+    }
   }, [sorted, beforeId, afterId]);
 
   const swap = () => {

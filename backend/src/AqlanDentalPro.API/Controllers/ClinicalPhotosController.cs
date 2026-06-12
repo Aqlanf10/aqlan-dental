@@ -31,6 +31,8 @@ public sealed class AddRadiographRequest
     public string? Notes { get; init; }
     public Guid? DoctorId { get; init; }
     public string? XrayDate { get; init; }
+    /// <summary>Optional link to an orthodontic case (standardized records — Phase 2).</summary>
+    public Guid? OrthoCaseId { get; init; }
 }
 
 [ApiController]
@@ -107,7 +109,7 @@ public class ClinicalPhotosController(AppDbContext db, ICurrentUserService curre
 public class RadiographsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
     [HttpGet("{patientId:guid}")]
-    public async Task<IActionResult> GetRadiographs(Guid patientId, [FromQuery] string? xrayType)
+    public async Task<IActionResult> GetRadiographs(Guid patientId, [FromQuery] string? xrayType, [FromQuery] Guid? orthoCaseId)
     {
         var query = db.Radiographs
             .Include(r => r.Doctor)
@@ -115,6 +117,9 @@ public class RadiographsController(AppDbContext db, ICurrentUserService currentU
 
         if (!string.IsNullOrWhiteSpace(xrayType))
             query = query.Where(r => r.XrayType == xrayType);
+
+        if (orthoCaseId.HasValue)
+            query = query.Where(r => r.OrthoCaseId == orthoCaseId);
 
         var xrays = await query
             .OrderByDescending(r => r.XrayDate)
@@ -124,6 +129,7 @@ public class RadiographsController(AppDbContext db, ICurrentUserService currentU
                 r.ToothRelated, r.Notes,
                 XrayDate = r.XrayDate.ToString("yyyy-MM-dd"),
                 DoctorName = r.Doctor != null ? r.Doctor.Name : null,
+                r.OrthoCaseId,
                 r.IsActive,
                 CreatedAt = r.CreatedAt.ToString("yyyy-MM-dd"),
             })
@@ -134,6 +140,10 @@ public class RadiographsController(AppDbContext db, ICurrentUserService currentU
     [HttpPost]
     public async Task<IActionResult> AddRadiograph([FromBody] AddRadiographRequest req)
     {
+        if (req.OrthoCaseId.HasValue &&
+            !await db.OrthoCases.AnyAsync(c => c.Id == req.OrthoCaseId.Value))
+            return BadRequest(new { message = "الحالة التقويمية غير موجودة" });
+
         var xray = new Radiograph
         {
             PatientId   = req.PatientId,
@@ -147,6 +157,7 @@ public class RadiographsController(AppDbContext db, ICurrentUserService currentU
             DoctorId    = req.DoctorId,
             UploadedBy  = currentUser.UserId,
             XrayDate    = req.XrayDate != null ? DateOnly.Parse(req.XrayDate) : DateOnly.FromDateTime(DateTime.Today),
+            OrthoCaseId = req.OrthoCaseId,
         };
         db.Radiographs.Add(xray);
         await db.SaveChangesAsync();

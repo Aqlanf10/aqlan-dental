@@ -22,6 +22,7 @@ import {
   Save,
   Scissors,
   ShieldCheck,
+  Star,
   Stethoscope,
   Trash2,
   User,
@@ -54,6 +55,7 @@ import {
   useSaveExtractionDecision,
   useSaveRetention,
   useTreatmentPlans,
+  useUpdateOrthoPhoto,
 } from "@/hooks/useOrtho";
 import { toast } from "@/stores/toastStore";
 import type {
@@ -70,8 +72,12 @@ import type {
 } from "@/types/ortho";
 import {
   EXTRACTION_FACTORS,
+  ORTHO_PHOTO_CATEGORY_LABELS,
+  ORTHO_PHOTO_SUBTYPES,
   ORTHO_STATUS_LABELS,
   RECORDS_CHECKLIST_ITEMS,
+  TREATMENT_PHASE_LABELS,
+  orthoSubtypeLabel,
 } from "@/types/ortho";
 import { TreatmentStagesPanel } from "@/components/ortho/TreatmentStagesPanel";
 import { OrthoStagesTimeline } from "@/components/ortho/OrthoStagesTimeline";
@@ -390,17 +396,30 @@ function OverviewPanel({
 /*  RecordsPanel                                                       */
 /* ------------------------------------------------------------------ */
 
+const EMPTY_PHOTO_FORM = {
+  photoUrl: "",
+  photoType: "Intraoral",
+  caption: "",
+  category: "",
+  subtype: "",
+  treatmentPhase: "",
+  isSelectedForReport: false,
+};
+
+const PHASE_BADGE_CLS: Record<string, string> = {
+  Initial: "bg-green-600/90",
+  Progress: "bg-blue-600/90",
+  Final: "bg-violet-600/90",
+};
+
 function RecordsPanel({ caseId }: { caseId: string }) {
   const { data: photos = [] as OrthoPhoto[], refetch: refetchPhotos } =
     useOrthoPhotos(caseId);
   const { data: checklist, refetch: refetchChecklist } =
     useRecordsChecklist(caseId);
   const saveChecklist = useSaveChecklist(caseId);
-  const [form, setForm] = useState({
-    photoUrl: "",
-    photoType: "Intraoral",
-    caption: "",
-  });
+  const updatePhoto = useUpdateOrthoPhoto(caseId);
+  const [form, setForm] = useState({ ...EMPTY_PHOTO_FORM });
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -408,6 +427,8 @@ function RecordsPanel({ caseId }: { caseId: string }) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewIndex, setPreviewIndex] = useState(0);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [phaseFilter, setPhaseFilter] = useState<string>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const PHOTO_TYPE_LABELS: Record<string, string> = {
@@ -415,6 +436,35 @@ function RecordsPanel({ caseId }: { caseId: string }) {
     Extraoral: "خارج الفم",
     Progress: "متابعة",
     Radiograph: "أشعة",
+  };
+
+  // Gallery filters (client-side — instant, no extra requests)
+  const filteredPhotos = useMemo(() => {
+    return photos.filter((p) => {
+      if (phaseFilter !== "all" && p.treatmentPhase !== phaseFilter) return false;
+      if (categoryFilter !== "all" && p.category !== categoryFilter) return false;
+      return true;
+    });
+  }, [photos, phaseFilter, categoryFilter]);
+
+  // إعادة ضبط مؤشر المعاينة عند تغيير التصفية حتى لا يخرج عن النطاق
+  useEffect(() => {
+    setPreviewIndex(0);
+  }, [phaseFilter, categoryFilter]);
+
+  /** الحقول الاختيارية الجديدة — تُرسل فقط عند تعبئتها (الرفع السريع القديم يبقى كما هو) */
+  const tagPayload = () => ({
+    category: form.category || undefined,
+    subtype: form.subtype || undefined,
+    treatmentPhase: form.treatmentPhase || undefined,
+    isSelectedForReport: form.isSelectedForReport || undefined,
+  });
+
+  const toggleReportSelection = (p: OrthoPhoto) => {
+    updatePhoto.mutate({
+      photoId: p.id,
+      data: { isSelectedForReport: !p.isSelectedForReport },
+    });
   };
 
   // Group checklist items
@@ -480,8 +530,13 @@ function RecordsPanel({ caseId }: { caseId: string }) {
     try {
       await (
         await import("@/services/orthoService")
-      ).orthoService.addPhoto(caseId, form);
-      setForm({ photoUrl: "", photoType: "Intraoral", caption: "" });
+      ).orthoService.addPhoto(caseId, {
+        photoUrl: form.photoUrl,
+        photoType: form.photoType,
+        caption: form.caption,
+        ...tagPayload(),
+      });
+      setForm({ ...EMPTY_PHOTO_FORM });
       await refetchPhotos();
       toast.success("تمت إضافة السجل");
     } catch {
@@ -510,10 +565,11 @@ function RecordsPanel({ caseId }: { caseId: string }) {
         photoUrl: url,
         photoType: form.photoType,
         caption: form.caption,
+        ...tagPayload(),
       });
       setPhotoFile(null);
       setPhotoPreview(null);
-      setForm((f) => ({ ...f, photoType: "Intraoral", caption: "" }));
+      setForm((f) => ({ ...EMPTY_PHOTO_FORM, photoUrl: f.photoUrl }));
       if (fileInputRef.current) fileInputRef.current.value = "";
       await refetchPhotos();
       toast.success("تم رفع الصورة وإضافتها بنجاح");
@@ -663,6 +719,75 @@ function RecordsPanel({ caseId }: { caseId: string }) {
                 <option value="Radiograph">أشعة</option>
               </select>
             </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="فئة الصورة">
+                <select
+                  className={inputCls}
+                  value={form.category}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      category: e.target.value,
+                      subtype: "", // الأنواع الفرعية تتبع الفئة
+                    }))
+                  }
+                >
+                  <option value="">— غير محدد —</option>
+                  {Object.entries(ORTHO_PHOTO_CATEGORY_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="نوع فرعي">
+                <select
+                  className={inputCls}
+                  value={form.subtype}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, subtype: e.target.value }))
+                  }
+                  disabled={
+                    !form.category ||
+                    (ORTHO_PHOTO_SUBTYPES[form.category] ?? []).length === 0
+                  }
+                >
+                  <option value="">— غير محدد —</option>
+                  {(ORTHO_PHOTO_SUBTYPES[form.category] ?? []).map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <Field label="مرحلة العلاج">
+              <select
+                className={inputCls}
+                value={form.treatmentPhase}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, treatmentPhase: e.target.value }))
+                }
+              >
+                <option value="">— غير محدد —</option>
+                {Object.entries(TREATMENT_PHASE_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={form.isSelectedForReport}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, isSelectedForReport: e.target.checked }))
+                }
+                className="h-4 w-4 rounded border-gray-300 text-clinic-blue focus:ring-clinic-blue"
+              />
+              إدراج في التقرير
+            </label>
             <Field label="ملاحظة">
               <input
                 className={inputCls}
@@ -702,12 +827,61 @@ function RecordsPanel({ caseId }: { caseId: string }) {
         </div>
 
         {/* Photo Gallery */}
-        <div>
+        <div className="space-y-3">
+          {/* Filter pills */}
+          {photos.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              {[
+                { value: "all", label: "الكل" },
+                ...Object.entries(TREATMENT_PHASE_LABELS).map(([value, label]) => ({
+                  value,
+                  label,
+                })),
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setPhaseFilter(opt.value)}
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-xs font-medium transition",
+                    phaseFilter === opt.value
+                      ? "border-clinic-blue bg-clinic-blue text-white"
+                      : "border-gray-200 bg-white text-gray-600 hover:border-clinic-blue/40"
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              <span className="mx-1 h-4 w-px bg-gray-200" />
+              {[
+                { value: "all", label: "كل الفئات" },
+                ...Object.entries(ORTHO_PHOTO_CATEGORY_LABELS).map(
+                  ([value, label]) => ({ value, label })
+                ),
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setCategoryFilter(opt.value)}
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-xs font-medium transition",
+                    categoryFilter === opt.value
+                      ? "border-clinic-blue bg-clinic-blue text-white"
+                      : "border-gray-200 bg-white text-gray-600 hover:border-clinic-blue/40"
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
           {photos.length === 0 ? (
             <EmptyState text="لا توجد صور أو سجلات مرتبطة بحالة التقويم." />
+          ) : filteredPhotos.length === 0 ? (
+            <EmptyState text="لا توجد صور مطابقة للتصفية المحددة." />
           ) : (
             <div className="grid gap-3 grid-cols-2 md:grid-cols-3">
-              {photos.map((p: OrthoPhoto, idx: number) => (
+              {filteredPhotos.map((p: OrthoPhoto, idx: number) => (
                 <div
                   key={p.id}
                   className="group relative aspect-square overflow-hidden rounded-lg border border-gray-200 bg-gray-50 cursor-pointer"
@@ -738,10 +912,49 @@ function RecordsPanel({ caseId }: { caseId: string }) {
                       )}
                     </div>
                   </div>
-                  {/* Type badge */}
-                  <span className="absolute top-2 right-2 rounded bg-black/50 px-1.5 py-0.5 text-[10px] font-medium text-white">
-                    {PHOTO_TYPE_LABELS[p.photoType] || p.photoType}
-                  </span>
+                  {/* Phase + subtype/type badges */}
+                  <div className="absolute top-2 right-2 flex max-w-[75%] flex-wrap justify-end gap-1">
+                    {p.treatmentPhase && TREATMENT_PHASE_LABELS[p.treatmentPhase] && (
+                      <span
+                        className={cn(
+                          "rounded px-1.5 py-0.5 text-[10px] font-bold text-white",
+                          PHASE_BADGE_CLS[p.treatmentPhase] ?? "bg-black/50"
+                        )}
+                      >
+                        {TREATMENT_PHASE_LABELS[p.treatmentPhase]}
+                      </span>
+                    )}
+                    <span className="rounded bg-black/50 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                      {orthoSubtypeLabel(p.subtype) ||
+                        (p.category && ORTHO_PHOTO_CATEGORY_LABELS[p.category]) ||
+                        PHOTO_TYPE_LABELS[p.photoType] ||
+                        p.photoType}
+                    </span>
+                  </div>
+                  {/* Report selection toggle */}
+                  <button
+                    type="button"
+                    title={
+                      p.isSelectedForReport
+                        ? "إزالة من التقرير"
+                        : "إدراج في التقرير"
+                    }
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleReportSelection(p);
+                    }}
+                    className={cn(
+                      "absolute bottom-2 left-2 z-10 rounded-full p-1.5 transition",
+                      p.isSelectedForReport
+                        ? "bg-amber-400 text-white shadow"
+                        : "bg-black/40 text-white opacity-0 group-hover:opacity-100 hover:bg-amber-400"
+                    )}
+                  >
+                    <Star
+                      className="h-3.5 w-3.5"
+                      fill={p.isSelectedForReport ? "currentColor" : "none"}
+                    />
+                  </button>
                   {/* Delete button */}
                   {deleteConfirm === p.id ? (
                     <div
@@ -782,13 +995,16 @@ function RecordsPanel({ caseId }: { caseId: string }) {
         </div>
       </div>
 
-      {/* Image Preview Modal */}
+      {/* Image Preview Modal — navigates within the filtered gallery */}
       <ImagePreviewModal
         isOpen={previewOpen}
         onClose={() => setPreviewOpen(false)}
-        url={photos[previewIndex]?.photoUrl ?? ""}
-        fileName={photos[previewIndex]?.caption || photos[previewIndex]?.photoType}
-        items={photos.map((p) => ({
+        url={filteredPhotos[previewIndex]?.photoUrl ?? ""}
+        fileName={
+          filteredPhotos[previewIndex]?.caption ||
+          filteredPhotos[previewIndex]?.photoType
+        }
+        items={filteredPhotos.map((p) => ({
           url: resolveImageUrl(p.photoUrl),
           fileName: p.caption || p.photoType,
         }))}

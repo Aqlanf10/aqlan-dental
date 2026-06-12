@@ -13,7 +13,10 @@ public class Radiograph : BaseEntity
     public string? Notes { get; set; }
     public Guid? DoctorId { get; set; }
     public Guid? UploadedBy { get; set; }
+    /// <summary>Optional link to an orthodontic case (standardized records — Phase 2).</summary>
+    public Guid? OrthoCaseId { get; set; }
 
     public Patient Patient { get; set; } = null!;
     public Doctor? Doctor { get; set; }
+    public OrthoCase? OrthoCase { get; set; }
 }

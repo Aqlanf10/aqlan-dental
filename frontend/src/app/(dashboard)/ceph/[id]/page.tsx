@@ -246,17 +246,23 @@ export default function CephAnalysisPage() {
             {saving ? 'حساب...' : saveStatus === 'saved' ? 'تم' : 'احسب'}
           </button>
 
+          {/* The PDF is generated from SAVED data only — gate on a clean,
+              computed state so a stale report can never be exported. */}
           <button onClick={() => handleReportPdf('download')}
-            disabled={placedCount === 0 || pdfBusy !== null}
-            title={placedCount === 0 ? 'ضع المعالم واحسب القياسات أولًا لإنشاء التقرير' : 'تحميل تقرير التحليل السيفالومتري PDF'}
+            disabled={placedCount === 0 || isDirty || !analysis?.measurements?.length || pdfBusy !== null}
+            title={placedCount === 0 ? 'ضع المعالم واحسب القياسات أولًا لإنشاء التقرير'
+              : isDirty || !analysis?.measurements?.length ? 'اضغط «احسب» لحفظ المعالم والقياسات قبل إصدار التقرير'
+              : 'تحميل تقرير التحليل السيفالومتري PDF'}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition">
             {pdfBusy === 'download' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
             تحميل التقرير PDF
           </button>
 
           <button onClick={() => handleReportPdf('print')}
-            disabled={placedCount === 0 || pdfBusy !== null}
-            title={placedCount === 0 ? 'ضع المعالم واحسب القياسات أولًا لإنشاء التقرير' : 'طباعة تقرير التحليل السيفالومتري'}
+            disabled={placedCount === 0 || isDirty || !analysis?.measurements?.length || pdfBusy !== null}
+            title={placedCount === 0 ? 'ضع المعالم واحسب القياسات أولًا لإنشاء التقرير'
+              : isDirty || !analysis?.measurements?.length ? 'اضغط «احسب» لحفظ المعالم والقياسات قبل إصدار التقرير'
+              : 'طباعة تقرير التحليل السيفالومتري'}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition">
             {pdfBusy === 'print' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
             طباعة التقرير

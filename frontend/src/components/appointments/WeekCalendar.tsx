@@ -3,14 +3,14 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import type { Appointment } from "@/types/appointment";
 import api from "@/lib/api";
-import { cn, formatTime } from "@/lib/utils";
+import { cn, formatTime, localDateString } from "@/lib/utils";
 
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 8); // 8:00 – 20:00
 
 const DAY_NAMES = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
 function toDateStr(d: Date): string {
-  return d.toISOString().split("T")[0];
+  return localDateString(d);
 }
 
 function getWeekDates(anchor: string): string[] {

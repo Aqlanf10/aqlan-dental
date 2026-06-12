@@ -16,6 +16,7 @@ import {
   Truck,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { localDateString } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import type { ProfitLossData, DailyCashSummary, AccountBalancesData } from "./types";
 import { PAYMENT_METHODS } from "./types";
@@ -26,8 +27,8 @@ import { formatYER, formatNumber } from "./FinanceHelpers";
 function PLSubTab() {
   const [data, setData] = useState<ProfitLossData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [from, setFrom] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10); });
-  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [from, setFrom] = useState(() => { const d = new Date(); return localDateString(new Date(d.getFullYear(), d.getMonth(), 1)); });
+  const [to, setTo] = useState(() => localDateString());
 
   const fetchPL = useCallback(async () => {
     try {
@@ -104,7 +105,7 @@ function PLSubTab() {
 function DailyCashSubTab() {
   const [data, setData] = useState<DailyCashSummary | null>(null);
   const [loading, setLoading] = useState(false);
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => localDateString());
 
   const fetchDaily = useCallback(async () => {
     try {

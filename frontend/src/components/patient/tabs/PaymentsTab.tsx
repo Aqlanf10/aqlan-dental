@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import api from "@/lib/api";
 import { EmptyState } from "./EmptyState";
-import { cn, formatArabicDate } from "@/lib/utils";
+import { cn, formatArabicDate, localDateString } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { useDoctors } from "@/hooks/useDoctors";
 import { useAuthStore } from "@/stores/authStore";
@@ -37,7 +37,7 @@ interface PaymentForm {
 
 const EMPTY_FORM: PaymentForm = {
   amount: "",
-  paymentDate: new Date().toISOString().split("T")[0],
+  paymentDate: localDateString(),
   paymentMethod: "Cash",
   serviceDescription: "",
   specialty: "",

@@ -4,7 +4,7 @@ import { Calendar, Plus, Clock, User, X, AlertTriangle } from "lucide-react";
 import portalApi from "@/lib/portalApi";
 import { usePatientAuthStore } from "@/stores/patientAuthStore";
 import type { PatientAppointment, PatientDoctor } from "@/types/patientPortal";
-import { cn } from "@/lib/utils";
+import { cn, localDateString } from "@/lib/utils";
 
 const APPOINTMENT_TYPES = ["فحص", "تنظيف", "حشو", "قلع", "معالجة جذر", "تقويم", "أخرى"];
 
@@ -93,7 +93,7 @@ export default function PortalAppointmentsPage() {
   };
 
   const now = new Date();
-  const todayStr = now.toISOString().split("T")[0];
+  const todayStr = localDateString(now);
   const filteredAppts = appointments.filter((a) => {
     const isCancelled = a.status === "Cancelled";
     const isUpcoming = !isCancelled && a.appointmentDate >= todayStr && (a.status === "Scheduled" || a.status === "Confirmed");

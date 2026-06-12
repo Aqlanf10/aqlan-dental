@@ -7,7 +7,7 @@ import { toast } from "@/stores/toastStore";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import type { LabOrder, LabOrderStatus } from "@/types/lab";
-import { cn } from "@/lib/utils";
+import { cn, localDateString } from "@/lib/utils";
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "مسودة", sent: "تم الإرسال", manufacturing: "قيد الصنع",
@@ -37,7 +37,7 @@ export default function LabOverduePage() {
   const markReceivedMutation = useMutation({
     mutationFn: async (id: string) => {
       await api.post(`/api/lab-orders/${id}/mark-received`, {
-        receivedDate: new Date().toISOString().split("T")[0],
+        receivedDate: localDateString(),
       });
     },
     onSuccess: () => {

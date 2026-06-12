@@ -48,6 +48,20 @@ export function formatPhoneForWhatsApp(phone: string | null | undefined): string
   return normalizePhone(phone);
 }
 
+/**
+ * Return a date as "YYYY-MM-DD" in the user's LOCAL timezone.
+ *
+ * Do NOT use `new Date().toISOString().split("T")[0]` for "today":
+ * toISOString() converts to UTC first, so in Yemen (UTC+3) any time after
+ * 21:00 local yields TOMORROW's date — daily screens then show the wrong day.
+ */
+export function localDateString(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 export function formatYemeniRiyal(amount: number): string {
   return new Intl.NumberFormat("ar-YE", {
     style: "currency",

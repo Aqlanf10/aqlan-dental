@@ -12,7 +12,7 @@ import {
   Pill, Heart, Filter, Building2, UserCheck, Clock,
 } from "lucide-react";
 import api from "@/lib/api";
-import { formatYemeniRiyal } from "@/lib/utils";
+import { formatYemeniRiyal, localDateString } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -1258,8 +1258,8 @@ export default function ReportsPage() {
   const [activeReport, setActiveReport] = useState<ReportKey>("center-summary");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const today = new Date().toISOString().slice(0, 10);
-  const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  const today = localDateString();
+  const monthAgo = localDateString(new Date(Date.now() - 30 * 86400000));
   const [from, setFrom] = useState(monthAgo);
   const [to, setTo] = useState(today);
 

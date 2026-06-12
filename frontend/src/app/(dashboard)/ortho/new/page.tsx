@@ -10,7 +10,7 @@ import type { PatientListItem } from "@/types/patient";
 import type { CreateOrthoCaseRequest } from "@/types/ortho";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
 import api from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, localDateString } from "@/lib/utils";
 
 interface Doctor { id: string; name: string; color?: string; }
 
@@ -44,7 +44,7 @@ function NewOrthoContent() {
 
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { startDate: new Date().toISOString().slice(0, 10), patientId: defaultPatientId ?? "" }
+    defaultValues: { startDate: localDateString(), patientId: defaultPatientId ?? "" }
   });
 
   useEffect(() => {

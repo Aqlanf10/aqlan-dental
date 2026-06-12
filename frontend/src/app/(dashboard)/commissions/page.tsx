@@ -12,7 +12,7 @@ import {
 import { useDoctors } from "@/hooks/useDoctors";
 import { useAuthStore } from "@/stores/authStore";
 import type { CommissionStatus } from "@/types/commission";
-import { cn } from "@/lib/utils";
+import { cn, localDateString } from "@/lib/utils";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -20,7 +20,7 @@ function fmt(n: number) {
   return n.toLocaleString("ar-YE", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
-function today() { return new Date().toISOString().slice(0, 10); }
+function today() { return localDateString(); }
 function firstOfMonth() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;

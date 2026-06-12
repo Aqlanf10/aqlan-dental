@@ -12,6 +12,7 @@ import {
   BarChart3,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { localDateString } from "@/lib/utils";
 import type { DashboardData, ProfitLossData } from "./types";
 import { KpiCard, tokens } from "./FinanceSharedUI";
 import { formatYER } from "./FinanceHelpers";
@@ -52,8 +53,8 @@ export function OverviewTab() {
     try {
       setPlLoading(true);
       const now = new Date();
-      const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-      const to = now.toISOString().slice(0, 10);
+      const from = localDateString(new Date(now.getFullYear(), now.getMonth(), 1));
+      const to = localDateString(now);
       const { data } = await api.get<ProfitLossData>("/api/finance-v3/profit-loss", { params: { fromDate: from, toDate: to } });
       setPlData(data);
     } catch {

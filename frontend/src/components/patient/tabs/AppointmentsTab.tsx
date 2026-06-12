@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Calendar, Plus } from "lucide-react";
 import api from "@/lib/api";
 import { EmptyState } from "./EmptyState";
-import { cn, formatArabicDate, formatTime, APPOINTMENT_STATUS_LABELS } from "@/lib/utils";
+import { cn, formatArabicDate, formatTime, APPOINTMENT_STATUS_LABELS, localDateString } from "@/lib/utils";
 
 interface AppointmentDto {
   id: string;
@@ -47,8 +47,8 @@ export function AppointmentsTab({ patientId, patientName }: AppointmentsTabProps
   const threeMonthsLater = new Date(today);
   threeMonthsLater.setMonth(threeMonthsLater.getMonth() + 3);
 
-  const [fromDate, setFromDate] = useState(threeMonthsAgo.toISOString().split("T")[0]);
-  const [toDate, setToDate] = useState(threeMonthsLater.toISOString().split("T")[0]);
+  const [fromDate, setFromDate] = useState(localDateString(threeMonthsAgo));
+  const [toDate, setToDate] = useState(localDateString(threeMonthsLater));
 
   useEffect(() => {
     setLoading(true);

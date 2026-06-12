@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizePhone, formatPhoneForWhatsApp, formatTime } from '@/lib/utils';
+import { normalizePhone, formatPhoneForWhatsApp, formatTime, localDateString } from '@/lib/utils';
 import {
   buildAnnouncementText,
   formatRoomForSpeech,
@@ -164,5 +164,33 @@ describe('buildAnnouncementText', () => {
   it('handles empty patient number with fallback', () => {
     const result = buildAnnouncementText('أحمد', '', 'غرفة 3');
     expect(result).toContain('غير محدد');
+  });
+});
+
+// ─── localDateString ─────────────────────────────────────────────────────────
+
+describe('localDateString', () => {
+  it('formats a date as YYYY-MM-DD with zero padding', () => {
+    expect(localDateString(new Date(2026, 0, 5))).toBe('2026-01-05');
+    expect(localDateString(new Date(2026, 11, 31))).toBe('2026-12-31');
+  });
+
+  it('uses the LOCAL date even late at night (UTC would roll to tomorrow)', () => {
+    // 23:30 local on June 12 — toISOString() in UTC+3 would yield June 13.
+    const lateNight = new Date(2026, 5, 12, 23, 30, 0);
+    expect(localDateString(lateNight)).toBe('2026-06-12');
+  });
+
+  it('handles local first-of-month without shifting to previous month', () => {
+    // Regression for finance OverviewTab: new Date(y, m, 1) at local midnight
+    // converted via toISOString() shifted to the previous month's last day in UTC+3.
+    const firstOfMonth = new Date(2026, 5, 1, 0, 0, 0);
+    expect(localDateString(firstOfMonth)).toBe('2026-06-01');
+  });
+
+  it('defaults to the current local date', () => {
+    const now = new Date();
+    const expected = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    expect(localDateString()).toBe(expected);
   });
 });

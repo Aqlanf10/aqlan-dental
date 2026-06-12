@@ -11,7 +11,7 @@ import { TableSkeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import type { LabOrder, LabOrderStatus } from "@/types/lab";
 import { NewLabOrderModal } from "@/components/lab/NewLabOrderModal";
-import { cn } from "@/lib/utils";
+import { cn, localDateString } from "@/lib/utils";
 
 const STATUS_CONFIG: Record<
   LabOrderStatus,
@@ -102,7 +102,7 @@ export default function LabPage() {
     mutationFn: async ({ id, status }: { id: string; status: LabOrderStatus }) => {
       await api.put(`/api/lab-orders/${id}/status`, {
         status,
-        receivedDate: status === "received" ? new Date().toISOString().split("T")[0] : undefined,
+        receivedDate: status === "received" ? localDateString() : undefined,
       });
     },
     onSuccess: () => {

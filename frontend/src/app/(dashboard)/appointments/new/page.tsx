@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { AppointmentForm } from "@/components/appointments/AppointmentForm";
+import { localDateString } from "@/lib/utils";
 
 function NewAppointmentContent() {
   const params = useSearchParams();
@@ -36,7 +37,7 @@ function NewAppointmentContent() {
         defaultPatientName={patientName}
         editDefaults={date || startTime || doctorId ? {
           doctorId: doctorId,
-          appointmentDate: date ?? new Date().toISOString().slice(0, 10),
+          appointmentDate: date ?? localDateString(),
           startTime: startTime ?? "",
           durationMinutes: 30,
           appointmentType: "",

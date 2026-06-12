@@ -12,7 +12,10 @@ public sealed class CreateCephAnalysisRequestValidator : AbstractValidator<Creat
 
         RuleFor(x => x.AnalysisType)
             .NotEmpty().WithMessage("نوع التحليل مطلوب")
-            .Must(t => t is "steiner" or "mcnamara" or "downs" or "tweed" or "ricketts" or "jarabak")
+            // "full" runs every analysis; "wits" is computed by the engine too.
+            // These must match the options offered by the frontend new-analysis form.
+            .Must(t => t is "full" or "steiner" or "mcnamara" or "downs" or "tweed"
+                or "ricketts" or "jarabak" or "wits")
             .WithMessage("نوع التحليل غير صالح");
     }
 }

@@ -35,7 +35,7 @@ public sealed record AiDraftSettings(
 ///    with a counts-only InputSummary (no patient identifiers), the
 ///    provider+model in ModelId (e.g. "gemini/gemini-3.5-flash"), and a short
 ///    ErrorSummary (no secrets, no exception dumps, never the full prompt).
-/// 4. API keys are read ONLY from environment variables (Railway) — never
+/// 4. API keys are read ONLY from backend environment variables (hosting-agnostic) — never
 ///    stored in the database, never returned to clients, never logged.
 /// </summary>
 public class CephAiDraftService(
@@ -214,7 +214,7 @@ public class CephAiDraftService(
             throw new CephAiUnavailableException(UnsupportedProviderMessageAr(settings.Provider));
         }
 
-        // API key ONLY from the environment (Railway) — never from the database.
+        // API key ONLY from the backend environment (hosting-agnostic) — never from the database.
         var apiKey = Environment.GetEnvironmentVariable(provider.ApiKeyEnvVar);
         if (string.IsNullOrWhiteSpace(apiKey))
         {

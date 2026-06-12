@@ -1896,7 +1896,7 @@ function AiTab() {
       <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
         <p className="text-sm font-semibold text-gray-700">حالة مفاتيح API (للقراءة فقط)</p>
         <p className="text-xs text-gray-500">
-          المفاتيح لا تُدخل ولا تُعرض هنا إطلاقًا — تُضبط كمتغيرات بيئة على الخادم (Railway) ويظهر منها آخر 4 خانات فقط.
+          المفاتيح لا تُدخل ولا تُعرض هنا إطلاقًا — تُضبط كمتغيرات بيئة للباك إند في إعدادات الاستضافة ويظهر منها آخر 4 خانات فقط.
         </p>
         <div className="space-y-2">
           {AI_PROVIDERS.map((p) => {

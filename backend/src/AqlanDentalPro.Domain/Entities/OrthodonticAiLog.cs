@@ -10,6 +10,12 @@ namespace AqlanDentalPro.Domain.Entities;
 ///   never patient identifiers.
 /// - ErrorSummary is a short Arabic/English reason (e.g. "HTTP 500"), never an
 ///   exception dump and never any secret.
+///
+/// DESIGN DECISION — no foreign keys, intentionally: this is an audit table.
+/// Audit rows must remain retained and immutable regardless of the lifecycle
+/// of the rows they reference (a cascade from CephAnalyses/Users would erase
+/// audit history; SET NULL would destroy attribution). AnalysisId/UserId are
+/// plain indexed Guids; lookups join opportunistically.
 /// </summary>
 public class OrthodonticAiLog : BaseEntity
 {

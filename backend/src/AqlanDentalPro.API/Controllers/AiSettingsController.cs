@@ -21,7 +21,7 @@ public sealed class UpdateAiSettingsRequest
 /// Admin configuration for the Ceph AI draft assistant (batch C-D).
 ///
 /// Hard security rules:
-/// - API keys live ONLY in server environment variables (Railway) — this
+/// - API keys live ONLY in backend environment variables (any hosting: Docker, VPS, cloud) — this
 ///   controller NEVER returns a key, never accepts one, and never logs one.
 ///   keyStatus exposes only { configured, masked-last-4 }.
 /// - test-connection is a SAFE local check (env key presence + settings
@@ -97,7 +97,7 @@ public class AiSettingsController(AppDbContext db, CephAiDraftService aiService)
             return Ok(new
             {
                 ok = false,
-                message = $"المفتاح غير مهيأ على الخادم — أضف متغير البيئة {envVar} في إعدادات الاستضافة (Railway)",
+                message = $"المفتاح غير مهيأ على الخادم — أضف متغير البيئة {envVar} في إعدادات الاستضافة",
             });
 
         if (string.IsNullOrWhiteSpace(settings.Model))

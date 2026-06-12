@@ -140,6 +140,44 @@ export interface CephAnalysis {
   diagnosis?: CephDiagnosis;
 }
 
+// ---------------------------------------------------------------------------
+// Comparison (GET /api/ceph/compare?baseId=&targetId=) — camelCase DTOs
+// ---------------------------------------------------------------------------
+
+/** Lightweight analysis info embedded in a comparison result. */
+export interface CephCompareAnalysisInfo {
+  id: string;
+  analysisDate: string;
+  analysisType: AnalysisType;
+}
+
+/** One measurement row in a before/after comparison. */
+export interface CephCompareRow {
+  measurementName: string;
+  nameAr: string;
+  /** `null` when the measurement has no known analysis group. */
+  analysisGroup: MeasurementGroup | null;
+  unit: string;
+  baseValue: number | null;
+  targetValue: number | null;
+  /** targetValue − baseValue (signed). `null` when either side is missing. */
+  delta: number | null;
+  normalValue: number;
+  stdDeviation: number;
+  baseClassification: MeasurementSeverity | null;
+  targetClassification: MeasurementSeverity | null;
+  /** `true` = moved toward the norm, `false` = away, `null` = not comparable. */
+  improved: boolean | null;
+}
+
+/** Full response of the comparison endpoint. */
+export interface CephCompareResult {
+  base: CephCompareAnalysisInfo;
+  target: CephCompareAnalysisInfo;
+  patientName: string;
+  rows: CephCompareRow[];
+}
+
 export interface CephAnalysisList {
   id: string;
   orthoCaseId: string;

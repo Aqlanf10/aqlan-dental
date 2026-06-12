@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Activity, Plus, Brain } from "lucide-react";
+import { Activity, Plus, Brain, GitCompareArrows, X } from "lucide-react";
 import type { CephAnalysisList } from "@/types/ceph";
 import { ANALYSIS_TYPE_AR } from "@/types/ceph";
 import api from "@/lib/api";
@@ -10,6 +10,7 @@ import { cn, formatArabicDate } from "@/lib/utils";
 export default function CephPage() {
   const [analyses, setAnalyses] = useState<CephAnalysisList[]>([]);
   const [loading, setLoading] = useState(true);
+  const [compareBase, setCompareBase] = useState<CephAnalysisList | null>(null);
 
   useEffect(() => {
     api.get<CephAnalysisList[]>("/api/ceph")
@@ -33,6 +34,23 @@ export default function CephPage() {
         </Link>
       </div>
 
+      {compareBase && (
+        <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-800">
+          <GitCompareArrows className="w-4 h-4 shrink-0" />
+          <span>
+            أساس المقارنة: <span className="font-semibold">{compareBase.patientName}</span> — {formatArabicDate(compareBase.analysisDate)}
+          </span>
+          <span className="text-xs text-blue-500">اختر «قارن مع هذا» على تحليل آخر لنفس الحالة</span>
+          <button
+            onClick={() => setCompareBase(null)}
+            className="ms-auto p-1 rounded hover:bg-blue-100 transition text-blue-600"
+            title="إلغاء المقارنة"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="space-y-2 animate-pulse">
           {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-xl" />)}
@@ -55,8 +73,14 @@ export default function CephPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {analyses.map((a) => (
-                  <tr key={a.id} className="hover:bg-gray-50 transition">
+                {analyses.map((a) => {
+                  const isBase = compareBase?.id === a.id;
+                  const isSameCase = !!compareBase && !isBase && compareBase.orthoCaseId === a.orthoCaseId;
+                  return (
+                  <tr key={a.id} className={cn("transition",
+                    isBase ? "bg-blue-50/60" : isSameCase ? "bg-emerald-50/40 hover:bg-emerald-50/70" : "hover:bg-gray-50",
+                    compareBase && !isBase && !isSameCase && "opacity-50"
+                  )}>
                     <td className="px-4 py-3">
                       <div className="font-medium text-gray-900">{a.patientName}</div>
                       {a.caseNumber && <div className="text-xs text-gray-400 font-mono">{a.caseNumber}</div>}
@@ -89,14 +113,34 @@ export default function CephPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <Link href={`/ceph/${a.id}`}
-                        className="text-xs text-clinic-blue hover:underline font-medium"
-                      >
-                        فتح التحليل
-                      </Link>
+                      <div className="flex items-center gap-3 whitespace-nowrap">
+                        <Link href={`/ceph/${a.id}`}
+                          className="text-xs text-clinic-blue hover:underline font-medium"
+                        >
+                          فتح التحليل
+                        </Link>
+                        {isBase ? (
+                          <span className="text-xs text-blue-600 font-medium">أساس المقارنة</span>
+                        ) : isSameCase ? (
+                          <Link
+                            href={`/ceph/compare?baseId=${compareBase!.id}&targetId=${a.id}`}
+                            className="text-xs px-2 py-1 rounded-lg bg-emerald-600 text-white hover:opacity-90 transition font-medium"
+                          >
+                            قارن مع هذا
+                          </Link>
+                        ) : !compareBase ? (
+                          <button
+                            onClick={() => setCompareBase(a)}
+                            className="text-xs text-gray-500 hover:text-clinic-blue hover:underline transition font-medium"
+                          >
+                            قارن
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -56,6 +56,7 @@ interface OrthoCase {
   applianceType?: string;
   status: string;
   stagePercentage: number;
+  currentStage?: string;
   doctorName?: string;
 }
 
@@ -166,6 +167,7 @@ export function OverviewTab({ patientId, summary, patient, canViewFinance = fals
 
   const whatsappNumber = patient.whatsApp || patient.phone;
   const patientName = `${patient.firstName} ${patient.lastName}`;
+  const activeOrthoCase = orthoCases.find((c) => c.status?.toLowerCase() === "active") ?? null;
 
   return (
     <div className="space-y-5" dir="rtl">
@@ -249,6 +251,51 @@ export function OverviewTab({ patientId, summary, patient, canViewFinance = fals
           </a>
         )}
       </div>
+
+      {/* ════════════════════ Ortho Case Summary ════════════════════ */}
+      {activeOrthoCase && (
+        <div className="rounded-xl border-2 border-violet-200 bg-violet-50/60 p-4">
+          <div className="flex items-center justify-between gap-2 mb-2.5 flex-wrap">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-100">
+                <Activity className="w-3.5 h-3.5 text-violet-600" />
+              </div>
+              <h3 className="text-sm font-bold text-[#0d2137]">حالة التقويم</h3>
+              <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-violet-100 text-violet-700">
+                نشطة
+              </span>
+            </div>
+            <Link
+              href={`/ortho/${activeOrthoCase.id}`}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition"
+            >
+              فتح ملف التقويم
+              <ChevronLeft className="w-3 h-3" />
+            </Link>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
+            <span className="font-medium text-[#0d2137]">{activeOrthoCase.caseNumber}</span>
+            {activeOrthoCase.applianceType && (
+              <span className="text-[#64748b]">الجهاز: {activeOrthoCase.applianceType}</span>
+            )}
+            {activeOrthoCase.currentStage && (
+              <span className="text-[#64748b]">المرحلة الحالية: {activeOrthoCase.currentStage}</span>
+            )}
+            {activeOrthoCase.doctorName && (
+              <span className="text-[#64748b]">د. {activeOrthoCase.doctorName}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 mt-2.5">
+            <div className="flex-1 h-1.5 bg-violet-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-violet-500 rounded-full"
+                style={{ width: `${Math.min(100, Math.max(0, activeOrthoCase.stagePercentage ?? 0))}%` }}
+              />
+            </div>
+            <span className="text-xs font-semibold text-violet-700">{activeOrthoCase.stagePercentage ?? 0}%</span>
+          </div>
+        </div>
+      )}
 
       {/* ════════════════════ Medical Alerts ════════════════════ */}
       {summary?.medicalAlerts && summary.medicalAlerts.length > 0 && (

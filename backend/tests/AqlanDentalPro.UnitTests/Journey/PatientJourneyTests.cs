@@ -1746,4 +1746,56 @@ public class PatientJourneyTests
         var finalQueue = await db.ClinicQueueItems.FirstOrDefaultAsync(q => q.Id == queueItem.Id);
         finalQueue!.Status.Should().Be(ClinicQueueStatus.Completed);
     }
+
+    // ─── Phase 1 Ortho Integration: HasActiveOrthoCase prefetch on today list ─
+
+    [Fact]
+    public async Task JourneyToday_OrthoPrefetch_FlagsOnlyPatientsWithActiveCase()
+    {
+        await using var db = CreateContext();
+        var orthoPatientId = Guid.NewGuid();
+        var completedCasePatientId = Guid.NewGuid();
+        var inactiveCasePatientId = Guid.NewGuid();
+        var noCasePatientId = Guid.NewGuid();
+
+        // Active ortho case → should be flagged
+        db.OrthoCases.Add(new OrthoCase
+        {
+            PatientId = orthoPatientId,
+            CaseNumber = "ORT-J1-001",
+            Status = OrthoCaseStatus.Active,
+            IsActive = true
+        });
+        // Completed case → should NOT be flagged
+        db.OrthoCases.Add(new OrthoCase
+        {
+            PatientId = completedCasePatientId,
+            CaseNumber = "ORT-J1-002",
+            Status = OrthoCaseStatus.Completed,
+            IsActive = true
+        });
+        // Soft-deleted active case → should NOT be flagged
+        db.OrthoCases.Add(new OrthoCase
+        {
+            PatientId = inactiveCasePatientId,
+            CaseNumber = "ORT-J1-003",
+            Status = OrthoCaseStatus.Active,
+            IsActive = false
+        });
+        await db.SaveChangesAsync();
+
+        // Simulate the GetToday prefetch: one query for all today's patient ids
+        var patientIds = new List<Guid> { orthoPatientId, completedCasePatientId, inactiveCasePatientId, noCasePatientId };
+        var orthoPatients = (await db.OrthoCases
+            .IgnoreQueryFilters()
+            .Where(o => o.IsActive && o.Status == OrthoCaseStatus.Active && patientIds.Contains(o.PatientId))
+            .Select(o => o.PatientId)
+            .Distinct()
+            .ToListAsync()).ToHashSet();
+
+        orthoPatients.Should().Contain(orthoPatientId, "patient with an active ortho case must be flagged");
+        orthoPatients.Should().NotContain(completedCasePatientId, "completed cases are not active");
+        orthoPatients.Should().NotContain(inactiveCasePatientId, "soft-deleted cases are not active");
+        orthoPatients.Should().NotContain(noCasePatientId, "patient without any ortho case must not be flagged");
+    }
 }

@@ -9,7 +9,7 @@ import {
   CircleDot,
   Ban, UserX,
   ArrowRightLeft, Timer, MessageSquare, MessageCircle, Pill, Download, Printer,
-  Route, Upload, Undo2,
+  Route, Upload, Undo2, GitBranch,
 } from "lucide-react";
 import api from "@/lib/api";
 import { cn, localDateString } from "@/lib/utils";
@@ -934,6 +934,15 @@ export default function PatientJourneyPage() {
                         )}>
                           {item.patientName}
                         </span>
+                        {item.hasActiveOrthoCase && (
+                          <span
+                            className="text-[9px] px-1.5 py-0.5 rounded-full font-medium bg-violet-100 text-violet-700 flex items-center gap-0.5 flex-shrink-0"
+                            title="لدى المريض حالة تقويم نشطة"
+                          >
+                            <GitBranch className="w-2.5 h-2.5" />
+                            تقويم
+                          </span>
+                        )}
                         <Link
                           href={`/patient-journey/${item.patientId}`}
                           onClick={(e) => e.stopPropagation()}

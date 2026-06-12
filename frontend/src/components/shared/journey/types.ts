@@ -66,6 +66,7 @@ export interface TodayJourneyItem {
   hasDraftInvoice?: boolean;
   hasLabOrder?: boolean;
   labOrderStatus?: string;
+  hasActiveOrthoCase?: boolean;
   amountDueReference?: number;
   treatmentDone?: string;
   chiefComplaint?: string;

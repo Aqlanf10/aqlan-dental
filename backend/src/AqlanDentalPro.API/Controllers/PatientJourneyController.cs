@@ -195,6 +195,16 @@ public class PatientJourneyController(
             .GroupBy(p => p.PatientId)
             .ToDictionary(g => g.Key, g => g.Sum(p => p.Amount));
 
+        // Patients with an active orthodontic case — single prefetch query for all today's patients
+        var orthoPatients = patientIds.Count > 0
+            ? (await db.OrthoCases
+                .IgnoreQueryFilters()
+                .Where(o => o.IsActive && o.Status == OrthoCaseStatus.Active && patientIds.Contains(o.PatientId))
+                .Select(o => o.PatientId)
+                .Distinct()
+                .ToListAsync()).ToHashSet()
+            : [];
+
         // Privacy: Doctors must not see patient phone numbers
         var isDoctor = patientAccessService.IsDoctor;
 
@@ -264,6 +274,7 @@ public class PatientJourneyController(
                 HasDraftInvoice = hasDraftInvoice,
                 HasLabOrder = labOrder != null,
                 LabOrderStatus = labOrder?.Status,
+                HasActiveOrthoCase = orthoPatients.Contains(a.PatientId),
                 InRoomSince = inRoomSince,
                 NextAction = nextAction
             };
@@ -300,6 +311,20 @@ public class PatientJourneyController(
 
             // Load payments for walk-in patients
             var walkInPatientIds = walkInQueueItems.Select(q => q.PatientId).Distinct().ToList();
+
+            // Extend the active-ortho prefetch set with walk-in patients not already covered
+            var uncoveredOrthoIds = walkInPatientIds.Where(id => !orthoPatients.Contains(id)).ToList();
+            if (uncoveredOrthoIds.Count > 0)
+            {
+                var walkInOrthoPatients = await db.OrthoCases
+                    .IgnoreQueryFilters()
+                    .Where(o => o.IsActive && o.Status == OrthoCaseStatus.Active && uncoveredOrthoIds.Contains(o.PatientId))
+                    .Select(o => o.PatientId)
+                    .Distinct()
+                    .ToListAsync();
+                foreach (var id in walkInOrthoPatients)
+                    orthoPatients.Add(id);
+            }
             var walkInPayments = walkInPatientIds.Count > 0
                 ? (await db.Payments
                     .Where(p => walkInPatientIds.Contains(p.PatientId) && p.PaymentDate == queryDate && p.IsActive)
@@ -357,6 +382,7 @@ public class PatientJourneyController(
                     HasDraftInvoice = false,
                     HasLabOrder = false,
                     LabOrderStatus = (string?)null,
+                    HasActiveOrthoCase = orthoPatients.Contains(q.PatientId),
                     InRoomSince = q.InRoomAt ?? q.StartedAt,
                     NextAction = nextAction
                 });

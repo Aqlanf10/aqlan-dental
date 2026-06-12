@@ -53,6 +53,7 @@ public static class StartupDatabaseMaintenance
         await EnsureLabOrdersSchemaAsync(app);
         await EnsureInvoicesNullableTaxAmountAsync(app);
         await EnsureLabTablesSchemaAsync(app);
+        await EnsureCephNormsSchemaAndSeedAsync(app);
 
         // ── Gated DB maintenance (ENABLE_STARTUP_DB_MAINTENANCE) ──────
         await RunGatedDbMaintenanceAsync(app, configuration);
@@ -1402,6 +1403,63 @@ public static class StartupDatabaseMaintenance
             wsLogger2.LogWarning(ex, "Website settings seed hotfix failed (non-fatal)");
         }
 
+    }
+
+    /// <summary>
+    /// CephNorms table (configurable cephalometric norms) + factory seed.
+    /// Schema creation is idempotent (CREATE TABLE IF NOT EXISTS — same DDL as
+    /// migration 20260625000000_AddCephNorms, which gated maintenance may not
+    /// have applied yet). Seeding via CephNormSeeder only inserts when the
+    /// table is empty, so admin-edited norms are never overwritten.
+    /// </summary>
+    private static async Task EnsureCephNormsSchemaAndSeedAsync(WebApplication app)
+    {
+        try
+        {
+            using var cnScope = app.Services.CreateScope();
+            var cnDb     = cnScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var cnLogger = cnScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+            if (cnDb.Database.IsRelational())
+            {
+                await cnDb.Database.ExecuteSqlRawAsync("""
+                    CREATE TABLE IF NOT EXISTS "CephNorms" (
+                        "Id" uuid NOT NULL,
+                        "MeasurementName" character varying(50) NOT NULL,
+                        "NameAr" character varying(200) NULL,
+                        "AnalysisGroup" character varying(30) NOT NULL,
+                        "NormalValue" numeric NOT NULL,
+                        "StdDeviation" numeric NOT NULL,
+                        "MinNormal" numeric NULL,
+                        "MaxNormal" numeric NULL,
+                        "Unit" character varying(10) NOT NULL,
+                        "Category" character varying(30) NULL,
+                        "InterpretationBelow" character varying(300) NULL,
+                        "InterpretationNormal" character varying(300) NULL,
+                        "InterpretationAbove" character varying(300) NULL,
+                        "SortOrder" integer NOT NULL DEFAULT 0,
+                        "CreatedAt" timestamp with time zone NOT NULL,
+                        "UpdatedAt" timestamp with time zone NOT NULL,
+                        "IsActive" boolean NOT NULL DEFAULT true,
+                        "DeletedAt" timestamp with time zone NULL,
+                        "DeletedBy" uuid NULL,
+                        CONSTRAINT "PK_CephNorms" PRIMARY KEY ("Id")
+                    );
+                    CREATE UNIQUE INDEX IF NOT EXISTS "IX_CephNorms_MeasurementName_AnalysisGroup" ON "CephNorms" ("MeasurementName", "AnalysisGroup");
+                    """);
+            }
+
+            var inserted = await CephNormSeeder.SeedIfEmptyAsync(cnDb);
+            if (inserted > 0)
+                cnLogger.LogInformation("Ceph norms seeded ({Count} factory rows)", inserted);
+            else
+                cnLogger.LogInformation("Ceph norms already exist, no seeding needed");
+        }
+        catch (Exception ex)
+        {
+            var cnLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+            cnLogger2.LogWarning(ex, "Ceph norms schema/seed hotfix failed (non-fatal)");
+        }
     }
 
     /// <summary>

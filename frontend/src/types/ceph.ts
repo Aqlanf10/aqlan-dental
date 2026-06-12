@@ -89,6 +89,27 @@ export interface CephMeasurement {
   direction: MeasurementDirection;
   analysisGroup: MeasurementGroup;
   interpretationAr?: string;
+  /** Interpretation text sourced from a fetched API norm (below/above range). */
+  apiInterpretation?: string;
+}
+
+/**
+ * Norm record returned by `GET /api/ceph-norms` (camelCase).
+ * Overlays the built-in norm tables via `applyNormOverrides` in cephMath;
+ * built-ins remain the fallback when a field/record is absent.
+ */
+export interface ApiNorm {
+  measurementName: string;
+  analysisGroup?: string;
+  normalValue: number;
+  stdDeviation: number;
+  minNormal?: number | null;
+  maxNormal?: number | null;
+  unit?: string;
+  nameAr?: string;
+  interpretationBelow?: string | null;
+  interpretationNormal?: string | null;
+  interpretationAbove?: string | null;
 }
 
 export interface CephDiagnosis {

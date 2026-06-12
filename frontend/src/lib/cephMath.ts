@@ -3,8 +3,9 @@
 // Re-exports CephMeasurement from types as the single unified type.
 // ---------------------------------------------------------------------------
 
-import type { CephMeasurement, MeasurementGroup } from "@/types/ceph";
+import type { ApiNorm, CephMeasurement, MeasurementGroup } from "@/types/ceph";
 export type { CephMeasurement };
+export type { ApiNorm };
 
 type Pt = { x: number; y: number };
 
@@ -126,6 +127,48 @@ export const DOWNS_NORMS: Record<string, Norm> = {
 };
 
 // ---------------------------------------------------------------------------
+// API norm overrides
+// Fetched from GET /api/ceph-norms and overlaid on the built-in tables above.
+// Built-ins always remain the fallback: a measurement without an override —
+// or with an invalid one — keeps its published norm.
+// ---------------------------------------------------------------------------
+
+let normOverrides: Record<string, ApiNorm> = {};
+
+/**
+ * Replace the active norm-override set. Calling with `[]` (or invalid data)
+ * restores built-ins for everything. Invalid entries (missing name,
+ * non-finite values, non-positive SD) are ignored.
+ */
+export function applyNormOverrides(norms: ApiNorm[]): void {
+  const next: Record<string, ApiNorm> = {};
+  if (Array.isArray(norms)) {
+    for (const n of norms) {
+      if (!n || typeof n.measurementName !== 'string' || !n.measurementName) continue;
+      if (!Number.isFinite(n.normalValue) || !Number.isFinite(n.stdDeviation)) continue;
+      if (n.stdDeviation <= 0) continue;
+      next[n.measurementName] = n;
+    }
+  }
+  normOverrides = next;
+}
+
+/** Effective norm for `name`: API override if present, otherwise the built-in. */
+function resolveNorm(name: string, builtin: Norm): { norm: Norm; override: ApiNorm | null } {
+  const ov = normOverrides[name];
+  if (!ov) return { norm: builtin, override: null };
+  return {
+    norm: {
+      normal: ov.normalValue,
+      sd: ov.stdDeviation,
+      unit: ov.unit === 'mm' || ov.unit === '°' ? ov.unit : builtin.unit,
+      nameAr: ov.nameAr && ov.nameAr.trim() ? ov.nameAr : builtin.nameAr,
+    },
+    override: ov,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Status computation (severity + direction)
 // ---------------------------------------------------------------------------
 
@@ -201,9 +244,10 @@ function r1(v: number): number { return +v.toFixed(1); }
 function makeMeasurement(
   name: string,
   value: number | null,
-  norm: Norm,
+  builtinNorm: Norm,
   group: MeasurementGroup
 ): CephMeasurement {
+  const { norm, override } = resolveNorm(name, builtinNorm);
   const deviation = value !== null ? r1(value - norm.normal) : null;
   const { severity, direction } = deviation !== null
     ? computeStatus(deviation, norm.sd)
@@ -211,8 +255,18 @@ function makeMeasurement(
   const interpretationAr = deviation !== null
     ? arabicInterpretation(name, deviation, severity)
     : undefined;
+  // Interpretation strings from the API norm — only when the value falls
+  // outside the [minNormal, maxNormal] range (defaults: normal ± sd).
+  let apiInterpretation: string | undefined;
+  if (override && value !== null) {
+    const min = override.minNormal ?? norm.normal - norm.sd;
+    const max = override.maxNormal ?? norm.normal + norm.sd;
+    if (value < min)      apiInterpretation = override.interpretationBelow ?? undefined;
+    else if (value > max) apiInterpretation = override.interpretationAbove ?? undefined;
+  }
   return { name, nameAr: norm.nameAr, value, normal: norm.normal, stdDev: norm.sd,
-           unit: norm.unit, deviation, severity, direction, analysisGroup: group, interpretationAr };
+           unit: norm.unit, deviation, severity, direction, analysisGroup: group,
+           interpretationAr, apiInterpretation };
 }
 
 // ---------------------------------------------------------------------------

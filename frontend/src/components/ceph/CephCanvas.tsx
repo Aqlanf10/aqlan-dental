@@ -1,8 +1,12 @@
 "use client";
 import { useRef, useEffect, useState, useCallback, useMemo } from "react";
-import type { CephLandmark } from "@/types/ceph";
+import { ZoomIn, ZoomOut, Hand, Ruler } from "lucide-react";
+import type { CephLandmark, CephMeasurement } from "@/types/ceph";
+import { cn } from "@/lib/utils";
 
 const HIT_RADIUS = 10;
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 8;
 
 export const LANDMARK_DEFS: Record<string, { nameAr: string; group: string; color: string }> = {
   S:   { nameAr: 'السرج',                  group: 'cranial',  color: '#60A5FA' },
@@ -45,6 +49,26 @@ const PLANES = [
   { key: 'L1ax', pts: ['L1A', 'L1T'], color: '#10B981', dash: [] as number[],   label: '' },
 ];
 
+// Planes that are part of the measurement overlay (drawn even when the
+// general planes toggle is off, as long as showMeasurements is on).
+const MEASUREMENT_PLANE_KEYS = new Set(['SN', 'FH', 'MdP', 'NA', 'NB', 'U1ax', 'L1ax']);
+
+// Floating value labels for the measurement overlay: measurement → anchor
+// landmark + canvas-space offset (kept constant regardless of zoom).
+const MEASUREMENT_LABELS: { name: string; anchor: string; dx: number; dy: number }[] = [
+  { name: 'SNA',  anchor: 'A',   dx: 14, dy: -14 },
+  { name: 'SNB',  anchor: 'B',   dx: 14, dy: -14 },
+  { name: 'ANB',  anchor: 'N',   dx: 14, dy: -18 },
+  { name: 'FMA',  anchor: 'Go',  dx: -14, dy: 18 },
+  { name: 'IMPA', anchor: 'L1T', dx: 14, dy: 18 },
+];
+
+const SEVERITY_COLOR: Record<string, string> = {
+  normal: '#4ADE80',
+  mild:   '#FBBF24',
+  severe: '#F87171',
+};
+
 export const SIMULATION_SCENARIOS: Record<string, {
   label: string;
   vectors: Record<string, { dx: number; dy: number }>;
@@ -78,6 +102,9 @@ export const SIMULATION_SCENARIOS: Record<string, {
   },
 };
 
+type Pt = { x: number; y: number };
+type View = { s: number; ox: number; oy: number };
+
 interface Props {
   imageUrl: string | null;
   imageWidth: number;
@@ -89,17 +116,38 @@ interface Props {
   showPlanes: boolean;
   showSimulation: boolean;
   simulationScenario: string;
+  /** Measurement overlay: draw value labels for SNA/SNB/ANB/FMA/IMPA. */
+  showMeasurements?: boolean;
+  /** Live measurement list computed by the page (same map the report uses). */
+  measurements?: CephMeasurement[];
+  /** Called when the two-point ruler calibration is applied (px per mm). */
+  onCalibrate?: (pixelsPerMm: number) => void;
 }
 
 export function CephCanvas({
   imageUrl, imageWidth, imageHeight, landmarks, onLandmarksChange,
   selectedKey, onSelectKey, showPlanes, showSimulation, simulationScenario,
+  showMeasurements = false, measurements, onCalibrate,
 }: Props) {
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [img, setImg]         = useState<HTMLImageElement | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [hovered,  setHovered]  = useState<string | null>(null);
+
+  // ── Zoom / pan state ──
+  // `view` is the explicit transform; null = auto fit-to-container.
+  const [view, setView]       = useState<View | null>(null);
+  const [panMode, setPanMode] = useState(false);
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
+  const panRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
+
+  // ── Calibration state (points stored in IMAGE space, kept across mode toggles) ──
+  const [calMode, setCalMode]     = useState(false);
+  const [calPoints, setCalPoints] = useState<Pt[]>([]);
+  const [calCursor, setCalCursor] = useState<Pt | null>(null);
+  const [calMm, setCalMm]         = useState('10');
 
   useEffect(() => {
     if (!imageUrl) { setImg(null); return; }
@@ -116,21 +164,55 @@ export function CephCanvas({
     return m;
   }, [landmarks]);
 
-  const getT = useCallback(() => {
+  const measMap = useMemo(() => {
+    const m: Record<string, CephMeasurement> = {};
+    (measurements ?? []).forEach(x => { m[x.name] = x; });
+    return m;
+  }, [measurements]);
+
+  /** Fit-to-container transform (the 100% baseline). */
+  const getFit = useCallback(() => {
     const c = canvasRef.current;
-    if (!c) return null;
+    if (!c || !c.width || !c.height) return null;
     const W = c.width, H = c.height;
     const iW = imageWidth  || img?.naturalWidth  || W;
     const iH = imageHeight || img?.naturalHeight || H;
     const s = Math.min(W / iW, H / iH);
-    const ox = (W - iW * s) / 2;
-    const oy = (H - iH * s) / 2;
-    return {
-      s, ox, oy, iW, iH,
-      tc: (x: number, y: number) => ({ x: ox + x * s, y: oy + y * s }),
-      ti: (cx: number, cy: number) => ({ x: (cx - ox) / s, y: (cy - oy) / s }),
-    };
+    return { s, ox: (W - iW * s) / 2, oy: (H - iH * s) / 2, iW, iH };
   }, [imageWidth, imageHeight, img]);
+
+  /** Active transform: explicit view (zoom/pan) or fit. Landmarks stay in image space. */
+  const getT = useCallback(() => {
+    const fit = getFit();
+    if (!fit) return null;
+    const v = view ?? fit;
+    return {
+      s: v.s, ox: v.ox, oy: v.oy, iW: fit.iW, iH: fit.iH, fitS: fit.s,
+      tc: (x: number, y: number) => ({ x: v.ox + x * v.s, y: v.oy + y * v.s }),
+      ti: (cx: number, cy: number) => ({ x: (cx - v.ox) / v.s, y: (cy - v.oy) / v.s }),
+    };
+  }, [getFit, view]);
+
+  /** Zoom by `factor` keeping the canvas point (cx, cy) fixed. Clamped 0.25x–8x of fit. */
+  const zoomAt = useCallback((cx: number, cy: number, factor: number) => {
+    const fit = getFit(); if (!fit) return;
+    const cur = view ?? fit;
+    const z = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, (cur.s / fit.s) * factor));
+    const ns = fit.s * z;
+    if (ns === cur.s) return;
+    setView({
+      s: ns,
+      ox: cx - (cx - cur.ox) * (ns / cur.s),
+      oy: cy - (cy - cur.oy) * (ns / cur.s),
+    });
+  }, [getFit, view]);
+
+  const centerZoom = useCallback((factor: number) => {
+    const c = canvasRef.current; if (!c) return;
+    zoomAt(c.width / 2, c.height / 2, factor);
+  }, [zoomAt]);
+
+  const resetFit = useCallback(() => setView(null), []);
 
   const draw = useCallback(() => {
     const c = canvasRef.current; if (!c) return;
@@ -156,12 +238,13 @@ export function CephCanvas({
       ctx.fillText('أضف رابط صورة الأشعة السيفالومترية', c.width / 2, c.height / 2 - 10);
       ctx.font = '11px sans-serif';
       ctx.fillStyle = '#475569';
-      ctx.fillText('سيتم عرض الصورة هنا للتحديد اليدوي أو بالذكاء الاصطناعي', c.width / 2, c.height / 2 + 10);
+      ctx.fillText('سيتم عرض الصورة هنا للتحديد اليدوي', c.width / 2, c.height / 2 + 10);
     }
 
-    // Planes
-    if (showPlanes) {
+    // Planes (measurement-overlay planes are drawn even when planes are hidden)
+    if (showPlanes || showMeasurements) {
       PLANES.forEach(p => {
+        if (!showPlanes && !MEASUREMENT_PLANE_KEYS.has(p.key)) return;
         const lm1 = lmMap[p.pts[0]], lm2 = lmMap[p.pts[1]];
         if (!lm1 || !lm2) return;
         const p1 = T.tc(lm1.x, lm1.y), p2 = T.tc(lm2.x, lm2.y);
@@ -264,8 +347,71 @@ export function CephCanvas({
       ctx.restore();
     });
 
+    // Measurement value labels (SNA/SNB/ANB/FMA/IMPA) near their vertices,
+    // colored by classification: green normal / yellow mild / red severe.
+    if (showMeasurements) {
+      MEASUREMENT_LABELS.forEach(({ name, anchor, dx, dy }) => {
+        const m = measMap[name];
+        if (!m || m.value === null) return;
+        const lm = lmMap[anchor]; if (!lm) return;
+        const cp = T.tc(lm.x, lm.y);
+        const color = SEVERITY_COLOR[m.severity] ?? SEVERITY_COLOR.normal;
+        const text = `${name} ${m.value}${m.unit}`;
+        ctx.save();
+        ctx.font = 'bold 11px monospace';
+        const w = ctx.measureText(text).width + 10;
+        const h = 16;
+        const x = dx >= 0 ? cp.x + dx : cp.x + dx - w;
+        const y = cp.y + dy - h / 2;
+        ctx.fillStyle = 'rgba(15,23,42,0.85)';
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, y, w, h);
+        ctx.fillStyle = color;
+        ctx.textAlign = 'left';
+        ctx.fillText(text, x + 5, y + 12);
+        ctx.restore();
+      });
+    }
+
+    // Calibration ruler line + points
+    if (calPoints.length > 0) {
+      const a = calPoints[0];
+      const b = calPoints.length === 2 ? calPoints[1] : (calMode ? calCursor : null);
+      if (b) {
+        const ca = T.tc(a.x, a.y), cb = T.tc(b.x, b.y);
+        const pxLen = Math.hypot(b.x - a.x, b.y - a.y); // image-space pixels
+        ctx.save();
+        ctx.strokeStyle = '#FBBF24';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath(); ctx.moveTo(ca.x, ca.y); ctx.lineTo(cb.x, cb.y); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#FBBF24';
+        ctx.font = 'bold 11px monospace';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = 'rgba(0,0,0,0.9)';
+        ctx.shadowBlur = 3;
+        ctx.fillText(`${Math.round(pxLen)} px`, (ca.x + cb.x) / 2, (ca.y + cb.y) / 2 - 8);
+        ctx.restore();
+      }
+      ctx.save();
+      calPoints.forEach(p => {
+        const cp = T.tc(p.x, p.y);
+        ctx.strokeStyle = '#FBBF24';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(cp.x, cp.y, 5, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cp.x - 8, cp.y); ctx.lineTo(cp.x + 8, cp.y);
+        ctx.moveTo(cp.x, cp.y - 8); ctx.lineTo(cp.x, cp.y + 8);
+        ctx.stroke();
+      });
+      ctx.restore();
+    }
+
     // Selected crosshair
-    if (selectedKey && !lmMap[selectedKey]) {
+    if (selectedKey && !lmMap[selectedKey] && !calMode) {
       ctx.save();
       ctx.strokeStyle = '#FBBF24';
       ctx.lineWidth = 1;
@@ -274,7 +420,8 @@ export function CephCanvas({
       ctx.beginPath(); ctx.moveTo(c.width / 2, 0); ctx.lineTo(c.width / 2, c.height); ctx.stroke();
       ctx.restore();
     }
-  }, [landmarks, lmMap, img, selectedKey, hovered, showPlanes, showSimulation, simulationScenario, getT]);
+  }, [landmarks, lmMap, measMap, img, selectedKey, hovered, showPlanes, showSimulation,
+      simulationScenario, showMeasurements, calMode, calPoints, calCursor, getT]);
 
   useEffect(() => { draw(); }, [draw]);
 
@@ -285,11 +432,50 @@ export function CephCanvas({
       const c = canvasRef.current; if (!c) return;
       c.width  = el.clientWidth;
       c.height = el.clientHeight;
+      setCanvasSize({ w: el.clientWidth, h: el.clientHeight });
       draw();
     });
     obs.observe(el);
     return () => obs.disconnect();
   }, [draw]);
+
+  // Wheel zoom toward the cursor. Native listener with passive:false because
+  // React delegates wheel events as passive (preventDefault would be ignored).
+  useEffect(() => {
+    const c = canvasRef.current; if (!c) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const r = c.getBoundingClientRect();
+      const cx = (e.clientX - r.left) * (c.width / r.width);
+      const cy = (e.clientY - r.top)  * (c.height / r.height);
+      zoomAt(cx, cy, e.deltaY < 0 ? 1.15 : 1 / 1.15);
+    };
+    c.addEventListener('wheel', onWheel, { passive: false });
+    return () => c.removeEventListener('wheel', onWheel);
+  }, [zoomAt]);
+
+  // Keyboard: +/- zoom, 0 reset-fit, Space = temporary pan, Escape exits calibration.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName) || t.isContentEditable)) return;
+      if (e.key === ' ') {
+        if (t?.tagName !== 'BUTTON') { setSpaceHeld(true); e.preventDefault(); }
+        return;
+      }
+      if (e.key === '+' || e.key === '=') { centerZoom(1.2); e.preventDefault(); }
+      else if (e.key === '-' || e.key === '_') { centerZoom(1 / 1.2); e.preventDefault(); }
+      else if (e.key === '0') { resetFit(); }
+      else if (e.key === 'Escape' && calMode) { setCalMode(false); setCalCursor(null); }
+    };
+    const onKeyUp = (e: KeyboardEvent) => { if (e.key === ' ') setSpaceHeld(false); };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [centerZoom, resetFit, calMode]);
 
   const coords = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const c = canvasRef.current!;
@@ -312,6 +498,23 @@ export function CephCanvas({
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const { cx, cy } = coords(e);
     const T = getT(); if (!T) return;
+
+    // Pan: middle button, space held, or pan-mode toggle
+    if (e.button === 1 || panMode || spaceHeld) {
+      e.preventDefault();
+      if (!view) setView({ s: T.s, ox: T.ox, oy: T.oy });
+      panRef.current = { sx: cx, sy: cy, ox: T.ox, oy: T.oy };
+      return;
+    }
+    if (e.button !== 0) return;
+
+    // Calibration: place the two ruler points (third click restarts)
+    if (calMode) {
+      const ip = T.ti(cx, cy);
+      setCalPoints(prev => prev.length >= 2 ? [{ x: ip.x, y: ip.y }] : [...prev, { x: ip.x, y: ip.y }]);
+      return;
+    }
+
     const hit = hitLandmark(cx, cy);
     if (hit) {
       setDragging(hit); onSelectKey(hit);
@@ -335,17 +538,61 @@ export function CephCanvas({
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const { cx, cy } = coords(e);
     const T = getT(); if (!T) return;
-    setHovered(hitLandmark(cx, cy));
+
+    if (panRef.current) {
+      const pan = panRef.current;
+      setView(v => v ? { ...v, ox: pan.ox + (cx - pan.sx), oy: pan.oy + (cy - pan.sy) } : v);
+      if (canvasRef.current) canvasRef.current.style.cursor = 'grabbing';
+      return;
+    }
+
+    if (calMode) {
+      if (calPoints.length === 1) setCalCursor(T.ti(cx, cy));
+      if (canvasRef.current) canvasRef.current.style.cursor = 'crosshair';
+      return;
+    }
+
+    const hit = hitLandmark(cx, cy);
+    setHovered(hit);
     if (dragging) {
       const ip = T.ti(cx, cy);
       onLandmarksChange(landmarks.map(l => l.key === dragging ? { ...l, x: ip.x, y: ip.y, isAiPlaced: false } : l));
     }
     if (canvasRef.current) {
-      canvasRef.current.style.cursor = hitLandmark(cx, cy) ? 'grab' : dragging ? 'grabbing' : selectedKey ? 'crosshair' : 'default';
+      canvasRef.current.style.cursor =
+        (panMode || spaceHeld) ? 'grab' :
+        dragging ? 'grabbing' :
+        hit ? 'grab' :
+        selectedKey ? 'crosshair' : 'default';
     }
   };
 
-  const handleMouseUp = () => setDragging(null);
+  const handleMouseUp = () => {
+    setDragging(null);
+    panRef.current = null;
+  };
+
+  // ── Toolbar / panel derived values ──
+  const iW = imageWidth  || img?.naturalWidth  || 0;
+  const iH = imageHeight || img?.naturalHeight || 0;
+  const fitS = (iW > 0 && iH > 0 && canvasSize.w > 0 && canvasSize.h > 0)
+    ? Math.min(canvasSize.w / iW, canvasSize.h / iH)
+    : 0;
+  const zoomPct = fitS > 0 ? Math.round(((view?.s ?? fitS) / fitS) * 100) : 100;
+
+  const calPxLen = calPoints.length === 2
+    ? Math.hypot(calPoints[1].x - calPoints[0].x, calPoints[1].y - calPoints[0].y)
+    : 0;
+
+  const applyCalibration = () => {
+    const mm = parseFloat(calMm);
+    if (!onCalibrate || !(mm > 0) || !(calPxLen > 0)) return;
+    onCalibrate(+(calPxLen / mm).toFixed(3));
+    setCalMode(false);
+    setCalCursor(null);
+  };
+
+  const toolBtn = "p-1.5 rounded-md text-gray-300 hover:bg-white/15 hover:text-white transition";
 
   return (
     <div ref={containerRef} className="relative w-full h-full bg-gray-950 rounded-lg overflow-hidden select-none">
@@ -357,7 +604,87 @@ export function CephCanvas({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       />
-      {hovered && (
+
+      {/* ── Toolbar overlay (top-left, fixed position regardless of RTL) ── */}
+      <div className="absolute top-3 left-3 z-10 flex items-center gap-0.5 bg-black/70 backdrop-blur-sm rounded-lg p-1" dir="ltr">
+        <button type="button" onClick={() => centerZoom(1.2)} className={toolBtn} title="تكبير (+)" aria-label="تكبير">
+          <ZoomIn className="w-3.5 h-3.5" />
+        </button>
+        <button type="button" onClick={() => centerZoom(1 / 1.2)} className={toolBtn} title="تصغير (-)" aria-label="تصغير">
+          <ZoomOut className="w-3.5 h-3.5" />
+        </button>
+        <span className="text-[10px] text-gray-200 font-mono w-11 text-center tabular-nums">{zoomPct}%</span>
+        <button type="button" onClick={resetFit}
+          className="px-1.5 py-1 rounded-md text-[10px] font-semibold text-gray-300 hover:bg-white/15 hover:text-white transition"
+          title="ملاءمة الصورة للإطار (0)">
+          ملاءمة
+        </button>
+        <span className="w-px h-4 bg-white/20 mx-0.5" />
+        <button type="button" onClick={() => setPanMode(p => !p)}
+          className={cn(toolBtn, panMode && "bg-white/25 text-white")}
+          title="وضع التحريك (أو اسحب بالزر الأوسط / مع مفتاح المسافة)" aria-pressed={panMode}>
+          <Hand className="w-3.5 h-3.5" />
+        </button>
+        <button type="button"
+          onClick={() => { setCalMode(m => !m); setCalCursor(null); }}
+          className={cn(
+            "flex items-center gap-1 px-1.5 py-1 rounded-md text-[10px] font-semibold transition",
+            calMode ? "bg-amber-400/90 text-gray-900" : "text-gray-300 hover:bg-white/15 hover:text-white"
+          )}
+          title="معايرة بنقطتين على مسطرة الصورة" aria-pressed={calMode}>
+          <Ruler className="w-3.5 h-3.5" />
+          معايرة
+        </button>
+      </div>
+
+      {/* ── Calibration panel ── */}
+      {calMode && (
+        <div className="absolute top-12 left-3 z-10 w-60 bg-black/80 backdrop-blur-sm rounded-lg p-2.5 space-y-2" dir="rtl">
+          <p className="text-[10px] font-semibold text-amber-300">
+            وضع المعايرة: انقر نقطتين على مسطرة صورة الأشعة
+          </p>
+          {calPoints.length === 2 ? (
+            <>
+              <p className="text-[10px] text-gray-200 font-mono" dir="ltr">
+                {Math.round(calPxLen)} px
+              </p>
+              <div className="flex items-center gap-1.5">
+                <label className="text-[10px] text-gray-300 whitespace-nowrap" htmlFor="ceph-cal-mm">
+                  المسافة الحقيقية (مم)
+                </label>
+                <input
+                  id="ceph-cal-mm"
+                  type="number"
+                  min={0.1}
+                  step={0.1}
+                  value={calMm}
+                  onChange={e => setCalMm(e.target.value)}
+                  className="w-14 text-[10px] px-1.5 py-0.5 rounded bg-white/10 border border-white/20 text-white focus:outline-none focus:ring-1 focus:ring-amber-400"
+                  dir="ltr"
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button type="button" onClick={applyCalibration}
+                  disabled={!(parseFloat(calMm) > 0)}
+                  className="flex-1 px-2 py-1 rounded-md bg-amber-400 text-gray-900 text-[10px] font-bold hover:bg-amber-300 disabled:opacity-50 transition">
+                  تطبيق المعايرة
+                </button>
+                <button type="button" onClick={() => setCalPoints([])}
+                  className="px-2 py-1 rounded-md border border-white/25 text-gray-300 text-[10px] hover:bg-white/10 transition">
+                  مسح النقاط
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="text-[10px] text-gray-400">
+              {calPoints.length === 0 ? 'النقطة الأولى: بداية المسافة المعلومة' : 'النقطة الثانية: نهاية المسافة المعلومة'}
+            </p>
+          )}
+          <p className="text-[9px] text-gray-500">Esc للخروج من وضع المعايرة</p>
+        </div>
+      )}
+
+      {hovered && !calMode && (
         <div className="absolute bottom-3 left-3 bg-black/80 text-white text-xs px-2.5 py-1.5 rounded-lg pointer-events-none flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: LANDMARK_DEFS[hovered]?.color }} />
           {LANDMARK_DEFS[hovered]?.nameAr ?? hovered}

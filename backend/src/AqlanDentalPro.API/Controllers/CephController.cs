@@ -48,12 +48,31 @@ public class CephController(CephService service) : ControllerBase
     }
 
     // POST /api/ceph/{id}/simulate
+    // Template-based landmark simulation — NOT AI (honest labeling, see
+    // CephService.SimulateTemplateAsync). Disabled by default; enable via the
+    // Settings key "ceph.simulation_enabled".
     [HttpPost("{id:guid}/simulate")]
-    public async Task<IActionResult> SimulateAi(Guid id, [FromBody] AiSimulateRequest req)
+    public async Task<IActionResult> SimulateTemplate(Guid id, [FromBody] AiSimulateRequest req)
     {
-        var result = await service.SimulateAiAsync(id, req);
+        if (!await service.IsSimulationEnabledAsync())
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new { message = "المحاكاة التجريبية معطلة من الإعدادات" });
+
+        var result = await service.SimulateTemplateAsync(id, req);
         return Ok(result);
     }
+
+    // POST /api/ceph/{id}/ai/auto-trace
+    // Honest placeholder for real AI auto-tracing (future specialized vision
+    // model integration point). Always 501 until a real model is integrated —
+    // the system must never fake AI results.
+    [HttpPost("{id:guid}/ai/auto-trace")]
+    public IActionResult AutoTrace(Guid id)
+        => StatusCode(StatusCodes.Status501NotImplemented, new
+        {
+            status  = "unavailable",
+            message = "التتبع الآلي بالذكاء الاصطناعي يتطلب نموذج رؤية متخصص — قيد التطوير. استخدم الوضع اليدوي."
+        });
 
     // PUT /api/ceph/{id}/diagnosis
     [HttpPut("{id:guid}/diagnosis")]

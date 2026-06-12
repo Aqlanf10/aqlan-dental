@@ -150,9 +150,26 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         (double x, double y) G(string k) => lm[k];
         double R1(double v) => Math.Round(v, 1);
 
-        var results = new List<(string name, string group, double value, double normal, double sd, string unit)>();
+        // Load configurable norms once per call. The hardcoded values passed to
+        // Add(...) below remain as FALLBACK when a norm row is missing — the
+        // computation must never break because of missing configuration.
+        var dbNorms = (await db.CephNorms.ToListAsync())
+            .GroupBy(n => (n.MeasurementName, n.AnalysisGroup))
+            .ToDictionary(g => g.Key, g => g.First());
+
+        var results = new List<(string name, string group, double value, double normal, double sd, string unit, decimal? min, decimal? max)>();
         void Add(string name, string group, double value, double normal, double sd, string unit)
-            => results.Add((name, group, R1(value), normal, sd, unit));
+        {
+            decimal? min = null, max = null;
+            if (dbNorms.TryGetValue((name, group), out var norm))
+            {
+                normal = (double)norm.NormalValue;
+                sd     = (double)norm.StdDeviation;
+                min    = norm.MinNormal;
+                max    = norm.MaxNormal;
+            }
+            results.Add((name, group, R1(value), normal, sd, unit, min, max));
+        }
 
         var groups = GetAnalysisGroups(analysis.AnalysisType ?? "full");
 
@@ -283,11 +300,10 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         var oldMeasurements = await db.CephMeasurements.Where(m => m.AnalysisId == id).ToListAsync();
         foreach (var m in oldMeasurements) m.IsActive = false;
 
-        foreach (var (name, group, value, normal, sd, unit) in results)
+        foreach (var (name, group, value, normal, sd, unit, min, max) in results)
         {
             double rawDev = value - normal;
-            double sdNorm = sd > 0 ? rawDev / sd : 0;
-            string classification = ClassifyDeviation(sdNorm);
+            string classification = ClassifyMeasurement(value, normal, sd, min, max);
 
             db.CephMeasurements.Add(new CephMeasurement
             {
@@ -434,9 +450,36 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  SIMULATE AI LANDMARKS
+    //  TEMPLATE-BASED LANDMARK SIMULATION  (NOT AI — honest labeling)
+    //
+    //  Places landmarks at average template positions with random jitter.
+    //  This is a training/demo aid only: it is NOT artificial intelligence and
+    //  must never be presented as such. Landmarks are returned with
+    //  IsAiPlaced = false and Confidence = null so reports never claim AI
+    //  placement. Gated behind the Settings key "ceph.simulation_enabled"
+    //  (default: disabled). Real AI auto-tracing has a separate placeholder
+    //  endpoint (POST /api/ceph/{id}/ai/auto-trace → 501).
     // ──────────────────────────────────────────────────────────────────────────
-    public async Task<List<CephLandmarkDto>> SimulateAiAsync(Guid id, AiSimulateRequest req)
+
+    /// <summary>
+    /// Settings key that enables the template-based landmark simulation.
+    /// Missing or anything other than "true"/"1" means DISABLED (default).
+    /// </summary>
+    public const string SimulationEnabledSettingKey = "ceph.simulation_enabled";
+
+    public const string SimulationNoticeAr =
+        "هذه محاكاة تجريبية لمواضع المعالم وليست ذكاءً اصطناعيًا حقيقيًا — تُستخدم للتدريب فقط ويجب ضبط كل معلم يدويًا.";
+
+    public async Task<bool> IsSimulationEnabledAsync()
+    {
+        var value = await db.Settings
+            .Where(s => s.Key == SimulationEnabledSettingKey)
+            .Select(s => s.Value)
+            .FirstOrDefaultAsync();
+        return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) || value == "1";
+    }
+
+    public async Task<CephSimulationResultDto> SimulateTemplateAsync(Guid id, AiSimulateRequest req)
     {
         // Store calibration so subsequent compute has it.
         var analysis = await db.CephAnalyses.FindAsync(id);
@@ -449,9 +492,11 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
                 ImageHeight = req.ImageHeight,
                 UserNotes   = ExtractUserNotes(analysis.Notes)
             };
-            analysis.Notes      = JsonSerializer.Serialize(notesData);
-            analysis.AiAssisted = true;
-            analysis.IsAutoTraced = true;
+            analysis.Notes = JsonSerializer.Serialize(notesData);
+            // Honest labeling: a template simulation is NOT AI assistance and
+            // NOT auto-tracing — never mark the analysis as such.
+            analysis.AiAssisted   = false;
+            analysis.IsAutoTraced = false;
             await db.SaveChangesAsync();
         }
 
@@ -488,26 +533,31 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
             ("Cm",  "قاعدة الأنف",                  0.83, 0.49),
         };
 
-        var result = new List<CephLandmarkDto>(templates.Length);
+        var landmarks = new List<CephLandmarkDto>(templates.Length);
         foreach (var (key, nameAr, fx, fy) in templates)
         {
             double jitterX = (rng.NextDouble() - 0.5) * 2 * 0.015;
             double jitterY = (rng.NextDouble() - 0.5) * 2 * 0.015;
-            double confidence = 0.75 + rng.NextDouble() * 0.20;
 
-            result.Add(new CephLandmarkDto
+            landmarks.Add(new CephLandmarkDto
             {
                 Id         = Guid.NewGuid(),
                 Key        = key,
                 Name       = nameAr,
                 X          = Math.Round((fx + jitterX) * W, 1),
                 Y          = Math.Round((fy + jitterY) * H, 1),
-                IsAiPlaced = true,
-                Confidence = Math.Round(confidence, 2)
+                // Template positions are NOT AI placements — no fake confidence.
+                IsAiPlaced = false,
+                Confidence = null
             });
         }
 
-        return result;
+        return new CephSimulationResultDto
+        {
+            IsSimulation     = true,
+            SimulationNotice = SimulationNoticeAr,
+            Landmarks        = landmarks
+        };
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -710,6 +760,22 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         if (abs <= 1.0) return "normal";
         if (abs <= 2.0) return "mild";
         return "severe";
+    }
+
+    // When an explicit normal range (MinNormal/MaxNormal) is configured on the
+    // CephNorm row it takes precedence over the ±1SD rule for the "normal"
+    // boundary; severity outside the range still follows the SD thresholds.
+    private static string ClassifyMeasurement(double value, double normal, double sd, decimal? min, decimal? max)
+    {
+        double sdNorm = sd > 0 ? (value - normal) / sd : 0;
+        if (min.HasValue || max.HasValue)
+        {
+            bool within = (!min.HasValue || value >= (double)min.Value)
+                       && (!max.HasValue || value <= (double)max.Value);
+            if (within) return "normal";
+            return Math.Abs(sdNorm) <= 2.0 ? "mild" : "severe";
+        }
+        return ClassifyDeviation(sdNorm);
     }
 
     // ──────────────────────────────────────────────────────────────────────────

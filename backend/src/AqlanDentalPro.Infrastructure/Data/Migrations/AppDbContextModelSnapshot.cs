@@ -919,6 +919,85 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.ToTable("CephMeasurements");
                 });
 
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.CephNorm", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AnalysisGroup")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("InterpretationAbove")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("InterpretationBelow")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("InterpretationNormal")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<decimal?>("MaxNormal")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("MeasurementName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<decimal?>("MinNormal")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("NameAr")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<decimal>("NormalValue")
+                        .HasColumnType("numeric");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("StdDeviation")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MeasurementName", "AnalysisGroup")
+                        .IsUnique();
+
+                    b.ToTable("CephNorms");
+                });
+
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.ClinicQueueItem", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4027,7 +4106,31 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ArchFormLower")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ArchFormUpper")
+                        .HasColumnType("text");
+
+                    b.Property<string>("BoltonDiscrepancyNote")
+                        .HasColumnType("text");
+
+                    b.Property<bool?>("Bruxism")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("CanineRelation")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CanineRelationLeft")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CanineRelationRight")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CariesNote")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ChinPosition")
                         .HasColumnType("text");
 
                     b.Property<bool?>("CoCrDiscrepancy")
@@ -4039,6 +4142,15 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<bool>("Crossbite")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("CrossbiteType")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CurveOfSpee")
+                        .HasColumnType("text");
+
+                    b.Property<bool?>("DeepBite")
+                        .HasColumnType("boolean");
+
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -4048,17 +4160,44 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<Guid?>("DoctorId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("EctopicEruptionNote")
+                        .HasColumnType("text");
+
                     b.Property<DateOnly>("ExamDate")
                         .HasColumnType("date");
 
                     b.Property<string>("FacialSymmetry")
                         .HasColumnType("text");
 
+                    b.Property<string>("FrenumNote")
+                        .HasColumnType("text");
+
+                    b.Property<string>("FunctionalShift")
+                        .HasColumnType("text");
+
+                    b.Property<string>("GingivalCondition")
+                        .HasColumnType("text");
+
+                    b.Property<bool?>("GummySmile")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Habits")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ImpactedTeethFdi")
+                        .HasColumnType("text");
+
+                    b.Property<string>("IncisorRelation")
                         .HasColumnType("text");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
+
+                    b.Property<bool?>("LipBiting")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("LipCompetenceGrade")
+                        .HasColumnType("text");
 
                     b.Property<bool?>("LipsCompetence")
                         .HasColumnType("boolean");
@@ -4066,13 +4205,43 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<string>("LowerCrowding")
                         .HasColumnType("text");
 
+                    b.Property<decimal?>("LowerCrowdingMm")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal?>("LowerSpacingMm")
+                        .HasColumnType("numeric");
+
                     b.Property<string>("MidlineLower")
                         .HasColumnType("text");
+
+                    b.Property<decimal?>("MidlineLowerShiftMm")
+                        .HasColumnType("numeric");
 
                     b.Property<string>("MidlineUpper")
                         .HasColumnType("text");
 
+                    b.Property<decimal?>("MidlineUpperShiftMm")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("MissingTeethFdi")
+                        .HasColumnType("text");
+
                     b.Property<string>("MolarRelation")
+                        .HasColumnType("text");
+
+                    b.Property<string>("MolarRelationLeft")
+                        .HasColumnType("text");
+
+                    b.Property<string>("MolarRelationRight")
+                        .HasColumnType("text");
+
+                    b.Property<bool?>("MouthBreathing")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool?>("NailBiting")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("NasolabialAngle")
                         .HasColumnType("text");
 
                     b.Property<string>("Notes")
@@ -4081,29 +4250,59 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<bool>("OpenBite")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("OralHygiene")
+                        .HasColumnType("text");
+
                     b.Property<Guid>("OrthoCaseId")
                         .HasColumnType("uuid");
 
                     b.Property<decimal?>("Overbite")
                         .HasColumnType("numeric");
 
+                    b.Property<decimal?>("OverbitePercent")
+                        .HasColumnType("numeric");
+
                     b.Property<decimal?>("Overjet")
                         .HasColumnType("numeric");
+
+                    b.Property<string>("PeriodontalConcerns")
+                        .HasColumnType("text");
 
                     b.Property<string>("Profile")
                         .HasColumnType("text");
 
+                    b.Property<string>("RetainedDeciduousFdi")
+                        .HasColumnType("text");
+
+                    b.Property<bool?>("ScissorBite")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("SmileLine")
                         .HasColumnType("text");
 
+                    b.Property<string>("SupernumeraryNote")
+                        .HasColumnType("text");
+
+                    b.Property<bool?>("ThumbSucking")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("TmjFindings")
                         .HasColumnType("text");
+
+                    b.Property<string>("TongueNote")
+                        .HasColumnType("text");
+
+                    b.Property<bool?>("TongueThrust")
+                        .HasColumnType("boolean");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("UpperCrowding")
                         .HasColumnType("text");
+
+                    b.Property<decimal?>("UpperCrowdingMm")
+                        .HasColumnType("numeric");
 
                     b.Property<decimal?>("UpperSpacing")
                         .HasColumnType("numeric");

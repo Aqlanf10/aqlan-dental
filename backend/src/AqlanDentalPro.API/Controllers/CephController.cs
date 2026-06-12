@@ -19,6 +19,20 @@ public class CephController(CephService service) : ControllerBase
         return Ok(result);
     }
 
+    // GET /api/ceph/compare?baseId=&targetId= — C-B pre/post comparison
+    // (declared before {id:guid} so "compare" never binds as an id)
+    [HttpGet("compare")]
+    public async Task<IActionResult> Compare([FromQuery] Guid baseId, [FromQuery] Guid targetId)
+    {
+        if (baseId == Guid.Empty || targetId == Guid.Empty || baseId == targetId)
+            return BadRequest(new { message = "حدد تحليلين مختلفين للمقارنة" });
+
+        var (result, error) = await service.CompareAsync(baseId, targetId);
+        if (error == "التحليل غير موجود") return NotFound(new { message = error });
+        if (error is not null) return BadRequest(new { message = error });
+        return Ok(result);
+    }
+
     // GET /api/ceph/{id}
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)

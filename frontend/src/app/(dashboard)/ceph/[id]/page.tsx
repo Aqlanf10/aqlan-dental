@@ -86,10 +86,13 @@ export default function CephAnalysisPage() {
 
   // Real-time measurements (live as user places landmarks)
   const computedMeasurements = useMemo(() => {
+    // normsVersion is read to force recompute when DB norm overrides arrive
+    // (buildMeasurementList reads module-level norm tables mutated by
+    // applyNormOverrides, invisible to the dependency analysis).
+    void normsVersion;
     const pts: Record<string, { x: number; y: number }> = {};
     landmarks.forEach(l => { pts[l.key] = { x: l.x, y: l.y }; });
     return buildMeasurementList(pts, pixelsPerMm, analysisGroups);
-    // normsVersion: recompute when DB norm overrides arrive.
   }, [landmarks, pixelsPerMm, analysisGroups, normsVersion]);
 
   const activeReportData = (analysis?.measurements?.length && !isDirty)

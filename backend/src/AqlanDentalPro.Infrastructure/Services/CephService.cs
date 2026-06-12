@@ -323,8 +323,25 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  GENERATE DIAGNOSIS  (AI-style Arabic text from measurements)
+    //  GENERATE DIAGNOSIS  (rule-based Arabic text from measurements)
     // ──────────────────────────────────────────────────────────────────────────
+
+    // C-B rule-engine thresholds (orthodontic literature):
+    // ANB skeletal cutoffs per Steiner (Class II > 4°, Class III < 0°).
+    // Wits appraisal (Jacobson): Class II > +2mm, Class III < -2mm — used to
+    // corroborate ANB, since ANB is distorted by jaw rotation / N position.
+    private const double WitsClassIiMm = 2.0;
+    private const double WitsClassIiiMm = -2.0;
+    // Severe sagittal discrepancy where camouflage alone is often insufficient
+    // (Proffit: surgical envelope ~ ANB beyond ±7-8°).
+    private const double SurgicalAnbHigh = 8.0;
+    private const double SurgicalAnbLow = -3.0;
+    // Dentoalveolar protrusion suggesting extraction analysis (Steiner mm norms
+    // are 4mm; >7mm is marked protrusion; interincisal < 120° supports it).
+    private const double ProtrusionU1NaMm = 7.0;
+    private const double ProtrusionL1NbMm = 7.0;
+    private const double InterincisalProclined = 120.0;
+
     private async Task GenerateDiagnosisAsync(Guid id)
     {
         var measurements = await db.CephMeasurements
@@ -336,10 +353,11 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
                 ? (double)d : null;
 
         double? anb    = GetValue("ANB");
+        double? wits   = GetValue("Wits");
         double? goGnSn = GetValue("GoGn-SN");
         double? fma    = GetValue("FMA");
 
-        // ── Skeletal Class ────────────────────────────────────────────────
+        // ── Skeletal Class (ANB corroborated by Wits when available) ──────
         string skeletalClass = "Class I";
         string skeletalAr    = "الصنف الأول الهيكلي";
         if (anb.HasValue)
@@ -356,26 +374,49 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
             }
         }
 
-        // ── Vertical Pattern ──────────────────────────────────────────────
+        string? witsNote = null;
+        if (anb.HasValue && wits.HasValue)
+        {
+            var witsClass = wits.Value > WitsClassIiMm ? "Class II"
+                          : wits.Value < WitsClassIiiMm ? "Class III"
+                          : "Class I";
+            witsNote = witsClass == skeletalClass
+                ? $"التصنيف الهيكلي مؤكد بمؤشر Wits ({wits.Value:0.0} مم)."
+                : $"تنبيه: نتيجة Wits ({wits.Value:0.0} مم → {ClassAr(witsClass)}) غير متوافقة مع ANB — يُنصح بمراجعة المعايرة ومواضع المعالم والاعتماد على التقييم السريري.";
+        }
+
+        // ── Vertical Pattern (GoGn-SN and FMA agreement when both exist) ──
         string verticalPattern = "Normodivergent";
         string verticalAr      = "نمط رأسي طبيعي";
-        double verticalRef     = goGnSn ?? fma ?? double.NaN;
+        string? verticalNote   = null;
 
-        if (!double.IsNaN(verticalRef))
+        string PatternOf(double value, bool isFma)
         {
-            bool usingFma = !goGnSn.HasValue && fma.HasValue;
-            double hi = usingFma ? 29 : 38;
-            double lo = usingFma ? 21 : 26;
+            double hi = isFma ? 29 : 38;
+            double lo = isFma ? 21 : 26;
+            return value > hi ? "Hyperdivergent" : value < lo ? "Hypodivergent" : "Normodivergent";
+        }
 
-            if (verticalRef > hi)
+        if (goGnSn.HasValue || fma.HasValue)
+        {
+            var primary = goGnSn.HasValue
+                ? PatternOf(goGnSn.Value, isFma: false)
+                : PatternOf(fma!.Value, isFma: true);
+
+            verticalPattern = primary;
+            verticalAr = primary switch
             {
-                verticalPattern = "Hyperdivergent";
-                verticalAr      = "نمط رأسي مرتفع (وجه طويل)";
-            }
-            else if (verticalRef < lo)
+                "Hyperdivergent" => "نمط رأسي مرتفع (وجه طويل)",
+                "Hypodivergent"  => "نمط رأسي منخفض (وجه قصير)",
+                _                 => "نمط رأسي طبيعي",
+            };
+
+            if (goGnSn.HasValue && fma.HasValue)
             {
-                verticalPattern = "Hypodivergent";
-                verticalAr      = "نمط رأسي منخفض (وجه قصير)";
+                var secondary = PatternOf(fma.Value, isFma: true);
+                verticalNote = secondary == primary
+                    ? "النمط الرأسي متوافق بين GoGn-SN وFMA."
+                    : "تنبيه: GoGn-SN وFMA يشيران لنمطين رأسيين مختلفين — يُنصح بمراجعة معالم Go/Gn/Po/Or.";
             }
         }
 
@@ -407,10 +448,12 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         // ── Soft Tissue Summary ───────────────────────────────────────────
         string softTissueSummary = "الأنسجة الرخوة في حدود طبيعية";
 
-        // ── AI Recommendation ─────────────────────────────────────────────
+        // ── Rule-based recommendation text ────────────────────────────────
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"التشخيص الهيكلي: {skeletalAr}");
+        if (witsNote is not null) sb.AppendLine(witsNote);
         sb.AppendLine($"النمط الرأسي: {verticalAr}");
+        if (verticalNote is not null) sb.AppendLine(verticalNote);
         sb.AppendLine($"ميلان القواطع: {incisorInclination}");
 
         if (skeletalClass == "Class II")
@@ -421,9 +464,33 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
             sb.AppendLine("التوصية: يمكن إجراء العلاج التقويمي التقليدي لتصحيح العلاقات السنية.");
 
         if (verticalPattern == "Hyperdivergent")
-            sb.AppendLine("ملاحظة: النمط الرأسي المرتفع يستوجب الحذر في استخدام مستخلصات الأسنان لتجنب مزيد من الفتح الرأسي.");
+            sb.AppendLine("ملاحظة: النمط الرأسي المرتفع يستوجب الحذر في الميكانيكا الباسطة، مع ميل لعضة أمامية مفتوحة.");
         else if (verticalPattern == "Hypodivergent")
-            sb.AppendLine("ملاحظة: النمط الرأسي المنخفض يسمح عادةً بحركة أمامية للأسنان بدرجة أكبر.");
+            sb.AppendLine("ملاحظة: النمط الرأسي المنخفض يترافق غالبًا مع عضة عميقة ويسمح بحركة أمامية أكبر للأسنان.");
+
+        // ── مؤشرات قاعدية آلية (C-B) — ليست قرارًا علاجيًا ────────────────
+        double? u1naMm = GetValue("U1-NA_mm");
+        double? l1nbMm = GetValue("L1-NB_mm");
+        double? interincisal = GetValue("U1-L1");
+
+        var indicators = new List<string>();
+
+        bool dentalProtrusion =
+            (u1naMm.HasValue && u1naMm.Value > ProtrusionU1NaMm) ||
+            (l1nbMm.HasValue && l1nbMm.Value > ProtrusionL1NbMm);
+        if (dentalProtrusion && interincisal.HasValue && interincisal.Value < InterincisalProclined)
+            indicators.Add("بروز سني واضح مع زاوية بين-قاطعية منخفضة — قد يستدعي دراسة القلع ضمن خطة العلاج.");
+        else if (dentalProtrusion)
+            indicators.Add("بروز سني أمامي ملحوظ — يُدرس ضمن تحليل المسافات وخطة العلاج.");
+
+        if (anb.HasValue && (anb.Value >= SurgicalAnbHigh || anb.Value <= SurgicalAnbLow))
+            indicators.Add("تفاوت هيكلي شديد قد يتجاوز حدود المعالجة التقويمية وحدها — يُنصح بتقييم الخيار الجراحي التقويمي.");
+
+        if (indicators.Count > 0)
+        {
+            sb.AppendLine("مؤشرات قاعدية آلية — تتطلب تقييم الأخصائي:");
+            foreach (var ind in indicators) sb.AppendLine($"• {ind}");
+        }
 
         string aiRecommendation = sb.ToString().Trim();
 
@@ -563,6 +630,87 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
     // ──────────────────────────────────────────────────────────────────────────
     //  SOFT DELETE
     // ──────────────────────────────────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────────────────────
+    //  C-B: COMPARE two analyses of the SAME ortho case (pre/post)
+    // ──────────────────────────────────────────────────────────────────────────
+    public async Task<(CephCompareResultDto? Result, string? Error)> CompareAsync(Guid baseId, Guid targetId)
+    {
+        var both = await db.CephAnalyses
+            .Where(a => (a.Id == baseId || a.Id == targetId) && a.IsActive)
+            .ToListAsync();
+
+        var baseA = both.FirstOrDefault(a => a.Id == baseId);
+        var targetA = both.FirstOrDefault(a => a.Id == targetId);
+        if (baseA is null || targetA is null)
+            return (null, "التحليل غير موجود");
+        if (baseA.OrthoCaseId != targetA.OrthoCaseId)
+            return (null, "التحليلان لا يخصان نفس الحالة");
+
+        var patientName = await db.OrthoCases
+            .Where(c => c.Id == baseA.OrthoCaseId)
+            .Join(db.Patients, c => c.PatientId, p => p.Id,
+                (c, p) => (p.FirstName + " " + p.LastName).Trim())
+            .FirstOrDefaultAsync();
+
+        var measurements = await db.CephMeasurements
+            .Where(m => (m.AnalysisId == baseId || m.AnalysisId == targetId) && m.IsActive)
+            .ToListAsync();
+
+        var norms = await db.CephNorms.Where(n => n.IsActive).ToListAsync();
+        var normByName = norms
+            .GroupBy(n => n.MeasurementName)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        var baseMap = measurements.Where(m => m.AnalysisId == baseId)
+            .GroupBy(m => m.MeasurementName).ToDictionary(g => g.Key, g => g.First());
+        var targetMap = measurements.Where(m => m.AnalysisId == targetId)
+            .GroupBy(m => m.MeasurementName).ToDictionary(g => g.Key, g => g.First());
+
+        var rows = baseMap.Keys.Union(targetMap.Keys)
+            .Select(name =>
+            {
+                baseMap.TryGetValue(name, out var b);
+                targetMap.TryGetValue(name, out var t);
+                var norm = normByName.GetValueOrDefault(name);
+                var normal = norm?.NormalValue ?? b?.NormalValue ?? t?.NormalValue;
+
+                bool? improved = null;
+                if (b?.MeasurementValue is decimal bv && t?.MeasurementValue is decimal tv && normal is decimal nv)
+                    improved = Math.Abs(tv - nv) < Math.Abs(bv - nv) ? true
+                             : Math.Abs(tv - nv) > Math.Abs(bv - nv) ? false
+                             : (bool?)null;
+
+                return new CephCompareRowDto
+                {
+                    MeasurementName = name,
+                    NameAr = norm?.NameAr ?? GetMeasurementNameAr(name),
+                    AnalysisGroup = norm?.AnalysisGroup,
+                    Unit = b?.Unit ?? t?.Unit ?? norm?.Unit ?? "°",
+                    BaseValue = b?.MeasurementValue,
+                    TargetValue = t?.MeasurementValue,
+                    Delta = b?.MeasurementValue is decimal b2 && t?.MeasurementValue is decimal t2
+                        ? Math.Round(t2 - b2, 2) : null,
+                    NormalValue = normal,
+                    StdDeviation = norm?.StdDeviation ?? b?.StdDeviation ?? t?.StdDeviation,
+                    BaseClassification = b?.Classification,
+                    TargetClassification = t?.Classification,
+                    Improved = improved,
+                };
+            })
+            .OrderBy(r => r.AnalysisGroup ?? "zz")
+            .ThenBy(r => r.MeasurementName)
+            .ToList();
+
+        var result = new CephCompareResultDto
+        {
+            Base = new CephCompareSideDto { Id = baseA.Id, AnalysisDate = baseA.AnalysisDate.ToString("yyyy-MM-dd"), AnalysisType = baseA.AnalysisType },
+            Target = new CephCompareSideDto { Id = targetA.Id, AnalysisDate = targetA.AnalysisDate.ToString("yyyy-MM-dd"), AnalysisType = targetA.AnalysisType },
+            PatientName = patientName,
+            Rows = rows,
+        };
+        return (result, null);
+    }
+
     public async Task SoftDeleteAsync(Guid id)
     {
         var analysis = await db.CephAnalyses.FindAsync(id);
@@ -897,6 +1045,13 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
     // ──────────────────────────────────────────────────────────────────────────
     //  NOTES JSON HELPER
     // ──────────────────────────────────────────────────────────────────────────
+    private static string ClassAr(string skeletalClass) => skeletalClass switch
+    {
+        "Class II"  => "الصنف الثاني",
+        "Class III" => "الصنف الثالث",
+        _            => "الصنف الأول",
+    };
+
     private static string? ExtractUserNotes(string? notesJson)
     {
         if (string.IsNullOrWhiteSpace(notesJson)) return null;

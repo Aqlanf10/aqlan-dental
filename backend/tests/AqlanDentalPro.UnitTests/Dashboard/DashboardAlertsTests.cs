@@ -160,6 +160,15 @@ public class DashboardAlertsTests
         db.Appointments.AddRange(
             new Appointment { PatientId = mine.Id, BranchId = myBranch, AppointmentDate = today, Status = AppointmentStatus.NoShow, IsActive = true },
             new Appointment { PatientId = other.Id, BranchId = otherBranch, AppointmentDate = today, Status = AppointmentStatus.NoShow, IsActive = true });
+
+        // Long-waiting must be branch-scoped too (Codex review on PR #354):
+        // one stale Waiting item per branch, via Patient.BranchId.
+        var myWait = new ClinicQueueItem { PatientId = mine.Id, QueueDate = today, Status = ClinicQueueStatus.Waiting, IsActive = true };
+        var otherWait = new ClinicQueueItem { PatientId = other.Id, QueueDate = today, Status = ClinicQueueStatus.Waiting, IsActive = true };
+        db.ClinicQueueItems.AddRange(myWait, otherWait);
+        await db.SaveChangesAsync();
+        myWait.CreatedAt = DateTime.UtcNow.AddMinutes(-60);
+        otherWait.CreatedAt = DateTime.UtcNow.AddMinutes(-60);
         await db.SaveChangesAsync();
 
         var adminAlerts = await CreateService(db, isAdmin: true).GetAlertsAsync();
@@ -167,5 +176,7 @@ public class DashboardAlertsTests
 
         adminAlerts.TodayNoShowCount.Should().Be(2);
         branchAlerts.TodayNoShowCount.Should().Be(1);
+        adminAlerts.LongWaitingCount.Should().Be(2);
+        branchAlerts.LongWaitingCount.Should().Be(1, "long-waiting alerts must be scoped to the user's branch");
     }
 }

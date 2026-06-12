@@ -162,10 +162,13 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
 
         // منتظرون أطول من المسموح
         var waitThreshold = nowUtc.AddMinutes(-longWaitMinutes);
-        var longWaitingCount = await db.ClinicQueueItems.CountAsync(q =>
+        var longWaitingQuery = db.ClinicQueueItems.Where(q =>
             q.IsActive && q.QueueDate == today
             && q.Status == ClinicQueueStatus.Waiting
             && q.CreatedAt <= waitThreshold);
+        if (branchId.HasValue)
+            longWaitingQuery = longWaitingQuery.Where(q => q.Patient.BranchId == branchId);
+        var longWaitingCount = await longWaitingQuery.CountAsync();
 
         // مواعيد الغد غير المؤكدة
         var unconfirmedQuery = db.Appointments.Where(a =>

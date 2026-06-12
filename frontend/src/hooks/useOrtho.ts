@@ -6,11 +6,13 @@ import type {
   CreateOrthoVisitRequest,
   ExtractionDecision,
   OrthoDiagnosis,
+  OrthoPhoto,
   ProblemListItem,
   RecordsChecklist,
   RetentionRecord,
   RetentionVisit,
   TreatmentPlan,
+  UpdateOrthoPhotoRequest,
 } from "@/types/ortho";
 
 export const orthoKeys = {
@@ -306,6 +308,36 @@ export function useOrthoPhotos(caseId: string) {
     queryKey: orthoKeys.photos(caseId),
     queryFn: async () => (await orthoService.getPhotos(caseId)).data,
     enabled: !!caseId,
+  });
+}
+
+/**
+ * تحديث وسوم صورة تقويم (الفئة/النوع الفرعي/المرحلة/الإدراج في التقرير) —
+ * تحديث تفاؤلي فوري مع تراجع تلقائي ورسالة عربية عند الفشل.
+ */
+export function useUpdateOrthoPhoto(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ photoId, data }: { photoId: string; data: UpdateOrthoPhotoRequest }) =>
+      orthoService.updatePhoto(caseId, photoId, data),
+    onMutate: async ({ photoId, data }) => {
+      await qc.cancelQueries({ queryKey: orthoKeys.photos(caseId) });
+      const previous = qc.getQueryData<OrthoPhoto[]>(orthoKeys.photos(caseId));
+      qc.setQueryData<OrthoPhoto[]>(orthoKeys.photos(caseId), (old) =>
+        old?.map((p) => (p.id === photoId ? { ...p, ...data } : p))
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        qc.setQueryData(orthoKeys.photos(caseId), context.previous);
+      }
+      toast.error("فشل تحديث بيانات الصورة");
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.photos(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.checklist(caseId) });
+    },
   });
 }
 

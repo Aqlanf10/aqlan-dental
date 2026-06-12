@@ -160,6 +160,22 @@ export interface OrthoPhoto {
   caption?: string;
   takenAt?: string;
   sortOrder?: number;
+  /** فئة الصورة القياسية: Extraoral | Intraoral | Radiograph | Document */
+  category?: string | null;
+  /** النوع الفرعي القياسي (FrontalRest, Profile, UpperOcclusal, OPG, ...) */
+  subtype?: string | null;
+  /** مرحلة العلاج: Initial (قبل) | Progress (أثناء) | Final (بعد) */
+  treatmentPhase?: string | null;
+  /** مُدرجة في تقرير الحالة */
+  isSelectedForReport?: boolean;
+}
+
+export interface UpdateOrthoPhotoRequest {
+  category?: string;
+  subtype?: string;
+  treatmentPhase?: string;
+  isSelectedForReport?: boolean;
+  caption?: string;
 }
 
 export interface RecordsChecklist {
@@ -272,6 +288,52 @@ export const RECORDS_CHECKLIST_ITEMS: { key: keyof RecordsChecklist; label: stri
   { key: "consent", label: "نموذج موافقة", group: "مستندات" },
   { key: "contract", label: "عقد العلاج", group: "مستندات" },
 ];
+
+export const ORTHO_PHOTO_CATEGORY_LABELS: Record<string, string> = {
+  Extraoral: "خارج الفم",
+  Intraoral: "داخل الفم",
+  Radiograph: "أشعة",
+  Document: "مستند",
+};
+
+/** الأنواع الفرعية القياسية لكل فئة (القيمة المخزنة → التسمية العربية) */
+export const ORTHO_PHOTO_SUBTYPES: Record<string, { value: string; label: string }[]> = {
+  Extraoral: [
+    { value: "FrontalRest", label: "أمامية راحة" },
+    { value: "FrontalSmile", label: "أمامية ابتسامة" },
+    { value: "Profile", label: "جانبية" },
+  ],
+  Intraoral: [
+    { value: "Frontal", label: "أمامية" },
+    { value: "Right", label: "شدق أيمن" },
+    { value: "Left", label: "شدق أيسر" },
+    { value: "UpperOcclusal", label: "إطباقية علوية" },
+    { value: "LowerOcclusal", label: "إطباقية سفلية" },
+  ],
+  Radiograph: [
+    { value: "OPG", label: "بانوراما" },
+    { value: "LateralCeph", label: "سيفالومتري جانبي" },
+    { value: "PACeph", label: "سيفالومتري خلفي أمامي" },
+    { value: "CBCT", label: "CBCT" },
+  ],
+  Document: [],
+};
+
+export const TREATMENT_PHASE_LABELS: Record<string, string> = {
+  Initial: "قبل",
+  Progress: "أثناء",
+  Final: "بعد",
+};
+
+/** تسمية النوع الفرعي بالعربية بغض النظر عن الفئة */
+export function orthoSubtypeLabel(subtype?: string | null): string | undefined {
+  if (!subtype) return undefined;
+  for (const options of Object.values(ORTHO_PHOTO_SUBTYPES)) {
+    const found = options.find((o) => o.value === subtype);
+    if (found) return found.label;
+  }
+  return subtype;
+}
 
 export const EXTRACTION_FACTORS = [
   { key: "profileFavorable", label: "البروفايل يدعم الخلع" },

@@ -13,6 +13,9 @@ public class Document : BaseEntity
     public Guid? UploadedBy { get; set; }
     public bool Signed { get; set; } = false;
     public DateTime? SignedAt { get; set; }
+    /// <summary>Optional link to an orthodontic case (standardized records — Phase 2).</summary>
+    public Guid? OrthoCaseId { get; set; }
 
     public Patient Patient { get; set; } = null!;
+    public OrthoCase? OrthoCase { get; set; }
 }

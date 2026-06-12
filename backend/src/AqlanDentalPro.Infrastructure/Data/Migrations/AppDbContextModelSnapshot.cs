@@ -1839,6 +1839,9 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<string>("Notes")
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("OrthoCaseId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uuid");
 
@@ -1858,6 +1861,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OrthoCaseId");
 
                     b.HasIndex("PatientId");
 
@@ -4126,6 +4131,10 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<string>("Category")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -4137,6 +4146,11 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
+
+                    b.Property<bool>("IsSelectedForReport")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<Guid>("OrthoCaseId")
                         .HasColumnType("uuid");
@@ -4154,8 +4168,16 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<int>("SortOrder")
                         .HasColumnType("integer");
 
+                    b.Property<string>("Subtype")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<DateTime>("TakenAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TreatmentPhase")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -4163,6 +4185,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("OrthoCaseId");
+
+                    b.HasIndex("OrthoCaseId", "Category");
 
                     b.ToTable("OrthoClinicalPhotos", (string)null);
                 });
@@ -5358,6 +5382,9 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<string>("Notes")
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("OrthoCaseId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uuid");
 
@@ -5379,6 +5406,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("DoctorId");
+
+                    b.HasIndex("OrthoCaseId");
 
                     b.HasIndex("PatientId");
 
@@ -7224,11 +7253,18 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.Document", b =>
                 {
+                    b.HasOne("AqlanDentalPro.Domain.Entities.OrthoCase", "OrthoCase")
+                        .WithMany()
+                        .HasForeignKey("OrthoCaseId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("AqlanDentalPro.Domain.Entities.Patient", "Patient")
                         .WithMany()
                         .HasForeignKey("PatientId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("OrthoCase");
 
                     b.Navigation("Patient");
                 });
@@ -8193,6 +8229,11 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .WithMany()
                         .HasForeignKey("DoctorId");
 
+                    b.HasOne("AqlanDentalPro.Domain.Entities.OrthoCase", "OrthoCase")
+                        .WithMany()
+                        .HasForeignKey("OrthoCaseId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("AqlanDentalPro.Domain.Entities.Patient", "Patient")
                         .WithMany("Radiographs")
                         .HasForeignKey("PatientId")
@@ -8200,6 +8241,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Doctor");
+
+                    b.Navigation("OrthoCase");
 
                     b.Navigation("Patient");
                 });

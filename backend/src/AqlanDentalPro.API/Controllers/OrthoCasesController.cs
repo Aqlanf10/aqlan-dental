@@ -140,23 +140,24 @@ public class OrthoCasesController(
         // Auto-derive checklist items from existing data using same per-item logic as GET /checklist
         if (checklist is null)
         {
-            var photos = orthoCase.OrthoClinicalPhotos;
+            var photos = orthoCase.OrthoClinicalPhotos.ToList();
             var hasCeph = orthoCase.CephAnalyses.Count > 0;
             var hasModel = await db.ModelAnalyses.AnyAsync(m => m.OrthoCaseId == id);
-            // Use precise per-item matching — same as GET /checklist derivation
+            // Use precise per-item matching — same as GET /checklist derivation:
+            // (Category, Subtype) tags first, legacy caption keywords as fallback
             checklistCompleted = new[]
             {
-                photos.Any(p => p.PhotoType == "Extraoral" && p.Caption?.Contains("frontal") == true),
-                photos.Any(p => p.PhotoType == "Extraoral" && p.Caption?.Contains("profile") == true),
-                photos.Any(p => p.PhotoType == "Extraoral" && p.Caption?.Contains("smile") == true),
-                photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("frontal") == true),
-                photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("right") == true),
-                photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("left") == true),
-                photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("upper") == true),
-                photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("lower") == true),
-                photos.Any(p => p.PhotoType == "Radiograph" && p.Caption?.Contains("OPG") == true),
-                hasCeph,
-                photos.Any(p => p.PhotoType == "Radiograph" && p.Caption?.Contains("CBCT") == true),
+                OrthoPhotoRecords.DeriveExtraoralFrontal(photos),
+                OrthoPhotoRecords.DeriveExtraoralProfile(photos),
+                OrthoPhotoRecords.DeriveExtraoralSmile(photos),
+                OrthoPhotoRecords.DeriveIntraoralFrontal(photos),
+                OrthoPhotoRecords.DeriveIntraoralRight(photos),
+                OrthoPhotoRecords.DeriveIntraoralLeft(photos),
+                OrthoPhotoRecords.DeriveUpperOcclusal(photos),
+                OrthoPhotoRecords.DeriveLowerOcclusal(photos),
+                OrthoPhotoRecords.DeriveOpg(photos),
+                hasCeph || OrthoPhotoRecords.DeriveLateralCeph(photos),
+                OrthoPhotoRecords.DeriveCbct(photos),
                 hasModel,
                 false, // Consent — cannot auto-derive
                 contract is not null,
@@ -766,21 +767,23 @@ public class OrthoCasesController(
             contract = unlinkedCount == 1;
         }
 
+        // Auto-derive each item from (Category, Subtype) tags with the legacy
+        // caption-keyword heuristic as an OR'd fallback (untagged photos keep working)
         return Ok(new
         {
             Id = (Guid?)null,
             OrthoCaseId = id,
-            ExtraoralFrontal = photos.Any(p => p.PhotoType == "Extraoral" && p.Caption?.Contains("frontal") == true),
-            ExtraoralProfile = photos.Any(p => p.PhotoType == "Extraoral" && p.Caption?.Contains("profile") == true),
-            ExtraoralSmile = photos.Any(p => p.PhotoType == "Extraoral" && p.Caption?.Contains("smile") == true),
-            IntraoralFrontal = photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("frontal") == true),
-            IntraoralRight = photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("right") == true),
-            IntraoralLeft = photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("left") == true),
-            UpperOcclusal = photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("upper") == true),
-            LowerOcclusal = photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("lower") == true),
-            Opg = photos.Any(p => p.PhotoType == "Radiograph" && p.Caption?.Contains("OPG") == true),
-            LateralCeph = hasCeph,
-            Cbct = photos.Any(p => p.PhotoType == "Radiograph" && p.Caption?.Contains("CBCT") == true),
+            ExtraoralFrontal = OrthoPhotoRecords.DeriveExtraoralFrontal(photos),
+            ExtraoralProfile = OrthoPhotoRecords.DeriveExtraoralProfile(photos),
+            ExtraoralSmile = OrthoPhotoRecords.DeriveExtraoralSmile(photos),
+            IntraoralFrontal = OrthoPhotoRecords.DeriveIntraoralFrontal(photos),
+            IntraoralRight = OrthoPhotoRecords.DeriveIntraoralRight(photos),
+            IntraoralLeft = OrthoPhotoRecords.DeriveIntraoralLeft(photos),
+            UpperOcclusal = OrthoPhotoRecords.DeriveUpperOcclusal(photos),
+            LowerOcclusal = OrthoPhotoRecords.DeriveLowerOcclusal(photos),
+            Opg = OrthoPhotoRecords.DeriveOpg(photos),
+            LateralCeph = hasCeph || OrthoPhotoRecords.DeriveLateralCeph(photos),
+            Cbct = OrthoPhotoRecords.DeriveCbct(photos),
             StudyModels = hasModel,
             Consent = false,
             Contract = contract,
@@ -1104,18 +1107,27 @@ public class OrthoCasesController(
         var orthoCase = await db.OrthoCases.FindAsync(id);
         if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
 
+        if (!OrthoPhotoRecords.TryNormalizeCategory(req.Category, out var category))
+            return BadRequest(new { message = "فئة الصورة غير صالحة" });
+        if (!OrthoPhotoRecords.TryNormalizePhase(req.TreatmentPhase, out var treatmentPhase))
+            return BadRequest(new { message = "مرحلة العلاج غير صالحة" });
+
         var maxOrder = await db.OrthoClinicalPhotos
             .Where(p => p.OrthoCaseId == id)
             .MaxAsync(p => (int?)p.SortOrder) ?? 0;
 
         var photo = new OrthoClinicalPhoto
         {
-            OrthoCaseId = id,
-            PhotoUrl    = req.PhotoUrl,
-            PhotoType   = req.PhotoType ?? "Intraoral",
-            Caption     = req.Caption,
-            TakenAt     = req.TakenAt ?? DateTime.UtcNow,
-            SortOrder   = req.SortOrder ?? (maxOrder + 1),
+            OrthoCaseId         = id,
+            PhotoUrl            = req.PhotoUrl,
+            PhotoType           = req.PhotoType ?? "Intraoral",
+            Caption             = req.Caption,
+            TakenAt             = req.TakenAt ?? DateTime.UtcNow,
+            SortOrder           = req.SortOrder ?? (maxOrder + 1),
+            Category            = category,
+            Subtype             = string.IsNullOrWhiteSpace(req.Subtype) ? null : req.Subtype.Trim(),
+            TreatmentPhase      = treatmentPhase,
+            IsSelectedForReport = req.IsSelectedForReport ?? false,
         };
         db.OrthoClinicalPhotos.Add(photo);
         await db.SaveChangesAsync();
@@ -1128,14 +1140,34 @@ public class OrthoCasesController(
             photo.Caption,
             TakenAt   = photo.TakenAt.ToString("yyyy-MM-dd"),
             photo.SortOrder,
+            photo.Category,
+            photo.Subtype,
+            photo.TreatmentPhase,
+            photo.IsSelectedForReport,
         });
     }
 
     [HttpGet("{id:guid}/photos")]
-    public async Task<IActionResult> GetPhotos(Guid id)
+    public async Task<IActionResult> GetPhotos(
+        Guid id,
+        [FromQuery] string? category = null,
+        [FromQuery] string? phase = null,
+        [FromQuery] bool? selectedOnly = null)
     {
-        var photos = await db.OrthoClinicalPhotos
-            .Where(p => p.OrthoCaseId == id)
+        if (!OrthoPhotoRecords.TryNormalizeCategory(category, out var normalizedCategory))
+            return BadRequest(new { message = "فئة الصورة غير صالحة" });
+        if (!OrthoPhotoRecords.TryNormalizePhase(phase, out var normalizedPhase))
+            return BadRequest(new { message = "مرحلة العلاج غير صالحة" });
+
+        var query = db.OrthoClinicalPhotos.Where(p => p.OrthoCaseId == id);
+        if (normalizedCategory is not null)
+            query = query.Where(p => p.Category == normalizedCategory);
+        if (normalizedPhase is not null)
+            query = query.Where(p => p.TreatmentPhase == normalizedPhase);
+        if (selectedOnly == true)
+            query = query.Where(p => p.IsSelectedForReport);
+
+        var photos = await query
             .OrderBy(p => p.SortOrder).ThenBy(p => p.TakenAt)
             .Select(p => new
             {
@@ -1145,9 +1177,57 @@ public class OrthoCasesController(
                 p.Caption,
                 TakenAt   = p.TakenAt.ToString("yyyy-MM-dd"),
                 p.SortOrder,
+                p.Category,
+                p.Subtype,
+                p.TreatmentPhase,
+                p.IsSelectedForReport,
             })
             .ToListAsync();
         return Ok(photos);
+    }
+
+    [HttpPatch("{id:guid}/photos/{photoId:guid}")]
+    public async Task<IActionResult> UpdatePhoto(Guid id, Guid photoId, [FromBody] UpdateOrthoPhotoRequest req)
+    {
+        var photo = await db.OrthoClinicalPhotos
+            .FirstOrDefaultAsync(p => p.Id == photoId && p.OrthoCaseId == id);
+        if (photo is null) return NotFound(new { message = "الصورة غير موجودة" });
+
+        if (req.Category is not null)
+        {
+            if (!OrthoPhotoRecords.TryNormalizeCategory(req.Category, out var category))
+                return BadRequest(new { message = "فئة الصورة غير صالحة" });
+            photo.Category = category; // empty string clears the tag
+        }
+        if (req.TreatmentPhase is not null)
+        {
+            if (!OrthoPhotoRecords.TryNormalizePhase(req.TreatmentPhase, out var treatmentPhase))
+                return BadRequest(new { message = "مرحلة العلاج غير صالحة" });
+            photo.TreatmentPhase = treatmentPhase; // empty string clears the tag
+        }
+        if (req.Subtype is not null)
+            photo.Subtype = string.IsNullOrWhiteSpace(req.Subtype) ? null : req.Subtype.Trim();
+        if (req.Caption is not null)
+            photo.Caption = string.IsNullOrWhiteSpace(req.Caption) ? null : req.Caption;
+        if (req.IsSelectedForReport.HasValue)
+            photo.IsSelectedForReport = req.IsSelectedForReport.Value;
+
+        await db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            photo.Id,
+            photo.PhotoUrl,
+            photo.PhotoType,
+            photo.Caption,
+            TakenAt   = photo.TakenAt.ToString("yyyy-MM-dd"),
+            photo.SortOrder,
+            photo.Category,
+            photo.Subtype,
+            photo.TreatmentPhase,
+            photo.IsSelectedForReport,
+            message = "تم تحديث بيانات الصورة",
+        });
     }
 
     [HttpDelete("{id:guid}/photos/{photoId:guid}")]
@@ -1276,4 +1356,22 @@ public sealed class AddOrthoPhotoRequest
     public string? Caption   { get; init; }
     public DateTime? TakenAt { get; init; }
     public int? SortOrder    { get; init; }
+    /// <summary>Optional standardized category — validated against OrthoPhotoCategory (case-insensitive).</summary>
+    public string? Category  { get; init; }
+    /// <summary>Optional standardized subtype (e.g. FrontalRest, Profile, UpperOcclusal, OPG, LateralCeph, CBCT).</summary>
+    public string? Subtype   { get; init; }
+    /// <summary>Optional treatment phase — validated against OrthoTreatmentPhase (case-insensitive).</summary>
+    public string? TreatmentPhase { get; init; }
+    public bool? IsSelectedForReport { get; init; }
+}
+
+public sealed class UpdateOrthoPhotoRequest
+{
+    // All fields optional — only provided (non-null) fields are updated.
+    // Empty strings clear the corresponding tag.
+    public string? Category  { get; init; }
+    public string? Subtype   { get; init; }
+    public string? TreatmentPhase { get; init; }
+    public bool? IsSelectedForReport { get; init; }
+    public string? Caption   { get; init; }
 }

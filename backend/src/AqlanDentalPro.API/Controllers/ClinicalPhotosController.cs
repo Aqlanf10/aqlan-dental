@@ -140,9 +140,11 @@ public class RadiographsController(AppDbContext db, ICurrentUserService currentU
     [HttpPost]
     public async Task<IActionResult> AddRadiograph([FromBody] AddRadiographRequest req)
     {
+        // Codex review (PR #357): the case must belong to the SAME patient —
+        // existence alone would allow cross-patient links.
         if (req.OrthoCaseId.HasValue &&
-            !await db.OrthoCases.AnyAsync(c => c.Id == req.OrthoCaseId.Value))
-            return BadRequest(new { message = "الحالة التقويمية غير موجودة" });
+            !await db.OrthoCases.AnyAsync(c => c.Id == req.OrthoCaseId.Value && c.PatientId == req.PatientId))
+            return BadRequest(new { message = "الحالة التقويمية غير موجودة أو لا تخص هذا المريض" });
 
         var xray = new Radiograph
         {

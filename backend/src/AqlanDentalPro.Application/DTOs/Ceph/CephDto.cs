@@ -128,6 +128,39 @@ public class CephSimulationResultDto
     public List<CephLandmarkDto> Landmarks { get; set; } = [];
 }
 
+/// <summary>C-B: pre/post comparison between two analyses of the same case.</summary>
+public class CephCompareResultDto
+{
+    public CephCompareSideDto Base { get; set; } = new();
+    public CephCompareSideDto Target { get; set; } = new();
+    public string? PatientName { get; set; }
+    public List<CephCompareRowDto> Rows { get; set; } = [];
+}
+
+public class CephCompareSideDto
+{
+    public Guid Id { get; set; }
+    public string AnalysisDate { get; set; } = string.Empty;
+    public string AnalysisType { get; set; } = string.Empty;
+}
+
+public class CephCompareRowDto
+{
+    public string MeasurementName { get; set; } = string.Empty;
+    public string? NameAr { get; set; }
+    public string? AnalysisGroup { get; set; }
+    public string Unit { get; set; } = string.Empty;
+    public decimal? BaseValue { get; set; }
+    public decimal? TargetValue { get; set; }
+    public decimal? Delta { get; set; }
+    public decimal? NormalValue { get; set; }
+    public decimal? StdDeviation { get; set; }
+    public string? BaseClassification { get; set; }
+    public string? TargetClassification { get; set; }
+    /// <summary>true = target closer to normal than base; null when not computable.</summary>
+    public bool? Improved { get; set; }
+}
+
 public class CephNormDto
 {
     public Guid Id { get; set; }

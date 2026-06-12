@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
-import { Printer, CheckCircle, AlertTriangle, XCircle, ArrowUp, ArrowDown } from "lucide-react";
-import type { CephMeasurement, CephDiagnosis, MeasurementGroup } from "@/types/ceph";
+import { Printer, CheckCircle, AlertTriangle, XCircle, ArrowUp, ArrowDown, Loader2 } from "lucide-react";
+import type { CephMeasurement, CephDiagnosis, CephAiDraftResponse, MeasurementGroup } from "@/types/ceph";
+import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -12,7 +13,13 @@ interface Props {
   analysisDate: string;
   calibrated: boolean;
   defaultGroup?: MeasurementGroup;
+  /** Enables the C-D AI draft assistant button (requires the diagnosis edit mode). */
+  analysisId?: string;
 }
+
+/** Fallback only — the server response always carries the authoritative disclaimer. */
+const AI_DRAFT_DISCLAIMER_FALLBACK =
+  "هذه مسودة مولّدة بالذكاء الاصطناعي — تتطلب مراجعة واعتماد أخصائي التقويم قبل أي استخدام سريري.";
 
 const SCIENTIST_TABS: { key: MeasurementGroup; label: string; labelFull: string }[] = [
   { key: 'steiner',  label: 'ستاينر',    labelFull: 'تحليل ستاينر' },
@@ -43,10 +50,32 @@ const VERTICAL_AR: Record<string, string> = {
 export function AnalysisReport({
   measurements, diagnosis, onDiagnosisChange,
   patientName, analysisDate, calibrated,
-  defaultGroup = 'steiner',
+  defaultGroup = 'steiner', analysisId,
 }: Props) {
   const [activeGroup, setActiveGroup] = useState<MeasurementGroup>(defaultGroup);
   const [finalNotes, setFinalNotes]   = useState(diagnosis?.finalDiagnosis ?? "");
+
+  // ── C-D AI draft assistant — draft only, NEVER auto-saved ────────────────
+  const [aiDraft, setAiDraft]     = useState<CephAiDraftResponse | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError]     = useState<string | null>(null);
+
+  const generateAiDraft = async () => {
+    if (!analysisId || aiLoading) return;
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const { data } = await api.post<CephAiDraftResponse>(`/api/ceph/${analysisId}/ai/draft-diagnosis`);
+      setAiDraft(data);
+    } catch (err) {
+      // The server always sends an honest Arabic reason (403 disabled/unconfigured,
+      // 429 monthly limit, 502 upstream) in the `message` field.
+      const resp = err as { response?: { data?: { message?: string } } };
+      setAiError(resp.response?.data?.message ?? "تعذر توليد المسودة — حاول لاحقًا");
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   const grouped = measurements.filter(m => m.analysisGroup === activeGroup);
   const hasMeas = measurements.length > 0;
@@ -257,6 +286,50 @@ export function AnalysisReport({
 
             {onDiagnosisChange && (
               <div className="space-y-2">
+                {/* C-D AI draft assistant — the draft is NEVER saved automatically */}
+                {analysisId && (
+                  <div className="print:hidden space-y-1.5">
+                    <button
+                      type="button"
+                      onClick={generateAiDraft}
+                      disabled={aiLoading}
+                      className="flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1.5 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 disabled:opacity-60 transition"
+                    >
+                      {aiLoading && <Loader2 className="w-3 h-3 animate-spin" />}
+                      {aiLoading ? "جارٍ توليد المسودة..." : "مسودة تشخيص بالذكاء الاصطناعي"}
+                    </button>
+
+                    {aiError && (
+                      <p className="text-[10px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-2.5 py-1.5">
+                        {aiError}
+                      </p>
+                    )}
+
+                    {aiDraft && (
+                      <div className="rounded-lg border border-amber-300 bg-amber-50 p-2.5 space-y-2">
+                        <p className="text-[9px] font-bold text-amber-800 flex items-start gap-1">
+                          <AlertTriangle className="w-3 h-3 mt-px flex-shrink-0" />
+                          {aiDraft.disclaimer || AI_DRAFT_DISCLAIMER_FALLBACK}
+                        </p>
+                        <p className="text-[10px] text-gray-800 leading-relaxed whitespace-pre-line">
+                          {aiDraft.draft}
+                        </p>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[8px] text-amber-700 font-mono" dir="ltr">{aiDraft.modelId}</span>
+                          <button
+                            type="button"
+                            onClick={() => setFinalNotes(aiDraft.draft)}
+                            className="text-[9px] font-semibold px-2 py-1 rounded border border-amber-400 bg-white text-amber-800 hover:bg-amber-100 transition"
+                            title="ينسخ المسودة إلى حقل التشخيص فقط — لا يتم الحفظ إلا بعد مراجعتك"
+                          >
+                            نسخ إلى حقل التشخيص (بدون حفظ)
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <label className="block text-[10px] font-semibold text-gray-600">
                   ملاحظات الطبيب والتشخيص النهائي
                 </label>

@@ -31,6 +31,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<CephMeasurement> CephMeasurements => Set<CephMeasurement>();
     public DbSet<CephDiagnosis> CephDiagnoses => Set<CephDiagnosis>();
     public DbSet<CephNorm> CephNorms => Set<CephNorm>();
+    public DbSet<OrthodonticAiLog> OrthodonticAiLogs => Set<OrthodonticAiLog>();
     public DbSet<ModelAnalysis> ModelAnalyses => Set<ModelAnalysis>();
     public DbSet<ExtractionDecision> ExtractionDecisions => Set<ExtractionDecision>();
     public DbSet<DentalChart> DentalCharts => Set<DentalChart>();

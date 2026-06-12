@@ -1183,23 +1183,24 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
             .Include(l => l.Doctor)
             .Include(l => l.Lab)
             .Include(l => l.Items).ThenInclude(i => i.WorkType)
+            .Include(l => l.Visit)
             .FirstOrDefaultAsync(l => l.Id == id);
 
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
 
-        var clinicName = await db.Settings.Where(s => s.Key == "clinic.name").Select(s => s.Value).FirstOrDefaultAsync() ?? "مركز طب الأسنان";
-        var clinicPhone = await db.Settings.Where(s => s.Key == "clinic.phones").Select(s => s.Value).FirstOrDefaultAsync() ?? "";
-        var clinicAddress = await db.Settings.Where(s => s.Key == "clinic.location").Select(s => s.Value).FirstOrDefaultAsync() ?? "";
-
         try
         {
+            var clinicName = await db.Settings.Where(s => s.Key == "clinic.name").Select(s => s.Value).FirstOrDefaultAsync() ?? "مركز طب الأسنان";
+            var clinicPhone = await db.Settings.Where(s => s.Key == "clinic.phones").Select(s => s.Value).FirstOrDefaultAsync() ?? "";
+            var clinicAddress = await db.Settings.Where(s => s.Key == "clinic.location").Select(s => s.Value).FirstOrDefaultAsync() ?? "";
+
             var pdfBytes = LabOrderPdfGenerator.Generate(order, clinicName, clinicPhone, clinicAddress);
             return File(pdfBytes, "application/pdf", $"lab-order-{order.OrderNumber}.pdf");
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to generate PDF for lab order {OrderId}", id);
-            return StatusCode(500, new { message = "فشل إنشاء ملف PDF" });
+            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إنشاء أمر العمل", detail = ex.Message, type = ex.GetType().Name });
         }
     }
 }

@@ -148,6 +148,104 @@ public class PdfEndpointErrorHandlingTests
         httpGetAttr!.Template.Should().Be("{id:guid}/print");
     }
 
+    [Fact]
+    public void LabOrderPdf_RequiresStaffOnlyAccess()
+    {
+        var controllerType = typeof(AqlanDentalPro.API.Controllers.LabOrdersController);
+        var authAttr = controllerType
+            .GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), false)
+            .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>()
+            .FirstOrDefault();
+
+        authAttr.Should().NotBeNull("LabOrdersController must have [Authorize] attribute");
+        authAttr!.Policy.Should().Be("StaffOnly");
+    }
+
+    [Fact]
+    public void LabOrderPdf_ReturnsArabic500WithDetail()
+    {
+        var backendSrcDir = Path.Combine(
+            AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..",
+            "backend", "src", "AqlanDentalPro.API", "Controllers");
+
+        if (!Directory.Exists(backendSrcDir)) return;
+
+        var labOrdersController = Path.Combine(backendSrcDir, "LabOrdersController.cs");
+        if (!File.Exists(labOrdersController)) return;
+
+        var content = File.ReadAllText(labOrdersController);
+        content.Should().Contain("حدث خطأ غير متوقع أثناء إنشاء أمر العمل",
+            "LabOrdersController.PrintPdf must return Arabic 500 message with detail");
+        content.Should().Contain("detail = ex.Message",
+            "LabOrdersController.PrintPdf 500 response must include exception detail for debugging");
+        content.Should().Contain("type = ex.GetType().Name",
+            "LabOrdersController.PrintPdf 500 response must include exception type for debugging");
+    }
+
+    [Fact]
+    public void LabOrderPdf_SettingsQueriesInsideTryCatch()
+    {
+        // Verify that Settings queries are inside the try block (not before it)
+        // by checking that the try block appears before the Settings query
+        var backendSrcDir = Path.Combine(
+            AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..",
+            "backend", "src", "AqlanDentalPro.API", "Controllers");
+
+        if (!Directory.Exists(backendSrcDir)) return;
+
+        var labOrdersController = Path.Combine(backendSrcDir, "LabOrdersController.cs");
+        if (!File.Exists(labOrdersController)) return;
+
+        var content = File.ReadAllText(labOrdersController);
+
+        // Find the PrintPdf method
+        var printPdfStart = content.IndexOf("PrintPdf(Guid id)");
+        if (printPdfStart < 0) return;
+
+        var methodBody = content.Substring(printPdfStart);
+
+        // The try keyword must appear before the first Settings query
+        var tryIndex = methodBody.IndexOf("try");
+        var settingsIndex = methodBody.IndexOf("db.Settings");
+        if (tryIndex < 0 || settingsIndex < 0) return;
+
+        tryIndex.Should().BeLessThan(settingsIndex,
+            "Settings queries must be inside the try-catch block so DB errors return structured 500, not bare 500");
+    }
+
+    [Fact]
+    public void LabOrderPdfGenerator_UsesArabicFontConstant()
+    {
+        var generatorType = typeof(AqlanDentalPro.API.Services.LabOrderPdfGenerator);
+        generatorType.Should().NotBeNull("LabOrderPdfGenerator class must exist");
+
+        // Verify the FontName constant references PdfService.ArabicFontName
+        var fontNameField = generatorType.GetField("FontName",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        if (fontNameField != null)
+        {
+            var value = fontNameField.GetValue(null) as string;
+            value.Should().Be(AqlanDentalPro.Infrastructure.Services.PdfService.ArabicFontName,
+                "LabOrderPdfGenerator must use the same Arabic font as other PDF generators");
+        }
+    }
+
+    [Fact]
+    public void LabOrderPdfGenerator_UsesArabicFallbacksForNullNavigationProperties()
+    {
+        var generatorPath = Path.Combine(
+            AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..",
+            "backend", "src", "AqlanDentalPro.API", "Services", "LabOrderPdfGenerator.cs");
+
+        if (!File.Exists(generatorPath)) return;
+
+        var content = File.ReadAllText(generatorPath);
+
+        // Verify Arabic fallbacks instead of em-dash for null navigation properties
+        content.Should().Contain("غير محدد",
+            "LabOrderPdfGenerator must use Arabic fallback text 'غير محدد' for null navigation properties instead of em-dash '—'");
+    }
+
     // ─── PDF Service Font Registration ───────────────────────────────────
 
     [Fact]

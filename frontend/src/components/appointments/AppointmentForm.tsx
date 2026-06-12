@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Save, AlertTriangle, CalendarDays, Loader2, Clock } from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, localDateString } from "@/lib/utils";
 import type { PatientListItem } from "@/types/patient";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
 
@@ -96,7 +96,7 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
       durationMinutes: editDefaults?.durationMinutes ?? 30,
       patientId:       defaultPatientId ?? "",
       doctorId:        editDefaults?.doctorId ?? "",
-      appointmentDate: editDefaults?.appointmentDate ?? new Date().toISOString().slice(0, 10),
+      appointmentDate: editDefaults?.appointmentDate ?? localDateString(),
       startTime:       editDefaults?.startTime ?? "",
       appointmentType: editDefaults?.appointmentType ?? "",
       notes:           editDefaults?.notes ?? "",

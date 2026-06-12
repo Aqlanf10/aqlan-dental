@@ -26,6 +26,14 @@ public static class StartupDatabaseMaintenance
     public static async Task RunStartupDatabaseMaintenanceAsync(
         this WebApplication app, IConfiguration configuration)
     {
+        // ── Fresh-database bootstrap ───────────────────────────────────
+        // Must run BEFORE the unconditional hotfixes: on a brand-new empty
+        // database those hotfixes create partial schema (e.g. "Settings"),
+        // which then makes the InitialCreate migration fail with
+        // "relation already exists" and leaves the database incomplete.
+        // Existing databases (Users table present) are not touched here.
+        await EnsureFreshDatabaseMigratedAsync(app, configuration);
+
         // ── Unconditional schema hotfixes ──────────────────────────────
         await EnsureUsersDoctorsSchemaAsync(app);
         await EnsureMessageAttachmentsSchemaAsync(app);
@@ -51,6 +59,175 @@ public static class StartupDatabaseMaintenance
 
         // ── HR/Backup tables (unconditional) ──────────────────────────
         await EnsureHrAndBackupTablesAsync(app);
+    }
+
+    /// <summary>
+    /// Fresh-database bootstrap: if the core "Users" table does not exist
+    /// (brand-new empty database), apply all EF migrations immediately —
+    /// before any unconditional hotfix can create partial schema that would
+    /// break InitialCreate. No-op on existing databases and non-relational
+    /// providers. Guarded by the same advisory lock key as gated maintenance
+    /// so concurrent instances don't migrate simultaneously.
+    /// </summary>
+    private static async Task EnsureFreshDatabaseMigratedAsync(WebApplication app, IConfiguration configuration)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+            if (!db.Database.IsRelational()) return;
+
+            var usersTableExists = false;
+            await db.Database.OpenConnectionAsync();
+            using (var checkCmd = db.Database.GetDbConnection().CreateCommand())
+            {
+                checkCmd.CommandText =
+                    "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Users')";
+                usersTableExists = await checkCmd.ExecuteScalarAsync() is bool b && b;
+            }
+
+            if (usersTableExists) return;
+
+            var lockKey = configuration.GetValue<int>("DB_MAINTENANCE_LOCK_KEY", 918273645);
+            var acquiredLock = false;
+            try
+            {
+                using var lockCmd = db.Database.GetDbConnection().CreateCommand();
+                lockCmd.CommandText = $"SELECT pg_try_advisory_lock({lockKey})";
+                acquiredLock = await lockCmd.ExecuteScalarAsync() is bool l && l;
+            }
+            catch (Exception lockEx)
+            {
+                logger.LogWarning(lockEx, "Fresh-DB bootstrap: advisory lock unavailable, proceeding without lock");
+                acquiredLock = true;
+            }
+
+            if (!acquiredLock)
+            {
+                logger.LogInformation("Fresh-DB bootstrap: another instance is migrating. Skipping.");
+                return;
+            }
+
+            try
+            {
+                // Decide strategy by history presence:
+                //  - Truly empty DB (no history): create the FULL schema from the
+                //    current EF model and record every discoverable migration as
+                //    applied (baseline). The historical migration chain cannot
+                //    replay on an empty database — several hand-written
+                //    migrations lack [Migration] attributes so EF can't even see
+                //    them, and others reference tables created later.
+                //  - Partial DB (history exists but Users missing): fall back to
+                //    MigrateAsync and let gated maintenance reconcile.
+                var hasHistory = false;
+                using (var histCmd = db.Database.GetDbConnection().CreateCommand())
+                {
+                    histCmd.CommandText =
+                        "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '__EFMigrationsHistory')";
+                    hasHistory = await histCmd.ExecuteScalarAsync() is bool h && h;
+                }
+
+                if (!hasHistory)
+                {
+                    logger.LogInformation("Empty database detected — creating full schema from the current EF model (baseline)");
+                    var createScript = db.Database.GenerateCreateScript();
+                    await db.Database.ExecuteSqlRawAsync(createScript);
+
+                    await db.Database.ExecuteSqlRawAsync("""
+                        CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
+                            "MigrationId" character varying(150) NOT NULL,
+                            "ProductVersion" character varying(32) NOT NULL,
+                            CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId")
+                        );
+                        """);
+
+                    var productVersion = Microsoft.EntityFrameworkCore.Infrastructure.ProductInfo.GetVersion();
+                    foreach (var migrationId in db.Database.GetMigrations())
+                    {
+                        await db.Database.ExecuteSqlRawAsync(
+                            """INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ({0}, {1}) ON CONFLICT DO NOTHING""",
+                            migrationId, productVersion);
+                    }
+
+                    logger.LogInformation("Fresh-DB baseline complete: schema created from model, migration history recorded");
+                }
+                else
+                {
+                    logger.LogInformation("Fresh database detected (no Users table) — applying all EF migrations before startup hotfixes");
+                    await db.Database.MigrateAsync();
+                    logger.LogInformation("Fresh-DB bootstrap: all migrations applied successfully");
+                }
+            }
+            finally
+            {
+                try
+                {
+                    using var unlockCmd = db.Database.GetDbConnection().CreateCommand();
+                    unlockCmd.CommandText = $"SELECT pg_advisory_unlock({lockKey})";
+                    await unlockCmd.ExecuteScalarAsync();
+                }
+                catch { /* connection teardown releases the lock anyway */ }
+            }
+        }
+        catch (Exception ex)
+        {
+            using var scope = app.Services.CreateScope();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+            logger.LogError(ex, "Fresh-DB bootstrap failed — startup continues; gated maintenance may still apply migrations");
+        }
+    }
+
+    /// <summary>
+    /// Ensures DeletedAt/DeletedBy exist on every table that has the BaseEntity
+    /// shape (IsActive + CreatedAt + UpdatedAt). Adding a nullable column to a
+    /// table whose entity doesn't use it is harmless; missing it where the EF
+    /// model expects it breaks every query against that table.
+    /// </summary>
+    private static async Task EnsureSoftDeleteColumnsOnBaseEntityTablesAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                DO $$
+                DECLARE t record;
+                BEGIN
+                    FOR t IN
+                        SELECT c1.table_name
+                        FROM information_schema.columns c1
+                        WHERE c1.table_schema = 'public' AND c1.column_name = 'IsActive'
+                          AND EXISTS (SELECT 1 FROM information_schema.columns c2
+                                      WHERE c2.table_schema = 'public' AND c2.table_name = c1.table_name AND c2.column_name = 'CreatedAt')
+                          AND EXISTS (SELECT 1 FROM information_schema.columns c2
+                                      WHERE c2.table_schema = 'public' AND c2.table_name = c1.table_name AND c2.column_name = 'UpdatedAt')
+                    LOOP
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns c3
+                                       WHERE c3.table_schema = 'public' AND c3.table_name = t.table_name AND c3.column_name = 'DeletedAt') THEN
+                            EXECUTE format('ALTER TABLE %I ADD COLUMN "DeletedAt" timestamp with time zone NULL', t.table_name);
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns c3
+                                       WHERE c3.table_schema = 'public' AND c3.table_name = t.table_name AND c3.column_name = 'DeletedBy') THEN
+                            EXECUTE format('ALTER TABLE %I ADD COLUMN "DeletedBy" uuid NULL', t.table_name);
+                        END IF;
+                    END LOOP;
+                END $$;
+                """);
+
+            logger.LogInformation("Soft-delete columns verified on all BaseEntity-shaped tables");
+        }
+        catch (Exception ex)
+        {
+            using var scope = app.Services.CreateScope();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+            logger.LogError(ex, "Failed to ensure soft-delete columns on BaseEntity tables (non-fatal)");
+        }
     }
 
     /// <summary>
@@ -3368,6 +3545,13 @@ public static class StartupDatabaseMaintenance
             // ClinicQueueItems table + tracking fields — now handled by EF migrations
             // 20260514000000_AddClinicQueueItems and 20260520000000_AddClinicQueueTrackingFields
             // (TD-010 / TD-010 safety nets removed in TD-020 Phase C1-e)
+
+            // Fresh-install fix: the EF model expects DeletedAt/DeletedBy on every
+            // BaseEntity table, but migration 20260522000000 lists only 39 tables —
+            // on a brand-new database ~48 tables (e.g. RolePermissions) end up
+            // without them and DbSeeder's first query fails with
+            // "column r.DeletedAt does not exist". Idempotent, no-op when present.
+            await EnsureSoftDeleteColumnsOnBaseEntityTablesAsync(app);
 
             await DbSeeder.SeedAsync(db, logger);
 

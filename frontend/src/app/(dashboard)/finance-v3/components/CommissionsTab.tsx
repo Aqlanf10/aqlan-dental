@@ -6,7 +6,8 @@ import {
   Download, RefreshCw 
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { 
+import { localDateString } from "@/lib/utils";
+import {
   tokens, KpiCard, SectionHeader, LoadingSkeleton, EmptyState,
   inputStyle, labelStyle, btnPrimary, btnGhost 
 } from "./FinanceSharedUI";
@@ -43,7 +44,7 @@ export function CommissionsTab() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
   });
   const [endDate, setEndDate] = useState<string>(() => {
-    return new Date().toISOString().split("T")[0];
+    return localDateString();
   });
 
   // Fetch doctors list for dropdown

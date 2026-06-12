@@ -5,7 +5,7 @@ import { Clock, Calendar } from "lucide-react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import type { Appointment } from "@/types/appointment";
-import { formatTime } from "@/lib/utils";
+import { formatTime, localDateString } from "@/lib/utils";
 
 /* ZIP-matched status badge colors */
 const STATUS_STYLES: Record<string, { color: string; bg: string }> = {
@@ -27,7 +27,7 @@ export function TodaySchedule() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateString();
 
   useEffect(() => {
     api.get<Appointment[]>(`/api/appointments?from=${today}&to=${today}`)

@@ -10,6 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { localDateString } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import type { ExpenseListItem, CreateExpenseRequest } from "./types";
 import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from "./types";
@@ -31,7 +32,7 @@ export function ExpensesTab() {
   const [eCategory, setECategory] = useState("Miscellaneous");
   const [eAmount, setEAmount] = useState("");
   const [eMethod, setEMethod] = useState("cash");
-  const [eDate, setEDate] = useState(new Date().toISOString().slice(0, 10));
+  const [eDate, setEDate] = useState(localDateString());
 
   const fetchData = useCallback(async () => {
     try { setLoading(true); const { data: responseData } = await api.get<{ data: ExpenseListItem[]; total: number }>("/api/finance-v3/expenses"); setData(responseData?.data ?? []); } catch { toast.error("فشل في تحميل المصروفات"); } finally { setLoading(false); }
@@ -56,7 +57,7 @@ export function ExpensesTab() {
       await api.post("/api/finance-v3/expenses", payload);
       toast.success("تم إنشاء المصروف بنجاح");
       setShowCreate(false);
-      setETitle(""); setECategory("Miscellaneous"); setEAmount(""); setEMethod("cash"); setEDate(new Date().toISOString().slice(0, 10));
+      setETitle(""); setECategory("Miscellaneous"); setEAmount(""); setEMethod("cash"); setEDate(localDateString());
       fetchData();
     } catch (err) { toast.error(extractErrorMessage(err, "فشل في إنشاء المصروف")); } finally { setSubmitting(false); }
   };

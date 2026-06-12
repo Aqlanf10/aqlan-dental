@@ -12,7 +12,9 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.Username).HasMaxLength(100).IsRequired();
         builder.HasIndex(u => u.Username).IsUnique();
         builder.Property(u => u.Email).HasMaxLength(200);
-        builder.HasIndex(u => u.Email).IsUnique().HasFilter("email IS NOT NULL");
+        // PostgreSQL is case-sensitive for quoted identifiers — the column is "Email",
+        // so the filter must quote it (unquoted lowercase 'email' fails on schema create).
+        builder.HasIndex(u => u.Email).IsUnique().HasFilter("\"Email\" IS NOT NULL");
         builder.Property(u => u.PasswordHash).IsRequired();
         builder.Property(u => u.PasswordSalt).IsRequired();
         builder.Property(u => u.Role).HasConversion<string>().HasMaxLength(50);

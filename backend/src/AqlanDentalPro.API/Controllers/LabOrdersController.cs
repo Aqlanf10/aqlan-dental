@@ -476,7 +476,7 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
         catch (Exception ex)
         {
             logger.LogError(ex, "Unexpected error loading lab order {OrderId}: {ErrorType} — {ErrorMsg}", id, ex.GetType().Name, ex.InnerException?.Message ?? ex.Message);
-            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل أمر المختبر", detail = ex.InnerException?.Message ?? ex.Message, type = ex.GetType().Name });
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل أمر المختبر" });
         }
 
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
@@ -559,6 +559,18 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
                         return BadRequest(new { message = "المعمل المحدد غير موجود أو غير مفعل" });
                 }
 
+                // LabOrder.DoctorId references Doctors.Id, NOT Users.Id — when the
+                // client omits doctorId, resolve the Doctor row of the current user
+                // instead of writing the UserId (which violated the FK).
+                var resolvedDoctorId = req.DoctorId;
+                if (!resolvedDoctorId.HasValue && currentUser.UserId.HasValue)
+                {
+                    resolvedDoctorId = await db.Doctors
+                        .Where(d => d.UserId == currentUser.UserId.Value && d.IsActive)
+                        .Select(d => (Guid?)d.Id)
+                        .FirstOrDefaultAsync();
+                }
+
                 var hasExplicitSentDate = !string.IsNullOrWhiteSpace(req.SentDate);
                 var order = new LabOrder
                 {
@@ -575,7 +587,7 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
                     Priority      = req.Priority,
                     Instructions  = req.Instructions,
                     Cost          = req.Cost,
-                    DoctorId      = req.DoctorId ?? currentUser.UserId,
+                    DoctorId      = resolvedDoctorId,
                     Status        = hasExplicitSentDate ? "sent" : "draft",
                     // Sprint 2 — new fields
                     Shade            = req.Shade,
@@ -764,7 +776,7 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
         catch (Exception ex)
         {
             logger.LogError(ex, "Unexpected error loading lab order for update {OrderId}: {ErrorType} — {ErrorMsg}", id, ex.GetType().Name, ex.InnerException?.Message ?? ex.Message);
-            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل أمر المختبر للتحديث", detail = ex.InnerException?.Message ?? ex.Message, type = ex.GetType().Name });
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل أمر المختبر للتحديث" });
         }
 
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
@@ -1266,7 +1278,7 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
         catch (Exception ex)
         {
             logger.LogError(ex, "Unexpected error loading lab order for PDF {OrderId}: {ErrorType} — {ErrorMsg}", id, ex.GetType().Name, ex.InnerException?.Message ?? ex.Message);
-            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل أمر المختبر للطباعة", detail = ex.InnerException?.Message ?? ex.Message, type = ex.GetType().Name });
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل أمر المختبر للطباعة" });
         }
 
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
@@ -1283,7 +1295,7 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to generate PDF for lab order {OrderId}: {ErrorType} — {ErrorMsg}", id, ex.GetType().Name, ex.Message);
-            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إنشاء أمر العمل", detail = ex.Message, type = ex.GetType().Name });
+            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إنشاء أمر العمل" });
         }
     }
 }

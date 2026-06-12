@@ -40,7 +40,6 @@ interface BookAppointmentModalProps {
 export function BookAppointmentModal({
   open,
   onClose,
-  patientId: _patientId,
   patientName,
   doctors,
   services,

@@ -9,7 +9,7 @@ import {
   AlertCircle, CheckCircle2, Link2, User, Printer,
 } from "lucide-react";
 import api from "@/lib/api";
-import { cn, formatArabicDate } from "@/lib/utils";
+import { cn, formatArabicDate, localDateString } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { useDoctors } from "@/hooks/useDoctors";
 import { EmptyState } from "./EmptyState";
@@ -70,7 +70,7 @@ interface VisitForm {
 }
 
 const EMPTY_FORM: VisitForm = {
-  visitDate: new Date().toISOString().split("T")[0],
+  visitDate: localDateString(),
   visitType: "",
   specialty: "",
   doctorId: "",
@@ -256,7 +256,7 @@ export function VisitsTab({ patientId, onVisitChanged, openAddModal, onModalOpen
 
     // Date filter
     if (dateFilter === "today") {
-      const today = new Date().toISOString().split("T")[0];
+      const today = localDateString();
       result = result.filter((v) => v.visitDate === today);
     } else if (dateFilter === "thisMonth") {
       const now = new Date();
@@ -293,7 +293,7 @@ export function VisitsTab({ patientId, onVisitChanged, openAddModal, onModalOpen
       const d = new Date(v.visitDate);
       return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
     }).length;
-    const today = visits.filter((v) => v.visitDate === new Date().toISOString().split("T")[0]).length;
+    const today = visits.filter((v) => v.visitDate === localDateString()).length;
     const linked = visits.filter((v) => v.appointmentId).length;
     return { total, thisMonth, today, linked };
   }, [visits]);

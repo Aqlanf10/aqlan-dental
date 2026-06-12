@@ -12,7 +12,7 @@ import {
   Route, Upload, Undo2,
 } from "lucide-react";
 import api from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, localDateString } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
 import { downloadPdfFromApi } from "@/lib/pdfDownload";
@@ -80,7 +80,7 @@ export default function PatientJourneyPage() {
 
   // Filters
   const [filterDate, setFilterDate] = useState(
-    new Date().toISOString().split("T")[0]
+    localDateString()
   );
   const [filterStatus, setFilterStatus] = useState("");
   const [filterService, setFilterService] = useState("");

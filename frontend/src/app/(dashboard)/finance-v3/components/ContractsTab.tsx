@@ -8,6 +8,7 @@ import {
   Plus,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { localDateString } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import type { ContractListItem } from "./types";
 import {
@@ -52,7 +53,7 @@ export function CreateContractModal({
   const [installmentsCount, setInstallmentsCount] = useState<number>(1);
   const [discountAmount, setDiscountAmount] = useState<number>(0);
   const [discountReason, setDiscountReason] = useState("");
-  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(localDateString());
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -67,7 +68,7 @@ export function CreateContractModal({
       setInstallmentsCount(1);
       setDiscountAmount(0);
       setDiscountReason("");
-      setStartDate(new Date().toISOString().slice(0, 10));
+      setStartDate(localDateString());
       setNotes("");
       setError("");
     }

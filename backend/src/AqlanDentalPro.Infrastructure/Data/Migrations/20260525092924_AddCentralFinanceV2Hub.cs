@@ -407,8 +407,12 @@ DO $$ BEGIN
 END $$;
 
 -- OperationalExpenses -> Suppliers
+-- FRESH-INSTALL FIX: Suppliers is created later (20260604000000); skip the FK
+-- on fresh databases — 20260604000000/reconcile re-adds it. Recorded history
+-- on existing databases is unaffected.
 DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_OperationalExpenses_Suppliers_SupplierId') THEN
+    IF to_regclass('public.""Suppliers""') IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_OperationalExpenses_Suppliers_SupplierId') THEN
         ALTER TABLE ""OperationalExpenses"" ADD CONSTRAINT ""FK_OperationalExpenses_Suppliers_SupplierId""
             FOREIGN KEY (""SupplierId"") REFERENCES ""Suppliers""(""Id"") ON DELETE NO ACTION;
     END IF;

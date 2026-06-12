@@ -8,7 +8,7 @@ import {
   CalendarDays,
   FileSpreadsheet,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, localDateString } from "@/lib/utils";
 import api from "@/lib/api";
 import { useBranches } from "@/hooks/useBranches";
 import { toast } from "@/stores/toastStore";
@@ -51,7 +51,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
 
 export default function AttendancePage() {
   const [view, setView] = useState<"daily" | "summary">("daily");
-  const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState(() => localDateString());
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [month, setMonth] = useState(() => new Date().getMonth() + 1);
   const [branchFilter, setBranchFilter] = useState("");

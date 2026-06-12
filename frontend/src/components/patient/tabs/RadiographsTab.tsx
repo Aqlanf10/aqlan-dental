@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { ScanLine, Plus, Trash2, X, Upload, FileText, Filter, Eye, Download } from "lucide-react";
 import api from "@/lib/api";
 import { EmptyState } from "./EmptyState";
-import { cn, formatArabicDate } from "@/lib/utils";
+import { cn, formatArabicDate, localDateString } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { ImagePreviewModal } from "@/components/shared/ImagePreviewModal";
 import { resolveImageUrl } from "@/hooks/useClinicBranding";
@@ -79,7 +79,7 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
   const [xrayFile, setXrayFile] = useState<File | null>(null);
   const [xrayType, setXrayType] = useState("OPG");
   const [xrayNotes, setXrayNotes] = useState("");
-  const [xrayDate, setXrayDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [xrayDate, setXrayDate] = useState(() => localDateString());
   const [xrayPreview, setXrayPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -109,7 +109,7 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
     setXrayFile(null);
     setXrayType("OPG");
     setXrayNotes("");
-    setXrayDate(new Date().toISOString().split("T")[0]);
+    setXrayDate(localDateString());
     setXrayPreview(null);
     setShowAddModal(true);
   };

@@ -108,6 +108,21 @@ public class TreasuryResolutionService(
             throw new ArgumentException("مبلغ الصرف يجب أن يكون أكبر من الصفر.");
 
         var treasury = await ResolveTreasuryAsync(branchId, paymentMethod, cashierSessionId, ct);
+
+        if (treasury.Balance - amount < 0)
+        {
+            // Configurable guard (Settings key below, value "true" to enforce).
+            // Default is warn-only so existing deployments with unseeded opening
+            // balances keep working until the accountant enables enforcement.
+            if (await IsNegativeBalanceBlockedAsync(ct))
+                throw new ArgumentException(
+                    $"عذراً، رصيد الخزينة «{treasury.Name}» غير كافٍ لهذه العملية. الرصيد الحالي: {treasury.Balance:N0} والمطلوب: {amount:N0}. يمكن للإدارة تعديل هذا الإعداد من إعدادات النظام.");
+
+            logger.LogWarning(
+                "Treasury {TreasuryId} ({Name}) balance going NEGATIVE: balance {Balance} - outflow {Amount}. Enable setting '{SettingKey}' to block this.",
+                treasury.Id, treasury.Name, treasury.Balance, amount, PreventNegativeBalanceSettingKey);
+        }
+
         await MutateTreasuryBalanceAsync(treasury, -amount, ct);
 
         logger.LogInformation(
@@ -160,6 +175,22 @@ public class TreasuryResolutionService(
     }
 
     // ─── Private Helpers ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Settings key that, when set to "true"/"1", blocks any treasury outflow
+    /// that would drive the balance negative (expenses, salaries, lab payables,
+    /// supplier bills, commission payouts, advances).
+    /// </summary>
+    public const string PreventNegativeBalanceSettingKey = "finance.prevent_negative_treasury_balance";
+
+    private async Task<bool> IsNegativeBalanceBlockedAsync(CancellationToken ct)
+    {
+        var value = await db.Settings
+            .Where(s => s.Key == PreventNegativeBalanceSettingKey)
+            .Select(s => s.Value)
+            .FirstOrDefaultAsync(ct);
+        return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) || value == "1";
+    }
 
     private static bool IsBankPaymentMethod(string? paymentMethod)
     {

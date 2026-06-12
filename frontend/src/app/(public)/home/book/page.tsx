@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
 import { useClinicBranding } from "@/hooks/useClinicBranding";
+import { localDateString } from "@/lib/utils";
 import {
   CheckCircle2,
   Loader2,
@@ -91,7 +92,7 @@ function toArabicTime(time24: string): string {
 
 /** Get today's date in YYYY-MM-DD */
 function getTodayDate(): string {
-  return new Date().toISOString().split("T")[0];
+  return localDateString();
 }
 
 /** Format a YYYY-MM-DD date to Arabic display */

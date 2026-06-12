@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { Image as ImageIcon, Plus, Trash2, X, Upload, Camera, Filter, Eye } from "lucide-react";
 import api from "@/lib/api";
 import { EmptyState } from "./EmptyState";
-import { cn, formatArabicDate } from "@/lib/utils";
+import { cn, formatArabicDate, localDateString } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { ImagePreviewModal } from "@/components/shared/ImagePreviewModal";
 import { resolveImageUrl } from "@/hooks/useClinicBranding";
@@ -91,7 +91,7 @@ export function PhotosTab({ patientId, orthoCaseId }: PhotosTabProps) {
   const [photoType, setPhotoType] = useState("");
   const [photoStage, setPhotoStage] = useState("");
   const [photoNotes, setPhotoNotes] = useState("");
-  const [photoDate, setPhotoDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [photoDate, setPhotoDate] = useState(() => localDateString());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Image preview state
@@ -122,7 +122,7 @@ export function PhotosTab({ patientId, orthoCaseId }: PhotosTabProps) {
     setPhotoType("");
     setPhotoStage("");
     setPhotoNotes("");
-    setPhotoDate(new Date().toISOString().split("T")[0]);
+    setPhotoDate(localDateString());
     setShowAddModal(true);
   };
 

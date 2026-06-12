@@ -934,10 +934,12 @@ export function TreatmentPlanPanel({
    Orthodontic Follow-up Panel — Enhanced with detailed ortho fields
    ═══════════════════════════════════════════════════════════════════════════ */
 export function OrthoFollowUpPanel({
-  onClose, patient, onSave,
+  onClose, patient, onSave, activeOrthoCase,
 }: {
   onClose: () => void;
   patient: DoctorPatientItem | null;
+  /** Phase 1 ortho integration: active case (from daily summary) used to prefill the current phase. */
+  activeOrthoCase?: { caseNumber?: string; currentStage?: string } | null;
   onSave: (data: {
     currentPhase: string;
     upperArchwire: string;
@@ -951,7 +953,8 @@ export function OrthoFollowUpPanel({
     nextVisitPlan: string;
   }) => void;
 }) {
-  const [currentPhase, setCurrentPhase] = useState("");
+  // Prefill from the active ortho case's current stage when available (field starts empty otherwise)
+  const [currentPhase, setCurrentPhase] = useState(activeOrthoCase?.currentStage ?? "");
   const [upperArchwire, setUpperArchwire] = useState("");
   const [lowerArchwire, setLowerArchwire] = useState("");
   const [elastics, setElastics] = useState("");

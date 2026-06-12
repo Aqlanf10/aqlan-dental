@@ -342,6 +342,9 @@ export default function DoctorClinicPage() {
   // ── Derived state ──
   const medicalAlerts = selectedSummary?.medicalAlerts ?? [];
   const isPatientSent = selectedPatient ? sentPatients.has(selectedPatient.appointmentId) : false;
+  // Phase 1 ortho integration: highlight ortho follow-up when the patient has an active case
+  const activeOrthoCase = selectedSummary?.activeOrthoCase ?? null;
+  const hasActiveOrthoCase = !!activeOrthoCase && String(activeOrthoCase.status).toLowerCase() === "active";
 
   // Sync selectedPatient state with the latest patients array updates
   useEffect(() => {
@@ -607,6 +610,7 @@ export default function DoctorClinicPage() {
                   (card.key !== "handoff" && !card.requiredStatus.includes(selectedPatient.appointmentStatus) && !card.requiredStatus.includes(selectedPatient.queueStatus ?? ""));
                 const isSentDisabled = card.key === "handoff" && isPatientSent;
                 const isCurrentPanel = activePanel === card.key;
+                const isOrthoHighlighted = card.key === "orthoFollowUp" && hasActiveOrthoCase && !isDisabled;
                 const CardIcon = card.icon;
 
                 return (
@@ -616,15 +620,21 @@ export default function DoctorClinicPage() {
                     disabled={isDisabled || isSentDisabled}
                     className="flex items-center gap-1 px-2 py-1 rounded text-[9px] font-semibold flex-shrink-0 border transition-all whitespace-nowrap"
                     style={{
-                      background: isCurrentPanel ? card.bgColor : "#fff",
-                      borderColor: isCurrentPanel ? card.color : "#e5e7eb",
+                      background: isCurrentPanel ? card.bgColor : isOrthoHighlighted ? "#f5f3ff" : "#fff",
+                      borderColor: isCurrentPanel ? card.color : isOrthoHighlighted ? "#7c3aed" : "#e5e7eb",
                       color: isCurrentPanel ? card.color : (isDisabled || isSentDisabled ? "#9ca3af" : "#374151"),
                       opacity: (isDisabled || isSentDisabled) ? 0.35 : 1,
-                      borderWidth: isCurrentPanel ? "1.5px" : "1px",
+                      borderWidth: isCurrentPanel || isOrthoHighlighted ? "1.5px" : "1px",
+                      boxShadow: isOrthoHighlighted ? "0 0 0 2px rgba(124, 58, 237, 0.15)" : undefined,
                     }}
                   >
                     <CardIcon className="w-3 h-3" />
                     <span>{card.label}</span>
+                    {isOrthoHighlighted && (
+                      <span className="text-[8px] font-bold px-1 py-px rounded-full" style={{ background: "#ede9fe", color: "#7c3aed" }}>
+                        حالة نشطة
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -789,7 +799,7 @@ export default function DoctorClinicPage() {
                     />
                   )}
                   {activePanel === "orthoFollowUp" && (
-                    <OrthoFollowUpPanel patient={selectedPatient} onClose={() => setActivePanel(null)}
+                    <OrthoFollowUpPanel patient={selectedPatient} activeOrthoCase={activeOrthoCase} onClose={() => setActivePanel(null)}
                       onSave={(data) => {
                         const parts = [data.notes, data.nextVisitPlan ? `خطة قادمة: ${data.nextVisitPlan}` : ""].filter(Boolean).join(" | ");
                         const existing = clinicalNotes.treatmentDone;

@@ -65,6 +65,18 @@ public static class ServiceRegistrationConfiguration
         {
             client.Timeout = TimeSpan.FromSeconds(15);
         });
+        // Ceph batch C-D — real LLM draft-diagnosis assistant. The orchestrator
+        // (CephAiDraftService) resolves a provider from the IAiDraftProvider set
+        // (gemini default, anthropic; openai recognized but not implemented).
+        // Named client follows the WhatsApp/Sms pattern; 60s because LLM
+        // generation is slower than messaging webhooks.
+        services.AddScoped<CephAiDraftService>();
+        services.AddScoped<IAiDraftProvider, AqlanDentalPro.Infrastructure.Services.Ai.GeminiAiDraftProvider>();
+        services.AddScoped<IAiDraftProvider, AqlanDentalPro.Infrastructure.Services.Ai.AnthropicAiDraftProvider>();
+        services.AddHttpClient(CephAiDraftService.HttpClientName, client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(60);
+        });
         services.AddScoped<ISmsService, SmsService>();
         services.AddHttpClient("Sms", client =>
         {

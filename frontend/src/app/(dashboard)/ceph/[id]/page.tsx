@@ -464,6 +464,7 @@ export default function CephAnalysisPage() {
                   analysisDate={analysis.analysisDate}
                   calibrated={pixelsPerMm !== null && pixelsPerMm > 0}
                   defaultGroup="steiner"
+                  analysisId={id}
                 />
               </div>
             )}

@@ -18,6 +18,19 @@ public record DashboardStats(
     int PendingBookingRequestsCount,
     int TodayArrivedCount);
 
+/// <summary>
+/// Operational alerts for the dashboard attention widget — the daily pain
+/// points of the clinic: lab work piling up, no-shows, patients waiting too
+/// long, and tomorrow's unconfirmed appointments.
+/// </summary>
+public record DashboardAlerts(
+    int OverdueLabOrdersCount,
+    int MaxLabDaysOverdue,
+    int TodayNoShowCount,
+    int LongWaitingCount,
+    int UnconfirmedTomorrowCount,
+    int RecallCandidatesCount);
+
 public class DashboardCharts
 {
     public List<DailyRevenue> RevenueByDay { get; set; } = new();
@@ -114,6 +127,68 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
         return new DashboardStats(
             appointmentsToday, newPatientsToday, totalPatients, activeOrthoCases, pendingLabOrders,
             overdueCount, totalRevenueMTD, queueWaitingCount, pendingBookingRequestsCount, todayArrivedCount);
+    }
+
+    /// <summary>
+    /// "يحتاج انتباهك" — operational alert counters. Branch-scoped for
+    /// non-admin users like the rest of the dashboard.
+    /// </summary>
+    public async Task<DashboardAlerts> GetAlertsAsync(int longWaitMinutes = 30, int recallWindowDays = 30)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var tomorrow = today.AddDays(1);
+        var nowUtc = DateTime.UtcNow;
+        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+
+        // التراكيب المتأخرة — same definition as /api/lab-orders/overdue
+        var overdueLabQuery = db.LabOrders.Where(l =>
+            l.IsActive
+            && l.ExpectedDate != null && l.ExpectedDate < today
+            && l.Status != "delivered" && l.Status != "cancelled");
+        if (branchId.HasValue)
+            overdueLabQuery = overdueLabQuery.Where(l => l.Patient != null && l.Patient.BranchId == branchId);
+
+        var overdueLabCount = await overdueLabQuery.CountAsync();
+        var oldestExpected = overdueLabCount == 0
+            ? (DateOnly?)null
+            : await overdueLabQuery.MinAsync(l => l.ExpectedDate);
+        var maxDaysOverdue = oldestExpected.HasValue ? today.DayNumber - oldestExpected.Value.DayNumber : 0;
+
+        // غياب اليوم
+        var noShowQuery = db.Appointments.Where(a =>
+            a.IsActive && a.AppointmentDate == today && a.Status == AppointmentStatus.NoShow);
+        if (branchId.HasValue) noShowQuery = noShowQuery.Where(a => a.BranchId == branchId);
+        var todayNoShowCount = await noShowQuery.CountAsync();
+
+        // منتظرون أطول من المسموح
+        var waitThreshold = nowUtc.AddMinutes(-longWaitMinutes);
+        var longWaitingCount = await db.ClinicQueueItems.CountAsync(q =>
+            q.IsActive && q.QueueDate == today
+            && q.Status == ClinicQueueStatus.Waiting
+            && q.CreatedAt <= waitThreshold);
+
+        // مواعيد الغد غير المؤكدة
+        var unconfirmedQuery = db.Appointments.Where(a =>
+            a.IsActive && a.AppointmentDate == tomorrow && a.Status == AppointmentStatus.Scheduled);
+        if (branchId.HasValue) unconfirmedQuery = unconfirmedQuery.Where(a => a.BranchId == branchId);
+        var unconfirmedTomorrowCount = await unconfirmedQuery.CountAsync();
+
+        // مرشحون لإعادة الاستدعاء: غابوا خلال النافذة وليس لهم موعد قادم
+        var recallSince = today.AddDays(-recallWindowDays);
+        var recallQuery = db.Appointments.Where(a =>
+            a.IsActive && a.Status == AppointmentStatus.NoShow
+            && a.AppointmentDate >= recallSince && a.AppointmentDate <= today
+            && !db.Appointments.Any(f =>
+                f.IsActive && f.PatientId == a.PatientId
+                && f.AppointmentDate >= today
+                && f.Status != AppointmentStatus.Cancelled
+                && f.Status != AppointmentStatus.NoShow));
+        if (branchId.HasValue) recallQuery = recallQuery.Where(a => a.BranchId == branchId);
+        var recallCandidatesCount = await recallQuery.Select(a => a.PatientId).Distinct().CountAsync();
+
+        return new DashboardAlerts(
+            overdueLabCount, maxDaysOverdue, todayNoShowCount,
+            longWaitingCount, unconfirmedTomorrowCount, recallCandidatesCount);
     }
 
     public async Task<DashboardCharts> GetChartsAsync(bool includeFinance = true)

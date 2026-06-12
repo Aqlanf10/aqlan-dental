@@ -51,6 +51,58 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         return Ok(list);
     }
 
+    /// <summary>
+    /// GET /api/appointments/recall-candidates — patients who no-showed within
+    /// the window (default 30 days) and have no upcoming appointment. Feeds the
+    /// recall worklist so the backlog of missed visits gets actively chased.
+    /// </summary>
+    [HttpGet("recall-candidates")]
+    public async Task<IActionResult> GetRecallCandidates([FromQuery] int windowDays = 30)
+    {
+        if (windowDays is < 1 or > 365)
+            return BadRequest(new { message = "نافذة الأيام يجب أن تكون بين 1 و 365" });
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var since = today.AddDays(-windowDays);
+        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+
+        var noShowQuery = db.Appointments.Where(a =>
+            a.IsActive && a.Status == AppointmentStatus.NoShow
+            && a.AppointmentDate >= since && a.AppointmentDate <= today
+            && !db.Appointments.Any(f =>
+                f.IsActive && f.PatientId == a.PatientId
+                && f.AppointmentDate >= today
+                && f.Status != AppointmentStatus.Cancelled
+                && f.Status != AppointmentStatus.NoShow));
+        if (branchId.HasValue) noShowQuery = noShowQuery.Where(a => a.BranchId == branchId);
+
+        var candidates = await noShowQuery
+            .GroupBy(a => a.PatientId)
+            .Select(g => new
+            {
+                PatientId = g.Key,
+                MissedCount = g.Count(),
+                LastMissedDate = g.Max(a => a.AppointmentDate),
+            })
+            .Join(db.Patients.Where(p => p.IsActive),
+                c => c.PatientId, p => p.Id,
+                (c, p) => new
+                {
+                    c.PatientId,
+                    PatientName = (p.FirstName + " " + p.LastName).Trim(),
+                    p.PatientNumber,
+                    p.Phone,
+                    c.MissedCount,
+                    c.LastMissedDate,
+                })
+            .OrderByDescending(c => c.LastMissedDate)
+            .ThenByDescending(c => c.MissedCount)
+            .Take(200)
+            .ToListAsync();
+
+        return Ok(new { items = candidates, totalCount = candidates.Count, windowDays });
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetByRange(
         [FromQuery] string? from,

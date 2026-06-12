@@ -23,6 +23,18 @@ public class DashboardController(DashboardService service) : ControllerBase
         return Ok(charts);
     }
 
+    /// <summary>
+    /// GET /api/dashboard/alerts — operational attention counters (overdue lab
+    /// work, today's no-shows, long-waiting patients, tomorrow's unconfirmed
+    /// appointments, recall candidates). No financial data — safe for all staff.
+    /// </summary>
+    [HttpGet("alerts")]
+    public async Task<IActionResult> GetAlerts()
+    {
+        var alerts = await service.GetAlertsAsync();
+        return Ok(alerts);
+    }
+
     private bool CanViewFinance() =>
         User.IsInRole("Admin")
         || User.IsInRole("Accountant")

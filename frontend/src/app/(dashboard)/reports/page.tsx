@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell,
@@ -1477,6 +1478,22 @@ export default function ReportsPage() {
                 })}
               </div>
             ))}
+
+            {/* صفحة مستقلة: تقرير العمليات والزحمة */}
+            <div className="mb-3">
+              <div className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-gray-400 uppercase tracking-wide">
+                <Activity className="w-3.5 h-3.5" />
+                العمليات
+              </div>
+              <Link
+                href="/reports/operations"
+                onClick={() => setSidebarOpen(false)}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm rounded-lg transition text-start text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+              >
+                <Clock className="w-4 h-4 flex-shrink-0 text-gray-400" />
+                تقرير العمليات والزحمة
+              </Link>
+            </div>
           </nav>
         </aside>
 

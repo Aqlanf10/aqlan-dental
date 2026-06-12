@@ -91,27 +91,39 @@ public static class StartupDatabaseMaintenance
             if (usersTableExists) return;
 
             var lockKey = configuration.GetValue<int>("DB_MAINTENANCE_LOCK_KEY", 918273645);
-            var acquiredLock = false;
             try
             {
+                // BLOCKING acquire (Codex review, PR #353): a loser that merely
+                // skipped here would continue into the unconditional hotfixes and
+                // create partial tables while the winner is still building the
+                // baseline — making the winner's GenerateCreateScript fail with
+                // "relation already exists". Instead, wait until the winner
+                // finishes, then re-check below whether bootstrap is still needed.
                 using var lockCmd = db.Database.GetDbConnection().CreateCommand();
-                lockCmd.CommandText = $"SELECT pg_try_advisory_lock({lockKey})";
-                acquiredLock = await lockCmd.ExecuteScalarAsync() is bool l && l;
+                lockCmd.CommandText = $"SELECT pg_advisory_lock({lockKey})";
+                lockCmd.CommandTimeout = 600; // up to 10 min for a full baseline
+                await lockCmd.ExecuteNonQueryAsync();
             }
             catch (Exception lockEx)
             {
                 logger.LogWarning(lockEx, "Fresh-DB bootstrap: advisory lock unavailable, proceeding without lock");
-                acquiredLock = true;
-            }
-
-            if (!acquiredLock)
-            {
-                logger.LogInformation("Fresh-DB bootstrap: another instance is migrating. Skipping.");
-                return;
             }
 
             try
             {
+                // Re-check inside the lock: another instance may have completed
+                // the bootstrap while we were waiting.
+                using (var recheckCmd = db.Database.GetDbConnection().CreateCommand())
+                {
+                    recheckCmd.CommandText =
+                        "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Users')";
+                    if (await recheckCmd.ExecuteScalarAsync() is bool again && again)
+                    {
+                        logger.LogInformation("Fresh-DB bootstrap: another instance completed the baseline while we waited. Skipping.");
+                        return;
+                    }
+                }
+
                 // Decide strategy by history presence:
                 //  - Truly empty DB (no history): create the FULL schema from the
                 //    current EF model and record every discoverable migration as
@@ -127,6 +139,27 @@ public static class StartupDatabaseMaintenance
                     histCmd.CommandText =
                         "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '__EFMigrationsHistory')";
                     hasHistory = await histCmd.ExecuteScalarAsync() is bool h && h;
+                }
+
+                // Partial-state guard: the baseline script has no IF NOT EXISTS —
+                // it only works on a truly empty schema. Leftover tables from a
+                // crashed earlier boot (no history, no Users, but some tables)
+                // would break it, so fall back to MigrateAsync + gated
+                // reconciliation in that case.
+                var existingTableCount = 0L;
+                using (var tcCmd = db.Database.GetDbConnection().CreateCommand())
+                {
+                    tcCmd.CommandText =
+                        "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'";
+                    existingTableCount = await tcCmd.ExecuteScalarAsync() is long c ? c : 0L;
+                }
+
+                if (!hasHistory && existingTableCount > 0)
+                {
+                    logger.LogWarning(
+                        "Fresh-DB bootstrap: database has {Count} tables but no migration history (partial state from a previous failed boot?). Falling back to MigrateAsync.",
+                        existingTableCount);
+                    hasHistory = true; // route to the MigrateAsync branch below
                 }
 
                 if (!hasHistory)

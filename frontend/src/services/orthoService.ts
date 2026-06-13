@@ -8,6 +8,7 @@ import type {
   OrthoOverview,
   OrthoPhoto,
   OrthoVisit,
+  PatientPlanDecisionRequest,
   ProblemListItem,
   RecordsChecklist,
   RetentionRecord,
@@ -51,6 +52,14 @@ export const orthoService = {
     api.patch<TreatmentPlan>(`${BASE}/${caseId}/treatment-plan/approve`),
   approveSpecificTreatmentPlan: (caseId: string, planId: string) =>
     api.patch<TreatmentPlan>(`${BASE}/${caseId}/treatment-plans/${planId}/approve`),
+  recordPatientPlanDecision: (
+    caseId: string,
+    planId: string,
+    data: PatientPlanDecisionRequest
+  ) => api.patch<TreatmentPlan>(
+    `${BASE}/${caseId}/treatment-plans/${planId}/patient-decision`,
+    data
+  ),
 
   getStages: (caseId: string) => api.get<TreatmentStage[]>(`${BASE}/${caseId}/stages`),
   updateStage: (caseId: string, stageId: string, status: string) =>

@@ -7,6 +7,7 @@ import type {
   ExtractionDecision,
   OrthoDiagnosis,
   OrthoPhoto,
+  PatientPlanDecisionRequest,
   ProblemListItem,
   RecordsChecklist,
   RetentionRecord,
@@ -14,6 +15,13 @@ import type {
   TreatmentPlan,
   UpdateOrthoPhotoRequest,
 } from "@/types/ortho";
+
+function backendMessage(error: unknown, fallback: string) {
+  const response = (error as {
+    response?: { data?: { message?: string } };
+  })?.response;
+  return response?.data?.message ?? fallback;
+}
 
 export const orthoKeys = {
   case: (caseId: string) => ["ortho-case", caseId] as const,
@@ -175,7 +183,7 @@ export function useCreateTreatmentPlan(caseId: string) {
       qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
       toast.success("تم إنشاء خطة علاج جديدة");
     },
-    onError: () => toast.error("فشل إنشاء خطة العلاج"),
+    onError: (error) => toast.error(backendMessage(error, "فشل إنشاء خطة العلاج")),
   });
 }
 
@@ -190,7 +198,7 @@ export function useUpdateTreatmentPlan(caseId: string) {
       qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
       toast.success("تم تحديث خطة العلاج");
     },
-    onError: () => toast.error("فشل تحديث خطة العلاج"),
+    onError: (error) => toast.error(backendMessage(error, "فشل تحديث خطة العلاج")),
   });
 }
 
@@ -204,7 +212,7 @@ export function useApproveTreatmentPlan(caseId: string) {
       qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
       toast.success("تم اعتماد خطة العلاج");
     },
-    onError: () => toast.error("فشل اعتماد الخطة"),
+    onError: (error) => toast.error(backendMessage(error, "فشل اعتماد الخطة")),
   });
 }
 
@@ -219,6 +227,26 @@ export function useApproveSpecificTreatmentPlan(caseId: string) {
       toast.success("تم اعتماد خطة العلاج");
     },
     onError: () => toast.error("فشل اعتماد الخطة"),
+  });
+}
+
+export function useRecordPatientPlanDecision(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      planId,
+      data,
+    }: {
+      planId: string;
+      data: PatientPlanDecisionRequest;
+    }) => orthoService.recordPatientPlanDecision(caseId, planId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.plan(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.plans(caseId) });
+      toast.success("تم تحديث قرار المريض بشأن الخطة");
+    },
+    onError: (error) =>
+      toast.error(backendMessage(error, "فشل تحديث قرار المريض")),
   });
 }
 

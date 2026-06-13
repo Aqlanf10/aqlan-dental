@@ -247,8 +247,51 @@ export interface TreatmentPlan {
   retentionPlan?: string;
   treatmentGoals?: string;
   risksLimitations?: string;
+  mechanicsPlan?: string;
+  auxiliaryAppliances?: string;
+  spaceManagementPlan?: string;
+  interdisciplinaryPlan?: string;
+  patientDecisionStatus?: "NotPresented" | "Presented" | "Accepted" | "Declined";
+  presentedAt?: string;
+  patientDecisionAt?: string;
+  patientDecisionBy?: string;
+  patientConsentMethod?: string;
+  patientDecisionNotes?: string;
   approvedByName?: string;
   approvedAt?: string;
+  objectives?: TreatmentPlanObjective[];
+  phases?: TreatmentPlanPhase[];
+}
+
+export interface TreatmentPlanObjective {
+  id?: string;
+  category: string;
+  description: string;
+  priority: number;
+  sortOrder?: number;
+  isAchieved?: boolean;
+  achievedAt?: string;
+}
+
+export interface TreatmentPlanPhase {
+  id?: string;
+  phaseName: string;
+  sequenceNumber: number;
+  objectiveSummary?: string;
+  plannedAppliance?: string;
+  mechanics?: string;
+  targetDurationMonths?: number;
+  plannedStartDate?: string;
+  plannedEndDate?: string;
+  status?: "Planned" | "Active" | "Completed" | "OnHold";
+  notes?: string;
+}
+
+export interface PatientPlanDecisionRequest {
+  status: "NotPresented" | "Presented" | "Accepted" | "Declined";
+  decisionBy?: string;
+  consentMethod?: string;
+  notes?: string;
 }
 
 export interface ExtractionDecision {

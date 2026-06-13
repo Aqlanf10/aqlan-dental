@@ -19,7 +19,19 @@ public class TreatmentPlan : BaseEntity
     public string? RetentionPlan { get; set; }
     public string? TreatmentGoals { get; set; }
     public string? RisksLimitations { get; set; }
+    public string? MechanicsPlan { get; set; }
+    public string? AuxiliaryAppliances { get; set; }
+    public string? SpaceManagementPlan { get; set; }
+    public string? InterdisciplinaryPlan { get; set; }
+    public string PatientDecisionStatus { get; set; } = "NotPresented";
+    public DateTime? PresentedAt { get; set; }
+    public DateTime? PatientDecisionAt { get; set; }
+    public string? PatientDecisionBy { get; set; }
+    public string? PatientConsentMethod { get; set; }
+    public string? PatientDecisionNotes { get; set; }
 
     public OrthoCase OrthoCase { get; set; } = null!;
     public Doctor? ApprovedByDoctor { get; set; }
+    public ICollection<TreatmentPlanObjective> Objectives { get; set; } = [];
+    public ICollection<TreatmentPlanPhase> Phases { get; set; } = [];
 }

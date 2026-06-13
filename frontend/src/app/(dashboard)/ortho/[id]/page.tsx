@@ -95,6 +95,7 @@ import { OrthoStagesTimeline } from "@/components/ortho/OrthoStagesTimeline";
 import { ImagePreviewModal } from "@/components/shared/ImagePreviewModal";
 import { OrthoVisitTimeline } from "@/components/ortho/OrthoVisitTimeline";
 import { OrthoBeforeAfterCompare } from "@/components/ortho/OrthoBeforeAfterCompare";
+import OrthoTreatmentPlanWorkspace from "@/components/ortho/OrthoTreatmentPlanWorkspace";
 import api from "@/lib/api";
 
 /* ------------------------------------------------------------------ */
@@ -1957,7 +1958,7 @@ function DiagnosisPanel({ caseId }: { caseId: string }) {
 /*  TreatmentPlanPanel (Multi-Plan)                                    */
 /* ------------------------------------------------------------------ */
 
-function TreatmentPlanPanel({ caseId }: { caseId: string }) {
+function LegacyTreatmentPlanPanel({ caseId }: { caseId: string }) {
   const { data: plans = [] as TreatmentPlan[] } = useTreatmentPlans(caseId);
   const createPlan = useCreateTreatmentPlan(caseId);
   const approvePlan = useApproveSpecificTreatmentPlan(caseId);
@@ -2309,6 +2310,10 @@ function TreatmentPlanPanel({ caseId }: { caseId: string }) {
       )}
     </div>
   );
+}
+
+function TreatmentPlanPanel({ caseId }: { caseId: string }) {
+  return <OrthoTreatmentPlanWorkspace caseId={caseId} />;
 }
 
 /* ------------------------------------------------------------------ */

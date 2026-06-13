@@ -6561,10 +6561,16 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<string>("AnchoragePlan")
-                        .HasColumnType("text");
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
 
                     b.Property<string>("ApplianceType")
-                        .HasColumnType("text");
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("AuxiliaryAppliances")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
 
                     b.Property<DateTime?>("ApprovedAt")
                         .HasColumnType("timestamp with time zone");
@@ -6576,7 +6582,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<string>("BracketSystem")
-                        .HasColumnType("text");
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -6591,16 +6598,26 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasColumnType("integer");
 
                     b.Property<string>("ExtractionPlan")
-                        .HasColumnType("text");
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
 
                     b.Property<string>("InitialWire")
-                        .HasColumnType("text");
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("InterdisciplinaryPlan")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsApproved")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("MechanicsPlan")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
 
                     b.Property<Guid>("OrthoCaseId")
                         .HasColumnType("uuid");
@@ -6615,14 +6632,46 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<int>("PlanVersion")
                         .HasColumnType("integer");
 
+                    b.Property<string>("PatientConsentMethod")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("PatientDecisionAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PatientDecisionBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("PatientDecisionNotes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("PatientDecisionStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("NotPresented");
+
+                    b.Property<DateTime?>("PresentedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("RetentionPlan")
-                        .HasColumnType("text");
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
 
                     b.Property<string>("RisksLimitations")
-                        .HasColumnType("text");
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("SpaceManagementPlan")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
 
                     b.Property<string>("TreatmentGoals")
-                        .HasColumnType("text");
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -6643,6 +6692,130 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("TreatmentPlans");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.TreatmentPlanObjective", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("AchievedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<bool>("IsAchieved")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("TreatmentPlanId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TreatmentPlanId", "SortOrder");
+
+                    b.ToTable("TreatmentPlanObjectives");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.TreatmentPlanPhase", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Mechanics")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("ObjectiveSummary")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("PhaseName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<DateOnly?>("PlannedEndDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("PlannedAppliance")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateOnly?>("PlannedStartDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("SequenceNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("Planned");
+
+                    b.Property<int?>("TargetDurationMonths")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("TreatmentPlanId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TreatmentPlanId", "SequenceNumber");
+
+                    b.ToTable("TreatmentPlanPhases");
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.TreatmentStage", b =>
@@ -8674,6 +8847,28 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Navigation("OrthoCase");
                 });
 
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.TreatmentPlanObjective", b =>
+                {
+                    b.HasOne("AqlanDentalPro.Domain.Entities.TreatmentPlan", "TreatmentPlan")
+                        .WithMany("Objectives")
+                        .HasForeignKey("TreatmentPlanId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("TreatmentPlan");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.TreatmentPlanPhase", b =>
+                {
+                    b.HasOne("AqlanDentalPro.Domain.Entities.TreatmentPlan", "TreatmentPlan")
+                        .WithMany("Phases")
+                        .HasForeignKey("TreatmentPlanId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("TreatmentPlan");
+                });
+
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.TreatmentStage", b =>
                 {
                     b.HasOne("AqlanDentalPro.Domain.Entities.OrthoCase", "OrthoCase")
@@ -8949,6 +9144,13 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.SupplierBill", b =>
                 {
                     b.Navigation("Payments");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.TreatmentPlan", b =>
+                {
+                    b.Navigation("Objectives");
+
+                    b.Navigation("Phases");
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.SurgeryCase", b =>

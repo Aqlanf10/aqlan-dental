@@ -22,6 +22,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<OrthoClinicalExam> OrthoClinicalExams => Set<OrthoClinicalExam>();
     public DbSet<ProblemListItem> ProblemListItems => Set<ProblemListItem>();
     public DbSet<TreatmentPlan> TreatmentPlans => Set<TreatmentPlan>();
+    public DbSet<TreatmentPlanObjective> TreatmentPlanObjectives => Set<TreatmentPlanObjective>();
+    public DbSet<TreatmentPlanPhase> TreatmentPlanPhases => Set<TreatmentPlanPhase>();
     public DbSet<OrthoVisit> OrthoVisits => Set<OrthoVisit>();
     public DbSet<TreatmentStage> TreatmentStages => Set<TreatmentStage>();
     public DbSet<RetentionRecord> RetentionRecords => Set<RetentionRecord>();

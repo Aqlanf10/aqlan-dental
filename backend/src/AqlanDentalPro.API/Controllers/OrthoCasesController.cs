@@ -544,30 +544,12 @@ public class OrthoCasesController(
     {
         var plans = await db.TreatmentPlans
             .Include(p => p.ApprovedByDoctor)
+            .Include(p => p.Objectives)
+            .Include(p => p.Phases)
             .Where(p => p.OrthoCaseId == id)
             .OrderBy(p => p.PlanLabel)
-            .Select(p => new
-            {
-                p.Id,
-                p.PlanVersion,
-                p.PlanLabel,
-                p.IsApproved,
-                p.ApplianceType,
-                p.BracketSystem,
-                p.InitialWire,
-                p.ExtractionPlan,
-                p.AnchoragePlan,
-                p.UseTads,
-                p.UseElastics,
-                p.ExpectedDurationMonths,
-                p.RetentionPlan,
-                p.TreatmentGoals,
-                p.RisksLimitations,
-                ApprovedByName = p.ApprovedByDoctor != null ? p.ApprovedByDoctor.Name : null,
-                ApprovedAt     = p.ApprovedAt != null ? p.ApprovedAt.Value.ToString("yyyy-MM-dd") : null,
-            })
             .ToListAsync();
-        return Ok(plans);
+        return Ok(plans.Select(MapTreatmentPlan));
     }
 
     [HttpGet("{id:guid}/treatment-plan")]
@@ -576,31 +558,14 @@ public class OrthoCasesController(
         // Backward-compatible: returns the latest (or approved) plan
         var plan = await db.TreatmentPlans
             .Include(p => p.ApprovedByDoctor)
+            .Include(p => p.Objectives)
+            .Include(p => p.Phases)
             .Where(p => p.OrthoCaseId == id)
             .OrderByDescending(p => p.IsApproved ? 1 : 0)
             .ThenByDescending(p => p.CreatedAt)
             .FirstOrDefaultAsync();
         if (plan is null) return Ok(null);
-        return Ok(new
-        {
-            plan.Id,
-            plan.PlanVersion,
-            plan.PlanLabel,
-            plan.IsApproved,
-            plan.ApplianceType,
-            plan.BracketSystem,
-            plan.InitialWire,
-            plan.ExtractionPlan,
-            plan.AnchoragePlan,
-            plan.UseTads,
-            plan.UseElastics,
-            plan.ExpectedDurationMonths,
-            plan.RetentionPlan,
-            plan.TreatmentGoals,
-            plan.RisksLimitations,
-            ApprovedByName = plan.ApprovedByDoctor?.Name,
-            ApprovedAt     = plan.ApprovedAt?.ToString("yyyy-MM-dd"),
-        });
+        return Ok(MapTreatmentPlan(plan));
     }
 
     private static readonly HashSet<string> ValidPlanLabels = new(StringComparer.OrdinalIgnoreCase) { "A", "B", "C" };
@@ -610,6 +575,8 @@ public class OrthoCasesController(
     {
         var orthoCase = await db.OrthoCases.FindAsync(id);
         if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+        var validationError = ValidateTreatmentPlanRequest(req);
+        if (validationError is not null) return BadRequest(new { message = validationError });
 
         // ── Canonicalise PlanLabel: trim whitespace and force uppercase ──
         // This prevents "a" / " b " / "C" from bypassing the unique index,
@@ -643,18 +610,9 @@ public class OrthoCasesController(
         {
             OrthoCaseId = id,
             PlanLabel = chosenLabel,
-            ApplianceType = req.ApplianceType,
-            BracketSystem = req.BracketSystem,
-            InitialWire = req.InitialWire,
-            ExtractionPlan = req.ExtractionPlan,
-            AnchoragePlan = req.AnchoragePlan,
-            UseTads = req.UseTads,
-            UseElastics = req.UseElastics,
-            ExpectedDurationMonths = req.ExpectedDurationMonths,
-            RetentionPlan = req.RetentionPlan,
-            TreatmentGoals = req.TreatmentGoals,
-            RisksLimitations = req.RisksLimitations,
         };
+        ApplyTreatmentPlanFields(plan, req);
+        SyncTreatmentPlanDetails(plan, req);
         db.TreatmentPlans.Add(plan);
         try
         {
@@ -687,8 +645,15 @@ public class OrthoCasesController(
     {
         var orthoCase = await db.OrthoCases.FindAsync(id);
         if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+        var validationError = ValidateTreatmentPlanRequest(req);
+        if (validationError is not null) return BadRequest(new { message = validationError });
 
-        var existing = await db.TreatmentPlans.Where(p => p.OrthoCaseId == id).OrderByDescending(p => p.CreatedAt).FirstOrDefaultAsync();
+        var existing = await db.TreatmentPlans
+            .Include(p => p.Objectives)
+            .Include(p => p.Phases)
+            .Where(p => p.OrthoCaseId == id)
+            .OrderByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync();
         if (existing is null)
         {
             // New plan defaults to PlanLabel "A" (see entity default).
@@ -697,18 +662,13 @@ public class OrthoCasesController(
             existing = new TreatmentPlan { OrthoCaseId = id };
             db.TreatmentPlans.Add(existing);
         }
+        else if (existing.IsApproved)
+        {
+            return BadRequest(new { message = "لا يمكن تعديل خطة معتمدة. أنشئ خطة بديلة للمراجعة." });
+        }
 
-        existing.ApplianceType          = req.ApplianceType;
-        existing.BracketSystem          = req.BracketSystem;
-        existing.InitialWire            = req.InitialWire;
-        existing.ExtractionPlan         = req.ExtractionPlan;
-        existing.AnchoragePlan          = req.AnchoragePlan;
-        existing.UseTads                = req.UseTads;
-        existing.UseElastics            = req.UseElastics;
-        existing.ExpectedDurationMonths = req.ExpectedDurationMonths;
-        existing.RetentionPlan          = req.RetentionPlan;
-        existing.TreatmentGoals         = req.TreatmentGoals;
-        existing.RisksLimitations       = req.RisksLimitations;
+        ApplyTreatmentPlanFields(existing, req);
+        SyncTreatmentPlanDetails(existing, req);
 
         try
         {
@@ -725,24 +685,21 @@ public class OrthoCasesController(
     [HttpPut("{id:guid}/treatment-plans/{planId:guid}")]
     public async Task<IActionResult> UpdateTreatmentPlan(Guid id, Guid planId, [FromBody] UpsertTreatmentPlanRequest req)
     {
-        var plan = await db.TreatmentPlans.FirstOrDefaultAsync(p => p.Id == planId && p.OrthoCaseId == id);
+        var validationError = ValidateTreatmentPlanRequest(req);
+        if (validationError is not null) return BadRequest(new { message = validationError });
+
+        var plan = await db.TreatmentPlans
+            .Include(p => p.Objectives)
+            .Include(p => p.Phases)
+            .FirstOrDefaultAsync(p => p.Id == planId && p.OrthoCaseId == id);
         if (plan is null) return NotFound(new { message = "خطة العلاج غير موجودة" });
         if (plan.IsApproved) return BadRequest(new { message = "لا يمكن تعديل خطة معتمدة" });
 
-        plan.ApplianceType          = req.ApplianceType;
-        plan.BracketSystem          = req.BracketSystem;
-        plan.InitialWire            = req.InitialWire;
-        plan.ExtractionPlan         = req.ExtractionPlan;
-        plan.AnchoragePlan          = req.AnchoragePlan;
-        plan.UseTads                = req.UseTads;
-        plan.UseElastics            = req.UseElastics;
-        plan.ExpectedDurationMonths = req.ExpectedDurationMonths;
-        plan.RetentionPlan          = req.RetentionPlan;
-        plan.TreatmentGoals         = req.TreatmentGoals;
-        plan.RisksLimitations       = req.RisksLimitations;
+        ApplyTreatmentPlanFields(plan, req);
+        SyncTreatmentPlanDetails(plan, req);
 
         await db.SaveChangesAsync();
-        return Ok(new { plan.Id, message = "تم تحديث خطة العلاج" });
+        return Ok(new { plan.Id, message = "تم تحديث خطة العلاج المنظمة" });
     }
 
     [HttpPatch("{id:guid}/treatment-plan/approve")]
@@ -752,10 +709,14 @@ public class OrthoCasesController(
         if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
 
         var plan = await db.TreatmentPlans
+            .Include(p => p.Objectives)
+            .Include(p => p.Phases)
             .Where(p => p.OrthoCaseId == id)
             .OrderByDescending(p => p.CreatedAt)
             .FirstOrDefaultAsync();
         if (plan is null) return NotFound(new { message = "خطة العلاج غير موجودة" });
+        var approvalError = ValidatePlanForApproval(plan);
+        if (approvalError is not null) return BadRequest(new { message = approvalError });
 
         // FIX: Record the actual approving user, not the assigned orthodontist.
         var approverId = currentUser.UserId;
@@ -811,8 +772,13 @@ public class OrthoCasesController(
         var orthoCase = await db.OrthoCases.FindAsync(id);
         if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
 
-        var plan = await db.TreatmentPlans.FirstOrDefaultAsync(p => p.Id == planId && p.OrthoCaseId == id);
+        var plan = await db.TreatmentPlans
+            .Include(p => p.Objectives)
+            .Include(p => p.Phases)
+            .FirstOrDefaultAsync(p => p.Id == planId && p.OrthoCaseId == id);
         if (plan is null) return NotFound(new { message = "خطة العلاج غير موجودة" });
+        var approvalError = ValidatePlanForApproval(plan);
+        if (approvalError is not null) return BadRequest(new { message = approvalError });
 
         var approverId = currentUser.UserId;
         if (approverId == null) return Unauthorized(new { message = "غير مصادق عليه" });
@@ -853,6 +819,240 @@ public class OrthoCasesController(
             ApprovedByUserId = approverId,
         });
     }
+
+    [HttpPatch("{id:guid}/treatment-plans/{planId:guid}/patient-decision")]
+    public async Task<IActionResult> RecordPatientDecision(
+        Guid id,
+        Guid planId,
+        [FromBody] RecordPatientDecisionRequest req)
+    {
+        var plan = await db.TreatmentPlans
+            .FirstOrDefaultAsync(p => p.Id == planId && p.OrthoCaseId == id);
+        if (plan is null) return NotFound(new { message = "خطة العلاج غير موجودة" });
+
+        var status = req.Status?.Trim();
+        var validStatuses = new[] { "NotPresented", "Presented", "Accepted", "Declined" };
+        if (status is null || !validStatuses.Contains(status, StringComparer.OrdinalIgnoreCase))
+            return BadRequest(new { message = "حالة قرار المريض غير صالحة" });
+
+        status = validStatuses.First(s => s.Equals(status, StringComparison.OrdinalIgnoreCase));
+        if (status is "Presented" or "Accepted" or "Declined" && !plan.IsApproved)
+            return BadRequest(new { message = "يجب اعتماد الخطة سريريًا قبل عرضها على المريض" });
+
+        if (status is "Accepted" or "Declined" && string.IsNullOrWhiteSpace(req.DecisionBy))
+            return BadRequest(new { message = "اسم صاحب القرار مطلوب عند القبول أو الرفض" });
+
+        plan.PatientDecisionStatus = status;
+        plan.PatientDecisionBy = Normalize(req.DecisionBy);
+        plan.PatientConsentMethod = Normalize(req.ConsentMethod);
+        plan.PatientDecisionNotes = Normalize(req.Notes);
+
+        if (status == "NotPresented")
+        {
+            plan.PresentedAt = null;
+            plan.PatientDecisionAt = null;
+        }
+        else
+        {
+            plan.PresentedAt ??= DateTime.UtcNow;
+            plan.PatientDecisionAt = status is "Accepted" or "Declined" ? DateTime.UtcNow : null;
+        }
+
+        await db.SaveChangesAsync();
+        return Ok(new
+        {
+            plan.Id,
+            plan.PatientDecisionStatus,
+            plan.PresentedAt,
+            plan.PatientDecisionAt,
+            plan.PatientDecisionBy,
+            plan.PatientConsentMethod,
+            plan.PatientDecisionNotes,
+        });
+    }
+
+    private static object MapTreatmentPlan(TreatmentPlan plan) => new
+    {
+        plan.Id,
+        plan.PlanVersion,
+        plan.PlanLabel,
+        plan.IsApproved,
+        plan.ApplianceType,
+        plan.BracketSystem,
+        plan.InitialWire,
+        plan.ExtractionPlan,
+        plan.AnchoragePlan,
+        plan.UseTads,
+        plan.UseElastics,
+        plan.ExpectedDurationMonths,
+        plan.RetentionPlan,
+        plan.TreatmentGoals,
+        plan.RisksLimitations,
+        plan.MechanicsPlan,
+        plan.AuxiliaryAppliances,
+        plan.SpaceManagementPlan,
+        plan.InterdisciplinaryPlan,
+        plan.PatientDecisionStatus,
+        plan.PresentedAt,
+        plan.PatientDecisionAt,
+        plan.PatientDecisionBy,
+        plan.PatientConsentMethod,
+        plan.PatientDecisionNotes,
+        ApprovedByName = plan.ApprovedByDoctor?.Name,
+        ApprovedAt = plan.ApprovedAt?.ToString("yyyy-MM-dd"),
+        Objectives = plan.Objectives
+            .OrderBy(o => o.SortOrder)
+            .Select(o => new
+            {
+                o.Id,
+                o.Category,
+                o.Description,
+                o.Priority,
+                o.SortOrder,
+                o.IsAchieved,
+                o.AchievedAt,
+            }),
+        Phases = plan.Phases
+            .OrderBy(p => p.SequenceNumber)
+            .Select(p => new
+            {
+                p.Id,
+                p.PhaseName,
+                p.SequenceNumber,
+                p.ObjectiveSummary,
+                p.PlannedAppliance,
+                p.Mechanics,
+                p.TargetDurationMonths,
+                PlannedStartDate = p.PlannedStartDate?.ToString("yyyy-MM-dd"),
+                PlannedEndDate = p.PlannedEndDate?.ToString("yyyy-MM-dd"),
+                p.Status,
+                p.Notes,
+            }),
+    };
+
+    private static void ApplyTreatmentPlanFields(TreatmentPlan plan, TreatmentPlanRequestBase req)
+    {
+        plan.ApplianceType = Normalize(req.ApplianceType);
+        plan.BracketSystem = Normalize(req.BracketSystem);
+        plan.InitialWire = Normalize(req.InitialWire);
+        plan.ExtractionPlan = Normalize(req.ExtractionPlan);
+        plan.AnchoragePlan = Normalize(req.AnchoragePlan);
+        plan.UseTads = req.UseTads;
+        plan.UseElastics = req.UseElastics;
+        plan.ExpectedDurationMonths = req.ExpectedDurationMonths;
+        plan.RetentionPlan = Normalize(req.RetentionPlan);
+        plan.TreatmentGoals = Normalize(req.TreatmentGoals);
+        plan.RisksLimitations = Normalize(req.RisksLimitations);
+        plan.MechanicsPlan = Normalize(req.MechanicsPlan);
+        plan.AuxiliaryAppliances = Normalize(req.AuxiliaryAppliances);
+        plan.SpaceManagementPlan = Normalize(req.SpaceManagementPlan);
+        plan.InterdisciplinaryPlan = Normalize(req.InterdisciplinaryPlan);
+    }
+
+    private static void SyncTreatmentPlanDetails(TreatmentPlan plan, TreatmentPlanRequestBase req)
+    {
+        if (req.Objectives is not null)
+        {
+            plan.Objectives.Clear();
+            var index = 0;
+            foreach (var item in req.Objectives)
+            {
+                plan.Objectives.Add(new TreatmentPlanObjective
+                {
+                    TreatmentPlanId = plan.Id,
+                    Category = item.Category.Trim(),
+                    Description = item.Description.Trim(),
+                    Priority = item.Priority,
+                    SortOrder = item.SortOrder ?? index++,
+                });
+            }
+        }
+
+        if (req.Phases is not null)
+        {
+            plan.Phases.Clear();
+            foreach (var item in req.Phases.OrderBy(p => p.SequenceNumber))
+            {
+                plan.Phases.Add(new TreatmentPlanPhase
+                {
+                    TreatmentPlanId = plan.Id,
+                    PhaseName = item.PhaseName.Trim(),
+                    SequenceNumber = item.SequenceNumber,
+                    ObjectiveSummary = Normalize(item.ObjectiveSummary),
+                    PlannedAppliance = Normalize(item.PlannedAppliance),
+                    Mechanics = Normalize(item.Mechanics),
+                    TargetDurationMonths = item.TargetDurationMonths,
+                    PlannedStartDate = ParseDate(item.PlannedStartDate),
+                    PlannedEndDate = ParseDate(item.PlannedEndDate),
+                    Status = item.Status?.Trim() ?? "Planned",
+                    Notes = Normalize(item.Notes),
+                });
+            }
+        }
+    }
+
+    private static string? ValidateTreatmentPlanRequest(TreatmentPlanRequestBase req)
+    {
+        if (req.ExpectedDurationMonths is < 1 or > 120)
+            return "المدة المتوقعة يجب أن تكون بين شهر و120 شهرًا";
+        if (req.Objectives?.Count > 20)
+            return "لا يمكن إضافة أكثر من 20 هدفًا للخطة";
+        if (req.Phases?.Count > 20)
+            return "لا يمكن إضافة أكثر من 20 مرحلة للخطة";
+
+        if (req.Objectives is not null)
+        {
+            foreach (var objective in req.Objectives)
+            {
+                if (string.IsNullOrWhiteSpace(objective.Description) || objective.Description.Trim().Length > 500)
+                    return "وصف كل هدف مطلوب ويجب ألا يتجاوز 500 حرف";
+                if (string.IsNullOrWhiteSpace(objective.Category) || objective.Category.Trim().Length > 50)
+                    return "تصنيف هدف العلاج غير صالح";
+                if (objective.Priority is < 1 or > 3)
+                    return "أولوية هدف العلاج يجب أن تكون بين 1 و3";
+            }
+        }
+
+        if (req.Phases is not null)
+        {
+            if (req.Phases.Select(p => p.SequenceNumber).Distinct().Count() != req.Phases.Count)
+                return "ترتيب مراحل العلاج يجب ألا يتكرر";
+            foreach (var phase in req.Phases)
+            {
+                if (phase.SequenceNumber < 1)
+                    return "ترتيب مرحلة العلاج يجب أن يبدأ من 1";
+                if (string.IsNullOrWhiteSpace(phase.PhaseName) || phase.PhaseName.Trim().Length > 150)
+                    return "اسم كل مرحلة مطلوب ويجب ألا يتجاوز 150 حرف";
+                if (phase.TargetDurationMonths is < 1 or > 60)
+                    return "مدة كل مرحلة يجب أن تكون بين شهر و60 شهرًا";
+                if (ParseDate(phase.PlannedStartDate) is { } start &&
+                    ParseDate(phase.PlannedEndDate) is { } end &&
+                    end < start)
+                    return "تاريخ نهاية المرحلة لا يمكن أن يسبق تاريخ بدايتها";
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ValidatePlanForApproval(TreatmentPlan plan)
+    {
+        if (string.IsNullOrWhiteSpace(plan.TreatmentGoals))
+            return "أضف ملخص أهداف العلاج قبل اعتماد الخطة";
+        if (plan.ExpectedDurationMonths is null)
+            return "حدد المدة المتوقعة قبل اعتماد الخطة";
+        if (plan.Objectives.Count == 0)
+            return "أضف هدفًا علاجيًا منظمًا واحدًا على الأقل قبل الاعتماد";
+        if (plan.Phases.Count == 0)
+            return "أضف مرحلة علاجية واحدة على الأقل قبل الاعتماد";
+        return null;
+    }
+
+    private static string? Normalize(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static DateOnly? ParseDate(string? value) =>
+        DateOnly.TryParse(value, out var date) ? date : null;
 
     // ─── Extraction Decision ─────────────────────────────────────────────────────
 
@@ -1449,35 +1649,64 @@ public sealed class UpsertExtractionDecisionRequest
     public System.Text.Json.JsonDocument? ConExtraction { get; init; }
 }
 
-public sealed class CreateTreatmentPlanRequest
+public abstract class TreatmentPlanRequestBase
 {
-    public string? PlanLabel          { get; init; }
-    public string? ApplianceType      { get; init; }
-    public string? BracketSystem      { get; init; }
-    public string? InitialWire        { get; init; }
-    public string? ExtractionPlan     { get; init; }
-    public string? AnchoragePlan      { get; init; }
-    public bool UseTads               { get; init; }
-    public bool UseElastics           { get; init; }
+    public string? ApplianceType { get; init; }
+    public string? BracketSystem { get; init; }
+    public string? InitialWire { get; init; }
+    public string? ExtractionPlan { get; init; }
+    public string? AnchoragePlan { get; init; }
+    public bool UseTads { get; init; }
+    public bool UseElastics { get; init; }
     public int? ExpectedDurationMonths { get; init; }
-    public string? RetentionPlan      { get; init; }
-    public string? TreatmentGoals     { get; init; }
-    public string? RisksLimitations   { get; init; }
+    public string? RetentionPlan { get; init; }
+    public string? TreatmentGoals { get; init; }
+    public string? RisksLimitations { get; init; }
+    public string? MechanicsPlan { get; init; }
+    public string? AuxiliaryAppliances { get; init; }
+    public string? SpaceManagementPlan { get; init; }
+    public string? InterdisciplinaryPlan { get; init; }
+    public List<TreatmentPlanObjectiveRequest>? Objectives { get; init; }
+    public List<TreatmentPlanPhaseRequest>? Phases { get; init; }
 }
 
-public sealed class UpsertTreatmentPlanRequest
+public sealed class CreateTreatmentPlanRequest : TreatmentPlanRequestBase
 {
-    public string? ApplianceType          { get; init; }
-    public string? BracketSystem          { get; init; }
-    public string? InitialWire            { get; init; }
-    public string? ExtractionPlan         { get; init; }
-    public string? AnchoragePlan          { get; init; }
-    public bool UseTads                   { get; init; }
-    public bool UseElastics               { get; init; }
-    public int? ExpectedDurationMonths    { get; init; }
-    public string? RetentionPlan          { get; init; }
-    public string? TreatmentGoals         { get; init; }
-    public string? RisksLimitations       { get; init; }
+    public string? PlanLabel { get; init; }
+}
+
+public sealed class UpsertTreatmentPlanRequest : TreatmentPlanRequestBase
+{
+}
+
+public sealed class TreatmentPlanObjectiveRequest
+{
+    public string Category { get; init; } = "Other";
+    public string Description { get; init; } = string.Empty;
+    public int Priority { get; init; } = 2;
+    public int? SortOrder { get; init; }
+}
+
+public sealed class TreatmentPlanPhaseRequest
+{
+    public string PhaseName { get; init; } = string.Empty;
+    public int SequenceNumber { get; init; }
+    public string? ObjectiveSummary { get; init; }
+    public string? PlannedAppliance { get; init; }
+    public string? Mechanics { get; init; }
+    public int? TargetDurationMonths { get; init; }
+    public string? PlannedStartDate { get; init; }
+    public string? PlannedEndDate { get; init; }
+    public string? Status { get; init; }
+    public string? Notes { get; init; }
+}
+
+public sealed class RecordPatientDecisionRequest
+{
+    public string? Status { get; init; }
+    public string? DecisionBy { get; init; }
+    public string? ConsentMethod { get; init; }
+    public string? Notes { get; init; }
 }
 
 public sealed class UpsertRetentionRequest

@@ -12,8 +12,37 @@ public sealed class CreateCephAnalysisRequestValidator : AbstractValidator<Creat
 
         RuleFor(x => x.AnalysisType)
             .NotEmpty().WithMessage("نوع التحليل مطلوب")
-            .Must(t => t is "steiner" or "mcnamara" or "downs" or "tweed" or "ricketts" or "jarabak")
+            // "full" runs every analysis; "wits" is computed by the engine too.
+            // These must match the options offered by the frontend new-analysis form.
+            .Must(t => t is "full" or "steiner" or "mcnamara" or "downs" or "tweed"
+                or "ricketts" or "jarabak" or "wits")
             .WithMessage("نوع التحليل غير صالح");
+
+        RuleFor(x => x.XrayFileUrl)
+            .MaximumLength(2048).WithMessage("رابط صورة الأشعة طويل جدًا")
+            .Must(BeValidXrayUrl).WithMessage("رابط صورة الأشعة غير صالح")
+            .When(x => !string.IsNullOrWhiteSpace(x.XrayFileUrl));
+
+        RuleFor(x => x.Notes)
+            .MaximumLength(2000).WithMessage("الملاحظات يجب ألا تتجاوز 2000 حرف");
+    }
+
+    private static bool BeValidXrayUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return true;
+
+        var url = value.Trim();
+        if (url.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase))
+        {
+            var fileName = url["/uploads/".Length..];
+            return fileName.Length > 0
+                && !fileName.Contains('/')
+                && !fileName.Contains('\\')
+                && !fileName.Contains("..", StringComparison.Ordinal);
+        }
+
+        return Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
     }
 }
 

@@ -263,14 +263,24 @@ public class CephReportPdfGenerator(AppDbContext db)
         {
             column.Item().Row(row =>
             {
-                row.RelativeItem().Column(col =>
+                row.RelativeItem().Row(idRow =>
                 {
-                    col.Item().Text(identity.ClinicName).Bold().FontSize(15).FontFamily(FontName);
-                    // Lead doctor block: name (bold) / title / credentials (smaller, muted)
-                    col.Item().Text(identity.LeadDoctor).Bold().FontSize(11).FontFamily(FontName);
-                    col.Item().Text(identity.LeadDoctorTitle).FontSize(9).FontFamily(FontName);
-                    col.Item().Text(identity.LeadDoctorCredentials)
-                        .FontSize(8).FontColor(Colors.Grey.Darken1).FontFamily(FontName);
+                    // Clinic logo (same mechanism as receipts/invoices: Fonts/logo.png).
+                    // Fallback is graceful — when no logo file exists the clinic name
+                    // text alone heads the report; no broken image is ever shown.
+                    var logoPath = ResolveLogoPath();
+                    if (logoPath is not null)
+                        idRow.ConstantItem(48).PaddingLeft(8).AlignTop().Image(logoPath);
+
+                    idRow.RelativeItem().Column(col =>
+                    {
+                        col.Item().Text(identity.ClinicName).Bold().FontSize(15).FontFamily(FontName);
+                        // Lead doctor block: name (bold) / title / credentials (smaller, muted)
+                        col.Item().Text(identity.LeadDoctor).Bold().FontSize(11).FontFamily(FontName);
+                        col.Item().Text(identity.LeadDoctorTitle).FontSize(9).FontFamily(FontName);
+                        col.Item().Text(identity.LeadDoctorCredentials)
+                            .FontSize(8).FontColor(Colors.Grey.Darken1).FontFamily(FontName);
+                    });
                 });
 
                 row.RelativeItem().AlignLeft().Column(col =>
@@ -613,6 +623,23 @@ public class CephReportPdfGenerator(AppDbContext db)
         if (p is null) return "غير محدد";
         var name = $"{p.FirstName} {p.LastName}".Trim();
         return name.Length > 0 ? name : "غير محدد";
+    }
+
+    /// <summary>
+    /// Resolves the clinic logo file — same convention as the receipt/invoice
+    /// PDFs (Fonts/logo.png next to the app). Returns null when absent so the
+    /// report falls back to the clinic name text with no broken image.
+    /// </summary>
+    private static string? ResolveLogoPath()
+    {
+        var paths = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "Fonts", "logo.png"),
+            Path.Combine(Directory.GetCurrentDirectory(), "Fonts", "logo.png"),
+        };
+        foreach (var path in paths)
+            if (File.Exists(path)) return path;
+        return null;
     }
 
     private static string AnalysisTypeArOf(string? analysisType) =>

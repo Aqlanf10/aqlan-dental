@@ -1,22 +1,35 @@
 using AqlanDentalPro.API.Services;
 using AqlanDentalPro.Application.DTOs.Ceph;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/ceph")]
 [Authorize(Policy = "OrthoAccess")]
-public class CephController(CephService service) : ControllerBase
+public class CephController(
+    CephService service,
+    AppDbContext db,
+    IPatientAccessService patientAccess) : ControllerBase
 {
     // GET /api/ceph                          — all analyses
     // GET /api/ceph?orthoCaseId={id}         — filtered by ortho case
     [HttpGet]
     public async Task<IActionResult> List([FromQuery] Guid? orthoCaseId)
     {
-        var result = await service.ListAsync(orthoCaseId);
+        if (orthoCaseId.HasValue)
+        {
+            var accessError = await GetCaseAccessErrorAsync(orthoCaseId.Value);
+            if (accessError is not null) return accessError;
+        }
+
+        var accessiblePatientIds = await patientAccess.GetAccessiblePatientIdsAsync();
+        var result = await service.ListAsync(orthoCaseId, accessiblePatientIds);
         return Ok(result);
     }
 
@@ -28,6 +41,11 @@ public class CephController(CephService service) : ControllerBase
         if (baseId == Guid.Empty || targetId == Guid.Empty || baseId == targetId)
             return BadRequest(new { message = "حدد تحليلين مختلفين للمقارنة" });
 
+        var baseAccessError = await GetAnalysisAccessErrorAsync(baseId);
+        if (baseAccessError is not null) return baseAccessError;
+        var targetAccessError = await GetAnalysisAccessErrorAsync(targetId);
+        if (targetAccessError is not null) return targetAccessError;
+
         var (result, error) = await service.CompareAsync(baseId, targetId);
         if (error == "التحليل غير موجود") return NotFound(new { message = error });
         if (error is not null) return BadRequest(new { message = error });
@@ -38,6 +56,9 @@ public class CephController(CephService service) : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
+        var accessError = await GetAnalysisAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
         var result = await service.GetByIdAsync(id);
         return result is null
             ? NotFound(new { message = "تحليل السيفالومتري غير موجود" })
@@ -48,6 +69,9 @@ public class CephController(CephService service) : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateCephAnalysisRequest req)
     {
+        var accessError = await GetCaseAccessErrorAsync(req.OrthoCaseId);
+        if (accessError is not null) return accessError;
+
         var result = await service.CreateAsync(req);
         return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
     }
@@ -56,6 +80,9 @@ public class CephController(CephService service) : ControllerBase
     [HttpPost("{id:guid}/landmarks")]
     public async Task<IActionResult> SaveLandmarks(Guid id, [FromBody] SaveLandmarksRequest req)
     {
+        var accessError = await GetAnalysisAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
         var ok = await service.SaveLandmarksAsync(id, req);
         if (!ok) return NotFound(new { message = "تحليل السيفالومتري غير موجود" });
         var detail = await service.GetByIdAsync(id);
@@ -69,6 +96,9 @@ public class CephController(CephService service) : ControllerBase
     [HttpPost("{id:guid}/simulate")]
     public async Task<IActionResult> SimulateTemplate(Guid id, [FromBody] AiSimulateRequest req)
     {
+        var accessError = await GetAnalysisAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
         if (!await service.IsSimulationEnabledAsync())
             return StatusCode(StatusCodes.Status403Forbidden,
                 new { message = "المحاكاة التجريبية معطلة من الإعدادات" });
@@ -78,16 +108,50 @@ public class CephController(CephService service) : ControllerBase
     }
 
     // POST /api/ceph/{id}/ai/auto-trace
-    // Honest placeholder for real AI auto-tracing (future specialized vision
-    // model integration point). Always 501 until a real model is integrated —
-    // the system must never fake AI results.
+    // Real Gemini image-understanding draft. The result is deliberately
+    // UNSAVED and must be reviewed/adjusted by an orthodontist.
     [HttpPost("{id:guid}/ai/auto-trace")]
-    public IActionResult AutoTrace(Guid id)
-        => StatusCode(StatusCodes.Status501NotImplemented, new
+    public async Task<IActionResult> AutoTrace(
+        Guid id,
+        [FromBody] CephAiTraceRequest request,
+        [FromServices] AqlanDentalPro.Infrastructure.Services.CephAiLandmarkDraftService landmarkService,
+        [FromServices] ILogger<CephController> logger)
+    {
+        var accessError = await GetAnalysisAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        try
         {
-            status  = "unavailable",
-            message = "التتبع الآلي بالذكاء الاصطناعي يتطلب نموذج رؤية متخصص — قيد التطوير. استخدم الوضع اليدوي."
-        });
+            var result = await landmarkService.GenerateAsync(
+                id, request.ImageWidth, request.ImageHeight, HttpContext.RequestAborted);
+            return result is null
+                ? NotFound(new { message = "تحليل السيفالومتري غير موجود" })
+                : Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (AqlanDentalPro.Application.Exceptions.CephAiUnavailableException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+        }
+        catch (AqlanDentalPro.Application.Exceptions.CephAiLimitReachedException ex)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { message = ex.Message });
+        }
+        catch (AqlanDentalPro.Application.Exceptions.CephAiUpstreamException ex)
+        {
+            logger.LogError(ex, "AI landmark draft upstream failure for analysis {AnalysisId}", id);
+            return StatusCode(StatusCodes.Status502BadGateway,
+                new { message = "تعذر توليد مسودة النقاط من خدمة الذكاء الاصطناعي — حاول لاحقاً" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected AI landmark draft failure for analysis {AnalysisId}", id);
+            return StatusCode(500, new { message = "حدث خطأ أثناء توليد مسودة نقاط السيفالومتري" });
+        }
+    }
 
     // POST /api/ceph/{id}/ai/draft-diagnosis
     // C-D: REAL LLM draft-diagnosis assistant (Gemini/Anthropic via
@@ -107,6 +171,9 @@ public class CephController(CephService service) : ControllerBase
         [FromServices] AqlanDentalPro.Infrastructure.Services.CephAiDraftService aiDraftService,
         [FromServices] ILogger<CephController> logger)
     {
+        var accessError = await GetAnalysisAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
         try
         {
             var result = await aiDraftService.GenerateDraftAsync(id);
@@ -152,6 +219,9 @@ public class CephController(CephService service) : ControllerBase
         [FromServices] CephReportPdfGenerator reportGenerator,
         [FromServices] ILogger<CephController> logger)
     {
+        var accessError = await GetAnalysisAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
         try
         {
             var pdfBytes = await reportGenerator.GenerateAsync(id);
@@ -174,6 +244,9 @@ public class CephController(CephService service) : ControllerBase
     [HttpPut("{id:guid}/diagnosis")]
     public async Task<IActionResult> SaveDiagnosis(Guid id, [FromBody] SaveDiagnosisRequest req)
     {
+        var accessError = await GetAnalysisAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
         var ok = await service.SaveDiagnosisAsync(id, req);
         return ok
             ? Ok(new { message = "تم حفظ التشخيص بنجاح" })
@@ -184,11 +257,46 @@ public class CephController(CephService service) : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        var accessError = await GetAnalysisAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
         var analysis = await service.GetByIdAsync(id);
         if (analysis is null)
             return NotFound(new { message = "تحليل السيفالومتري غير موجود" });
 
         await service.SoftDeleteAsync(id);
         return Ok(new { message = "تم حذف التحليل بنجاح" });
+    }
+
+    private async Task<IActionResult?> GetCaseAccessErrorAsync(Guid orthoCaseId)
+    {
+        var patientId = await db.OrthoCases
+            .AsNoTracking()
+            .Where(x => x.Id == orthoCaseId && x.IsActive)
+            .Select(x => (Guid?)x.PatientId)
+            .FirstOrDefaultAsync();
+
+        if (!patientId.HasValue)
+            return NotFound(new { message = "حالة التقويم غير موجودة" });
+
+        return await patientAccess.CanAccessPatientAsync(patientId.Value)
+            ? null
+            : Forbid();
+    }
+
+    private async Task<IActionResult?> GetAnalysisAccessErrorAsync(Guid analysisId)
+    {
+        var patientId = await db.CephAnalyses
+            .AsNoTracking()
+            .Where(x => x.Id == analysisId && x.IsActive)
+            .Select(x => (Guid?)x.OrthoCase.PatientId)
+            .FirstOrDefaultAsync();
+
+        if (!patientId.HasValue)
+            return NotFound(new { message = "تحليل السيفالومتري غير موجود" });
+
+        return await patientAccess.CanAccessPatientAsync(patientId.Value)
+            ? null
+            : Forbid();
     }
 }

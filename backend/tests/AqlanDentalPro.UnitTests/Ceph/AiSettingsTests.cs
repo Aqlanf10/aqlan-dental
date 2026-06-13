@@ -7,6 +7,7 @@ using AqlanDentalPro.Infrastructure.Services.Ai;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Moq;
 using System.Text.Json;
@@ -52,14 +53,29 @@ public class AiSettingsTests
         var factory = new StubHttpClientFactory(handler);
         var user = new Mock<ICurrentUserService>();
         user.Setup(u => u.UserId).Returns(Guid.NewGuid());
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AiSettings:EncryptionKey"] = "unit-test-ai-encryption-key-that-is-long-enough",
+            })
+            .Build();
+        var keyVault = new AiApiKeyVault(
+            db, configuration, new Mock<ILogger<AiApiKeyVault>>().Object);
 
         var service = new CephAiDraftService(
             db,
             new IAiDraftProvider[] { new GeminiAiDraftProvider(factory), new AnthropicAiDraftProvider(factory) },
             user.Object,
+            keyVault,
             new Mock<ILogger<CephAiDraftService>>().Object);
 
-        return (new AiSettingsController(db, service), handler);
+        return (
+            new AiSettingsController(
+                db,
+                service,
+                keyVault,
+                new Mock<ILogger<AiSettingsController>>().Object),
+            handler);
     }
 
     private static JsonDocument ToJson(IActionResult result)
@@ -88,6 +104,7 @@ public class AiSettingsTests
             root.GetProperty("temperature").GetDouble().Should().Be(0.4);
             root.GetProperty("monthlyLimit").GetInt32().Should().Be(0);
             root.GetProperty("usageThisMonth").GetInt32().Should().Be(0);
+            root.GetProperty("usageAvailable").GetBoolean().Should().BeTrue();
 
             var keyStatus = root.GetProperty("keyStatus");
             foreach (var provider in new[] { "gemini", "anthropic", "openai" })
@@ -174,6 +191,56 @@ public class AiSettingsTests
         (await db.Settings.SingleAsync(s => s.Key == "ai.max_tokens")).Value.Should().Be("2000");
         (await db.Settings.SingleAsync(s => s.Key == "ai.temperature")).Value.Should().Be("0.2");
         (await db.Settings.SingleAsync(s => s.Key == "ai.monthly_limit")).Value.Should().Be("50");
+    }
+
+    [Fact]
+    public async Task Put_StoresProviderKeyEncrypted_AndReturnsMaskedStatusOnly()
+    {
+        await using var db = CreateDb();
+        var (controller, _) = CreateController(db);
+
+        var result = await controller.Update(new UpdateAiSettingsRequest
+        {
+            Enabled = true,
+            Provider = "gemini",
+            Model = "gemini-test",
+            SecretValue = LongTestKey,
+        });
+
+        var stored = await db.Settings.SingleAsync(s => s.Key == "ai.secret.gemini");
+        stored.Value.Should().StartWith("v1:");
+        stored.Value.Should().NotContain(LongTestKey);
+        stored.Category.Should().Be("ai-secret");
+
+        var serialized = JsonSerializer.Serialize(
+            result.Should().BeOfType<OkObjectResult>().Subject.Value);
+        serialized.Should().Contain("********9876");
+        serialized.Should().Contain("\"source\":\"settings\"");
+        serialized.Should().NotContain(LongTestKey);
+    }
+
+    [Fact]
+    public async Task Put_ClearStoredSecret_RemovesOverride()
+    {
+        await using var db = CreateDb();
+        var (controller, _) = CreateController(db);
+
+        await controller.Update(new UpdateAiSettingsRequest
+        {
+            Provider = "gemini",
+            Model = "gemini-test",
+            SecretValue = LongTestKey,
+        });
+        (await db.Settings.AnyAsync(s => s.Key == "ai.secret.gemini")).Should().BeTrue();
+
+        await controller.Update(new UpdateAiSettingsRequest
+        {
+            Provider = "gemini",
+            Model = "gemini-test",
+            ClearStoredSecret = true,
+        });
+
+        (await db.Settings.AnyAsync(s => s.Key == "ai.secret.gemini")).Should().BeFalse();
     }
 
     [Fact]

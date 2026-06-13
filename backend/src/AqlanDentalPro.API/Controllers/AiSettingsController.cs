@@ -3,6 +3,7 @@ using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -15,22 +16,28 @@ public sealed class UpdateAiSettingsRequest
     public int MaxTokens { get; init; } = CephAiDraftService.DefaultMaxTokens;
     public double Temperature { get; init; } = CephAiDraftService.DefaultTemperature;
     public int MonthlyLimit { get; init; } = CephAiDraftService.DefaultMonthlyLimit;
+    public string? SecretValue { get; init; }
+    public bool ClearStoredSecret { get; init; }
 }
 
 /// <summary>
 /// Admin configuration for the Ceph AI draft assistant (batch C-D).
 ///
 /// Hard security rules:
-/// - API keys live ONLY in backend environment variables (any hosting: Docker, VPS, cloud) — this
-///   controller NEVER returns a key, never accepts one, and never logs one.
-///   keyStatus exposes only { configured, masked-last-4 }.
+/// - API keys may come from environment variables or an encrypted admin
+///   override. The controller never returns or logs the raw value.
+///   keyStatus exposes only { configured, masked-last-4, source }.
 /// - test-connection is a SAFE local check (env key presence + settings
 ///   sanity) — it never calls the external AI API.
 /// </summary>
 [ApiController]
 [Route("api/ai-settings")]
 [Authorize(Policy = "AdminOnly")]
-public class AiSettingsController(AppDbContext db, CephAiDraftService aiService) : ControllerBase
+public class AiSettingsController(
+    AppDbContext db,
+    CephAiDraftService aiService,
+    AiApiKeyVault keyVault,
+    ILogger<AiSettingsController> logger) : ControllerBase
 {
     /// <summary>Recognized providers and their env vars — openai is recognized but not implemented yet.</summary>
     private static readonly IReadOnlyDictionary<string, string> ProviderEnvVars =
@@ -76,12 +83,17 @@ public class AiSettingsController(AppDbContext db, CephAiDraftService aiService)
         await UpsertAsync(CephAiDraftService.MonthlyLimitSettingKey,
             monthlyLimit.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
+        if (req.ClearStoredSecret)
+            await keyVault.ClearStoredAsync(provider);
+        else if (!string.IsNullOrWhiteSpace(req.SecretValue))
+            await keyVault.StoreAsync(provider, req.SecretValue);
+
         await db.SaveChangesAsync();
         return Ok(await BuildPayloadAsync());
     }
 
     // POST /api/ai-settings/test-connection — SAFE local check only:
-    // env key presence + settings sanity. NEVER calls the external AI API.
+    // encrypted/environment key presence + settings sanity. NEVER calls the external AI API.
     [HttpPost("test-connection")]
     public async Task<IActionResult> TestConnection()
     {
@@ -93,11 +105,21 @@ public class AiSettingsController(AppDbContext db, CephAiDraftService aiService)
         if (settings.Provider == "openai")
             return Ok(new { ok = false, message = CephAiDraftService.UnsupportedProviderMessageAr("openai") });
 
-        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(envVar)))
+        string? resolvedSecret;
+        try
+        {
+            resolvedSecret = await keyVault.ResolveAsync(settings.Provider, envVar);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Ok(new { ok = false, message = ex.Message });
+        }
+
+        if (string.IsNullOrWhiteSpace(resolvedSecret))
             return Ok(new
             {
                 ok = false,
-                message = $"المفتاح غير مهيأ على الخادم — أضف متغير البيئة {envVar} في إعدادات الاستضافة",
+                message = $"المفتاح غير مهيأ — أدخله من الإعدادات أو اضبط متغير البيئة {envVar}",
             });
 
         if (string.IsNullOrWhiteSpace(settings.Model))
@@ -112,7 +134,20 @@ public class AiSettingsController(AppDbContext db, CephAiDraftService aiService)
     private async Task<object> BuildPayloadAsync()
     {
         var settings = await aiService.GetSettingsAsync();
-        var usage = await aiService.CountUsageThisMonthAsync();
+        var usage = 0;
+        var usageAvailable = true;
+        string? usageWarning = null;
+        try
+        {
+            usage = await aiService.CountUsageThisMonthAsync();
+        }
+        catch (Exception ex) when (IsMissingAiLogTable(ex))
+        {
+            usageAvailable = false;
+            usageWarning = "سجل استخدام الذكاء الاصطناعي غير متاح حتى تطبيق ترحيل قاعدة البيانات";
+            logger.LogWarning(
+                "OrthodonticAiLogs is not available. AI settings remain readable, but usage counters are disabled.");
+        }
 
         return new
         {
@@ -123,21 +158,37 @@ public class AiSettingsController(AppDbContext db, CephAiDraftService aiService)
             temperature = settings.Temperature,
             monthlyLimit = settings.MonthlyLimit,
             usageThisMonth = usage,
-            keyStatus = ProviderEnvVars.ToDictionary(p => p.Key, p => KeyStatusFor(p.Value)),
+            usageAvailable,
+            usageWarning,
+            keyStatus = await BuildKeyStatusAsync(),
         };
     }
 
-    /// <summary>Masked status only — the key itself never leaves the server.</summary>
-    private static object KeyStatusFor(string envVar)
+    private static bool IsMissingAiLogTable(Exception exception)
     {
-        var key = Environment.GetEnvironmentVariable(envVar);
-        if (string.IsNullOrWhiteSpace(key))
-            return new { configured = false, masked = (string?)null };
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is PostgresException { SqlState: PostgresErrorCodes.UndefinedTable })
+                return true;
+        }
 
-        // Show the last 4 characters only for keys long enough that this
-        // reveals nothing useful; otherwise mask completely.
-        var masked = key.Length > 8 ? $"********{key[^4..]}" : "********";
-        return new { configured = true, masked = (string?)masked };
+        return false;
+    }
+
+    private async Task<Dictionary<string, object>> BuildKeyStatusAsync()
+    {
+        var result = new Dictionary<string, object>();
+        foreach (var provider in ProviderEnvVars)
+        {
+            var status = await keyVault.GetStatusAsync(provider.Key, provider.Value);
+            result[provider.Key] = new
+            {
+                configured = status.Configured,
+                masked = status.Masked,
+                source = status.Source,
+            };
+        }
+        return result;
     }
 
     private async Task UpsertAsync(string key, string value)

@@ -42,6 +42,7 @@ public class CephAiDraftService(
     AppDbContext db,
     IEnumerable<IAiDraftProvider> providers,
     ICurrentUserService currentUser,
+    AiApiKeyVault keyVault,
     ILogger<CephAiDraftService> logger)
 {
     // ── Settings keys (Settings table) ────────────────────────────────────────
@@ -146,7 +147,8 @@ public class CephAiDraftService(
         var provider = ResolveProvider(settings.Provider);
         if (provider is null) return (false, UnsupportedProviderMessageAr(settings.Provider));
 
-        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(provider.ApiKeyEnvVar)))
+        if (string.IsNullOrWhiteSpace(
+                await keyVault.ResolveAsync(provider.ProviderName, provider.ApiKeyEnvVar)))
             return (false, MissingKeyMessageAr);
 
         return (true, null);
@@ -214,8 +216,9 @@ public class CephAiDraftService(
             throw new CephAiUnavailableException(UnsupportedProviderMessageAr(settings.Provider));
         }
 
-        // API key ONLY from the backend environment (hosting-agnostic) — never from the database.
-        var apiKey = Environment.GetEnvironmentVariable(provider.ApiKeyEnvVar);
+        // The key is resolved from an encrypted admin override first, then
+        // from the provider environment variable. It is never returned/logged.
+        var apiKey = await keyVault.ResolveAsync(provider.ProviderName, provider.ApiKeyEnvVar, ct);
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             await WriteAuditAsync(analysisId, modelId: null, succeeded: false,

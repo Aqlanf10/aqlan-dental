@@ -175,7 +175,7 @@ export default function CephXrayUploader({ value, onChange, onUploadingChange }:
     [handleFile]
   );
 
-  const previewUrl = method === "url" ? resolveImageUrl(value) : localPreview;
+  const previewUrl = localPreview || resolveImageUrl(value);
 
   const applyRemoteUrl = useCallback(async () => {
     const candidate = urlDraft.trim();
@@ -195,35 +195,20 @@ export default function CephXrayUploader({ value, onChange, onUploadingChange }:
     onUploadingChange?.(true);
 
     try {
-      await new Promise<void>((resolve, reject) => {
-        const image = new window.Image();
-        const timeout = window.setTimeout(
-          () => reject(new Error("timeout")),
-          12_000
-        );
-        image.crossOrigin = "anonymous";
-        image.onload = () => {
-          window.clearTimeout(timeout);
-          resolve();
-        };
-        image.onerror = () => {
-          window.clearTimeout(timeout);
-          reject(new Error("load"));
-        };
-        image.src = parsed.toString();
-      });
-
       await deleteTemporaryUpload(uploadedFileName);
-      setUploadedFileName("");
-      setFileLabel("");
-      onChange(parsed.toString());
+      const { data } = await api.post<UploadResponse & { sourceUrl: string }>(
+        "/api/uploads/import-image",
+        { url: parsed.toString() }
+      );
+      setUploadedFileName(data.fileName);
+      setFileLabel(data.originalName || parsed.hostname);
+      setLocalPreview(resolveImageUrl(data.url));
+      onChange(data.url);
       setStatus("done");
-    } catch {
+    } catch (err) {
       onChange("");
       setStatus("error");
-      setError(
-        "تعذر تحميل الصورة من الرابط. تأكد أن الرابط مباشر وأن خادم PACS يسمح بعرض الصورة عبر CORS"
-      );
+      setError(extractErr(err, "تعذر استيراد الصورة من الرابط"));
     } finally {
       onUploadingChange?.(false);
     }
@@ -382,7 +367,7 @@ export default function CephXrayUploader({ value, onChange, onUploadingChange }:
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-3">
           <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
             <Link2 className="w-4 h-4 text-clinic-blue" />
-            رابط الصورة (PACS أو خادم الأشعة)
+            رابط مباشر للصورة أو خادم PACS
           </label>
           <div className="flex gap-2">
             <input
@@ -400,7 +385,7 @@ export default function CephXrayUploader({ value, onChange, onUploadingChange }:
               className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-navy text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition whitespace-nowrap"
             >
               <ImageIcon className="w-4 h-4" />
-              معاينة
+              استيراد
             </button>
           </div>
         </div>
@@ -420,7 +405,9 @@ export default function CephXrayUploader({ value, onChange, onUploadingChange }:
         <p className="text-gray-400 leading-relaxed">
           صيغ DICOM وTIFF وPDF غير مناسبة للرسم التفاعلي حاليًا — حوّلها إلى JPG أو PNG قبل الرفع.
         </p>
-        <p className="text-gray-400">يمكن إضافة صورة الأشعة لاحقًا من داخل التحليل.</p>
+        <p className="text-gray-400">
+          عند استخدام رابط، تُنسخ الصورة بأمان إلى ملفات المركز حتى تبقى قابلة للرسم والقياس.
+        </p>
       </div>
     </div>
   );

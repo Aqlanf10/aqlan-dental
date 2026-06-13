@@ -122,12 +122,20 @@ interface Props {
   measurements?: CephMeasurement[];
   /** Called when the two-point ruler calibration is applied (px per mm). */
   onCalibrate?: (pixelsPerMm: number) => void;
+  imageAdjustments?: {
+    brightness: number;
+    contrast: number;
+    inverted: boolean;
+  };
+  onImageDimensions?: (width: number, height: number) => void;
 }
 
 export function CephCanvas({
   imageUrl, imageWidth, imageHeight, landmarks, onLandmarksChange,
   selectedKey, onSelectKey, showPlanes, showSimulation, simulationScenario,
   showMeasurements = false, measurements, onCalibrate,
+  imageAdjustments = { brightness: 100, contrast: 100, inverted: false },
+  onImageDimensions,
 }: Props) {
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -153,10 +161,13 @@ export function CephCanvas({
     if (!imageUrl) { setImg(null); return; }
     const el = new window.Image();
     el.crossOrigin = 'anonymous';
-    el.onload  = () => setImg(el);
+    el.onload  = () => {
+      setImg(el);
+      onImageDimensions?.(el.naturalWidth, el.naturalHeight);
+    };
     el.onerror = () => setImg(null);
     el.src = imageUrl;
-  }, [imageUrl]);
+  }, [imageUrl, onImageDimensions]);
 
   const lmMap = useMemo(() => {
     const m: Record<string, CephLandmark> = {};
@@ -225,9 +236,16 @@ export function CephCanvas({
 
     // Image / placeholder
     if (img) {
+      ctx.save();
+      ctx.filter = [
+        `brightness(${imageAdjustments.brightness}%)`,
+        `contrast(${imageAdjustments.contrast}%)`,
+        imageAdjustments.inverted ? "invert(1)" : "invert(0)",
+      ].join(" ");
       ctx.drawImage(img, T.ox, T.oy, T.iW * T.s, T.iH * T.s);
-      // Slight darkening for landmark visibility
-      ctx.fillStyle = 'rgba(0,0,0,0.15)';
+      ctx.restore();
+      // A light veil keeps colored landmarks legible without obscuring anatomy.
+      ctx.fillStyle = 'rgba(0,0,0,0.06)';
       ctx.fillRect(T.ox, T.oy, T.iW * T.s, T.iH * T.s);
     } else {
       ctx.fillStyle = '#1E293B';
@@ -421,7 +439,8 @@ export function CephCanvas({
       ctx.restore();
     }
   }, [landmarks, lmMap, measMap, img, selectedKey, hovered, showPlanes, showSimulation,
-      simulationScenario, showMeasurements, calMode, calPoints, calCursor, getT]);
+      simulationScenario, showMeasurements, calMode, calPoints, calCursor, getT,
+      imageAdjustments]);
 
   useEffect(() => { draw(); }, [draw]);
 

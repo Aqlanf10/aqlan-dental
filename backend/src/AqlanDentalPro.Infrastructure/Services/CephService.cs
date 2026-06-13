@@ -13,10 +13,14 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
     // ──────────────────────────────────────────────────────────────────────────
     //  LIST
     // ──────────────────────────────────────────────────────────────────────────
-    public async Task<List<CephAnalysisListDto>> ListAsync(Guid? orthoCaseId)
+    public async Task<List<CephAnalysisListDto>> ListAsync(
+        Guid? orthoCaseId,
+        HashSet<Guid>? accessiblePatientIds = null)
     {
         return await db.CephAnalyses
             .Where(a => orthoCaseId == null || a.OrthoCaseId == orthoCaseId)
+            .Where(a => accessiblePatientIds == null ||
+                        accessiblePatientIds.Contains(a.OrthoCase.PatientId))
             .OrderByDescending(a => a.AnalysisDate)
             .Select(a => new CephAnalysisListDto
             {

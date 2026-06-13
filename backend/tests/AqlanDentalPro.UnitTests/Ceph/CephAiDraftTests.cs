@@ -6,6 +6,7 @@ using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.Infrastructure.Services.Ai;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Moq;
 using System.Net;
@@ -82,11 +83,20 @@ public class CephAiDraftTests
             new GeminiAiDraftProvider(factory),
             new AnthropicAiDraftProvider(factory),
         };
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AiSettings:EncryptionKey"] = "unit-test-ai-encryption-key-that-is-long-enough",
+            })
+            .Build();
+        var keyVault = new AiApiKeyVault(
+            db, configuration, new Mock<ILogger<AiApiKeyVault>>().Object);
 
         return new CephAiDraftService(
             db,
             providers,
             user.Object,
+            keyVault,
             new Mock<ILogger<CephAiDraftService>>().Object);
     }
 
@@ -467,9 +477,13 @@ public class CephAiDraftTests
 
             var user = new Mock<ICurrentUserService>();
             user.Setup(u => u.UserId).Returns(Guid.NewGuid());
+            var patientAccess = new Mock<IPatientAccessService>();
+            patientAccess.Setup(x => x.CanAccessPatientAsync(It.IsAny<Guid>())).ReturnsAsync(true);
             var controller = new AqlanDentalPro.API.Controllers.CephController(
                 new AqlanDentalPro.Application.Services.CephService(
-                    db, user.Object, new Mock<ILogger<AqlanDentalPro.Application.Services.CephService>>().Object));
+                    db, user.Object, new Mock<ILogger<AqlanDentalPro.Application.Services.CephService>>().Object),
+                db,
+                patientAccess.Object);
 
             var result = await controller.DraftDiagnosis(
                 Guid.NewGuid(), aiService,
@@ -489,9 +503,13 @@ public class CephAiDraftTests
 
         var user = new Mock<ICurrentUserService>();
         user.Setup(u => u.UserId).Returns(Guid.NewGuid());
+        var patientAccess = new Mock<IPatientAccessService>();
+        patientAccess.Setup(x => x.CanAccessPatientAsync(It.IsAny<Guid>())).ReturnsAsync(true);
         var controller = new AqlanDentalPro.API.Controllers.CephController(
             new AqlanDentalPro.Application.Services.CephService(
-                db, user.Object, new Mock<ILogger<AqlanDentalPro.Application.Services.CephService>>().Object));
+                db, user.Object, new Mock<ILogger<AqlanDentalPro.Application.Services.CephService>>().Object),
+            db,
+            patientAccess.Object);
 
         var result = await controller.DraftDiagnosis(
             analysisId, aiService,
@@ -522,14 +540,15 @@ public class CephAiDraftTests
     }
 
     [Fact]
-    public void AutoTraceEndpoint_RemainsHonest501_SourceCheck()
+    public void AutoTraceEndpoint_IsRealUnsavedDraft_NotPlaceholder_SourceCheck()
     {
         var controllerPath = ControllerSourcePath("CephController.cs");
         if (!File.Exists(controllerPath)) return;
 
         var content = File.ReadAllText(controllerPath);
-        content.Should().Contain("Status501NotImplemented",
-            "the auto-trace placeholder must stay an honest 501 — C-D replaces nothing existing");
+        content.Should().Contain("CephAiLandmarkDraftService");
+        content.Should().Contain("UNSAVED");
+        content.Should().NotContain("Status501NotImplemented");
     }
 
     internal static string ControllerSourcePath(string fileName) => Path.Combine(

@@ -112,6 +112,19 @@ export interface ApiNorm {
   interpretationAbove?: string | null;
 }
 
+/**
+ * Response of POST /api/ceph/{id}/ai/draft-diagnosis (C-D).
+ * The draft is NEVER auto-saved — it must be explicitly copied by the doctor
+ * into the FinalDiagnosis field and saved via the existing diagnosis flow.
+ */
+export interface CephAiDraftResponse {
+  draft: string;
+  modelId: string;
+  /** Mandatory Arabic review disclaimer — always shown prominently. */
+  disclaimer: string;
+  generatedAt: string;
+}
+
 export interface CephDiagnosis {
   skeletalClass?: string;
   verticalPattern?: string;

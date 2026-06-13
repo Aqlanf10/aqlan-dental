@@ -89,6 +89,62 @@ public class CephController(CephService service) : ControllerBase
             message = "التتبع الآلي بالذكاء الاصطناعي يتطلب نموذج رؤية متخصص — قيد التطوير. استخدم الوضع اليدوي."
         });
 
+    // POST /api/ceph/{id}/ai/draft-diagnosis
+    // C-D: REAL LLM draft-diagnosis assistant (Gemini/Anthropic via
+    // IAiDraftProvider) — never fake AI.
+    // Returns either a real model response or an honest Arabic error:
+    //   403 when disabled (Settings "ai.ceph_draft_enabled"), the provider is
+    //       unsupported (e.g. openai), or its env-var API key is missing —
+    //       message states exactly which,
+    //   429 when the configurable monthly limit (ai.monthly_limit) is reached,
+    //   502 when the upstream AI API call failed.
+    // The draft is NEVER auto-saved: the response always carries the review
+    // disclaimer and the doctor explicitly copies it into FinalDiagnosis.
+    // Every attempt is audited in OrthodonticAiLogs.
+    [HttpPost("{id:guid}/ai/draft-diagnosis")]
+    public async Task<IActionResult> DraftDiagnosis(
+        Guid id,
+        [FromServices] AqlanDentalPro.Infrastructure.Services.CephAiDraftService aiDraftService,
+        [FromServices] ILogger<CephController> logger)
+    {
+        try
+        {
+            var result = await aiDraftService.GenerateDraftAsync(id);
+            if (result is null)
+                return NotFound(new { message = "تحليل السيفالومتري غير موجود" });
+
+            return Ok(new
+            {
+                draft = result.Draft,
+                modelId = result.ModelId,
+                disclaimer = result.Disclaimer,
+                generatedAt = result.GeneratedAt,
+            });
+        }
+        catch (AqlanDentalPro.Application.Exceptions.CephAiUnavailableException ex)
+        {
+            // Honest, specific Arabic reason (flag off vs unsupported provider vs missing API key).
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+        }
+        catch (AqlanDentalPro.Application.Exceptions.CephAiLimitReachedException ex)
+        {
+            // Configurable monthly usage limit (Settings "ai.monthly_limit").
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { message = ex.Message });
+        }
+        catch (AqlanDentalPro.Application.Exceptions.CephAiUpstreamException ex)
+        {
+            // Security rule: never expose exception/upstream details to clients.
+            logger.LogError(ex, "AI draft-diagnosis upstream failure for analysis {AnalysisId}", id);
+            return StatusCode(StatusCodes.Status502BadGateway,
+                new { message = "تعذر الاتصال بخدمة الذكاء الاصطناعي — حاول لاحقًا" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected AI draft-diagnosis failure for analysis {AnalysisId}", id);
+            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء توليد مسودة التشخيص" });
+        }
+    }
+
     // GET /api/ceph/{id}/report/pdf — C-C Arabic cephalometric PDF report
     [HttpGet("{id:guid}/report/pdf")]
     public async Task<IActionResult> GetReportPdf(

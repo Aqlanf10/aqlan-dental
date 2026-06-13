@@ -58,6 +58,16 @@ public static class ServiceRegistrationConfiguration
         services.AddScoped<AqlanDentalPro.Application.Interfaces.Services.IPatientAccessService, AqlanDentalPro.Infrastructure.Services.PatientAccessService>();
         services.AddScoped<ILoginAttemptService, LoginAttemptService>();
         services.AddHttpClient(); // Register IHttpClientFactory for PatientPortalService
+        services.AddHttpClient("RemoteClinicalImage", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(20);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("AqlanDentalPro/1.0");
+        })
+        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            AllowAutoRedirect = false,
+            AutomaticDecompression = System.Net.DecompressionMethods.All,
+        });
         services.AddHttpClient<IRecaptchaService, RecaptchaService>();
         services.AddScoped<IPdfService, PdfService>();
         services.AddScoped<IEmailService, EmailService>();
@@ -71,8 +81,11 @@ public static class ServiceRegistrationConfiguration
         // Named client follows the WhatsApp/Sms pattern; 60s because LLM
         // generation is slower than messaging webhooks.
         services.AddScoped<CephAiDraftService>();
+        services.AddScoped<CephAiLandmarkDraftService>();
+        services.AddScoped<AiApiKeyVault>();
         services.AddScoped<IAiDraftProvider, AqlanDentalPro.Infrastructure.Services.Ai.GeminiAiDraftProvider>();
         services.AddScoped<IAiDraftProvider, AqlanDentalPro.Infrastructure.Services.Ai.AnthropicAiDraftProvider>();
+        services.AddScoped<ICephLandmarkDraftProvider, AqlanDentalPro.Infrastructure.Services.Ai.GeminiCephLandmarkDraftProvider>();
         services.AddHttpClient(CephAiDraftService.HttpClientName, client =>
         {
             client.Timeout = TimeSpan.FromSeconds(60);

@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import {
   Brain, Calculator, Eye, EyeOff, Play, PlayCircle, ArrowRight,
   Save, CheckCircle2, ChevronRight, Loader2, FileDown, Printer,
+  Sun, Contrast, RotateCcw, ListChecks, ImageIcon, FileText, ScanLine,
 } from "lucide-react";
 import type { CephAnalysis, CephLandmark, CephDiagnosis, AnalysisType } from "@/types/ceph";
 import { ANALYSIS_GROUPS, ANALYSIS_TYPE_AR } from "@/types/ceph";
@@ -24,7 +25,7 @@ const LANDMARK_GROUPS = [
   { key: 'soft',     label: 'الأنسجة الرخوة',  keys: ['LS', 'LI', 'Pn', 'Cm'] },
 ];
 
-type RightTab = 'landmarks' | 'report' | 'diagnosis';
+type RightTab = 'report' | 'diagnosis';
 
 export default function CephAnalysisPage() {
   const { id } = useParams<{ id: string }>();
@@ -39,15 +40,22 @@ export default function CephAnalysisPage() {
   const [isDirty, setIsDirty]         = useState(false);
   const [saving, setSaving]           = useState(false);
   const [detecting, setDetecting]     = useState(false);
+  const [aiTracing, setAiTracing]     = useState(false);
   const [saveStatus, setSaveStatus]   = useState<'idle' | 'saved' | 'error'>('idle');
-  const [rightTab, setRightTab]       = useState<RightTab>('landmarks');
+  const [rightTab, setRightTab]       = useState<RightTab>('report');
   const [diagnosis, setDiagnosis]     = useState<CephDiagnosis | null>(null);
   const [imageSize, setImageSize]     = useState({ w: 800, h: 600 });
+  const [brightness, setBrightness]   = useState(100);
+  const [contrast, setContrast]       = useState(100);
+  const [inverted, setInverted]       = useState(false);
+  const [showMeasurements, setShowMeasurements] = useState(true);
   // Configurable norms from DB (overlaid on built-ins; built-ins are the fallback).
   const [normsVersion, setNormsVersion] = useState(0);
   // Honest-simulation state: the template tool is NOT AI and must say so.
   const [simNotice, setSimNotice]     = useState<string | null>(null);
   const [simError, setSimError]       = useState<string | null>(null);
+  const [aiTraceNotice, setAiTraceNotice] = useState<string | null>(null);
+  const [aiTraceError, setAiTraceError] = useState<string | null>(null);
   // C-C: Arabic ceph PDF report (download / print)
   const [pdfBusy, setPdfBusy]         = useState<'download' | 'print' | null>(null);
   const [pdfError, setPdfError]       = useState<string | null>(null);
@@ -112,6 +120,11 @@ export default function CephAnalysisPage() {
     setIsDirty(true);
   }, []);
 
+  const handleImageDimensions = useCallback((width: number, height: number) => {
+    setImageSize(current =>
+      current.w === width && current.h === height ? current : { w: width, h: height });
+  }, []);
+
   const handleTemplateSimulation = async () => {
     setDetecting(true);
     setSimError(null);
@@ -135,6 +148,42 @@ export default function CephAnalysisPage() {
       setSimError(msg ?? "تعذر تشغيل المحاكاة التجريبية");
       setSimNotice(null);
     } finally { setDetecting(false); }
+  };
+
+  const handleAiTrace = async () => {
+    setAiTracing(true);
+    setAiTraceError(null);
+    setAiTraceNotice(null);
+    try {
+      const { data } = await api.post<{
+        landmarks: CephLandmark[];
+        modelId: string;
+        disclaimer: string;
+        generatedAt: string;
+      }>(`/api/ceph/${id}/ai/auto-trace`, {
+        imageWidth: imageSize.w,
+        imageHeight: imageSize.h,
+      });
+
+      const drafted = (data.landmarks ?? []).map((landmark) => ({
+        ...landmark,
+        name: landmark.name || LANDMARK_DEFS[landmark.key]?.nameAr || landmark.key,
+        nameAr: LANDMARK_DEFS[landmark.key]?.nameAr || landmark.name || landmark.key,
+        group: LANDMARK_DEFS[landmark.key]?.group as CephLandmark["group"],
+        isAiPlaced: true,
+      }));
+      setLandmarks(drafted);
+      setIsDirty(true);
+      setSaveStatus("idle");
+      setSelectedKey(drafted[0]?.key ?? null);
+      setAiTraceNotice(`${data.disclaimer} النموذج: ${data.modelId}`);
+    } catch (error) {
+      const message = (error as { response?: { data?: { message?: string } } })
+        .response?.data?.message;
+      setAiTraceError(message ?? "تعذر توليد مسودة نقاط السيفالومتري");
+    } finally {
+      setAiTracing(false);
+    }
   };
 
   const handleSaveAndCompute = async () => {
@@ -204,7 +253,7 @@ export default function CephAnalysisPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
       {/* ── Header ── */}
-      <div className="flex-shrink-0 flex items-center justify-between py-3 px-1 gap-2">
+      <div className="flex-shrink-0 flex items-center justify-between border-b border-gray-200 bg-white px-3 py-2 gap-2">
         <div className="flex items-center gap-3 min-w-0">
           <Link href="/ceph"
             className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500 flex-shrink-0">
@@ -220,23 +269,26 @@ export default function CephAnalysisPage() {
 
         {/* Toolbar */}
         <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
-          <button onClick={handleTemplateSimulation} disabled={detecting}
-            title="قالب تجريبي لمواضع المعالم — ليس ذكاءً اصطناعيًا"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-60 transition">
-            {detecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
-            {detecting ? 'جارٍ التوليد...' : 'محاكاة تجريبية (ليست AI)'}
+          <button
+            type="button"
+            onClick={handleAiTrace}
+            disabled={aiTracing || !analysis.xrayFileUrl}
+            title="إنشاء مسودة نقاط بالذكاء الاصطناعي ثم مراجعتها يدوياً"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-violet-300 bg-violet-50 text-violet-800 hover:bg-violet-100 disabled:opacity-50 transition">
+            {aiTracing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
+            {aiTracing ? "جارٍ تحليل الصورة..." : "مسودة AI للنقاط"}
           </button>
 
-          <button disabled
-            title="التتبع الآلي بالذكاء الاصطناعي يتطلب نموذج رؤية متخصص — قيد التطوير"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-gray-200 text-gray-400 cursor-not-allowed">
-            <Brain className="w-3.5 h-3.5" />
-            تتبع آلي AI (قريبًا)
+          <button onClick={handleTemplateSimulation} disabled={detecting}
+            title="قالب تجريبي لمواضع المعالم — ليس ذكاءً اصطناعيًا"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 disabled:opacity-60 transition">
+            {detecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
+            {detecting ? 'جارٍ التوليد...' : 'قالب تدريبي'}
           </button>
 
           <button onClick={handleSaveAndCompute} disabled={saving || !landmarks.length}
             className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition",
+              "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition",
               saveStatus === 'saved' ? "bg-green-600 text-white" :
               saveStatus === 'error' ? "bg-red-100 text-red-700 border border-red-300" :
               "bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60"
@@ -244,7 +296,7 @@ export default function CephAnalysisPage() {
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> :
              saveStatus === 'saved' ? <CheckCircle2 className="w-3.5 h-3.5" /> :
              <Calculator className="w-3.5 h-3.5" />}
-            {saving ? 'حساب...' : saveStatus === 'saved' ? 'تم' : 'احسب'}
+            {saving ? 'جارٍ الحفظ...' : saveStatus === 'saved' ? 'تم الحفظ والحساب' : 'حفظ وحساب'}
           </button>
 
           {/* The PDF is generated from SAVED data only — gate on a clean,
@@ -254,7 +306,7 @@ export default function CephAnalysisPage() {
             title={placedCount === 0 ? 'ضع المعالم واحسب القياسات أولًا لإنشاء التقرير'
               : isDirty || !analysis?.measurements?.length ? 'اضغط «احسب» لحفظ المعالم والقياسات قبل إصدار التقرير'
               : 'تحميل تقرير التحليل السيفالومتري PDF'}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition">
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition">
             {pdfBusy === 'download' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
             تحميل التقرير PDF
           </button>
@@ -264,7 +316,7 @@ export default function CephAnalysisPage() {
             title={placedCount === 0 ? 'ضع المعالم واحسب القياسات أولًا لإنشاء التقرير'
               : isDirty || !analysis?.measurements?.length ? 'اضغط «احسب» لحفظ المعالم والقياسات قبل إصدار التقرير'
               : 'طباعة تقرير التحليل السيفالومتري'}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition">
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition">
             {pdfBusy === 'print' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
             طباعة التقرير
           </button>
@@ -290,6 +342,35 @@ export default function CephAnalysisPage() {
         </div>
       </div>
 
+      <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50 px-3 py-1.5">
+        <div className="flex items-center gap-1 overflow-x-auto text-[11px]">
+          {[
+            { label: "الصورة", done: Boolean(analysis.xrayFileUrl), icon: ImageIcon },
+            { label: "الترقيم", done: placedCount === totalCount, icon: ListChecks },
+            { label: "التحليل", done: Boolean(analysis.measurements?.length) && !isDirty, icon: Calculator },
+            { label: "التشخيص", done: Boolean(diagnosis?.finalDiagnosis), icon: Brain },
+            { label: "التقرير", done: Boolean(analysis.measurements?.length) && !isDirty, icon: FileText },
+          ].map((stage, index) => {
+            const Icon = stage.icon;
+            return (
+              <div key={stage.label} className="flex items-center flex-shrink-0">
+                <span className={cn(
+                  "flex items-center gap-1.5 rounded-md px-2.5 py-1 font-medium",
+                  stage.done ? "bg-emerald-50 text-emerald-700" :
+                  index === 1 ? "bg-white text-clinic-blue shadow-sm ring-1 ring-gray-200" :
+                  "text-gray-400"
+                )}>
+                  <Icon className="h-3.5 w-3.5" />
+                  {stage.label}
+                  {stage.done && <CheckCircle2 className="h-3 w-3" />}
+                </span>
+                {index < 4 && <ChevronRight className="mx-0.5 h-3.5 w-3.5 text-gray-300 rtl:rotate-180" />}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Honest-simulation banners */}
       {simNotice && (
         <div className="flex-shrink-0 mx-1 mb-2 flex items-start justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -300,6 +381,18 @@ export default function CephAnalysisPage() {
       {simError && (
         <div className="flex-shrink-0 mx-1 mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
           {simError}
+        </div>
+      )}
+      {aiTraceNotice && (
+        <div className="flex-shrink-0 mx-1 mb-2 flex items-start justify-between gap-2 rounded-lg border border-violet-300 bg-violet-50 px-3 py-2 text-xs text-violet-800">
+          <span>{aiTraceNotice}</span>
+          <button onClick={() => setAiTraceNotice(null)} className="font-bold text-violet-600 hover:text-violet-800">✕</button>
+        </div>
+      )}
+      {aiTraceError && (
+        <div className="flex-shrink-0 mx-1 mb-2 flex items-start justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          <span>{aiTraceError}</span>
+          <button onClick={() => setAiTraceError(null)} className="font-bold text-red-500 hover:text-red-700">✕</button>
         </div>
       )}
       {pdfError && (
@@ -325,26 +418,160 @@ export default function CephAnalysisPage() {
       )}
 
       {/* Main content */}
-      <div className="flex-1 flex gap-3 overflow-hidden">
-        {/* ── Canvas side ── */}
-        <div className="flex-1 min-w-0 flex flex-col gap-2">
-          <CephCanvas
-            imageUrl={resolveImageUrl(analysis.xrayFileUrl) || null}
-            imageWidth={imageSize.w}
-            imageHeight={imageSize.h}
-            landmarks={landmarks}
-            onLandmarksChange={handleLandmarksChange}
-            selectedKey={selectedKey}
-            onSelectKey={setSelectedKey}
-            showPlanes={showPlanes}
-            showSimulation={showSim}
-            simulationScenario={simScenario}
-          />
+      <div className="flex-1 flex overflow-hidden border-t border-gray-200">
+        <aside className="hidden w-64 flex-shrink-0 flex-col overflow-hidden border-e border-gray-200 bg-white lg:flex">
+          <div className="border-b border-gray-100 px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-bold text-gray-800">دليل النقاط التشريحية</p>
+                <p className="text-[10px] text-gray-400">اختر نقطة ثم ضعها أو حرّكها فوق الصورة</p>
+              </div>
+              <span className={cn(
+                "rounded-md px-2 py-1 text-[10px] font-bold tabular-nums",
+                placedCount === totalCount ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-clinic-blue",
+              )}>
+                {placedCount}/{totalCount}
+              </span>
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100">
+              <div
+                className="h-full rounded-full bg-clinic-blue transition-all"
+                style={{ width: `${Math.min(100, (placedCount / totalCount) * 100)}%` }}
+              />
+            </div>
+          </div>
 
-          {/* Info bar */}
-          <div className="flex-shrink-0 flex items-center gap-3 text-[10px] text-gray-400 px-1 flex-wrap">
+          <div className="flex-1 overflow-y-auto px-2 py-2">
+            {LANDMARK_GROUPS.map(group => (
+              <section key={group.key} className="mb-2">
+                <p className="px-2 py-1 text-[9px] font-bold text-gray-400">{group.label}</p>
+                {group.keys.map(key => {
+                  const def = LANDMARK_DEFS[key];
+                  const placed = lmMap[key];
+                  const isSelected = selectedKey === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setSelectedKey(isSelected ? null : key)}
+                      className={cn(
+                        "mb-0.5 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-[11px] transition",
+                        isSelected
+                          ? "bg-blue-50 text-clinic-blue ring-1 ring-blue-200"
+                          : "text-gray-600 hover:bg-gray-50",
+                      )}
+                    >
+                      <span
+                        className="h-2.5 w-2.5 flex-shrink-0 rounded-full border"
+                        style={{
+                          backgroundColor: placed ? def?.color : "transparent",
+                          borderColor: placed ? def?.color : "#cbd5e1",
+                        }}
+                      />
+                      <span className="w-7 flex-shrink-0 font-mono text-[10px] font-bold text-gray-500">{key}</span>
+                      <span className="min-w-0 flex-1 truncate">{def?.nameAr}</span>
+                      {placed?.isAiPlaced && (
+                        <span className="rounded bg-violet-50 px-1 text-[8px] font-bold text-violet-600">AI</span>
+                      )}
+                      {placed && <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-emerald-500" />}
+                    </button>
+                  );
+                })}
+              </section>
+            ))}
+          </div>
+        </aside>
+
+        <div className="flex min-w-0 flex-1 flex-col bg-slate-950">
+          <div className="flex flex-shrink-0 items-center gap-3 overflow-x-auto border-b border-white/10 bg-slate-900 px-3 py-2 text-[10px] text-slate-200">
+            <label className="flex flex-shrink-0 items-center gap-2">
+              <Sun className="h-3.5 w-3.5" />
+              <span>الإضاءة</span>
+              <input
+                type="range"
+                min={40}
+                max={180}
+                value={brightness}
+                onChange={e => setBrightness(Number(e.target.value))}
+                className="w-24 accent-blue-400"
+              />
+              <span className="w-8 font-mono tabular-nums">{brightness}%</span>
+            </label>
+            <label className="flex flex-shrink-0 items-center gap-2">
+              <Contrast className="h-3.5 w-3.5" />
+              <span>التباين</span>
+              <input
+                type="range"
+                min={40}
+                max={220}
+                value={contrast}
+                onChange={e => setContrast(Number(e.target.value))}
+                className="w-24 accent-blue-400"
+              />
+              <span className="w-8 font-mono tabular-nums">{contrast}%</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => setInverted(value => !value)}
+              className={cn(
+                "flex flex-shrink-0 items-center gap-1.5 rounded-md px-2 py-1 transition",
+                inverted ? "bg-blue-500 text-white" : "bg-white/10 hover:bg-white/15",
+              )}
+              title="عكس درجات الأشعة"
+            >
+              <ScanLine className="h-3.5 w-3.5" />
+              عكس الصورة
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setBrightness(100);
+                setContrast(100);
+                setInverted(false);
+              }}
+              className="flex flex-shrink-0 items-center gap-1.5 rounded-md bg-white/10 px-2 py-1 hover:bg-white/15"
+              title="إعادة ضبط عرض الصورة"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              إعادة الضبط
+            </button>
+            <span className="h-4 w-px flex-shrink-0 bg-white/15" />
+            <button
+              type="button"
+              onClick={() => setShowMeasurements(value => !value)}
+              className={cn(
+                "flex flex-shrink-0 items-center gap-1.5 rounded-md px-2 py-1 transition",
+                showMeasurements ? "bg-emerald-500/20 text-emerald-300" : "bg-white/10 text-slate-300",
+              )}
+            >
+              <Calculator className="h-3.5 w-3.5" />
+              قيم القياسات
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1">
+            <CephCanvas
+              imageUrl={resolveImageUrl(analysis.xrayFileUrl) || null}
+              imageWidth={imageSize.w}
+              imageHeight={imageSize.h}
+              landmarks={landmarks}
+              onLandmarksChange={handleLandmarksChange}
+              selectedKey={selectedKey}
+              onSelectKey={setSelectedKey}
+              showPlanes={showPlanes}
+              showSimulation={showSim}
+              simulationScenario={simScenario}
+              showMeasurements={showMeasurements}
+              measurements={activeReportData}
+              onCalibrate={setPixelsPerMm}
+              imageAdjustments={{ brightness, contrast, inverted }}
+              onImageDimensions={handleImageDimensions}
+            />
+          </div>
+
+          <div className="flex flex-shrink-0 flex-wrap items-center gap-3 border-t border-white/10 bg-slate-900 px-3 py-1.5 text-[10px] text-slate-400">
             <span className="font-mono">
-              <span className={cn("font-bold", placedCount >= 20 ? "text-green-600" : placedCount > 10 ? "text-amber-500" : "text-gray-500")}>
+              <span className={cn("font-bold", placedCount >= 20 ? "text-emerald-400" : placedCount > 10 ? "text-amber-400" : "text-slate-300")}>
                 {placedCount}
               </span>/{totalCount} نقطة
             </span>
@@ -354,96 +581,51 @@ export default function CephAnalysisPage() {
               <input
                 type="number"
                 value={pixelsPerMm ?? ''}
-                min={0} step={0.01}
+                min={0}
+                step={0.01}
                 onChange={e => setPixelsPerMm(e.target.value ? +e.target.value : null)}
                 placeholder="px/mm"
-                className="w-16 text-[10px] px-1.5 py-0.5 border border-gray-200 rounded text-gray-700 focus:outline-none focus:ring-1 focus:ring-clinic-blue"
+                className="w-16 rounded border border-white/15 bg-white/10 px-1.5 py-0.5 text-[10px] text-white focus:outline-none focus:ring-1 focus:ring-blue-400"
                 dir="ltr"
               />
-              <span className="text-gray-300">px/mm</span>
+              <span className="text-slate-500">px/mm</span>
             </div>
             {selectedKey && (
               <>
                 <span>·</span>
-                <span className="text-clinic-blue font-semibold">
-                  ▶ انقر لوضع: {LANDMARK_DEFS[selectedKey]?.nameAr ?? selectedKey}
+                <span className="font-semibold text-blue-300">
+                  انقر لوضع: {LANDMARK_DEFS[selectedKey]?.nameAr ?? selectedKey}
                 </span>
               </>
             )}
           </div>
         </div>
 
-        {/* ── Right panel ── */}
-        <div className="w-80 flex-shrink-0 flex flex-col overflow-hidden rounded-xl border border-gray-200 shadow-sm bg-white">
-          {/* Tab bar */}
-          <div className="flex border-b border-gray-100 flex-shrink-0">
+        <aside className="flex w-80 flex-shrink-0 flex-col overflow-hidden border-s border-gray-200 bg-white xl:w-[23rem]">
+          <div className="flex flex-shrink-0 border-b border-gray-100">
             {([
-              { key: 'landmarks', label: 'النقاط' },
-              { key: 'report',    label: 'القياسات' },
+              { key: 'report', label: 'التحليل والقياسات' },
               { key: 'diagnosis', label: 'التشخيص' },
             ] as { key: RightTab; label: string }[]).map(t => (
-              <button key={t.key} onClick={() => setRightTab(t.key)}
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setRightTab(t.key)}
                 className={cn(
-                  "flex-1 py-2.5 text-[11px] font-semibold border-b-2 transition",
+                  "flex-1 border-b-2 py-2.5 text-[11px] font-semibold transition",
                   rightTab === t.key
                     ? "border-clinic-blue text-clinic-blue"
-                    : "border-transparent text-gray-400 hover:text-gray-600"
-                )}>
+                    : "border-transparent text-gray-400 hover:text-gray-600",
+                )}
+              >
                 {t.label}
               </button>
             ))}
           </div>
 
-          <div className="flex-1 overflow-hidden flex flex-col">
-            {/* ── Landmarks tab ── */}
-            {rightTab === 'landmarks' && (
-              <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                {LANDMARK_GROUPS.map(group => (
-                  <div key={group.key}>
-                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest px-1 mb-1">
-                      {group.label}
-                    </p>
-                    <div className="space-y-0.5">
-                      {group.keys.map(key => {
-                        const def    = LANDMARK_DEFS[key];
-                        const placed = lmMap[key];
-                        const isSel  = selectedKey === key;
-                        return (
-                          <button key={key} onClick={() => setSelectedKey(isSel ? null : key)}
-                            className={cn(
-                              "w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11px] transition text-start",
-                              isSel   ? "bg-clinic-blue/10 border border-clinic-blue/30 text-clinic-blue" :
-                              placed  ? "hover:bg-gray-50 text-gray-700" :
-                                        "hover:bg-gray-50 text-gray-400"
-                            )}>
-                            <div className="w-2 h-2 rounded-full flex-shrink-0 border"
-                              style={{
-                                backgroundColor: placed ? def?.color : 'transparent',
-                                borderColor: placed ? def?.color : '#d1d5db',
-                              }} />
-                            <span className="font-mono font-bold text-[9px] w-5 text-gray-500">{key}</span>
-                            <span className="flex-1 truncate">{def?.nameAr}</span>
-                            {placed?.isAiPlaced && (
-                              <span className="text-[8px] text-purple-400 font-bold">AI</span>
-                            )}
-                            {placed?.confidence !== undefined && (
-                              <span className="text-[8px] text-gray-300 font-mono">
-                                {Math.round(placed.confidence * 100)}%
-                              </span>
-                            )}
-                            {isSel && <ChevronRight className="w-3 h-3 flex-shrink-0" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* ── Report tab (scientist tabs) ── */}
+          <div className="flex flex-1 flex-col overflow-hidden">
             {rightTab === 'report' && (
-              <div className="flex-1 overflow-hidden p-3">
+              <div className="flex-1 overflow-hidden p-2">
                 <AnalysisReport
                   measurements={activeReportData}
                   diagnosis={null}
@@ -454,9 +636,8 @@ export default function CephAnalysisPage() {
               </div>
             )}
 
-            {/* ── Diagnosis tab ── */}
             {rightTab === 'diagnosis' && (
-              <div className="flex-1 overflow-hidden p-3">
+              <div className="flex-1 overflow-hidden p-2">
                 <AnalysisReport
                   measurements={activeReportData}
                   diagnosis={diagnosis ?? { doctorApproved: false }}
@@ -470,7 +651,17 @@ export default function CephAnalysisPage() {
               </div>
             )}
           </div>
-        </div>
+
+          <div className="border-t border-gray-100 p-2">
+            <Link
+              href={`/ortho/${analysis.orthoCaseId}/model-analysis`}
+              className="flex w-full items-center justify-between rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-clinic-blue hover:bg-blue-100"
+            >
+              <span>تحاليل النماذج والأسنان</span>
+              <ChevronRight className="h-4 w-4 rtl:rotate-180" />
+            </Link>
+          </div>
+        </aside>
       </div>
     </div>
   );

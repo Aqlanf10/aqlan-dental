@@ -136,6 +136,10 @@ function NewCephPageInner() {
   };
 
   const onSubmit = async (data: FormData) => {
+    if (!xrayFileUrl) {
+      setServerError("أرفق صورة الأشعة السيفالومترية من الجهاز أو من رابط مباشر");
+      return;
+    }
     setSaving(true);
     setServerError("");
     try {
@@ -212,9 +216,11 @@ function NewCephPageInner() {
               </span>
               <div>
                 <h2 className="text-sm font-bold text-gray-900">
-                  صورة الأشعة السيفالومترية
+                  صورة الأشعة السيفالومترية <span className="text-red-500">*</span>
                 </h2>
-                <p className="text-xs text-gray-400">اختيارية — يمكن إضافتها لاحقًا</p>
+                <p className="text-xs text-gray-400">
+                  ارفعها من الجهاز أو استوردها من رابط مباشر
+                </p>
               </div>
             </div>
 
@@ -373,7 +379,7 @@ function NewCephPageInner() {
                   ? "جارٍ الإنشاء..."
                   : uploading
                     ? "انتظر رفع الصورة..."
-                    : "إنشاء التحليل"}
+                    : "بدء الترقيم والتحليل"}
               </button>
             </div>
           </aside>

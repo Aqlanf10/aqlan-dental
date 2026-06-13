@@ -128,6 +128,20 @@ public class CephSimulationResultDto
     public List<CephLandmarkDto> Landmarks { get; set; } = [];
 }
 
+public class CephAiTraceRequest
+{
+    public int ImageWidth { get; set; }
+    public int ImageHeight { get; set; }
+}
+
+public class CephAiTraceResultDto
+{
+    public List<CephLandmarkDto> Landmarks { get; set; } = [];
+    public string ModelId { get; set; } = string.Empty;
+    public string Disclaimer { get; set; } = string.Empty;
+    public DateTime GeneratedAt { get; set; }
+}
+
 /// <summary>C-B: pre/post comparison between two analyses of the same case.</summary>
 public class CephCompareResultDto
 {

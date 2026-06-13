@@ -7,6 +7,7 @@ import {
   UserCog, Loader2, ShieldAlert, CheckCircle2, XCircle,
   Mail, MailWarning, Clock, Send, CreditCard, FlaskConical, Banknote,
   Sparkles, PlugZap,
+  Eye, EyeOff,
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -1722,8 +1723,9 @@ function EmailTab() {
 // ─── AI Tab (Ceph C-D draft assistant configuration) ─────────────────────────
 interface AiKeyStatus {
   configured: boolean;
-  /** "********xxxx" (last 4 of the server env key) — the key itself NEVER leaves the server. */
+  /** "********xxxx" (last 4 only) — the raw key never leaves the server. */
   masked: string | null;
+  source: "settings" | "environment" | "none" | "invalid";
 }
 
 interface AiSettingsDto {
@@ -1734,6 +1736,8 @@ interface AiSettingsDto {
   temperature: number;
   monthlyLimit: number;
   usageThisMonth: number;
+  usageAvailable: boolean;
+  usageWarning?: string | null;
   keyStatus: Record<string, AiKeyStatus>;
 }
 
@@ -1751,6 +1755,9 @@ function AiTab() {
   const [error, setError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [secretValue, setSecretValue] = useState("");
+  const [showSecret, setShowSecret] = useState(false);
+  const [clearStoredSecret, setClearStoredSecret] = useState(false);
 
   useEffect(() => {
     api.get<AiSettingsDto>("/api/ai-settings")
@@ -1772,8 +1779,13 @@ function AiTab() {
         maxTokens: settings.maxTokens,
         temperature: settings.temperature,
         monthlyLimit: settings.monthlyLimit,
+        secretValue: secretValue.trim() || undefined,
+        clearStoredSecret,
       });
       setSettings(data);
+      setSecretValue("");
+      setShowSecret(false);
+      setClearStoredSecret(false);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
@@ -1807,12 +1819,19 @@ function AiTab() {
   return (
     <div className="space-y-5">
       {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+      {!settings.usageAvailable && settings.usageWarning && (
+        <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <span>{settings.usageWarning}. يمكن تعديل الإعدادات الآن، لكن عداد الاستخدام سيبقى متوقفًا.</span>
+        </p>
+      )}
 
       <div className="text-xs px-3 py-2 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 flex items-start gap-2">
         <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
         <span>
-          مساعد السيفالو يولّد <b>مسودة تشخيص فقط</b> تتطلب مراجعة واعتماد أخصائي التقويم —
-          لا يُحفظ أي شيء تلقائيًا، وكل استخدام يُسجَّل في سجل التدقيق.
+          مساعد السيفالو يولّد <b>مسودة نقاط ومسودة تشخيص</b> تتطلبان مراجعة واعتماد أخصائي التقويم.
+          عند طلب مسودة النقاط تُرسل صورة الأشعة إلى المزود المحدد، ولا يُحفظ أي ناتج تلقائيًا،
+          وكل استخدام يُسجَّل في سجل التدقيق.
         </span>
       </div>
 
@@ -1824,7 +1843,7 @@ function AiTab() {
           onChange={(e) => setSettings({ ...settings, enabled: e.target.checked })}
           className="w-4 h-4 rounded border-gray-300 text-clinic-blue focus:ring-clinic-blue"
         />
-        <span className="text-sm font-medium text-gray-800">تفعيل مساعد السيفالو (مسودة التشخيص بالذكاء الاصطناعي)</span>
+        <span className="text-sm font-medium text-gray-800">تفعيل مساعد السيفالو (مسودة النقاط والتشخيص)</span>
       </label>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1894,9 +1913,9 @@ function AiTab() {
 
       {/* Key status — read-only, masked. Keys are configured via server env vars only. */}
       <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
-        <p className="text-sm font-semibold text-gray-700">حالة مفاتيح API (للقراءة فقط)</p>
+        <p className="text-sm font-semibold text-gray-700">إدارة مفتاح API</p>
         <p className="text-xs text-gray-500">
-          المفاتيح لا تُدخل ولا تُعرض هنا إطلاقًا — تُضبط كمتغيرات بيئة للباك إند في إعدادات الاستضافة ويظهر منها آخر 4 خانات فقط.
+          يُحفظ المفتاح مشفراً في الخادم ولا يُعاد إلى المتصفح. يظهر فقط آخر 4 خانات، ويمكن لمتغيرات بيئة الاستضافة أن تعمل كخيار احتياطي.
         </p>
         <div className="space-y-2">
           {AI_PROVIDERS.map((p) => {
@@ -1908,15 +1927,64 @@ function AiTab() {
                   <code className="text-[10px] text-gray-400" dir="ltr">{p.envVar}</code>
                 </div>
                 {status?.configured ? (
-                  <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full font-medium font-mono" dir="ltr">
-                    {status.masked ?? "********"}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-gray-500">
+                      {status.source === "settings" ? "محفوظ مشفراً" : "متغير استضافة"}
+                    </span>
+                    <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full font-medium font-mono" dir="ltr">
+                      {status.masked ?? "********"}
+                    </span>
+                  </div>
                 ) : (
                   <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-medium">غير مهيأ</span>
                 )}
               </div>
             );
           })}
+        </div>
+
+        <div className="border-t border-gray-200 pt-3">
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">
+            استبدال مفتاح {AI_PROVIDERS.find((p) => p.value === settings.provider)?.label}
+          </label>
+          <div className="relative">
+            <input
+              value={secretValue}
+              onChange={(event) => {
+                setSecretValue(event.target.value);
+                if (event.target.value) setClearStoredSecret(false);
+              }}
+              type={showSecret ? "text" : "password"}
+              autoComplete="new-password"
+              className={`${inputCls} pl-10 font-mono`}
+              placeholder={settings.keyStatus[settings.provider]?.configured
+                ? "اتركه فارغاً للإبقاء على المفتاح الحالي"
+                : "أدخل مفتاح API"}
+              dir="ltr"
+            />
+            <button
+              type="button"
+              onClick={() => setShowSecret((value) => !value)}
+              className="absolute left-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-500 hover:bg-gray-100"
+              title={showSecret ? "إخفاء المفتاح" : "إظهار المفتاح"}
+            >
+              {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          {settings.keyStatus[settings.provider]?.source === "settings" && (
+            <label className="mt-2 flex items-center gap-2 text-xs text-gray-600">
+              <input
+                type="checkbox"
+                checked={clearStoredSecret}
+                onChange={(event) => {
+                  setClearStoredSecret(event.target.checked);
+                  if (event.target.checked) setSecretValue("");
+                }}
+                className="h-4 w-4 rounded border-gray-300 text-clinic-blue"
+              />
+              حذف المفتاح المحفوظ والعودة إلى متغير الاستضافة إن وُجد
+            </label>
+          )}
         </div>
       </div>
 

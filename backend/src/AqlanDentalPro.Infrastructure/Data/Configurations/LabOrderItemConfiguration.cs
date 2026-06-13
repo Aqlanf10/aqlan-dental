@@ -26,7 +26,7 @@ public class LabOrderItemConfiguration : IEntityTypeConfiguration<LabOrderItem>
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasOne(i => i.WorkType)
-            .WithMany()
+            .WithMany(w => w.LabOrderItems)
             .HasForeignKey(i => i.WorkTypeId)
             .OnDelete(DeleteBehavior.Restrict);
     }

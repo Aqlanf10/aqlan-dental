@@ -152,6 +152,20 @@ function NewCephPageInner() {
     }
   };
 
+  const handleCancel = async () => {
+    if (xrayFileUrl.startsWith("/uploads/")) {
+      const fileName = xrayFileUrl.slice("/uploads/".length);
+      if (fileName && !fileName.includes("/") && !fileName.includes("..")) {
+        try {
+          await api.delete(`/api/uploads/${encodeURIComponent(fileName)}`);
+        } catch {
+          // Best effort cleanup; cancellation should never trap the user.
+        }
+      }
+    }
+    router.push("/ceph");
+  };
+
   return (
     <div className="space-y-5">
       {/* Breadcrumb + header */}
@@ -342,12 +356,13 @@ function NewCephPageInner() {
 
             {/* Actions */}
             <div className="flex items-center justify-end gap-3">
-              <Link
-                href="/ceph"
+              <button
+                type="button"
+                onClick={() => void handleCancel()}
                 className="px-5 py-2.5 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
               >
                 إلغاء
-              </Link>
+              </button>
               <button
                 type="submit"
                 disabled={saving || uploading}

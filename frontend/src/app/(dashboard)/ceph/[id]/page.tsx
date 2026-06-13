@@ -12,6 +12,7 @@ import { buildMeasurementList, applyNormOverrides, type ApiNorm } from "@/lib/ce
 import { CephCanvas, LANDMARK_DEFS, LANDMARK_ORDER, SIMULATION_SCENARIOS } from "@/components/ceph/CephCanvas";
 import { AnalysisReport } from "@/components/ceph/AnalysisReport";
 import api from "@/lib/api";
+import { resolveImageUrl } from "@/hooks/useClinicBranding";
 import { downloadPdfFromApi, printPdfFromApi } from "@/lib/pdfDownload";
 import { cn, formatArabicDate } from "@/lib/utils";
 
@@ -328,7 +329,7 @@ export default function CephAnalysisPage() {
         {/* ── Canvas side ── */}
         <div className="flex-1 min-w-0 flex flex-col gap-2">
           <CephCanvas
-            imageUrl={analysis.xrayFileUrl ?? null}
+            imageUrl={resolveImageUrl(analysis.xrayFileUrl) || null}
             imageWidth={imageSize.w}
             imageHeight={imageSize.h}
             landmarks={landmarks}

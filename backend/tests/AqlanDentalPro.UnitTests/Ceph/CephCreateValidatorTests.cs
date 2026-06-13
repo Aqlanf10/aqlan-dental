@@ -53,4 +53,45 @@ public class CephCreateValidatorTests
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain(e => e.PropertyName == nameof(CreateCephAnalysisRequest.OrthoCaseId));
     }
+
+    [Theory]
+    [InlineData("/uploads/12345678-abcd.jpg")]
+    [InlineData("https://pacs.example.org/images/ceph-1.png")]
+    [InlineData("http://localhost:5000/uploads/ceph.webp")]
+    public void AcceptsSafeXrayUrls(string url)
+    {
+        var request = Req("full");
+        request.XrayFileUrl = url;
+
+        _validator.Validate(request).IsValid.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("file:///etc/passwd")]
+    [InlineData("/uploads/../secret.png")]
+    [InlineData("/uploads/folder/image.png")]
+    [InlineData("not-a-url")]
+    public void RejectsUnsafeOrMalformedXrayUrls(string url)
+    {
+        var request = Req("full");
+        request.XrayFileUrl = url;
+
+        var result = _validator.Validate(request);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == nameof(CreateCephAnalysisRequest.XrayFileUrl));
+    }
+
+    [Fact]
+    public void RejectsExcessivelyLongNotes()
+    {
+        var request = Req("full");
+        request.Notes = new string('x', 2001);
+
+        var result = _validator.Validate(request);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == nameof(CreateCephAnalysisRequest.Notes));
+    }
 }

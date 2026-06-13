@@ -15,13 +15,11 @@ import { resolveImageUrl } from "@/hooks/useClinicBranding";
 import { cn } from "@/lib/utils";
 
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
-const ALLOWED_EXT = ["jpg", "jpeg", "png", "webp", "tif", "tiff", "pdf"];
+const ALLOWED_EXT = ["jpg", "jpeg", "png", "webp"];
 const ALLOWED_MIME = [
   "image/jpeg",
   "image/png",
   "image/webp",
-  "image/tiff",
-  "application/pdf",
 ];
 
 interface UploadResponse {
@@ -66,6 +64,7 @@ export default function CephXrayUploader({ value, onChange, onUploadingChange }:
   const [localPreview, setLocalPreview] = useState(""); // object URL or remote url
   const [previewBroken, setPreviewBroken] = useState(false);
   const [fileLabel, setFileLabel] = useState("");
+  const [uploadedFileName, setUploadedFileName] = useState("");
   const [urlDraft, setUrlDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -77,25 +76,43 @@ export default function CephXrayUploader({ value, onChange, onUploadingChange }:
     [onUploadingChange]
   );
 
-  const reset = useCallback(() => {
+  const deleteTemporaryUpload = useCallback(async (fileName: string) => {
+    if (!fileName) return;
+    try {
+      await api.delete(`/api/uploads/${encodeURIComponent(fileName)}`);
+    } catch {
+      // Best effort only. The upload may already be attached or removed.
+    }
+  }, []);
+
+  const reset = useCallback(async () => {
     if (localPreview.startsWith("blob:")) URL.revokeObjectURL(localPreview);
+    await deleteTemporaryUpload(uploadedFileName);
     setLocalPreview("");
     setPreviewBroken(false);
     setFileLabel("");
+    setUploadedFileName("");
+    setUrlDraft("");
     setStatus("idle");
     setError("");
     onChange("");
     onUploadingChange?.(false);
-  }, [localPreview, onChange, onUploadingChange]);
+  }, [
+    deleteTemporaryUpload,
+    localPreview,
+    onChange,
+    onUploadingChange,
+    uploadedFileName,
+  ]);
 
   const validate = (file: File): string | null => {
     const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
     if (file.size > MAX_SIZE) return "حجم الملف يتجاوز 10 ميجابايت";
     if (!ALLOWED_EXT.includes(ext)) {
-      return "نوع الملف غير مدعوم. الصيغ المسموحة: JPG، JPEG، PNG، TIFF";
+      return "نوع الملف غير مدعوم للتحليل. استخدم JPG أو PNG أو WEBP";
     }
     if (file.type && !ALLOWED_MIME.includes(file.type)) {
-      return "نوع الملف غير مدعوم. الصيغ المسموحة: JPG، JPEG، PNG، TIFF";
+      return "نوع الملف غير مدعوم للتحليل. استخدم JPG أو PNG أو WEBP";
     }
     return null;
   };
@@ -109,6 +126,8 @@ export default function CephXrayUploader({ value, onChange, onUploadingChange }:
         setError(v);
         return;
       }
+
+      await deleteTemporaryUpload(uploadedFileName);
 
       // Immediate local preview
       if (localPreview.startsWith("blob:")) URL.revokeObjectURL(localPreview);
@@ -126,6 +145,7 @@ export default function CephXrayUploader({ value, onChange, onUploadingChange }:
           headers: { "Content-Type": "multipart/form-data" },
         });
         onChange(data.url); // store the returned relative url
+        setUploadedFileName(data.fileName);
         setStatus("done");
         onUploadingChange?.(false);
       } catch (err) {
@@ -135,7 +155,14 @@ export default function CephXrayUploader({ value, onChange, onUploadingChange }:
         onUploadingChange?.(false);
       }
     },
-    [localPreview, onChange, onUploadingChange, setUploading]
+    [
+      deleteTemporaryUpload,
+      localPreview,
+      onChange,
+      onUploadingChange,
+      setUploading,
+      uploadedFileName,
+    ]
   );
 
   const onDrop = useCallback(
@@ -150,13 +177,74 @@ export default function CephXrayUploader({ value, onChange, onUploadingChange }:
 
   const previewUrl = method === "url" ? resolveImageUrl(value) : localPreview;
 
+  const applyRemoteUrl = useCallback(async () => {
+    const candidate = urlDraft.trim();
+    let parsed: URL;
+    try {
+      parsed = new URL(candidate);
+      if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
+    } catch {
+      setStatus("error");
+      setError("أدخل رابط صورة صحيح يبدأ بـ http أو https");
+      return;
+    }
+
+    setError("");
+    setPreviewBroken(false);
+    setStatus("uploading");
+    onUploadingChange?.(true);
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const image = new window.Image();
+        const timeout = window.setTimeout(
+          () => reject(new Error("timeout")),
+          12_000
+        );
+        image.crossOrigin = "anonymous";
+        image.onload = () => {
+          window.clearTimeout(timeout);
+          resolve();
+        };
+        image.onerror = () => {
+          window.clearTimeout(timeout);
+          reject(new Error("load"));
+        };
+        image.src = parsed.toString();
+      });
+
+      await deleteTemporaryUpload(uploadedFileName);
+      setUploadedFileName("");
+      setFileLabel("");
+      onChange(parsed.toString());
+      setStatus("done");
+    } catch {
+      onChange("");
+      setStatus("error");
+      setError(
+        "تعذر تحميل الصورة من الرابط. تأكد أن الرابط مباشر وأن خادم PACS يسمح بعرض الصورة عبر CORS"
+      );
+    } finally {
+      onUploadingChange?.(false);
+    }
+  }, [
+    deleteTemporaryUpload,
+    onChange,
+    onUploadingChange,
+    uploadedFileName,
+    urlDraft,
+  ]);
+
   return (
     <div className="space-y-4">
       {/* Method tabs */}
       <div className="inline-flex rounded-lg bg-gray-100 p-1 text-sm">
         <button
           type="button"
-          onClick={() => setMethod("device")}
+          onClick={() => {
+            if (method !== "device") void reset();
+            setMethod("device");
+          }}
           className={cn(
             "flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition",
             method === "device"
@@ -169,7 +257,10 @@ export default function CephXrayUploader({ value, onChange, onUploadingChange }:
         </button>
         <button
           type="button"
-          onClick={() => setMethod("url")}
+          onClick={() => {
+            if (method !== "url") void reset();
+            setMethod("url");
+          }}
           className={cn(
             "flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition",
             method === "url"
@@ -210,7 +301,7 @@ export default function CephXrayUploader({ value, onChange, onUploadingChange }:
           {/* Remove */}
           <button
             type="button"
-            onClick={reset}
+            onClick={() => void reset()}
             className="absolute top-3 end-3 flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-xs font-medium text-gray-600 shadow hover:bg-white hover:text-red-600 transition"
           >
             <X className="w-3.5 h-3.5" />
@@ -228,11 +319,11 @@ export default function CephXrayUploader({ value, onChange, onUploadingChange }:
           <p className="text-sm text-red-700">
             {method === "url"
               ? "تعذر تحميل الصورة من الرابط"
-              : "تعذر عرض معاينة هذا الملف في المتصفح (قد يكون TIFF أو PDF)"}
+              : "تعذر عرض معاينة الصورة في المتصفح"}
           </p>
           <button
             type="button"
-            onClick={reset}
+            onClick={() => void reset()}
             className="text-xs font-medium text-clinic-blue hover:underline"
           >
             إعادة المحاولة
@@ -277,7 +368,7 @@ export default function CephXrayUploader({ value, onChange, onUploadingChange }:
           <input
             ref={inputRef}
             type="file"
-            accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.pdf,image/*"
+            accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
@@ -304,15 +395,9 @@ export default function CephXrayUploader({ value, onChange, onUploadingChange }:
             />
             <button
               type="button"
-              onClick={() => {
-                const u = urlDraft.trim();
-                if (!u) return;
-                setError("");
-                setPreviewBroken(false);
-                onChange(u);
-                setStatus("done");
-              }}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-navy text-white hover:opacity-90 transition whitespace-nowrap"
+              onClick={() => void applyRemoteUrl()}
+              disabled={status === "uploading" || !urlDraft.trim()}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-navy text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition whitespace-nowrap"
             >
               <ImageIcon className="w-4 h-4" />
               معاينة
@@ -331,10 +416,9 @@ export default function CephXrayUploader({ value, onChange, onUploadingChange }:
 
       {/* Formats + notes */}
       <div className="space-y-1.5 text-xs">
-        <p className="text-gray-500">الصيغ المدعومة: JPG, JPEG, PNG, TIFF</p>
+        <p className="text-gray-500">الصيغ المدعومة: JPG, JPEG, PNG, WEBP</p>
         <p className="text-gray-400 leading-relaxed">
-          TIFF قد لا تظهر معاينته في المتصفح. صيغة DICOM غير مدعومة حاليًا — حوّلها إلى JPG/PNG قبل
-          الرفع.
+          صيغ DICOM وTIFF وPDF غير مناسبة للرسم التفاعلي حاليًا — حوّلها إلى JPG أو PNG قبل الرفع.
         </p>
         <p className="text-gray-400">يمكن إضافة صورة الأشعة لاحقًا من داخل التحليل.</p>
       </div>

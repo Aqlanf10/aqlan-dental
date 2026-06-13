@@ -10,15 +10,13 @@ public class UploadsController(ILogger<UploadsController> logger) : ControllerBa
 {
     private static readonly HashSet<string> AllowedMimeTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        // image/tiff added for cephalometric radiographs (note: TIFF may not
-        // preview in-browser — the ceph uploader warns about this).
-        "image/jpeg", "image/png", "image/webp", "image/tiff", "application/pdf",
+        "image/jpeg", "image/png", "image/webp", "application/pdf",
         "audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav"
     };
 
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".pdf",
+        ".jpg", ".jpeg", ".png", ".webp", ".pdf",
         ".webm", ".ogg", ".mp4", ".m4a", ".mp3", ".wav"
     };
 

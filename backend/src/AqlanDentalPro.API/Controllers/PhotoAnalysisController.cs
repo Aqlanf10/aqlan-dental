@@ -65,6 +65,26 @@ public class PhotoAnalysisController(
                   : NotFound(new { message = "تحليل الصورة غير موجود" });
     }
 
+    // GET /api/photo-analysis/{id}/report/pdf — Arabic PDF report
+    [HttpGet("{id:guid}/report/pdf")]
+    public async Task<IActionResult> ReportPdf(
+        Guid id,
+        [FromServices] AqlanDentalPro.API.Services.PhotoAnalysisReportPdfGenerator pdf)
+    {
+        var accessError = await GetAnalysisAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        try
+        {
+            var bytes = await pdf.GenerateAsync(id);
+            return File(bytes, "application/pdf", $"photo-analysis-{id}.pdf");
+        }
+        catch (ArgumentException)
+        {
+            return NotFound(new { message = "تحليل الصورة غير موجود" });
+        }
+    }
+
     // ── Patient-access guards (same pattern as CephController) ──────────────
     private async Task<IActionResult?> GetCaseAccessErrorAsync(Guid orthoCaseId)
     {

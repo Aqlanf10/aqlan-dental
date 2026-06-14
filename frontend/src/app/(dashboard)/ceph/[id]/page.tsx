@@ -34,6 +34,7 @@ export default function CephAnalysisPage() {
   const [landmarks, setLandmarks]     = useState<CephLandmark[]>([]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [showPlanes, setShowPlanes]   = useState(true);
+  const [showTracing, setShowTracing] = useState(true);
   const [showSim, setShowSim]         = useState(false);
   const [simScenario, setSimScenario] = useState(Object.keys(SIMULATION_SCENARIOS)[0]);
   const [pixelsPerMm, setPixelsPerMm] = useState<number | null>(null);
@@ -346,8 +347,13 @@ export default function CephAnalysisPage() {
           <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
             <button onClick={() => setShowPlanes(!showPlanes)}
               className={cn("p-1.5 rounded-md transition", showPlanes ? "bg-white shadow-sm text-clinic-blue" : "text-gray-400")}
-              title="الخطوط التشريحية">
+              title="المستويات المرجعية">
               {showPlanes ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            </button>
+            <button onClick={() => setShowTracing(!showTracing)}
+              className={cn("p-1.5 rounded-md transition", showTracing ? "bg-white shadow-sm text-pink-600" : "text-gray-400")}
+              title="التتبّع التشريحي">
+              <ScanLine className="w-3.5 h-3.5" />
             </button>
             <button onClick={() => setShowSim(!showSim)}
               className={cn("p-1.5 rounded-md transition", showSim ? "bg-white shadow-sm text-green-600" : "text-gray-400")}
@@ -581,6 +587,7 @@ export default function CephAnalysisPage() {
               selectedKey={selectedKey}
               onSelectKey={setSelectedKey}
               showPlanes={showPlanes}
+              showTracing={showTracing}
               showSimulation={showSim}
               simulationScenario={simScenario}
               showMeasurements={showMeasurements}

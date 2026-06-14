@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import {
   Brain, Calculator, Eye, EyeOff, Play, PlayCircle, ArrowRight,
   Save, CheckCircle2, ChevronRight, Loader2, FileDown, Printer,
-  Sun, Contrast, RotateCcw, ListChecks, ImageIcon, FileText, ScanLine,
+  Sun, Contrast, RotateCcw, ListChecks, ImageIcon, FileText, ScanLine, Target,
 } from "lucide-react";
 import type { CephAnalysis, CephLandmark, CephDiagnosis, AnalysisType } from "@/types/ceph";
 import { ANALYSIS_GROUPS, ANALYSIS_TYPE_AR } from "@/types/ceph";
@@ -320,6 +320,14 @@ export default function CephAnalysisPage() {
             {pdfBusy === 'print' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
             طباعة التقرير
           </button>
+
+          {/* Visual Treatment Objective — planned incisor movements preview */}
+          <Link href={`/ceph/vto?analysisId=${id}`}
+            title="هدف العلاج البصري — معاينة الحركات المخطّطة للقواطع"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-clinic-blue/30 bg-clinic-blue/5 text-clinic-blue hover:bg-clinic-blue/10 transition">
+            <Target className="w-3.5 h-3.5" />
+            هدف العلاج VTO
+          </Link>
 
           <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
             <button onClick={() => setShowPlanes(!showPlanes)}

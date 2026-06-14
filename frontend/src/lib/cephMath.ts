@@ -94,6 +94,53 @@ export function applySimilarity(t: Similarity, p: Pt): Pt {
 }
 
 // ---------------------------------------------------------------------------
+// VTO — Visual Treatment Objective (honest, clinician-driven)
+// The orthodontist enters the sagittal incisor movements they PLAN (mm); the
+// tool translates the incisor landmarks by exactly those amounts and redraws.
+// This is NOT an automated outcome prediction — it visualizes the planned
+// movement only. Convention: +x is anterior (lateral cephs face right), so a
+// positive value protracts and a negative value retracts the incisor.
+// ---------------------------------------------------------------------------
+
+/** Planned sagittal bodily movement (mm) for the upper/lower incisors. */
+export interface VtoMovementMm { u1: number; l1: number; }
+
+/** Landmarks moved by each incisor (crown tip + apex move together — bodily). */
+const VTO_U1_KEYS = ['U1T', 'U1A'] as const;
+const VTO_L1_KEYS = ['L1T', 'L1A'] as const;
+
+/**
+ * Returns a copy of the landmark map with the upper/lower incisor points
+ * translated sagittally by the planned mm (converted to pixels via
+ * pixelsPerMm). Non-incisor landmarks are unchanged. A non-positive
+ * pixelsPerMm (uncalibrated) yields an unchanged copy.
+ */
+export function applyVtoMovements(
+  lm: Record<string, Pt>,
+  move: VtoMovementMm,
+  pixelsPerMm: number,
+): Record<string, Pt> {
+  const out: Record<string, Pt> = {};
+  for (const k in lm) out[k] = { x: lm[k].x, y: lm[k].y };
+  if (!(pixelsPerMm > 0)) return out;
+
+  for (const k of VTO_U1_KEYS) if (out[k]) out[k] = { x: out[k].x + move.u1 * pixelsPerMm, y: out[k].y };
+  for (const k of VTO_L1_KEYS) if (out[k]) out[k] = { x: out[k].x + move.l1 * pixelsPerMm, y: out[k].y };
+  return out;
+}
+
+/**
+ * Approximate overjet (mm) as the sagittal gap between the upper and lower
+ * incisor edges (U1T − L1T along x), divided by the pixel scale. Returns null
+ * when either edge is missing or the image is uncalibrated. Honest geometry —
+ * not a biological prediction.
+ */
+export function approxOverjetMm(lm: Record<string, Pt>, pixelsPerMm: number): number | null {
+  if (!(pixelsPerMm > 0) || !lm['U1T'] || !lm['L1T']) return null;
+  return r1((lm['U1T'].x - lm['L1T'].x) / pixelsPerMm);
+}
+
+// ---------------------------------------------------------------------------
 // Normal-value tables
 // All norms sourced from published orthodontic literature.
 // ---------------------------------------------------------------------------

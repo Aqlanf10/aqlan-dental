@@ -143,6 +143,7 @@ export function CephCanvas({
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [img, setImg]         = useState<HTMLImageElement | null>(null);
+  const [imgError, setImgError] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
   const [hovered,  setHovered]  = useState<string | null>(null);
 
@@ -161,14 +162,19 @@ export function CephCanvas({
   const [calMm, setCalMm]         = useState('10');
 
   useEffect(() => {
-    if (!imageUrl) { setImg(null); return; }
+    if (!imageUrl) { setImg(null); setImgError(false); return; }
     const el = new window.Image();
-    el.crossOrigin = 'anonymous';
+    // NOTE: do NOT set crossOrigin. The canvas only draws the radiograph (with
+    // ctx.filter for brightness/contrast) and never reads its pixels, so a
+    // tainted canvas is fine. Requesting CORS ('anonymous') against an uploads
+    // host that sends no CORS headers made the image silently fail to load
+    // (onerror → blank), which looked like "the image won't show".
     el.onload  = () => {
       setImg(el);
+      setImgError(false);
       onImageDimensions?.(el.naturalWidth, el.naturalHeight);
     };
-    el.onerror = () => setImg(null);
+    el.onerror = () => { setImg(null); setImgError(true); };
     el.src = imageUrl;
   }, [imageUrl, onImageDimensions]);
 
@@ -253,13 +259,24 @@ export function CephCanvas({
     } else {
       ctx.fillStyle = '#1E293B';
       ctx.fillRect(T.ox, T.oy, T.iW * T.s, T.iH * T.s);
-      ctx.fillStyle = '#64748B';
-      ctx.font = '14px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('أضف رابط صورة الأشعة السيفالومترية', c.width / 2, c.height / 2 - 10);
-      ctx.font = '11px sans-serif';
-      ctx.fillStyle = '#475569';
-      ctx.fillText('سيتم عرض الصورة هنا للتحديد اليدوي', c.width / 2, c.height / 2 + 10);
+      if (imageUrl && imgError) {
+        // A URL is set but the file could not be loaded (missing/expired upload
+        // or unreachable host) — say so honestly instead of "add an image".
+        ctx.fillStyle = '#F87171';
+        ctx.font = '14px sans-serif';
+        ctx.fillText('تعذّر تحميل صورة الأشعة', c.width / 2, c.height / 2 - 10);
+        ctx.font = '11px sans-serif';
+        ctx.fillStyle = '#94A3B8';
+        ctx.fillText('قد تكون الصورة فُقدت بعد إعادة النشر — أعد رفعها', c.width / 2, c.height / 2 + 10);
+      } else {
+        ctx.fillStyle = '#64748B';
+        ctx.font = '14px sans-serif';
+        ctx.fillText('أضف رابط صورة الأشعة السيفالومترية', c.width / 2, c.height / 2 - 10);
+        ctx.font = '11px sans-serif';
+        ctx.fillStyle = '#475569';
+        ctx.fillText('سيتم عرض الصورة هنا للتحديد اليدوي', c.width / 2, c.height / 2 + 10);
+      }
     }
 
     // Planes (measurement-overlay planes are drawn even when planes are hidden)
@@ -441,7 +458,7 @@ export function CephCanvas({
       ctx.beginPath(); ctx.moveTo(c.width / 2, 0); ctx.lineTo(c.width / 2, c.height); ctx.stroke();
       ctx.restore();
     }
-  }, [landmarks, lmMap, measMap, img, selectedKey, hovered, showPlanes, showSimulation,
+  }, [landmarks, lmMap, measMap, img, imgError, imageUrl, selectedKey, hovered, showPlanes, showSimulation,
       simulationScenario, showMeasurements, calMode, calPoints, calCursor, getT,
       imageAdjustments]);
 

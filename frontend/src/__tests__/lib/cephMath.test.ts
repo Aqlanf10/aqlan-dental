@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   dist, angle3, angleBetweenLines, perpDist, signedPerpDist, lineAngle,
-  computeJarabak,
+  computeJarabak, similarityFromPairs, applySimilarity,
 } from '@/lib/cephMath';
 
 type Pt = { x: number; y: number };
@@ -259,5 +259,56 @@ describe('computeJarabak', () => {
   it('returns null values when required landmarks are missing', () => {
     const r = computeJarabak({ S: { x: 0, y: 0 } });
     expect(r.every(m => m.value === null)).toBe(true);
+  });
+});
+
+// ─── similarityFromPairs / applySimilarity (superimposition) ─────────────────
+
+describe('similarityFromPairs', () => {
+  it('maps both source points exactly onto their targets', () => {
+    const srcA: Pt = { x: 10, y: 20 };
+    const srcB: Pt = { x: 50, y: 20 };
+    const dstA: Pt = { x: 100, y: 100 };
+    const dstB: Pt = { x: 100, y: 180 }; // rotated 90°, scaled 2×, translated
+    const t = similarityFromPairs(srcA, srcB, dstA, dstB);
+    const a = applySimilarity(t, srcA);
+    const b = applySimilarity(t, srcB);
+    expect(a.x).toBeCloseTo(dstA.x, 6);
+    expect(a.y).toBeCloseTo(dstA.y, 6);
+    expect(b.x).toBeCloseTo(dstB.x, 6);
+    expect(b.y).toBeCloseTo(dstB.y, 6);
+  });
+
+  it('preserves shape — a third point keeps its position relative to the pair', () => {
+    // Identical tracings: registering one onto the other is the identity-like
+    // map, so every point lands on its counterpart.
+    const srcA: Pt = { x: 0, y: 0 };
+    const srcB: Pt = { x: 100, y: 0 };
+    const third: Pt = { x: 40, y: 30 };
+    // Target = source rotated 90° about origin then shifted by (200,50).
+    const rot = (p: Pt): Pt => ({ x: -p.y + 200, y: p.x + 50 });
+    const t = similarityFromPairs(srcA, srcB, rot(srcA), rot(srcB));
+    const mapped = applySimilarity(t, third);
+    expect(mapped.x).toBeCloseTo(rot(third).x, 4);
+    expect(mapped.y).toBeCloseTo(rot(third).y, 4);
+  });
+
+  it('scales distances by the target/source segment ratio', () => {
+    const srcA: Pt = { x: 0, y: 0 };
+    const srcB: Pt = { x: 10, y: 0 };       // |src| = 10
+    const dstA: Pt = { x: 0, y: 0 };
+    const dstB: Pt = { x: 30, y: 0 };       // |dst| = 30 → 3× scale
+    const t = similarityFromPairs(srcA, srcB, dstA, dstB);
+    const p = applySimilarity(t, { x: 5, y: 5 });
+    expect(p.x).toBeCloseTo(15, 6);
+    expect(p.y).toBeCloseTo(15, 6);
+  });
+
+  it('degrades to pure translation when the source pair coincides', () => {
+    const s: Pt = { x: 7, y: 7 };
+    const t = similarityFromPairs(s, s, { x: 20, y: 30 }, { x: 99, y: 99 });
+    const mapped = applySimilarity(t, s);
+    expect(mapped.x).toBeCloseTo(20, 6);
+    expect(mapped.y).toBeCloseTo(30, 6);
   });
 });

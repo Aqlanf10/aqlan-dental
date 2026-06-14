@@ -14,7 +14,8 @@ import {
 } from "lucide-react";
 import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
-import type { CephCompareResult, CephCompareRow, MeasurementSeverity } from "@/types/ceph";
+import type { CephAnalysis, CephCompareResult, CephCompareRow, MeasurementSeverity } from "@/types/ceph";
+import { CephSuperimposeCanvas } from "@/components/ceph/CephSuperimposeCanvas";
 
 // ─── Labels ──────────────────────────────────────────────────────────────────
 
@@ -87,6 +88,20 @@ function ComparePageInner() {
       );
       return res.data;
     },
+  });
+
+  // Full analyses (with landmark coordinates) for the visual superimposition.
+  const baseAnalysis = useQuery({
+    queryKey: ["ceph-analysis", baseId],
+    enabled: Boolean(baseId),
+    retry: false,
+    queryFn: async () => (await api.get<CephAnalysis>(`/api/ceph/${encodeURIComponent(baseId)}`)).data,
+  });
+  const targetAnalysis = useQuery({
+    queryKey: ["ceph-analysis", targetId],
+    enabled: Boolean(targetId),
+    retry: false,
+    queryFn: async () => (await api.get<CephAnalysis>(`/api/ceph/${encodeURIComponent(targetId)}`)).data,
   });
 
   const summary = useMemo(() => {
@@ -194,6 +209,20 @@ function ComparePageInner() {
         </div>
       ) : (
         <>
+          {/* Visual superimposition (cranial base, registered on SN) */}
+          {baseAnalysis.data && targetAnalysis.data &&
+           baseAnalysis.data.landmarks.length > 0 && targetAnalysis.data.landmarks.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 avoid-break">
+              <h2 className="text-sm font-bold text-gray-700 mb-3">التراكب البنيوي (قاعدة الجمجمة)</h2>
+              <CephSuperimposeCanvas
+                baseLandmarks={baseAnalysis.data.landmarks}
+                targetLandmarks={targetAnalysis.data.landmarks}
+                baseDate={formatArabicDate(data.base.analysisDate)}
+                targetDate={formatArabicDate(data.target.analysisDate)}
+              />
+            </div>
+          )}
+
           {/* Summary cards */}
           <div className="grid grid-cols-3 gap-3">
             <SummaryCard icon={TrendingUp} label="تحسّن" count={summary.improved}

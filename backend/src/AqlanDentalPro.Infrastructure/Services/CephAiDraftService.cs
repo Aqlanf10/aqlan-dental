@@ -202,7 +202,7 @@ public class CephAiDraftService(
         {
             // Audit every call — including honest refusals to run.
             await WriteAuditAsync(analysisId, modelId: null, succeeded: false,
-                errorSummary: "feature_disabled", inputSummary, outputLength: 0);
+                errorSummary: "feature_disabled", inputSummary, outputLength: 0, bestEffort: true);
             throw new CephAiUnavailableException(DisabledMessageAr);
         }
 
@@ -212,7 +212,7 @@ public class CephAiDraftService(
             // "openai" (and any unknown value) — recognized but not implemented:
             // honest Arabic refusal, never a fake response.
             await WriteAuditAsync(analysisId, modelId: null, succeeded: false,
-                errorSummary: $"provider_unsupported:{settings.Provider}", inputSummary, outputLength: 0);
+                errorSummary: $"provider_unsupported:{settings.Provider}", inputSummary, outputLength: 0, bestEffort: true);
             throw new CephAiUnavailableException(UnsupportedProviderMessageAr(settings.Provider));
         }
 
@@ -222,7 +222,7 @@ public class CephAiDraftService(
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             await WriteAuditAsync(analysisId, modelId: null, succeeded: false,
-                errorSummary: "api_key_missing", inputSummary, outputLength: 0);
+                errorSummary: "api_key_missing", inputSummary, outputLength: 0, bestEffort: true);
             throw new CephAiUnavailableException(MissingKeyMessageAr);
         }
 
@@ -231,7 +231,7 @@ public class CephAiDraftService(
         if (settings.MonthlyLimit > 0 && await CountUsageThisMonthAsync() >= settings.MonthlyLimit)
         {
             await WriteAuditAsync(analysisId, modelId, succeeded: false,
-                errorSummary: "monthly_limit_reached", inputSummary, outputLength: 0);
+                errorSummary: "monthly_limit_reached", inputSummary, outputLength: 0, bestEffort: true);
             throw new CephAiLimitReachedException(MonthlyLimitMessageAr);
         }
 
@@ -249,7 +249,7 @@ public class CephAiDraftService(
         {
             // Provider already produced a short, secret-free reason.
             await WriteAuditAsync(analysisId, modelId, succeeded: false,
-                errorSummary: ex.Message, inputSummary, outputLength: 0);
+                errorSummary: ex.Message, inputSummary, outputLength: 0, bestEffort: true);
             throw;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
@@ -264,7 +264,7 @@ public class CephAiDraftService(
             logger.LogError(ex, "[CephAiDraft] {Provider} API call failed for analysis {AnalysisId}",
                 provider.ProviderName, analysisId);
             await WriteAuditAsync(analysisId, modelId, succeeded: false,
-                errorSummary: reason, inputSummary, outputLength: 0);
+                errorSummary: reason, inputSummary, outputLength: 0, bestEffort: true);
             throw new CephAiUpstreamException(reason, ex);
         }
 
@@ -280,22 +280,38 @@ public class CephAiDraftService(
         };
     }
 
+    // bestEffort = true ONLY on refusal/error paths: an audit-write failure
+    // there (e.g. missing OrthodonticAiLogs table on an un-migrated DB) must
+    // never mask the honest AI error or turn an expected 403/429 into a 500.
+    // The SUCCESS path stays strict (bestEffort = false): the monthly limit is
+    // derived from successful audit rows, so a successful generation that cannot
+    // be recorded must fail rather than silently bypass the limit / audit.
     private async Task WriteAuditAsync(
         Guid analysisId, string? modelId, bool succeeded,
-        string? errorSummary, string? inputSummary, int outputLength)
+        string? errorSummary, string? inputSummary, int outputLength,
+        bool bestEffort = false)
     {
-        db.OrthodonticAiLogs.Add(new OrthodonticAiLog
+        try
         {
-            AnalysisId = analysisId,
-            UserId = currentUser.UserId,
-            Action = ActionDraftDiagnosis,
-            ModelId = modelId,
-            Succeeded = succeeded,
-            ErrorSummary = errorSummary,
-            InputSummary = inputSummary,
-            OutputLength = outputLength,
-        });
-        await db.SaveChangesAsync();
+            db.OrthodonticAiLogs.Add(new OrthodonticAiLog
+            {
+                AnalysisId = analysisId,
+                UserId = currentUser.UserId,
+                Action = ActionDraftDiagnosis,
+                ModelId = modelId,
+                Succeeded = succeeded,
+                ErrorSummary = errorSummary,
+                InputSummary = inputSummary,
+                OutputLength = outputLength,
+            });
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex) when (bestEffort)
+        {
+            logger.LogWarning(ex,
+                "Failed to write OrthodonticAiLog audit row for analysis {AnalysisId} — continuing", analysisId);
+            db.ChangeTracker.Clear();
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────

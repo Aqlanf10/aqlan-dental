@@ -54,6 +54,7 @@ public static class StartupDatabaseMaintenance
         await EnsureInvoicesNullableTaxAmountAsync(app);
         await EnsureLabTablesSchemaAsync(app);
         await EnsureCephNormsSchemaAndSeedAsync(app);
+        await EnsureOrthodonticAiLogsSchemaAsync(app);
 
         // ── Gated DB maintenance (ENABLE_STARTUP_DB_MAINTENANCE) ──────
         await RunGatedDbMaintenanceAsync(app, configuration);
@@ -1469,6 +1470,49 @@ public static class StartupDatabaseMaintenance
         {
             var cnLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
             cnLogger2.LogWarning(ex, "Ceph norms schema/seed hotfix failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// OrthodonticAiLogs audit table (Ceph AI assistant — batch C-D). Idempotent
+    /// CREATE TABLE IF NOT EXISTS so databases predating the migration still have
+    /// it; without it the AI auto-trace / draft-diagnosis audit insert would throw
+    /// and mask the honest "AI not configured" message behind a generic 500.
+    /// Schema mirrors OrthodonticAiLog (BaseEntity columns + audit fields).
+    /// </summary>
+    private static async Task EnsureOrthodonticAiLogsSchemaAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS "OrthodonticAiLogs" (
+                    "Id" uuid NOT NULL,
+                    "AnalysisId" uuid NOT NULL,
+                    "UserId" uuid NULL,
+                    "Action" character varying(50) NOT NULL,
+                    "ModelId" character varying(100) NULL,
+                    "Succeeded" boolean NOT NULL DEFAULT false,
+                    "ErrorSummary" character varying(300) NULL,
+                    "InputSummary" character varying(300) NULL,
+                    "OutputLength" integer NOT NULL DEFAULT 0,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "UpdatedAt" timestamp with time zone NOT NULL,
+                    "IsActive" boolean NOT NULL DEFAULT true,
+                    "DeletedAt" timestamp with time zone NULL,
+                    "DeletedBy" uuid NULL,
+                    CONSTRAINT "PK_OrthodonticAiLogs" PRIMARY KEY ("Id")
+                );
+                CREATE INDEX IF NOT EXISTS "IX_OrthodonticAiLogs_AnalysisId" ON "OrthodonticAiLogs" ("AnalysisId");
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "OrthodonticAiLogs schema hotfix failed (non-fatal)");
         }
     }
 

@@ -70,7 +70,7 @@ public sealed class CephAiLandmarkDraftService(
         var settings = await settingsService.GetSettingsAsync();
         if (!settings.Enabled)
         {
-            await WriteAuditAsync(analysisId, null, false, "feature_disabled", inputSummary, 0);
+            await WriteAuditAsync(analysisId, null, false, "feature_disabled", inputSummary, 0, bestEffort: true);
             throw new CephAiUnavailableException(CephAiDraftService.DisabledMessageAr);
         }
 
@@ -79,7 +79,7 @@ public sealed class CephAiLandmarkDraftService(
         if (provider is null)
         {
             await WriteAuditAsync(
-                analysisId, null, false, $"vision_provider_unsupported:{settings.Provider}", inputSummary, 0);
+                analysisId, null, false, $"vision_provider_unsupported:{settings.Provider}", inputSummary, 0, bestEffort: true);
             throw new CephAiUnavailableException(
                 $"مزود {settings.Provider} لا يدعم مسودة نقاط السيفالومتري حالياً");
         }
@@ -88,7 +88,7 @@ public sealed class CephAiLandmarkDraftService(
             provider.ProviderName, provider.ApiKeyEnvVar, cancellationToken);
         if (string.IsNullOrWhiteSpace(secret))
         {
-            await WriteAuditAsync(analysisId, null, false, "api_key_missing", inputSummary, 0);
+            await WriteAuditAsync(analysisId, null, false, "api_key_missing", inputSummary, 0, bestEffort: true);
             throw new CephAiUnavailableException(CephAiDraftService.MissingKeyMessageAr);
         }
 
@@ -97,7 +97,7 @@ public sealed class CephAiLandmarkDraftService(
         {
             await WriteAuditAsync(
                 analysisId, $"{provider.ProviderName}/{settings.Model}", false,
-                "monthly_limit_reached", inputSummary, 0);
+                "monthly_limit_reached", inputSummary, 0, bestEffort: true);
             throw new CephAiLimitReachedException(CephAiDraftService.MonthlyLimitMessageAr);
         }
 
@@ -142,7 +142,7 @@ public sealed class CephAiLandmarkDraftService(
                 CephAiUpstreamException upstream => upstream.Message,
                 _ => "vision_network_error",
             };
-            await WriteAuditAsync(analysisId, modelId, false, reason, inputSummary, 0);
+            await WriteAuditAsync(analysisId, modelId, false, reason, inputSummary, 0, bestEffort: true);
             if (ex is CephAiUpstreamException)
                 throw;
             throw new CephAiUpstreamException(reason, ex);
@@ -190,25 +190,40 @@ public sealed class CephAiLandmarkDraftService(
         return (await File.ReadAllBytesAsync(filePath, cancellationToken), mimeType);
     }
 
+    // bestEffort = true ONLY on refusal/error paths: a failure there (e.g. the
+    // OrthodonticAiLogs table missing on an un-migrated DB) must NEVER mask the
+    // honest AI error, nor turn an expected 403/400 into a generic 500. The
+    // SUCCESS path stays strict (bestEffort = false) so the monthly-limit count,
+    // derived from successful audit rows, can never be silently bypassed.
     private async Task WriteAuditAsync(
         Guid analysisId,
         string? modelId,
         bool succeeded,
         string? errorSummary,
         string inputSummary,
-        int outputLength)
+        int outputLength,
+        bool bestEffort = false)
     {
-        db.OrthodonticAiLogs.Add(new OrthodonticAiLog
+        try
         {
-            AnalysisId = analysisId,
-            UserId = currentUser.UserId,
-            Action = Action,
-            ModelId = modelId,
-            Succeeded = succeeded,
-            ErrorSummary = errorSummary,
-            InputSummary = inputSummary,
-            OutputLength = outputLength,
-        });
-        await db.SaveChangesAsync();
+            db.OrthodonticAiLogs.Add(new OrthodonticAiLog
+            {
+                AnalysisId = analysisId,
+                UserId = currentUser.UserId,
+                Action = Action,
+                ModelId = modelId,
+                Succeeded = succeeded,
+                ErrorSummary = errorSummary,
+                InputSummary = inputSummary,
+                OutputLength = outputLength,
+            });
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex) when (bestEffort)
+        {
+            logger.LogWarning(ex,
+                "Failed to write OrthodonticAiLog audit row for analysis {AnalysisId} — continuing", analysisId);
+            db.ChangeTracker.Clear(); // drop the failed insert so later saves stay clean
+        }
     }
 }

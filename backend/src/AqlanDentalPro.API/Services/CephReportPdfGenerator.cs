@@ -76,6 +76,21 @@ public class CephReportPdfGenerator(AppDbContext db)
         ("Go", "Me", "#F87171"),
     ];
 
+    // Anatomical tracing contours — must mirror frontend lib/cephTracing.ts so the
+    // PDF tracing matches the on-screen tracing (cranial base, maxilla, mandible,
+    // facial + soft-tissue profile, incisors).
+    private static readonly (string[] Keys, string Color)[] TracingContours =
+    [
+        (["S", "N"], "#60A5FA"),
+        (["PNS", "ANS", "A"], "#FB923C"),
+        (["Co", "Go", "Me", "Pog", "B"], "#F87171"),
+        (["Ar", "Go"], "#F87171"),
+        (["N", "A", "Pog"], "#FBBF24"),
+        (["Pn", "Cm", "LS", "LI", "Pog"], "#F472B6"),
+        (["U1A", "U1T"], "#34D399"),
+        (["L1A", "L1T"], "#10B981"),
+    ];
+
     private static readonly string[] GroupOrder = ["steiner", "tweed", "mcnamara", "ricketts", "downs", "jarabak", "wits"];
 
     private static readonly Dictionary<string, string> AnalysisGroupTitleAr = new(StringComparer.OrdinalIgnoreCase)
@@ -579,6 +594,19 @@ public class CephReportPdfGenerator(AppDbContext db)
             sb.Append(string.Create(inv,
                 $"<line x1=\"{p1.Item1:0.##}\" y1=\"{p1.Item2:0.##}\" x2=\"{p2.Item1:0.##}\" y2=\"{p2.Item2:0.##}\" " +
                 $"stroke=\"{color}\" stroke-width=\"{lineW:0.##}\" stroke-opacity=\"0.85\"/>"));
+        }
+
+        // Anatomical tracing contours — polylines through present landmarks.
+        var tracingW = lineW * 1.4;
+        foreach (var (keys, color) in TracingContours)
+        {
+            var present = keys.Where(points.ContainsKey).ToList();
+            if (present.Count < 2) continue;
+            var coords = string.Join(" ", present.Select(k =>
+                string.Create(inv, $"{points[k].Item1:0.##},{points[k].Item2:0.##}")));
+            sb.Append(string.Create(inv,
+                $"<polyline points=\"{coords}\" fill=\"none\" stroke=\"{color}\" " +
+                $"stroke-width=\"{tracingW:0.##}\" stroke-opacity=\"0.9\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>"));
         }
 
         foreach (var (key, (x, y)) in points)

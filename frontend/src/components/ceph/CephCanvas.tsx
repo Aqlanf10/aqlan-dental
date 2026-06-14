@@ -2,6 +2,7 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { ZoomIn, ZoomOut, Hand, Ruler } from "lucide-react";
 import type { CephLandmark, CephMeasurement } from "@/types/ceph";
+import { tracingPolylines } from "@/lib/cephTracing";
 import { cn } from "@/lib/utils";
 
 const HIT_RADIUS = 10;
@@ -117,6 +118,8 @@ interface Props {
   selectedKey: string | null;
   onSelectKey: (key: string | null) => void;
   showPlanes: boolean;
+  /** Draw the anatomical tracing (contours connecting placed landmarks). */
+  showTracing?: boolean;
   showSimulation: boolean;
   simulationScenario: string;
   /** Measurement overlay: draw value labels for SNA/SNB/ANB/FMA/IMPA. */
@@ -135,7 +138,7 @@ interface Props {
 
 export function CephCanvas({
   imageUrl, imageWidth, imageHeight, landmarks, onLandmarksChange,
-  selectedKey, onSelectKey, showPlanes, showSimulation, simulationScenario,
+  selectedKey, onSelectKey, showPlanes, showTracing = false, showSimulation, simulationScenario,
   showMeasurements = false, measurements, onCalibrate,
   imageAdjustments = { brightness: 100, contrast: 100, inverted: false },
   onImageDimensions,
@@ -307,6 +310,28 @@ export function CephCanvas({
       });
     }
 
+    // Anatomical tracing — connect placed landmarks into the standard outline.
+    if (showTracing) {
+      const polylines = tracingPolylines(k => Boolean(lmMap[k]));
+      ctx.save();
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.globalAlpha = 0.85;
+      for (const line of polylines) {
+        ctx.strokeStyle = line.color;
+        ctx.beginPath();
+        line.keys.forEach((key, i) => {
+          const lm = lmMap[key];
+          const cp = T.tc(lm.x, lm.y);
+          if (i === 0) ctx.moveTo(cp.x, cp.y);
+          else ctx.lineTo(cp.x, cp.y);
+        });
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
     // Simulation overlay
     if (showSimulation) {
       const sc = SIMULATION_SCENARIOS[simulationScenario];
@@ -458,7 +483,7 @@ export function CephCanvas({
       ctx.beginPath(); ctx.moveTo(c.width / 2, 0); ctx.lineTo(c.width / 2, c.height); ctx.stroke();
       ctx.restore();
     }
-  }, [landmarks, lmMap, measMap, img, imgError, imageUrl, selectedKey, hovered, showPlanes, showSimulation,
+  }, [landmarks, lmMap, measMap, img, imgError, imageUrl, selectedKey, hovered, showPlanes, showTracing, showSimulation,
       simulationScenario, showMeasurements, calMode, calPoints, calCursor, getT,
       imageAdjustments]);
 

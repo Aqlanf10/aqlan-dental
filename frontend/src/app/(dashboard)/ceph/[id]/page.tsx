@@ -256,7 +256,8 @@ export default function CephAnalysisPage() {
       {/* ── Header ── */}
       <div className="flex-shrink-0 flex items-center justify-between border-b border-gray-200 bg-white px-3 py-2 gap-2">
         <div className="flex items-center gap-3 min-w-0">
-          <Link href="/ceph"
+          <Link href={`/ortho/${analysis.orthoCaseId}?tab=ceph`}
+            title="العودة إلى حالة التقويم"
             className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500 flex-shrink-0">
             <ArrowRight className="w-4 h-4" />
           </Link>

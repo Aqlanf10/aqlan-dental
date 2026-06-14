@@ -68,6 +68,10 @@ const inputCls = (err?: string) =>
 function NewCephPageInner() {
   const router = useRouter();
   const params = useSearchParams();
+  const requestedCaseId = params.get("orthoCaseId");
+  const returnHref = requestedCaseId
+    ? `/ortho/${requestedCaseId}?tab=ceph`
+    : "/ceph";
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
   const [caseSearch, setCaseSearch] = useState("");
@@ -89,7 +93,7 @@ function NewCephPageInner() {
     resolver: zodResolver(schema),
     defaultValues: {
       analysisType: "full",
-      orthoCaseId: params.get("orthoCaseId") ?? "",
+      orthoCaseId: requestedCaseId ?? "",
     },
   });
 
@@ -97,20 +101,20 @@ function NewCephPageInner() {
 
   // Pre-fill if orthoCaseId is in query
   useEffect(() => {
-    const id = params.get("orthoCaseId");
+    const id = requestedCaseId;
     if (!id) return;
     api
-      .get<OrthoCase[]>("/api/ortho-cases")
+      .get<OrthoCase>(`/api/ortho-cases/${encodeURIComponent(id)}`)
       .then((r) => {
-        const c = r.data.find((x) => x.id === id);
-        if (c) {
-          setValue("orthoCaseId", c.id);
-          setCaseSearch(`${c.patientName} (${c.caseNumber})`);
-          setSelectedCaseLabel(`${c.patientName} (${c.caseNumber})`);
-        }
+        const c = r.data;
+        setValue("orthoCaseId", c.id);
+        setCaseSearch(`${c.patientName} (${c.caseNumber})`);
+        setSelectedCaseLabel(`${c.patientName} (${c.caseNumber})`);
       })
-      .catch(() => {});
-  }, [params, setValue]);
+      .catch(() => {
+        setServerError("تعذر تحميل حالة التقويم المحددة");
+      });
+  }, [requestedCaseId, setValue]);
 
   useEffect(() => {
     if (caseSearch.length < 2) {
@@ -168,7 +172,7 @@ function NewCephPageInner() {
         }
       }
     }
-    router.push("/ceph");
+    router.push(returnHref);
   };
 
   return (
@@ -176,15 +180,15 @@ function NewCephPageInner() {
       {/* Breadcrumb + header */}
       <div>
         <div className="flex items-center gap-2 text-sm text-gray-500">
-          <Link href="/ceph" className="hover:text-clinic-blue transition">
-            السيفالومتري
+          <Link href={returnHref} className="hover:text-clinic-blue transition">
+            {requestedCaseId ? "حالة التقويم" : "السيفالومتري"}
           </Link>
           <span>/</span>
           <span className="text-gray-900 font-medium">تحليل جديد</span>
         </div>
         <div className="mt-2 flex items-center gap-3">
           <Link
-            href="/ceph"
+            href={returnHref}
             className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500"
           >
             <ArrowRight className="w-4 h-4" />

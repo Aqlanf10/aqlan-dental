@@ -549,7 +549,66 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         diagnosis.AiRecommendation   = aiRecommendation;
         // Do not overwrite DoctorApproved/FinalDiagnosis if already set by doctor.
 
+        await SyncOrthoDiagnosisFromCephAsync(
+            id,
+            skeletalClass,
+            verticalPattern,
+            softTissueSummary,
+            GetValue);
+
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Keeps the orthodontic case diagnosis aligned with the latest calculated
+    /// cephalometric measurements. Approved diagnoses are immutable: a newer
+    /// analysis remains visible in the case workspace but never overwrites a
+    /// doctor's approved clinical conclusion.
+    /// </summary>
+    private async Task SyncOrthoDiagnosisFromCephAsync(
+        Guid analysisId,
+        string skeletalClass,
+        string verticalPattern,
+        string softTissueSummary,
+        Func<string, double?> getValue)
+    {
+        var orthoCaseId = await db.CephAnalyses
+            .Where(a => a.Id == analysisId)
+            .Select(a => (Guid?)a.OrthoCaseId)
+            .FirstOrDefaultAsync();
+
+        if (!orthoCaseId.HasValue) return;
+
+        var orthoDiagnosis = await db.OrthoDiagnoses
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(d => d.OrthoCaseId == orthoCaseId.Value);
+
+        if (orthoDiagnosis?.ApprovedAt is not null) return;
+
+        if (orthoDiagnosis is null)
+        {
+            orthoDiagnosis = new OrthoDiagnosis
+            {
+                OrthoCaseId = orthoCaseId.Value,
+            };
+            db.OrthoDiagnoses.Add(orthoDiagnosis);
+        }
+
+        static decimal? ToDecimal(double? value) =>
+            value.HasValue ? (decimal)value.Value : null;
+
+        orthoDiagnosis.IsActive = true;
+        orthoDiagnosis.SkeletalClassification = skeletalClass;
+        orthoDiagnosis.FacialPattern = verticalPattern;
+        orthoDiagnosis.ANB = ToDecimal(getValue("ANB"));
+        orthoDiagnosis.Wits = ToDecimal(getValue("Wits"));
+        orthoDiagnosis.FMA = ToDecimal(getValue("FMA"));
+        orthoDiagnosis.SNA = ToDecimal(getValue("SNA"));
+        orthoDiagnosis.SNB = ToDecimal(getValue("SNB"));
+        orthoDiagnosis.IMPA = ToDecimal(getValue("IMPA"));
+        orthoDiagnosis.SoftTissueDiagnosis ??= softTissueSummary;
+        orthoDiagnosis.CephSourceAnalysisId = analysisId;
+        orthoDiagnosis.CephSyncedAt = DateTime.UtcNow;
     }
 
     // ──────────────────────────────────────────────────────────────────────────

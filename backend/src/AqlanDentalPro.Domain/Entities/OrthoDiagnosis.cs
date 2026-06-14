@@ -16,9 +16,12 @@ public class OrthoDiagnosis : BaseEntity
     public string? FunctionalDiagnosis { get; set; }
     public string? Etiology { get; set; }
     public string? Summary { get; set; }
+    public Guid? CephSourceAnalysisId { get; set; }
+    public DateTime? CephSyncedAt { get; set; }
     public Guid? ApprovedBy { get; set; }
     public DateTime? ApprovedAt { get; set; }
 
     public OrthoCase OrthoCase { get; set; } = null!;
+    public CephAnalysis? CephSourceAnalysis { get; set; }
     public Doctor? ApprovedByDoctor { get; set; }
 }

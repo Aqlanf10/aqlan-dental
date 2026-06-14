@@ -226,6 +226,11 @@ export interface OrthoDiagnosis {
   snb?: number;
   impa?: number;
   summary?: string;
+  cephSourceAnalysisId?: string;
+  cephSyncedAt?: string;
+  latestCephAnalysisId?: string;
+  latestCephAnalysisDate?: string;
+  isCephSyncOutdated?: boolean;
   isApproved?: boolean;
   approvedByName?: string;
   approvedAt?: string;
@@ -338,6 +343,10 @@ export interface OrthoOverview {
   visitsCount: number;
   photosCount: number;
   cephAnalysesCount: number;
+  latestCephAnalysisId?: string;
+  latestCephAnalysisDate?: string;
+  cephDiagnosisSyncedAt?: string;
+  isCephDiagnosisOutdated?: boolean;
   hasRetention: boolean;
   checklistCompleted: number;
   checklistTotal: number;

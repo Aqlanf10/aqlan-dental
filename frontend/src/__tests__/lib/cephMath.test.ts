@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   dist, angle3, angleBetweenLines, perpDist, signedPerpDist, lineAngle,
   computeJarabak, similarityFromPairs, applySimilarity,
+  applyVtoMovements, approxOverjetMm,
 } from '@/lib/cephMath';
 
 type Pt = { x: number; y: number };
@@ -310,5 +311,64 @@ describe('similarityFromPairs', () => {
     const mapped = applySimilarity(t, s);
     expect(mapped.x).toBeCloseTo(20, 6);
     expect(mapped.y).toBeCloseTo(30, 6);
+  });
+});
+
+// ─── applyVtoMovements / approxOverjetMm (VTO) ───────────────────────────────
+
+describe('applyVtoMovements', () => {
+  const lm = (): Record<string, Pt> => ({
+    U1T: { x: 200, y: 100 }, U1A: { x: 190, y: 130 },
+    L1T: { x: 196, y: 104 }, L1A: { x: 188, y: 134 },
+    A:   { x: 180, y: 110 }, // untouched control point
+  });
+
+  it('translates both incisors sagittally by the planned mm (× pixelsPerMm)', () => {
+    const out = applyVtoMovements(lm(), { u1: -3, l1: 2 }, 4); // 4 px/mm
+    expect(out.U1T.x).toBe(200 - 3 * 4); // upper retracted 3mm
+    expect(out.U1A.x).toBe(190 - 3 * 4);
+    expect(out.L1T.x).toBe(196 + 2 * 4); // lower protracted 2mm
+    expect(out.L1A.x).toBe(188 + 2 * 4);
+  });
+
+  it('leaves non-incisor landmarks and the y-axis untouched (bodily sagittal move)', () => {
+    const out = applyVtoMovements(lm(), { u1: -3, l1: 2 }, 4);
+    expect(out.A).toEqual({ x: 180, y: 110 });
+    expect(out.U1T.y).toBe(100);
+    expect(out.L1T.y).toBe(104);
+  });
+
+  it('does not mutate the input map', () => {
+    const input = lm();
+    applyVtoMovements(input, { u1: -5, l1: -5 }, 4);
+    expect(input.U1T.x).toBe(200);
+  });
+
+  it('returns an unchanged copy when uncalibrated (pixelsPerMm ≤ 0)', () => {
+    const out = applyVtoMovements(lm(), { u1: -3, l1: 2 }, 0);
+    expect(out.U1T.x).toBe(200);
+    expect(out.L1T.x).toBe(196);
+  });
+});
+
+describe('approxOverjetMm', () => {
+  it('is the sagittal U1T→L1T gap divided by the pixel scale', () => {
+    const lm: Record<string, Pt> = { U1T: { x: 212, y: 100 }, L1T: { x: 200, y: 104 } };
+    expect(approxOverjetMm(lm, 4)).toBe(3); // (212−200)/4
+  });
+
+  it('decreases by the planned retraction after a VTO move', () => {
+    const lm: Record<string, Pt> = {
+      U1T: { x: 212, y: 100 }, U1A: { x: 205, y: 130 },
+      L1T: { x: 200, y: 104 }, L1A: { x: 196, y: 134 },
+    };
+    const before = approxOverjetMm(lm, 4)!;
+    const after = approxOverjetMm(applyVtoMovements(lm, { u1: -2, l1: 0 }, 4), 4)!;
+    expect(before - after).toBeCloseTo(2, 6); // 2mm upper retraction closes 2mm overjet
+  });
+
+  it('returns null when uncalibrated or an incisor edge is missing', () => {
+    expect(approxOverjetMm({ U1T: { x: 1, y: 1 }, L1T: { x: 0, y: 0 } }, 0)).toBeNull();
+    expect(approxOverjetMm({ U1T: { x: 1, y: 1 } }, 4)).toBeNull();
   });
 });

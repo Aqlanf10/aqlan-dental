@@ -123,6 +123,7 @@ public class OrthoCasesController(
             .Include(c => c.Visits)
             .Include(c => c.OrthoClinicalPhotos)
             .Include(c => c.CephAnalyses)
+            .Include(c => c.PhotoAnalyses)
             .Include(c => c.RetentionRecord)
             .Include(c => c.RecordsChecklist)
             .FirstOrDefaultAsync(c => c.Id == id);
@@ -138,6 +139,9 @@ public class OrthoCasesController(
                 d.ApprovedAt,
                 d.CephSourceAnalysisId,
                 d.CephSyncedAt,
+                d.ProfileSourceAnalysisId,
+                d.FrontalSourceAnalysisId,
+                d.PhotoAnalysisSyncedAt,
             })
             .FirstOrDefaultAsync();
         var hasDiagnosis = diagnosisSummary is not null;
@@ -145,6 +149,14 @@ public class OrthoCasesController(
         var latestCeph = orthoCase.CephAnalyses
             .OrderByDescending(a => a.AnalysisDate)
             .ThenByDescending(a => a.UpdatedAt)
+            .FirstOrDefault();
+        var latestProfile = orthoCase.PhotoAnalyses
+            .Where(a => a.ViewType == "profile")
+            .OrderByDescending(a => a.CreatedAt)
+            .FirstOrDefault();
+        var latestFrontal = orthoCase.PhotoAnalyses
+            .Where(a => a.ViewType == "frontal")
+            .OrderByDescending(a => a.CreatedAt)
             .FirstOrDefault();
         var latestPlan = orthoCase.TreatmentPlans.OrderByDescending(p => p.CreatedAt).FirstOrDefault();
         var latestVisit = orthoCase.Visits.OrderByDescending(v => v.VisitDate).FirstOrDefault();
@@ -241,11 +253,20 @@ public class OrthoCasesController(
             VisitsCount = orthoCase.Visits.Count,
             PhotosCount = orthoCase.OrthoClinicalPhotos.Count,
             CephAnalysesCount = orthoCase.CephAnalyses.Count,
+            PhotoAnalysesCount = orthoCase.PhotoAnalyses.Count,
             LatestCephAnalysisId = latestCeph?.Id,
             LatestCephAnalysisDate = latestCeph?.AnalysisDate.ToString("yyyy-MM-dd"),
             CephDiagnosisSyncedAt = diagnosisSummary?.CephSyncedAt,
             IsCephDiagnosisOutdated = latestCeph is not null &&
                 diagnosisSummary?.CephSourceAnalysisId != latestCeph.Id,
+            LatestProfileAnalysisId = latestProfile?.Id,
+            LatestProfileAnalysisDate = latestProfile?.CreatedAt.ToString("yyyy-MM-dd"),
+            LatestFrontalAnalysisId = latestFrontal?.Id,
+            LatestFrontalAnalysisDate = latestFrontal?.CreatedAt.ToString("yyyy-MM-dd"),
+            PhotoAnalysisSyncedAt = diagnosisSummary?.PhotoAnalysisSyncedAt,
+            IsPhotoAnalysisSyncOutdated =
+                (latestProfile is not null && diagnosisSummary?.ProfileSourceAnalysisId != latestProfile.Id) ||
+                (latestFrontal is not null && diagnosisSummary?.FrontalSourceAnalysisId != latestFrontal.Id),
             HasRetention = orthoCase.RetentionRecord is not null,
             ChecklistCompleted = checklistCompleted,
             ChecklistTotal = checklistTotal,
@@ -1040,6 +1061,26 @@ public class OrthoCasesController(
                 AnalysisDate = a.AnalysisDate.ToString("yyyy-MM-dd"),
             })
             .FirstOrDefaultAsync();
+        var latestProfile = await db.PhotoAnalyses
+            .AsNoTracking()
+            .Where(a => a.OrthoCaseId == id && a.ViewType == "profile")
+            .OrderByDescending(a => a.CreatedAt)
+            .Select(a => new
+            {
+                a.Id,
+                AnalysisDate = a.CreatedAt.ToString("yyyy-MM-dd"),
+            })
+            .FirstOrDefaultAsync();
+        var latestFrontal = await db.PhotoAnalyses
+            .AsNoTracking()
+            .Where(a => a.OrthoCaseId == id && a.ViewType == "frontal")
+            .OrderByDescending(a => a.CreatedAt)
+            .Select(a => new
+            {
+                a.Id,
+                AnalysisDate = a.CreatedAt.ToString("yyyy-MM-dd"),
+            })
+            .FirstOrDefaultAsync();
 
         var diagnosis = await db.OrthoDiagnoses
             .Include(d => d.ApprovedByDoctor)
@@ -1066,10 +1107,21 @@ public class OrthoCasesController(
                 diagnosis.Summary,
                 diagnosis.CephSourceAnalysisId,
                 diagnosis.CephSyncedAt,
+                diagnosis.PhotoAnalysisSummary,
+                diagnosis.ProfileSourceAnalysisId,
+                diagnosis.FrontalSourceAnalysisId,
+                diagnosis.PhotoAnalysisSyncedAt,
                 LatestCephAnalysisId = latestCephInfo?.Id,
                 LatestCephAnalysisDate = latestCephInfo?.AnalysisDate,
                 IsCephSyncOutdated = latestCephInfo is not null &&
                     diagnosis.CephSourceAnalysisId != latestCephInfo.Id,
+                LatestProfileAnalysisId = latestProfile?.Id,
+                LatestProfileAnalysisDate = latestProfile?.AnalysisDate,
+                LatestFrontalAnalysisId = latestFrontal?.Id,
+                LatestFrontalAnalysisDate = latestFrontal?.AnalysisDate,
+                IsPhotoAnalysisSyncOutdated =
+                    (latestProfile is not null && diagnosis.ProfileSourceAnalysisId != latestProfile.Id) ||
+                    (latestFrontal is not null && diagnosis.FrontalSourceAnalysisId != latestFrontal.Id),
                 IsApproved = diagnosis.ApprovedAt != null,
                 ApprovedByName = diagnosis.ApprovedByDoctor?.Name,
                 ApprovedAt = diagnosis.ApprovedAt?.ToString("yyyy-MM-dd"),
@@ -1138,9 +1190,18 @@ public class OrthoCasesController(
             Summary = problemSummary,
             CephSourceAnalysisId = (Guid?)null,
             CephSyncedAt = (DateTime?)null,
+            PhotoAnalysisSummary = (string?)null,
+            ProfileSourceAnalysisId = (Guid?)null,
+            FrontalSourceAnalysisId = (Guid?)null,
+            PhotoAnalysisSyncedAt = (DateTime?)null,
             LatestCephAnalysisId = latestCephInfo?.Id,
             LatestCephAnalysisDate = latestCephInfo?.AnalysisDate,
             IsCephSyncOutdated = latestCephInfo is not null,
+            LatestProfileAnalysisId = latestProfile?.Id,
+            LatestProfileAnalysisDate = latestProfile?.AnalysisDate,
+            LatestFrontalAnalysisId = latestFrontal?.Id,
+            LatestFrontalAnalysisDate = latestFrontal?.AnalysisDate,
+            IsPhotoAnalysisSyncOutdated = latestProfile is not null || latestFrontal is not null,
             IsApproved = false,
             ApprovedByName = (string?)null,
             ApprovedAt = (string?)null,

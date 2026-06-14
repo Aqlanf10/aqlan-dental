@@ -31,6 +31,7 @@ export const orthoKeys = {
   checklist: (caseId: string) => ["ortho-checklist", caseId] as const,
   ceph: (caseId: string) => ["ortho-ceph", caseId] as const,
   cephDetail: (analysisId: string) => ["ortho-ceph-detail", analysisId] as const,
+  photoAnalyses: (caseId: string) => ["ortho-photo-analyses", caseId] as const,
 };
 
 export function useOrthoCase(caseId: string) {
@@ -150,6 +151,14 @@ export function useCaseCephAnalysis(analysisId?: string) {
     queryKey: orthoKeys.cephDetail(analysisId ?? ""),
     queryFn: async () => (await orthoService.getCephAnalysis(analysisId!)).data,
     enabled: !!analysisId,
+  });
+}
+
+export function useCasePhotoAnalyses(caseId: string) {
+  return useQuery({
+    queryKey: orthoKeys.photoAnalyses(caseId),
+    queryFn: async () => (await orthoService.getPhotoAnalyses(caseId)).data,
+    enabled: !!caseId,
   });
 }
 

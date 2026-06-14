@@ -19,9 +19,8 @@ public class PhotoAnalysisConfiguration : IEntityTypeConfiguration<PhotoAnalysis
 
         builder.HasIndex(p => p.OrthoCaseId);
 
-        // FK to the case (no navigation collection needed on OrthoCase).
         builder.HasOne(p => p.OrthoCase)
-            .WithMany()
+            .WithMany(c => c.PhotoAnalyses)
             .HasForeignKey(p => p.OrthoCaseId)
             .OnDelete(DeleteBehavior.Cascade);
     }

@@ -43,6 +43,7 @@ import {
   useClinicalExam,
   useCaseCephAnalyses,
   useCaseCephAnalysis,
+  useCasePhotoAnalyses,
   useCreateTreatmentPlan,
   useDeleteProblem,
   useDiagnosis,
@@ -274,6 +275,7 @@ function OverviewPanel({
             ["مشاكل", overview?.problemsCount ?? 0],
             ["صور", overview?.photosCount ?? 0],
             ["تحليلات Ceph", overview?.cephAnalysesCount ?? 0],
+            ["تحليلات صور الوجه", overview?.photoAnalysesCount ?? 0],
             ["إكمال السجلات", `${checklistPercent}%`],
           ].map(([label, value]) => (
             <div
@@ -1794,7 +1796,11 @@ function ProblemsPanel({ caseId }: { caseId: string }) {
 
 function CephPanel({ caseId }: { caseId: string }) {
   const { data: analyses = [], isLoading } = useCaseCephAnalyses(caseId);
+  const { data: photoAnalyses = [], isLoading: photoAnalysesLoading } =
+    useCasePhotoAnalyses(caseId);
   const latest = analyses[0];
+  const latestProfile = photoAnalyses.find((analysis) => analysis.viewType === "profile");
+  const latestFrontal = photoAnalyses.find((analysis) => analysis.viewType === "frontal");
   const { data: latestDetail } = useCaseCephAnalysis(latest?.id);
   const { data: diagnosis } = useDiagnosis(caseId);
 
@@ -1820,7 +1826,20 @@ function CephPanel({ caseId }: { caseId: string }) {
             title: "التحليل محفوظ داخل الحالة",
             detail: "ستنتقل القياسات تلقائياً إلى التشخيص عند حفظ نقاط التحليل.",
           }
-        : null;
+      : null;
+  const photoSyncState = diagnosis?.isApproved && diagnosis.isPhotoAnalysisSyncOutdated
+    ? {
+        tone: "border-amber-200 bg-amber-50 text-amber-800",
+        title: "يوجد تحليل صورة وجه أحدث من التشخيص المعتمد",
+        detail: "لم يُكتب فوق التشخيص المعتمد. راجع تحليل البروفايل أو الصورة الأمامية ثم حدّث التشخيص سريريًا.",
+      }
+    : diagnosis?.photoAnalysisSyncedAt && !diagnosis.isPhotoAnalysisSyncOutdated
+      ? {
+          tone: "border-green-200 bg-green-50 text-green-800",
+          title: "تحليل صور الوجه متزامن مع تشخيص الحالة",
+          detail: `آخر مزامنة: ${formatArabicDate(diagnosis.photoAnalysisSyncedAt)}`,
+        }
+      : null;
 
   return (
     <div className="space-y-5">
@@ -1840,6 +1859,13 @@ function CephPanel({ caseId }: { caseId: string }) {
             تحليل صورة البروفايل
           </Link>
           <Link
+            href={`/ceph/photo/frontal?orthoCaseId=${caseId}`}
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+          >
+            <User className="h-4 w-4" />
+            تحليل الصورة الأمامية
+          </Link>
+          <Link
             href={`/ceph/new?orthoCaseId=${caseId}`}
             className="inline-flex items-center gap-2 rounded-lg bg-clinic-blue px-3 py-2 text-sm font-medium text-white transition hover:opacity-90"
           >
@@ -1853,6 +1879,57 @@ function CephPanel({ caseId }: { caseId: string }) {
         <div className={cn("rounded-lg border px-4 py-3", syncState.tone)}>
           <p className="text-sm font-semibold">{syncState.title}</p>
           <p className="mt-1 text-xs leading-5">{syncState.detail}</p>
+        </div>
+      )}
+      {photoSyncState && (
+        <div className={cn("rounded-lg border px-4 py-3", photoSyncState.tone)}>
+          <p className="text-sm font-semibold">{photoSyncState.title}</p>
+          <p className="mt-1 text-xs leading-5">{photoSyncState.detail}</p>
+        </div>
+      )}
+
+      {photoAnalysesLoading ? (
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="h-28 animate-pulse rounded-lg bg-gray-100" />
+          <div className="h-28 animate-pulse rounded-lg bg-gray-100" />
+        </div>
+      ) : (latestProfile || latestFrontal) && (
+        <div className="grid gap-3 md:grid-cols-2">
+          {[
+            {
+              key: "profile",
+              title: "تحليل البروفايل والأنسجة الرخوة",
+              analysis: latestProfile,
+              href: `/ceph/photo?orthoCaseId=${caseId}`,
+            },
+            {
+              key: "frontal",
+              title: "تحليل التناظر والنسب الأمامية",
+              analysis: latestFrontal,
+              href: `/ceph/photo/frontal?orthoCaseId=${caseId}`,
+            },
+          ].map((item) => (
+            <section key={item.key} className="rounded-lg border border-gray-200 bg-white p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">{item.title}</p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {item.analysis
+                      ? `آخر حفظ: ${formatArabicDate(item.analysis.analysisDate)}`
+                      : "لم يُحفظ تحليل بعد"}
+                  </p>
+                </div>
+                <UserSquare2 className="h-5 w-5 text-clinic-blue" />
+              </div>
+              <Link
+                href={item.href}
+                className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-clinic-blue hover:underline"
+              >
+                {item.analysis ? "فتح التحليل المحفوظ" : "بدء التحليل"}
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </section>
+          ))}
         </div>
       )}
 
@@ -2017,6 +2094,44 @@ function DiagnosisPanel({ caseId }: { caseId: string }) {
             >
               فتح التحليل المصدر
             </Link>
+          </div>
+        </div>
+      )}
+      {form.photoAnalysisSummary && (
+        <div className={cn(
+          "rounded-lg border px-4 py-3",
+          form.isApproved && form.isPhotoAnalysisSyncOutdated
+            ? "border-amber-200 bg-amber-50 text-amber-800"
+            : "border-cyan-200 bg-cyan-50 text-cyan-900"
+        )}>
+          <p className="text-sm font-semibold">
+            {form.isApproved && form.isPhotoAnalysisSyncOutdated
+              ? "التشخيص المعتمد محفوظ ويوجد تحليل صورة وجه أحدث"
+              : "ملخص صور الوجه منقول تلقائيًا إلى الحالة"}
+          </p>
+          <p className="mt-2 whitespace-pre-line text-xs leading-6">
+            {form.photoAnalysisSummary}
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+            {form.photoAnalysisSyncedAt && (
+              <span>آخر مزامنة: {formatArabicDate(form.photoAnalysisSyncedAt)}</span>
+            )}
+            {(form.profileSourceAnalysisId || form.latestProfileAnalysisId) && (
+              <Link
+                href={`/ceph/photo?orthoCaseId=${caseId}`}
+                className="font-medium underline underline-offset-2"
+              >
+                فتح تحليل البروفايل
+              </Link>
+            )}
+            {(form.frontalSourceAnalysisId || form.latestFrontalAnalysisId) && (
+              <Link
+                href={`/ceph/photo/frontal?orthoCaseId=${caseId}`}
+                className="font-medium underline underline-offset-2"
+              >
+                فتح التحليل الأمامي
+              </Link>
+            )}
           </div>
         </div>
       )}

@@ -321,13 +321,27 @@ export default function CephAnalysisPage() {
             طباعة التقرير
           </button>
 
-          {/* Visual Treatment Objective — planned incisor movements preview */}
-          <Link href={`/ceph/vto?analysisId=${id}`}
-            title="هدف العلاج البصري — معاينة الحركات المخطّطة للقواطع"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-clinic-blue/30 bg-clinic-blue/5 text-clinic-blue hover:bg-clinic-blue/10 transition">
-            <Target className="w-3.5 h-3.5" />
-            هدف العلاج VTO
-          </Link>
+          {/* Visual Treatment Objective — planned incisor movements preview.
+              The VTO page refetches the SAVED analysis, so it is gated on a
+              clean state: unsaved landmark/calibration edits must be saved
+              first or the preview would build from stale positions. */}
+          {placedCount === 0 || isDirty ? (
+            <span
+              title={placedCount === 0
+                ? 'ضع المعالم واحفظها أولًا لفتح هدف العلاج'
+                : 'اضغط «احسب» لحفظ المعالم والمعايرة قبل فتح هدف العلاج'}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-gray-200 text-gray-300 cursor-not-allowed">
+              <Target className="w-3.5 h-3.5" />
+              هدف العلاج VTO
+            </span>
+          ) : (
+            <Link href={`/ceph/vto?analysisId=${id}`}
+              title="هدف العلاج البصري — معاينة الحركات المخطّطة للقواطع"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-clinic-blue/30 bg-clinic-blue/5 text-clinic-blue hover:bg-clinic-blue/10 transition">
+              <Target className="w-3.5 h-3.5" />
+              هدف العلاج VTO
+            </Link>
+          )}
 
           <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
             <button onClick={() => setShowPlanes(!showPlanes)}

@@ -63,7 +63,12 @@ function VtoPageInner() {
   const overjetBefore = calibrated ? approxOverjetMm(original, pixelsPerMm!) : null;
   const overjetAfter = calibrated ? approxOverjetMm(predicted, pixelsPerMm!) : null;
 
-  const hasIncisors = Boolean(original["U1T"] && original["L1T"]);
+  // Bodily movement shifts the crown tip AND the apex together, so all four
+  // incisor landmarks must exist — otherwise the plan would move tips without
+  // their apex/axis and misrepresent the planned tooth movement.
+  const hasIncisors = Boolean(
+    original["U1T"] && original["U1A"] && original["L1T"] && original["L1A"],
+  );
 
   if (!analysisId) {
     return (
@@ -127,7 +132,7 @@ function VtoPageInner() {
 
           {!hasIncisors && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5 text-[11px] text-blue-700">
-              يتطلب VTO وجود معالم القواطع (U1T و L1T) في التحليل.
+              يتطلب VTO وجود معالم القواطع الأربعة (طرف وذروة العلوي U1T/U1A والسفلي L1T/L1A) في التحليل.
             </div>
           )}
 

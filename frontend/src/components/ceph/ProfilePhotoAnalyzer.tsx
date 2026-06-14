@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle, AlertTriangle, XCircle, RotateCcw } from "lucide-react";
 import {
   PROFILE_LANDMARKS, computePhotoMeasurements, profileType,
-  type PhotoSeverity,
+  type PhotoSeverity, type PhotoMeasurement,
 } from "@/lib/photoAnalysis";
 import { cn } from "@/lib/utils";
 
@@ -12,6 +12,10 @@ type Pt = { x: number; y: number };
 
 interface Props {
   imageUrl: string;
+  /** Pre-placed landmarks when reopening a saved analysis. */
+  initialPoints?: Record<string, Pt>;
+  /** Reports the current placed points + computed measurements (for saving). */
+  onChange?: (data: { points: Record<string, Pt>; measurements: PhotoMeasurement[] }) => void;
 }
 
 const SEVERITY = {
@@ -20,22 +24,24 @@ const SEVERITY = {
   severe: { icon: XCircle, cls: "text-red-500", bg: "bg-red-50 text-red-700", label: "واضح" },
 } as const;
 
-export function ProfilePhotoAnalyzer({ imageUrl }: Props) {
+export function ProfilePhotoAnalyzer({ imageUrl, initialPoints, onChange }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [dim, setDim] = useState<{ w: number; h: number } | null>(null);
-  const [points, setPoints] = useState<Record<string, Pt>>({});
+  const [points, setPoints] = useState<Record<string, Pt>>(initialPoints ?? {});
   const [selected, setSelected] = useState<string>(PROFILE_LANDMARKS[0].key);
 
   useEffect(() => {
-    setPoints({});
+    setPoints(initialPoints ?? {});
     const img = new window.Image();
     img.onload = () => setDim({ w: img.naturalWidth, h: img.naturalHeight });
     img.onerror = () => setDim(null);
     img.src = imageUrl;
-  }, [imageUrl]);
+  }, [imageUrl, initialPoints]);
 
   const measurements = useMemo(() => computePhotoMeasurements(points), [points]);
   const profile = profileType(measurements);
+
+  useEffect(() => { onChange?.({ points, measurements }); }, [points, measurements, onChange]);
   const r = dim ? Math.max(4, dim.w / 120) : 6;
 
   const placeAt = (e: React.MouseEvent<SVGSVGElement>) => {

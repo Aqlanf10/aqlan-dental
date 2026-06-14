@@ -46,6 +46,7 @@ public static class ServiceRegistrationConfiguration
         services.AddScoped<IPatientPortalMessagingService, PatientPortalMessagingService>();
         services.AddScoped<IRealTimePushService, SignalRPushService>();
         services.AddScoped<CephService>();
+        services.AddScoped<PhotoAnalysisService>();
         services.AddScoped<AqlanDentalPro.API.Services.CephReportPdfGenerator>();
         services.AddScoped<IPatientPortalService, PatientPortalService>();
         services.AddScoped<IWhatsAppService, WhatsAppService>();

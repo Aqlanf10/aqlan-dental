@@ -1,8 +1,10 @@
 using AqlanDentalPro.Application.DTOs.Ceph;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.Application.Validators;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Data.Seed;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -144,5 +146,68 @@ public class CephJarabakAnalysisTests
             .AnyAsync(m => m.AnalysisId == id && m.IsActive && m.MeasurementName == "Bjork-Sum");
 
         hasJarabak.Should().BeTrue("the 'full' analysis must run Jarabak alongside the other six analyses");
+    }
+
+    // ─── Uncalibrated save path (Codex review) ───────────────────────────────
+
+    [Fact]
+    public void SaveLandmarksValidator_AcceptsUncalibratedZeroPixelsPerMm()
+    {
+        var req = new SaveLandmarksRequest
+        {
+            PixelsPerMm = 0, ImageWidth = 800, ImageHeight = 600,
+            Landmarks = [new LandmarkInput { Key = "S", X = 1, Y = 1 }],
+        };
+        new SaveLandmarksRequestValidator().Validate(req).IsValid
+            .Should().BeTrue("scale-independent analyses (Jarabak) must be savable without calibration");
+    }
+
+    [Fact]
+    public void SaveLandmarksValidator_RejectsNegativePixelsPerMm()
+    {
+        var req = new SaveLandmarksRequest
+        {
+            PixelsPerMm = -1, ImageWidth = 800, ImageHeight = 600,
+            Landmarks = [new LandmarkInput { Key = "S", X = 1, Y = 1 }],
+        };
+        new SaveLandmarksRequestValidator().Validate(req).IsValid.Should().BeFalse();
+    }
+
+    // ─── Norm backfill for already-seeded clinics (Codex review) ─────────────
+
+    [Fact]
+    public async Task Backfill_InsertsMissingJarabakNorms_WithoutTouchingExistingRows()
+    {
+        await using var db = CreateDb();
+        // Simulate a clinic seeded before Jarabak existed, with one customized row.
+        db.CephNorms.Add(new CephNorm
+        {
+            MeasurementName = "SNA", AnalysisGroup = "steiner", NameAr = "مخصص",
+            NormalValue = 79, StdDeviation = 3, Unit = "°", IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var inserted = await CephNormSeeder.BackfillMissingDefaultsAsync(db);
+
+        inserted.Should().BeGreaterThan(0);
+        (await db.CephNorms.AnyAsync(n => n.MeasurementName == "Bjork-Sum" && n.AnalysisGroup == "jarabak"))
+            .Should().BeTrue("missing Jarabak norms must be backfilled");
+        (await db.CephNorms.AnyAsync(n => n.MeasurementName == "Jarabak-Ratio" && n.AnalysisGroup == "jarabak"))
+            .Should().BeTrue();
+
+        var sna = await db.CephNorms.SingleAsync(n => n.MeasurementName == "SNA");
+        sna.NameAr.Should().Be("مخصص", "existing customized rows must not be overwritten");
+        sna.NormalValue.Should().Be(79);
+    }
+
+    [Fact]
+    public async Task Backfill_IsIdempotent_SecondRunInsertsNothing()
+    {
+        await using var db = CreateDb();
+        await CephNormSeeder.SeedIfEmptyAsync(db);
+
+        var second = await CephNormSeeder.BackfillMissingDefaultsAsync(db);
+
+        second.Should().Be(0, "a fully seeded table has no missing factory rows");
     }
 }

@@ -53,8 +53,12 @@ public sealed class SaveLandmarksRequestValidator : AbstractValidator<SaveLandma
         RuleFor(x => x.Landmarks)
             .NotEmpty().WithMessage("يجب إضافة نقطة مرجعية واحدة على الأقل");
 
+        // 0 = uncalibrated. Angle-only and ratio analyses (e.g. Jarabak's
+        // saddle/articular/gonial angles and the S-Go/N-Me facial-height ratio)
+        // are scale-independent and must be savable without ruler calibration;
+        // the engine simply skips the mm-based measurements when this is 0.
         RuleFor(x => x.PixelsPerMm)
-            .GreaterThan(0).WithMessage("مقياس البكسل لكل ملم يجب أن يكون أكبر من صفر");
+            .GreaterThanOrEqualTo(0).WithMessage("مقياس البكسل لكل ملم يجب ألا يكون سالبًا");
 
         RuleFor(x => x.ImageWidth)
             .GreaterThan(0).WithMessage("عرض الصورة يجب أن يكون أكبر من صفر");

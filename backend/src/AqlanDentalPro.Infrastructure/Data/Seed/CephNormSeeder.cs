@@ -30,6 +30,32 @@ public static class CephNormSeeder
     }
 
     /// <summary>
+    /// Inserts only the factory rows that are MISSING from the table (matched by
+    /// MeasurementName + AnalysisGroup, including soft-deleted rows so the unique
+    /// index is never violated). Existing rows — even admin-customized ones — are
+    /// left untouched. This lets newly added analyses (e.g. Jarabak) light up on
+    /// already-seeded clinics at startup without a manual reset. Returns the
+    /// number of rows inserted (0 when nothing was missing).
+    /// </summary>
+    public static async Task<int> BackfillMissingDefaultsAsync(AppDbContext db, CancellationToken ct = default)
+    {
+        var existingKeys = (await db.CephNorms.IgnoreQueryFilters()
+                .Select(n => new { n.MeasurementName, n.AnalysisGroup })
+                .ToListAsync(ct))
+            .Select(k => (k.MeasurementName, k.AnalysisGroup))
+            .ToHashSet();
+
+        var missing = GetFactoryDefaults()
+            .Where(d => !existingKeys.Contains((d.MeasurementName, d.AnalysisGroup)))
+            .ToList();
+
+        if (missing.Count == 0) return 0;
+        db.CephNorms.AddRange(missing);
+        await db.SaveChangesAsync(ct);
+        return missing.Count;
+    }
+
+    /// <summary>
     /// Restores every norm row to factory values: existing rows (matched by
     /// MeasurementName + AnalysisGroup, including soft-deleted ones) are
     /// overwritten and re-activated; missing rows are inserted.

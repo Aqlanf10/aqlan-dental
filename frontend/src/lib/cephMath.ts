@@ -58,6 +58,42 @@ export function lineAngle(p1: Pt, p2: Pt): number {
 }
 
 // ---------------------------------------------------------------------------
+// Similarity transform (translation + rotation + uniform scale)
+// Used for cephalometric superimposition: two tracings are registered by
+// mapping a pair of source landmarks onto the matching pair on the reference
+// tracing. Two point-pairs determine the transform exactly.
+// ---------------------------------------------------------------------------
+
+/** p' = (a·x − b·y + tx, b·x + a·y + ty); (a,b) encode scale·rotation. */
+export interface Similarity { a: number; b: number; tx: number; ty: number; }
+
+/** Identity transform (used as a safe fallback for degenerate input). */
+export const IDENTITY_SIMILARITY: Similarity = { a: 1, b: 0, tx: 0, ty: 0 };
+
+/**
+ * The similarity that maps srcA→dstA and srcB→dstB exactly. When the two
+ * source points coincide (no orientation/scale info) it degrades to a pure
+ * translation aligning srcA onto dstA.
+ */
+export function similarityFromPairs(srcA: Pt, srcB: Pt, dstA: Pt, dstB: Pt): Similarity {
+  const sx = srcB.x - srcA.x, sy = srcB.y - srcA.y;
+  const srcLen2 = sx * sx + sy * sy;
+  if (srcLen2 < 1e-9) {
+    return { a: 1, b: 0, tx: dstA.x - srcA.x, ty: dstA.y - srcA.y };
+  }
+  const dx = dstB.x - dstA.x, dy = dstB.y - dstA.y;
+  const a = (sx * dx + sy * dy) / srcLen2;
+  const b = (sx * dy - sy * dx) / srcLen2;
+  const tx = dstA.x - (a * srcA.x - b * srcA.y);
+  const ty = dstA.y - (b * srcA.x + a * srcA.y);
+  return { a, b, tx, ty };
+}
+
+export function applySimilarity(t: Similarity, p: Pt): Pt {
+  return { x: t.a * p.x - t.b * p.y + t.tx, y: t.b * p.x + t.a * p.y + t.ty };
+}
+
+// ---------------------------------------------------------------------------
 // Normal-value tables
 // All norms sourced from published orthodontic literature.
 // ---------------------------------------------------------------------------

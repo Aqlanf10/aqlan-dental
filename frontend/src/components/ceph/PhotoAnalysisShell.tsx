@@ -3,10 +3,11 @@
 import { Suspense, useCallback, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowRight, ImagePlus, Loader2, Save, CheckCircle2, Clock } from "lucide-react";
+import { ArrowRight, ImagePlus, Loader2, Save, CheckCircle2, Clock, FileDown, Printer } from "lucide-react";
 import api from "@/lib/api";
 import { resolveImageUrl } from "@/hooks/useClinicBranding";
 import { usePhotoAnalysisCase, type SavedPhotoAnalysis } from "@/hooks/usePhotoAnalysisCase";
+import { downloadPdfFromApi, printPdfFromApi } from "@/lib/pdfDownload";
 import { cn, formatArabicDate } from "@/lib/utils";
 
 type Pt = { x: number; y: number };
@@ -35,6 +36,10 @@ function ShellInner({ viewType, title, icon, uploadLabel, renderAnalyzer }: Prop
 
   const inputRef = useRef<HTMLInputElement>(null);
   const stateRef = useRef<{ points: Record<string, Pt>; measurements: unknown }>({ points: {}, measurements: [] });
+  // JSON of the points as they were last saved/loaded — used to detect edits so
+  // the PDF report (built from the persisted record) is never offered for a
+  // dirty, unsaved state.
+  const savedPointsRef = useRef<string>("");
 
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [relativeUrl, setRelativeUrl] = useState<string | null>(null);
@@ -42,6 +47,10 @@ function ShellInner({ viewType, title, icon, uploadLabel, renderAnalyzer }: Prop
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedOk, setSavedOk] = useState(false);
+  // Id of the currently saved/loaded analysis — enables the PDF report buttons.
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState<"download" | "print" | null>(null);
 
   const { saved, saving, error: saveError, save } = usePhotoAnalysisCase(orthoCaseId, viewType);
 
@@ -63,6 +72,9 @@ function ShellInner({ viewType, title, icon, uploadLabel, renderAnalyzer }: Prop
       setInitialPoints(undefined);
       setImageUrl(resolveImageUrl(data.url) || data.url);
       setSavedOk(false);
+      setSavedId(null); // a fresh upload is an unsaved analysis
+      savedPointsRef.current = "";
+      setDirty(false);
     } catch (err) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       setError(msg ?? "تعذّر رفع الصورة — حاول مرة أخرى.");
@@ -85,20 +97,48 @@ function ShellInner({ viewType, title, icon, uploadLabel, renderAnalyzer }: Prop
       setRelativeUrl(data.imageFileUrl);
       setInitialPoints(pts);
       setImageUrl(resolveImageUrl(data.imageFileUrl) || data.imageFileUrl);
+      savedPointsRef.current = JSON.stringify(pts ?? {});
+      setDirty(false);
+      setSavedId(item.id);
     } catch {
       setError("تعذّر تحميل التحليل المحفوظ");
     }
   };
 
+  const reportPdf = async (mode: "download" | "print") => {
+    if (!savedId) return;
+    setPdfBusy(mode);
+    setError(null);
+    try {
+      const url = `/api/photo-analysis/${encodeURIComponent(savedId)}/report/pdf`;
+      const filename = `photo-analysis-${savedId}.pdf`;
+      if (mode === "download") await downloadPdfFromApi(url, filename);
+      else await printPdfFromApi(url, filename);
+    } catch {
+      setError("تعذّر إنشاء تقرير PDF — احفظ التحليل أولًا ثم حاول.");
+    } finally {
+      setPdfBusy(null);
+    }
+  };
+
   const onChange = useCallback((data: { points: Record<string, Pt>; measurements: unknown }) => {
     stateRef.current = data;
-    setSavedOk(false);
+    // An edit relative to the saved/loaded baseline marks the analysis dirty,
+    // hiding the PDF actions (the report is built from the persisted record).
+    const isDirty = JSON.stringify(data.points) !== savedPointsRef.current;
+    setDirty(isDirty);
+    if (isDirty) setSavedOk(false);
   }, []);
 
   const handleSave = async () => {
     if (!relativeUrl) return;
-    const ok = await save(relativeUrl, stateRef.current.points, stateRef.current.measurements);
-    if (ok) setSavedOk(true);
+    const id = await save(relativeUrl, stateRef.current.points, stateRef.current.measurements);
+    if (id) {
+      setSavedOk(true);
+      setSavedId(id);
+      savedPointsRef.current = JSON.stringify(stateRef.current.points);
+      setDirty(false);
+    }
   };
 
   return (
@@ -129,6 +169,22 @@ function ShellInner({ viewType, title, icon, uploadLabel, renderAnalyzer }: Prop
                 : savedOk ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
               {savedOk ? "تم الحفظ" : "حفظ في الحالة"}
             </button>
+          )}
+          {savedId && !dirty && (
+            <>
+              <button onClick={() => reportPdf("download")} disabled={pdfBusy !== null}
+                title="تحميل تقرير PDF للتحليل المحفوظ"
+                className="no-print flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-60 transition">
+                {pdfBusy === "download" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+                تقرير PDF
+              </button>
+              <button onClick={() => reportPdf("print")} disabled={pdfBusy !== null}
+                title="طباعة تقرير التحليل"
+                className="no-print flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-60 transition">
+                {pdfBusy === "print" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                طباعة
+              </button>
+            </>
           )}
           {imageUrl && (
             <button onClick={() => inputRef.current?.click()}

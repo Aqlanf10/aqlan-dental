@@ -37,12 +37,12 @@ export function usePhotoAnalysisCase(orthoCaseId: string | null, viewType: "prof
   useEffect(() => { reload(); }, [reload]);
 
   const save = useCallback(
-    async (imageFileUrl: string, points: Record<string, Pt>, measurements: unknown) => {
-      if (!orthoCaseId) return false;
+    async (imageFileUrl: string, points: Record<string, Pt>, measurements: unknown): Promise<string | null> => {
+      if (!orthoCaseId) return null;
       setSaving(true);
       setError(null);
       try {
-        await api.post("/api/photo-analysis", {
+        const { data } = await api.post<{ id: string }>("/api/photo-analysis", {
           orthoCaseId,
           viewType,
           imageFileUrl,
@@ -50,11 +50,11 @@ export function usePhotoAnalysisCase(orthoCaseId: string | null, viewType: "prof
           measurementsJson: JSON.stringify(measurements),
         });
         await reload();
-        return true;
+        return data.id;
       } catch (err) {
         const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
         setError(msg ?? "تعذّر حفظ التحليل في الحالة");
-        return false;
+        return null;
       } finally {
         setSaving(false);
       }

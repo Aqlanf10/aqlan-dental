@@ -96,6 +96,32 @@ public sealed class SaveDiagnosisRequestValidator : AbstractValidator<SaveDiagno
     }
 }
 
+public sealed class SavePhotoAnalysisRequestValidator : AbstractValidator<SavePhotoAnalysisRequest>
+{
+    public SavePhotoAnalysisRequestValidator()
+    {
+        RuleFor(x => x.OrthoCaseId)
+            .NotEmpty().WithMessage("رقم حالة التقويم مطلوب");
+
+        RuleFor(x => x.ViewType)
+            .Must(v => v is "profile" or "frontal")
+            .WithMessage("نوع الصورة غير صالح");
+
+        RuleFor(x => x.ImageFileUrl)
+            .NotEmpty().WithMessage("صورة التحليل مطلوبة")
+            .MaximumLength(1000).WithMessage("رابط الصورة طويل جدًا");
+
+        RuleFor(x => x.Notes)
+            .MaximumLength(2000).WithMessage("الملاحظات يجب ألا تتجاوز 2000 حرف");
+
+        RuleFor(x => x.LandmarksJson)
+            .MaximumLength(100_000).WithMessage("بيانات المعالم كبيرة جدًا");
+
+        RuleFor(x => x.MeasurementsJson)
+            .MaximumLength(100_000).WithMessage("بيانات القياسات كبيرة جدًا");
+    }
+}
+
 public sealed class AiSimulateRequestValidator : AbstractValidator<AiSimulateRequest>
 {
     public AiSimulateRequestValidator()

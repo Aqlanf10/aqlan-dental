@@ -1,0 +1,185 @@
+"use client";
+
+import { Suspense, useCallback, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { ArrowRight, ImagePlus, Loader2, Save, CheckCircle2, Clock } from "lucide-react";
+import api from "@/lib/api";
+import { resolveImageUrl } from "@/hooks/useClinicBranding";
+import { usePhotoAnalysisCase, type SavedPhotoAnalysis } from "@/hooks/usePhotoAnalysisCase";
+import { cn, formatArabicDate } from "@/lib/utils";
+
+type Pt = { x: number; y: number };
+
+const MAX_BYTES = 10 * 1024 * 1024;
+const ACCEPTED = ["image/jpeg", "image/png", "image/webp"];
+
+interface RenderArgs {
+  imageUrl: string;
+  initialPoints?: Record<string, Pt>;
+  onChange: (data: { points: Record<string, Pt>; measurements: unknown }) => void;
+}
+
+interface Props {
+  viewType: "profile" | "frontal";
+  title: string;
+  icon: ReactNode;
+  uploadLabel: string;
+  renderAnalyzer: (args: RenderArgs) => ReactNode;
+}
+
+function ShellInner({ viewType, title, icon, uploadLabel, renderAnalyzer }: Props) {
+  const searchParams = useSearchParams();
+  const orthoCaseId = searchParams.get("orthoCaseId");
+  const returnHref = orthoCaseId ? `/ortho/${orthoCaseId}?tab=ceph` : "/ceph";
+
+  const inputRef = useRef<HTMLInputElement>(null);
+  const stateRef = useRef<{ points: Record<string, Pt>; measurements: unknown }>({ points: {}, measurements: [] });
+
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [relativeUrl, setRelativeUrl] = useState<string | null>(null);
+  const [initialPoints, setInitialPoints] = useState<Record<string, Pt> | undefined>(undefined);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [savedOk, setSavedOk] = useState(false);
+
+  const { saved, saving, error: saveError, save } = usePhotoAnalysisCase(orthoCaseId, viewType);
+
+  const onPick = async (file: File) => {
+    setError(null);
+    if (!ACCEPTED.includes(file.type)) { setError("نوع الصورة غير مدعوم — استخدم JPG أو PNG أو WEBP."); return; }
+    if (file.size > MAX_BYTES) { setError("حجم الصورة يتجاوز 10 ميجابايت."); return; }
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      // The shared axios instance defaults to application/json, which makes
+      // Axios serialize FormData to JSON — override so the file is sent as
+      // multipart and UploadsController receives it.
+      const { data } = await api.post<{ url: string }>("/api/uploads", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setRelativeUrl(data.url);
+      setInitialPoints(undefined);
+      setImageUrl(resolveImageUrl(data.url) || data.url);
+      setSavedOk(false);
+    } catch (err) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setError(msg ?? "تعذّر رفع الصورة — حاول مرة أخرى.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const loadSaved = async (item: SavedPhotoAnalysis) => {
+    setError(null);
+    setSavedOk(false);
+    try {
+      const { data } = await api.get<{ imageFileUrl: string; landmarksJson?: string }>(
+        `/api/photo-analysis/${encodeURIComponent(item.id)}`,
+      );
+      let pts: Record<string, Pt> | undefined;
+      if (data.landmarksJson) {
+        try { pts = JSON.parse(data.landmarksJson); } catch { pts = undefined; }
+      }
+      setRelativeUrl(data.imageFileUrl);
+      setInitialPoints(pts);
+      setImageUrl(resolveImageUrl(data.imageFileUrl) || data.imageFileUrl);
+    } catch {
+      setError("تعذّر تحميل التحليل المحفوظ");
+    }
+  };
+
+  const onChange = useCallback((data: { points: Record<string, Pt>; measurements: unknown }) => {
+    stateRef.current = data;
+    setSavedOk(false);
+  }, []);
+
+  const handleSave = async () => {
+    if (!relativeUrl) return;
+    const ok = await save(relativeUrl, stateRef.current.points, stateRef.current.measurements);
+    if (ok) setSavedOk(true);
+  };
+
+  return (
+    <div className="space-y-5 max-w-5xl" dir="rtl">
+      <div className="no-print flex items-center gap-2 text-sm text-gray-500">
+        <Link href={returnHref} className="hover:text-clinic-blue transition">
+          {orthoCaseId ? "حالة التقويم" : "السيفالومتري"}
+        </Link>
+        <span>/</span>
+        <span className="text-gray-900 font-medium">{title}</span>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Link href={returnHref}
+            className="no-print p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500">
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+          <h1 className="text-2xl font-extrabold text-gray-900 flex items-center gap-2">{icon}{title}</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          {imageUrl && orthoCaseId && (
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="no-print flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition">
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : savedOk ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
+              {savedOk ? "تم الحفظ" : "حفظ في الحالة"}
+            </button>
+          )}
+          {imageUrl && (
+            <button onClick={() => inputRef.current?.click()}
+              className="no-print flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition">
+              <ImagePlus className="w-3.5 h-3.5" />صورة أخرى
+            </button>
+          )}
+        </div>
+      </div>
+
+      <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) onPick(f); e.target.value = ""; }} />
+
+      {(error || saveError) && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-2.5 text-xs">{error ?? saveError}</div>
+      )}
+
+      {orthoCaseId && saved.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-3">
+          <p className="text-xs font-bold text-gray-600 mb-2">تحاليل محفوظة لهذه الحالة</p>
+          <div className="flex flex-wrap gap-2">
+            {saved.map((s) => (
+              <button key={s.id} onClick={() => loadSaved(s)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-gray-200 text-[11px] text-gray-600 hover:border-clinic-blue hover:text-clinic-blue transition">
+                <Clock className="w-3 h-3" />{formatArabicDate(s.analysisDate)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!imageUrl ? (
+        <button onClick={() => inputRef.current?.click()} disabled={uploading}
+          className="w-full border-2 border-dashed border-gray-300 rounded-xl py-16 flex flex-col items-center gap-3 text-gray-400 hover:border-clinic-blue hover:text-clinic-blue transition disabled:opacity-60">
+          {uploading ? <Loader2 className="w-8 h-8 animate-spin" /> : <ImagePlus className="w-8 h-8" />}
+          <span className="text-sm font-medium">{uploading ? "جارٍ رفع الصورة..." : uploadLabel}</span>
+          <span className="text-[11px] text-gray-300">القياسات مستقلة عن المقياس لا تتطلب معايرة</span>
+        </button>
+      ) : (
+        <div className={cn("space-y-2")}>
+          {renderAnalyzer({ imageUrl, initialPoints, onChange })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function PhotoAnalysisShell(props: Props) {
+  return (
+    <Suspense fallback={<div className="h-64 animate-pulse rounded-xl bg-gray-100" />}>
+      <ShellInner {...props} />
+    </Suspense>
+  );
+}

@@ -55,6 +55,7 @@ public static class StartupDatabaseMaintenance
         await EnsureLabTablesSchemaAsync(app);
         await EnsureCephNormsSchemaAndSeedAsync(app);
         await EnsureOrthodonticAiLogsSchemaAsync(app);
+        await EnsurePhotoAnalysisSchemaAsync(app);
 
         // ── Gated DB maintenance (ENABLE_STARTUP_DB_MAINTENANCE) ──────
         await RunGatedDbMaintenanceAsync(app, configuration);
@@ -1513,6 +1514,48 @@ public static class StartupDatabaseMaintenance
         {
             app.Services.GetRequiredService<ILogger<Program>>()
                 .LogWarning(ex, "OrthodonticAiLogs schema hotfix failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// PhotoAnalyses table (saved facial photo analyses). Idempotent
+    /// CREATE TABLE IF NOT EXISTS so databases predating migration
+    /// 20260629000000_AddPhotoAnalysis still have it. Mirrors PhotoAnalysis +
+    /// BaseEntity columns. The FK to OrthoCases is created by the migration on
+    /// fresh databases; the app also validates case existence at write time.
+    /// </summary>
+    private static async Task EnsurePhotoAnalysisSchemaAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS "PhotoAnalyses" (
+                    "Id" uuid NOT NULL,
+                    "OrthoCaseId" uuid NOT NULL,
+                    "ViewType" character varying(20) NOT NULL,
+                    "ImageFileUrl" character varying(1000) NOT NULL,
+                    "LandmarksJson" text NULL,
+                    "MeasurementsJson" text NULL,
+                    "DoctorId" uuid NULL,
+                    "Notes" character varying(2000) NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "UpdatedAt" timestamp with time zone NOT NULL,
+                    "IsActive" boolean NOT NULL DEFAULT true,
+                    "DeletedAt" timestamp with time zone NULL,
+                    "DeletedBy" uuid NULL,
+                    CONSTRAINT "PK_PhotoAnalyses" PRIMARY KEY ("Id")
+                );
+                CREATE INDEX IF NOT EXISTS "IX_PhotoAnalyses_OrthoCaseId" ON "PhotoAnalyses" ("OrthoCaseId");
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "PhotoAnalyses schema hotfix failed (non-fatal)");
         }
     }
 

@@ -29,6 +29,8 @@ export const orthoKeys = {
   retention: (caseId: string) => ["ortho-retention", caseId] as const,
   photos: (caseId: string) => ["ortho-photos", caseId] as const,
   checklist: (caseId: string) => ["ortho-checklist", caseId] as const,
+  ceph: (caseId: string) => ["ortho-ceph", caseId] as const,
+  cephDetail: (analysisId: string) => ["ortho-ceph-detail", analysisId] as const,
 };
 
 export function useOrthoCase(caseId: string) {
@@ -132,6 +134,22 @@ export function useApproveDiagnosis(caseId: string) {
       toast.success("تم اعتماد التشخيص");
     },
     onError: () => toast.error("فشل اعتماد التشخيص"),
+  });
+}
+
+export function useCaseCephAnalyses(caseId: string) {
+  return useQuery({
+    queryKey: orthoKeys.ceph(caseId),
+    queryFn: async () => (await orthoService.getCephAnalyses(caseId)).data,
+    enabled: !!caseId,
+  });
+}
+
+export function useCaseCephAnalysis(analysisId?: string) {
+  return useQuery({
+    queryKey: orthoKeys.cephDetail(analysisId ?? ""),
+    queryFn: async () => (await orthoService.getCephAnalysis(analysisId!)).data,
+    enabled: !!analysisId,
   });
 }
 

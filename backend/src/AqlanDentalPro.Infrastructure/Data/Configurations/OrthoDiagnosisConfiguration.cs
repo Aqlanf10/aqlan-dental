@@ -26,6 +26,11 @@ public class OrthoDiagnosisConfiguration : IEntityTypeConfiguration<OrthoDiagnos
         builder.Property(d => d.Etiology).IsRequired(false);
         builder.Property(d => d.Summary).IsRequired(false);
 
+        builder.HasOne(d => d.CephSourceAnalysis)
+            .WithMany()
+            .HasForeignKey(d => d.CephSourceAnalysisId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         builder.HasOne(d => d.ApprovedByDoctor)
             .WithMany()
             .HasForeignKey(d => d.ApprovedBy)

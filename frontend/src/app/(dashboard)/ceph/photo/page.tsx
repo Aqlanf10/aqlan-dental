@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { Suspense, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowRight, ImagePlus, Loader2, UserSquare2 } from "lucide-react";
 import api from "@/lib/api";
 import { resolveImageUrl } from "@/hooks/useClinicBranding";
@@ -10,7 +11,10 @@ import { ProfilePhotoAnalyzer } from "@/components/ceph/ProfilePhotoAnalyzer";
 const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPTED = ["image/jpeg", "image/png", "image/webp"];
 
-export default function ProfilePhotoPage() {
+function ProfilePhotoPageInner() {
+  const searchParams = useSearchParams();
+  const orthoCaseId = searchParams.get("orthoCaseId");
+  const returnHref = orthoCaseId ? `/ortho/${orthoCaseId}?tab=ceph` : "/ceph";
   const inputRef = useRef<HTMLInputElement>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -43,14 +47,16 @@ export default function ProfilePhotoPage() {
   return (
     <div className="space-y-5 max-w-5xl" dir="rtl">
       <div className="no-print flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/ceph" className="hover:text-clinic-blue transition">السيفالومتري</Link>
+        <Link href={returnHref} className="hover:text-clinic-blue transition">
+          {orthoCaseId ? "حالة التقويم" : "السيفالومتري"}
+        </Link>
         <span>/</span>
         <span className="text-gray-900 font-medium">تحليل صورة البروفايل</span>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <Link href="/ceph"
+          <Link href={returnHref}
             className="no-print p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500">
             <ArrowRight className="w-4 h-4" />
           </Link>
@@ -95,5 +101,13 @@ export default function ProfilePhotoPage() {
         <ProfilePhotoAnalyzer imageUrl={imageUrl} />
       )}
     </div>
+  );
+}
+
+export default function ProfilePhotoPage() {
+  return (
+    <Suspense fallback={<div className="h-64 animate-pulse rounded-xl bg-gray-100" />}>
+      <ProfilePhotoPageInner />
+    </Suspense>
   );
 }

@@ -16,6 +16,7 @@ import type {
   TreatmentStage,
   UpdateOrthoPhotoRequest,
 } from "@/types/ortho";
+import type { CephAnalysis, CephAnalysisList } from "@/types/ceph";
 
 const BASE = "/api/ortho-cases";
 
@@ -38,6 +39,10 @@ export const orthoService = {
     api.put(`${BASE}/${caseId}/diagnosis`, data),
   approveDiagnosis: (caseId: string) =>
     api.patch(`${BASE}/${caseId}/diagnosis/approve`),
+  getCephAnalyses: (caseId: string) =>
+    api.get<CephAnalysisList[]>(`/api/ceph?orthoCaseId=${encodeURIComponent(caseId)}`),
+  getCephAnalysis: (analysisId: string) =>
+    api.get<CephAnalysis>(`/api/ceph/${analysisId}`),
 
   getTreatmentPlan: (caseId: string) => api.get<TreatmentPlan | null>(`${BASE}/${caseId}/treatment-plan`),
   getTreatmentPlans: (caseId: string) => api.get<TreatmentPlan[]>(`${BASE}/${caseId}/treatment-plans`),

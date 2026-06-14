@@ -131,8 +131,21 @@ public class OrthoCasesController(
 
         var hasClinicalExam = await db.OrthoClinicalExams.AnyAsync(e => e.OrthoCaseId == id);
         var problemsCount = await db.ProblemListItems.CountAsync(p => p.OrthoCaseId == id);
-        var hasDiagnosis = await db.OrthoDiagnoses.AnyAsync(d => d.OrthoCaseId == id);
-        var isDiagnosisApproved = await db.OrthoDiagnoses.AnyAsync(d => d.OrthoCaseId == id && d.ApprovedAt != null);
+        var diagnosisSummary = await db.OrthoDiagnoses
+            .Where(d => d.OrthoCaseId == id)
+            .Select(d => new
+            {
+                d.ApprovedAt,
+                d.CephSourceAnalysisId,
+                d.CephSyncedAt,
+            })
+            .FirstOrDefaultAsync();
+        var hasDiagnosis = diagnosisSummary is not null;
+        var isDiagnosisApproved = diagnosisSummary?.ApprovedAt is not null;
+        var latestCeph = orthoCase.CephAnalyses
+            .OrderByDescending(a => a.AnalysisDate)
+            .ThenByDescending(a => a.UpdatedAt)
+            .FirstOrDefault();
         var latestPlan = orthoCase.TreatmentPlans.OrderByDescending(p => p.CreatedAt).FirstOrDefault();
         var latestVisit = orthoCase.Visits.OrderByDescending(v => v.VisitDate).FirstOrDefault();
 
@@ -228,6 +241,11 @@ public class OrthoCasesController(
             VisitsCount = orthoCase.Visits.Count,
             PhotosCount = orthoCase.OrthoClinicalPhotos.Count,
             CephAnalysesCount = orthoCase.CephAnalyses.Count,
+            LatestCephAnalysisId = latestCeph?.Id,
+            LatestCephAnalysisDate = latestCeph?.AnalysisDate.ToString("yyyy-MM-dd"),
+            CephDiagnosisSyncedAt = diagnosisSummary?.CephSyncedAt,
+            IsCephDiagnosisOutdated = latestCeph is not null &&
+                diagnosisSummary?.CephSourceAnalysisId != latestCeph.Id,
             HasRetention = orthoCase.RetentionRecord is not null,
             ChecklistCompleted = checklistCompleted,
             ChecklistTotal = checklistTotal,
@@ -1011,6 +1029,18 @@ public class OrthoCasesController(
     [HttpGet("{id:guid}/diagnosis")]
     public async Task<IActionResult> GetDiagnosis(Guid id)
     {
+        var latestCephInfo = await db.CephAnalyses
+            .AsNoTracking()
+            .Where(a => a.OrthoCaseId == id)
+            .OrderByDescending(a => a.AnalysisDate)
+            .ThenByDescending(a => a.UpdatedAt)
+            .Select(a => new
+            {
+                a.Id,
+                AnalysisDate = a.AnalysisDate.ToString("yyyy-MM-dd"),
+            })
+            .FirstOrDefaultAsync();
+
         var diagnosis = await db.OrthoDiagnoses
             .Include(d => d.ApprovedByDoctor)
             .Where(d => d.OrthoCaseId == id)
@@ -1034,6 +1064,12 @@ public class OrthoCasesController(
                 diagnosis.SNB,
                 diagnosis.IMPA,
                 diagnosis.Summary,
+                diagnosis.CephSourceAnalysisId,
+                diagnosis.CephSyncedAt,
+                LatestCephAnalysisId = latestCephInfo?.Id,
+                LatestCephAnalysisDate = latestCephInfo?.AnalysisDate,
+                IsCephSyncOutdated = latestCephInfo is not null &&
+                    diagnosis.CephSourceAnalysisId != latestCephInfo.Id,
                 IsApproved = diagnosis.ApprovedAt != null,
                 ApprovedByName = diagnosis.ApprovedByDoctor?.Name,
                 ApprovedAt = diagnosis.ApprovedAt?.ToString("yyyy-MM-dd"),
@@ -1100,6 +1136,11 @@ public class OrthoCasesController(
             SNB = snbValue,
             IMPA = impaValue,
             Summary = problemSummary,
+            CephSourceAnalysisId = (Guid?)null,
+            CephSyncedAt = (DateTime?)null,
+            LatestCephAnalysisId = latestCephInfo?.Id,
+            LatestCephAnalysisDate = latestCephInfo?.AnalysisDate,
+            IsCephSyncOutdated = latestCephInfo is not null,
             IsApproved = false,
             ApprovedByName = (string?)null,
             ApprovedAt = (string?)null,

@@ -145,14 +145,19 @@ public class CephCompareAndDiagnosisTests
             });
         await db.SaveChangesAsync();
 
+        await InvokeDiagnosisAsync(db, analysis.Id);
+
+        return await db.CephDiagnoses.SingleAsync(d => d.AnalysisId == analysis.Id);
+    }
+
+    private static async Task InvokeDiagnosisAsync(AppDbContext db, Guid analysisId)
+    {
         // GenerateDiagnosisAsync is private — exercise via the public compute path's
         // sibling: call it through reflection to keep the test focused on rules.
         var svc = CreateService(db);
         var method = typeof(CephService).GetMethod("GenerateDiagnosisAsync",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-        await (Task)method.Invoke(svc, [analysis.Id])!;
-
-        return await db.CephDiagnoses.SingleAsync(d => d.AnalysisId == analysis.Id);
+        await (Task)method.Invoke(svc, [analysisId])!;
     }
 
     [Fact]
@@ -221,5 +226,147 @@ public class CephCompareAndDiagnosisTests
         diag.AiRecommendation.Should().NotContain("مؤشرات قاعدية آلية");
         diag.AiRecommendation.Should().Contain("مؤكد بمؤشر Wits");
         diag.AiRecommendation.Should().Contain("متوافق بين GoGn-SN وFMA");
+    }
+
+    [Fact]
+    public async Task Diagnosis_NewCephMeasurements_AutoSyncUnapprovedOrthoDiagnosis()
+    {
+        await using var db = CreateDb();
+        var orthoCase = new OrthoCase
+        {
+            Id = Guid.NewGuid(),
+            PatientId = Guid.NewGuid(),
+            CaseNumber = "OC-SYNC",
+            IsActive = true,
+        };
+        var analysis = new CephAnalysis
+        {
+            Id = Guid.NewGuid(),
+            OrthoCaseId = orthoCase.Id,
+            AnalysisDate = DateOnly.FromDateTime(DateTime.Today),
+            AnalysisType = "full",
+            IsActive = true,
+        };
+        db.AddRange(orthoCase, analysis);
+        db.CephMeasurements.AddRange(
+            new CephMeasurement { AnalysisId = analysis.Id, MeasurementName = "ANB", MeasurementValue = 6, IsActive = true },
+            new CephMeasurement { AnalysisId = analysis.Id, MeasurementName = "Wits", MeasurementValue = 4, IsActive = true },
+            new CephMeasurement { AnalysisId = analysis.Id, MeasurementName = "FMA", MeasurementValue = 31, IsActive = true },
+            new CephMeasurement { AnalysisId = analysis.Id, MeasurementName = "SNA", MeasurementValue = 84, IsActive = true },
+            new CephMeasurement { AnalysisId = analysis.Id, MeasurementName = "SNB", MeasurementValue = 78, IsActive = true },
+            new CephMeasurement { AnalysisId = analysis.Id, MeasurementName = "IMPA", MeasurementValue = 96, IsActive = true });
+        await db.SaveChangesAsync();
+
+        await InvokeDiagnosisAsync(db, analysis.Id);
+
+        var synced = await db.OrthoDiagnoses.SingleAsync(d => d.OrthoCaseId == orthoCase.Id);
+        synced.SkeletalClassification.Should().Be("Class II");
+        synced.FacialPattern.Should().Be("Hyperdivergent");
+        synced.ANB.Should().Be(6);
+        synced.Wits.Should().Be(4);
+        synced.FMA.Should().Be(31);
+        synced.SNA.Should().Be(84);
+        synced.SNB.Should().Be(78);
+        synced.IMPA.Should().Be(96);
+        synced.CephSourceAnalysisId.Should().Be(analysis.Id);
+        synced.CephSyncedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Diagnosis_CephSync_PreservesManualClinicalFields()
+    {
+        await using var db = CreateDb();
+        var orthoCase = new OrthoCase
+        {
+            Id = Guid.NewGuid(),
+            PatientId = Guid.NewGuid(),
+            CaseNumber = "OC-MANUAL",
+            IsActive = true,
+        };
+        var analysis = new CephAnalysis
+        {
+            Id = Guid.NewGuid(),
+            OrthoCaseId = orthoCase.Id,
+            AnalysisDate = DateOnly.FromDateTime(DateTime.Today),
+            AnalysisType = "full",
+            IsActive = true,
+        };
+        var diagnosis = new OrthoDiagnosis
+        {
+            OrthoCaseId = orthoCase.Id,
+            DentalClassification = "Angle II div 1",
+            FunctionalDiagnosis = "تنفس فموي",
+            Etiology = "وراثي ووظيفي",
+            Summary = "ملخص الطبيب",
+            SoftTissueDiagnosis = "وصف أنسجة رخوة يدوي",
+            IsActive = true,
+        };
+        db.AddRange(orthoCase, analysis, diagnosis);
+        db.CephMeasurements.Add(new CephMeasurement
+        {
+            AnalysisId = analysis.Id,
+            MeasurementName = "ANB",
+            MeasurementValue = -2,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        await InvokeDiagnosisAsync(db, analysis.Id);
+
+        var synced = await db.OrthoDiagnoses.SingleAsync(d => d.OrthoCaseId == orthoCase.Id);
+        synced.SkeletalClassification.Should().Be("Class III");
+        synced.DentalClassification.Should().Be("Angle II div 1");
+        synced.FunctionalDiagnosis.Should().Be("تنفس فموي");
+        synced.Etiology.Should().Be("وراثي ووظيفي");
+        synced.Summary.Should().Be("ملخص الطبيب");
+        synced.SoftTissueDiagnosis.Should().Be("وصف أنسجة رخوة يدوي");
+    }
+
+    [Fact]
+    public async Task Diagnosis_ApprovedOrthoDiagnosis_IsNeverOverwrittenByCephSync()
+    {
+        await using var db = CreateDb();
+        var orthoCase = new OrthoCase
+        {
+            Id = Guid.NewGuid(),
+            PatientId = Guid.NewGuid(),
+            CaseNumber = "OC-APPROVED",
+            IsActive = true,
+        };
+        var analysis = new CephAnalysis
+        {
+            Id = Guid.NewGuid(),
+            OrthoCaseId = orthoCase.Id,
+            AnalysisDate = DateOnly.FromDateTime(DateTime.Today),
+            AnalysisType = "full",
+            IsActive = true,
+        };
+        var originalSource = Guid.NewGuid();
+        var diagnosis = new OrthoDiagnosis
+        {
+            OrthoCaseId = orthoCase.Id,
+            SkeletalClassification = "Class I",
+            ANB = 2,
+            CephSourceAnalysisId = originalSource,
+            CephSyncedAt = DateTime.UtcNow.AddDays(-10),
+            ApprovedAt = DateTime.UtcNow.AddDays(-5),
+            IsActive = true,
+        };
+        db.AddRange(orthoCase, analysis, diagnosis);
+        db.CephMeasurements.Add(new CephMeasurement
+        {
+            AnalysisId = analysis.Id,
+            MeasurementName = "ANB",
+            MeasurementValue = 8,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        await InvokeDiagnosisAsync(db, analysis.Id);
+
+        var approved = await db.OrthoDiagnoses.SingleAsync(d => d.OrthoCaseId == orthoCase.Id);
+        approved.SkeletalClassification.Should().Be("Class I");
+        approved.ANB.Should().Be(2);
+        approved.CephSourceAnalysisId.Should().Be(originalSource);
     }
 }

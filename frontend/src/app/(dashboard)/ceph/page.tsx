@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Activity, Plus, Brain, GitCompareArrows, X } from "lucide-react";
+import { Activity, Plus, Brain, GitCompareArrows, X, UserSquare2 } from "lucide-react";
 import type { CephAnalysisList } from "@/types/ceph";
 import { ANALYSIS_TYPE_AR } from "@/types/ceph";
 import api from "@/lib/api";
@@ -26,12 +26,20 @@ export default function CephPage() {
           <h1 className="text-2xl font-extrabold text-gray-900">السيفالومتري</h1>
           <p className="text-sm text-gray-500 mt-0.5">تحليل الأشعة السيفالومترية وقياسات الهيكل العظمي</p>
         </div>
-        <Link href="/ceph/new"
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
-        >
-          <Plus className="w-4 h-4" />
-          تحليل جديد
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/ceph/photo"
+            className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+          >
+            <UserSquare2 className="w-4 h-4" />
+            تحليل صورة بروفايل
+          </Link>
+          <Link href="/ceph/new"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
+          >
+            <Plus className="w-4 h-4" />
+            تحليل جديد
+          </Link>
+        </div>
       </div>
 
       {compareBase && (

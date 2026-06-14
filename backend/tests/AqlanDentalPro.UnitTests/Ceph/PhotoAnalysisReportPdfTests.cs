@@ -20,7 +20,7 @@ public class PhotoAnalysisReportPdfTests
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options);
 
-    private static async Task<Guid> SeedAsync(AppDbContext db, string viewType, string? imageUrl = "/uploads/missing-photo.jpg")
+    private static async Task<Guid> SeedAsync(AppDbContext db, string viewType, string imageUrl = "/uploads/missing-photo.jpg")
     {
         var patient = new Patient { Id = Guid.NewGuid(), FirstName = "سالم", LastName = "المخلافي", PatientNumber = "P-9", IsActive = true };
         var orthoCase = new OrthoCase { Id = Guid.NewGuid(), PatientId = patient.Id, CaseNumber = "OC-9", IsActive = true };
@@ -80,5 +80,92 @@ public class PhotoAnalysisReportPdfTests
         dims.Should().NotBeNull();
         dims!.Value.W.Should().Be(300);
         dims.Value.H.Should().Be(200);
+    }
+
+    [Fact]
+    public void ReadImageDimensions_ParsesLosslessWebPHeader()
+    {
+        var b = new byte[31];
+        b[0] = (byte)'R'; b[1] = (byte)'I'; b[2] = (byte)'F'; b[3] = (byte)'F';
+        b[8] = (byte)'W'; b[9] = (byte)'E'; b[10] = (byte)'B'; b[11] = (byte)'P';
+        b[12] = (byte)'V'; b[13] = (byte)'P'; b[14] = (byte)'8'; b[15] = (byte)'L';
+        b[20] = 0x2F;
+
+        // VP8L packs width-1 and height-1 across four bytes.
+        const int widthMinusOne = 299;
+        const int heightMinusOne = 199;
+        b[21] = (byte)(widthMinusOne & 0xFF);
+        b[22] = (byte)(((widthMinusOne >> 8) & 0x3F) | ((heightMinusOne & 0x03) << 6));
+        b[23] = (byte)((heightMinusOne >> 2) & 0xFF);
+        b[24] = (byte)((heightMinusOne >> 10) & 0x0F);
+
+        var dims = PhotoAnalysisReportPdfGenerator.ReadImageDimensions(b);
+        dims.Should().NotBeNull();
+        dims!.Value.W.Should().Be(300);
+        dims.Value.H.Should().Be(200);
+    }
+
+    [Fact]
+    public async Task Generate_FrontalWithStoredImageAndFullMeasurements_ProducesValidPdf()
+    {
+        var uploadsDir = Path.Combine(Path.GetTempPath(), "aqlan-uploads");
+        Directory.CreateDirectory(uploadsDir);
+        var fileName = $"photo-analysis-{Guid.NewGuid():N}.png";
+        var filePath = Path.Combine(uploadsDir, fileName);
+
+        // Valid 1x1 PNG. The test exercises image loading, overlay composition,
+        // and a full frontal measurement table in the same report.
+        var png = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+        await File.WriteAllBytesAsync(filePath, png);
+
+        try
+        {
+            await using var db = CreateDb();
+            var patient = new Patient
+            {
+                Id = Guid.NewGuid(),
+                FirstName = "سالم",
+                LastName = "المخلافي",
+                PatientNumber = "P-10",
+                IsActive = true,
+            };
+            var orthoCase = new OrthoCase
+            {
+                Id = Guid.NewGuid(),
+                PatientId = patient.Id,
+                CaseNumber = "OC-10",
+                IsActive = true,
+            };
+            var measurements = Enumerable.Range(1, 8)
+                .Select(i => new
+                {
+                    key = $"M{i}",
+                    nameAr = $"قياس {i}",
+                    value = 1.0 + i / 100.0,
+                    normal = 1.0,
+                    sd = 0.1,
+                    severity = i % 3 == 0 ? "mild" : "normal",
+                    interpretationAr = "مراجعة سريرية",
+                });
+            var analysis = new PhotoAnalysis
+            {
+                Id = Guid.NewGuid(),
+                OrthoCaseId = orthoCase.Id,
+                ViewType = "frontal",
+                ImageFileUrl = $"/uploads/{fileName}",
+                IsActive = true,
+                LandmarksJson = "{\"Sn\":{\"x\":0.5,\"y\":0.5}}",
+                MeasurementsJson = System.Text.Json.JsonSerializer.Serialize(measurements),
+            };
+            db.AddRange(patient, orthoCase, analysis);
+            await db.SaveChangesAsync();
+
+            AssertPdf(await new PhotoAnalysisReportPdfGenerator(db).GenerateAsync(analysis.Id));
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
     }
 }

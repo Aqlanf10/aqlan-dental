@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AqlanDentalPro.Application.DTOs.Ceph;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
@@ -15,6 +16,15 @@ namespace AqlanDentalPro.Application.Services;
 public class PhotoAnalysisService(AppDbContext db, ICurrentUserService currentUser)
 {
     private static readonly HashSet<string> ViewTypes = new(StringComparer.OrdinalIgnoreCase) { "profile", "frontal" };
+
+    private sealed class StoredMeasurement
+    {
+        public string? Key { get; set; }
+        public string? NameAr { get; set; }
+        public double? Value { get; set; }
+        public string? Severity { get; set; }
+        public string? InterpretationAr { get; set; }
+    }
 
     public async Task<List<PhotoAnalysisListItemDto>> ListAsync(Guid orthoCaseId)
     {
@@ -67,6 +77,7 @@ public class PhotoAnalysisService(AppDbContext db, ICurrentUserService currentUs
         };
 
         db.PhotoAnalyses.Add(entity);
+        await SyncOrthoDiagnosisFromPhotoAnalysisAsync(entity);
         await db.SaveChangesAsync();
         return (Map(entity), null);
     }
@@ -91,4 +102,129 @@ public class PhotoAnalysisService(AppDbContext db, ICurrentUserService currentUs
         Notes = p.Notes,
         AnalysisDate = p.CreatedAt.ToString("yyyy-MM-dd"),
     };
+
+    /// <summary>
+    /// Transfers the latest facial-photo findings into the orthodontic diagnosis
+    /// as a clearly separated draft summary. Approved diagnoses and manually
+    /// authored soft-tissue text are never overwritten.
+    /// </summary>
+    private async Task SyncOrthoDiagnosisFromPhotoAnalysisAsync(PhotoAnalysis current)
+    {
+        var currentSummary = BuildClinicalSummary(current.ViewType, current.MeasurementsJson);
+        if (string.IsNullOrWhiteSpace(currentSummary)) return;
+
+        var diagnosis = await db.OrthoDiagnoses
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(d => d.OrthoCaseId == current.OrthoCaseId);
+
+        if (diagnosis?.ApprovedAt is not null) return;
+
+        var otherView = current.ViewType.Equals("profile", StringComparison.OrdinalIgnoreCase)
+            ? "frontal"
+            : "profile";
+        var other = await db.PhotoAnalyses
+            .Where(p => p.OrthoCaseId == current.OrthoCaseId && p.ViewType == otherView)
+            .OrderByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync();
+        var otherSummary = other is null
+            ? null
+            : BuildClinicalSummary(other.ViewType, other.MeasurementsJson);
+
+        var profileSummary = current.ViewType.Equals("profile", StringComparison.OrdinalIgnoreCase)
+            ? currentSummary
+            : otherSummary;
+        var frontalSummary = current.ViewType.Equals("frontal", StringComparison.OrdinalIgnoreCase)
+            ? currentSummary
+            : otherSummary;
+
+        var sections = new List<string>();
+        if (!string.IsNullOrWhiteSpace(profileSummary))
+            sections.Add($"تحليل البروفايل: {profileSummary}");
+        if (!string.IsNullOrWhiteSpace(frontalSummary))
+            sections.Add($"تحليل الصورة الأمامية: {frontalSummary}");
+
+        if (diagnosis is null)
+        {
+            diagnosis = new OrthoDiagnosis { OrthoCaseId = current.OrthoCaseId };
+            db.OrthoDiagnoses.Add(diagnosis);
+        }
+
+        var combinedSummary = string.Join(Environment.NewLine, sections);
+        var previousAutoSummary = diagnosis.PhotoAnalysisSummary;
+        diagnosis.IsActive = true;
+        diagnosis.PhotoAnalysisSummary = combinedSummary;
+        if (string.IsNullOrWhiteSpace(diagnosis.SoftTissueDiagnosis)
+            || string.Equals(diagnosis.SoftTissueDiagnosis, previousAutoSummary, StringComparison.Ordinal))
+        {
+            diagnosis.SoftTissueDiagnosis = combinedSummary;
+        }
+        diagnosis.PhotoAnalysisSyncedAt = DateTime.UtcNow;
+
+        if (current.ViewType.Equals("profile", StringComparison.OrdinalIgnoreCase))
+        {
+            diagnosis.ProfileSourceAnalysisId = current.Id;
+            if (other is not null) diagnosis.FrontalSourceAnalysisId = other.Id;
+        }
+        else
+        {
+            diagnosis.FrontalSourceAnalysisId = current.Id;
+            if (other is not null) diagnosis.ProfileSourceAnalysisId = other.Id;
+        }
+    }
+
+    private static string? BuildClinicalSummary(string viewType, string? measurementsJson)
+    {
+        if (string.IsNullOrWhiteSpace(measurementsJson)) return null;
+
+        List<StoredMeasurement> measurements;
+        try
+        {
+            measurements = JsonSerializer.Deserialize<List<StoredMeasurement>>(
+                measurementsJson,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        var scored = measurements
+            .Where(m => m.Value.HasValue && double.IsFinite(m.Value.Value))
+            .ToList();
+        if (scored.Count == 0) return null;
+
+        var findings = scored
+            .Where(m => !string.Equals(m.Severity, "normal", StringComparison.OrdinalIgnoreCase))
+            .Select(m => m.InterpretationAr)
+            .Where(text => !string.IsNullOrWhiteSpace(text))
+            .Distinct()
+            .Take(4)
+            .ToList();
+
+        string headline;
+        if (viewType.Equals("profile", StringComparison.OrdinalIgnoreCase))
+        {
+            var convexity = scored.FirstOrDefault(m =>
+                string.Equals(m.Key, "FacialConvexity", StringComparison.OrdinalIgnoreCase))?.Value;
+            headline = convexity switch
+            {
+                > 16 => "ملف محدب مع ميل لنمط هيكلي من الصنف الثاني",
+                < 8 => "ملف مقعر مع ميل لنمط هيكلي من الصنف الثالث",
+                not null => "ملف مستقيم ضمن الحدود المرجعية",
+                _ => "تم توثيق قياسات الأنسجة الرخوة الجانبية",
+            };
+        }
+        else
+        {
+            var abnormalCount = scored.Count(m =>
+                !string.Equals(m.Severity, "normal", StringComparison.OrdinalIgnoreCase));
+            headline = abnormalCount == 0
+                ? "النسب والتناظر ضمن الحدود المرجعية"
+                : $"{abnormalCount} قياس خارج النطاق المرجعي ويحتاج مراجعة الأخصائي";
+        }
+
+        return findings.Count == 0
+            ? headline
+            : $"{headline}. {string.Join("؛ ", findings)}";
+    }
 }

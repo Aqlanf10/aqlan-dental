@@ -8,6 +8,7 @@ import type {
   OrthoOverview,
   OrthoPhoto,
   OrthoVisit,
+  PhotoAnalysisListItem,
   ProblemListItem,
   RecordsChecklist,
   RetentionRecord,
@@ -43,6 +44,8 @@ export const orthoService = {
     api.get<CephAnalysisList[]>(`/api/ceph?orthoCaseId=${encodeURIComponent(caseId)}`),
   getCephAnalysis: (analysisId: string) =>
     api.get<CephAnalysis>(`/api/ceph/${analysisId}`),
+  getPhotoAnalyses: (caseId: string) =>
+    api.get<PhotoAnalysisListItem[]>(`/api/photo-analysis?orthoCaseId=${encodeURIComponent(caseId)}`),
 
   getTreatmentPlan: (caseId: string) => api.get<TreatmentPlan | null>(`${BASE}/${caseId}/treatment-plan`),
   getTreatmentPlans: (caseId: string) => api.get<TreatmentPlan[]>(`${BASE}/${caseId}/treatment-plans`),

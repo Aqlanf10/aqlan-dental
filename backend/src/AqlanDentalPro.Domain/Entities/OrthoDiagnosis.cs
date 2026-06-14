@@ -18,10 +18,16 @@ public class OrthoDiagnosis : BaseEntity
     public string? Summary { get; set; }
     public Guid? CephSourceAnalysisId { get; set; }
     public DateTime? CephSyncedAt { get; set; }
+    public string? PhotoAnalysisSummary { get; set; }
+    public Guid? ProfileSourceAnalysisId { get; set; }
+    public Guid? FrontalSourceAnalysisId { get; set; }
+    public DateTime? PhotoAnalysisSyncedAt { get; set; }
     public Guid? ApprovedBy { get; set; }
     public DateTime? ApprovedAt { get; set; }
 
     public OrthoCase OrthoCase { get; set; } = null!;
     public CephAnalysis? CephSourceAnalysis { get; set; }
+    public PhotoAnalysis? ProfileSourceAnalysis { get; set; }
+    public PhotoAnalysis? FrontalSourceAnalysis { get; set; }
     public Doctor? ApprovedByDoctor { get; set; }
 }

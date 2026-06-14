@@ -25,10 +25,21 @@ public class OrthoDiagnosisConfiguration : IEntityTypeConfiguration<OrthoDiagnos
         builder.Property(d => d.FunctionalDiagnosis).IsRequired(false);
         builder.Property(d => d.Etiology).IsRequired(false);
         builder.Property(d => d.Summary).IsRequired(false);
+        builder.Property(d => d.PhotoAnalysisSummary).IsRequired(false);
 
         builder.HasOne(d => d.CephSourceAnalysis)
             .WithMany()
             .HasForeignKey(d => d.CephSourceAnalysisId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(d => d.ProfileSourceAnalysis)
+            .WithMany()
+            .HasForeignKey(d => d.ProfileSourceAnalysisId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(d => d.FrontalSourceAnalysis)
+            .WithMany()
+            .HasForeignKey(d => d.FrontalSourceAnalysisId)
             .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasOne(d => d.ApprovedByDoctor)

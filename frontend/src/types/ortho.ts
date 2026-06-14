@@ -228,9 +228,18 @@ export interface OrthoDiagnosis {
   summary?: string;
   cephSourceAnalysisId?: string;
   cephSyncedAt?: string;
+  photoAnalysisSummary?: string;
+  profileSourceAnalysisId?: string;
+  frontalSourceAnalysisId?: string;
+  photoAnalysisSyncedAt?: string;
   latestCephAnalysisId?: string;
   latestCephAnalysisDate?: string;
   isCephSyncOutdated?: boolean;
+  latestProfileAnalysisId?: string;
+  latestProfileAnalysisDate?: string;
+  latestFrontalAnalysisId?: string;
+  latestFrontalAnalysisDate?: string;
+  isPhotoAnalysisSyncOutdated?: boolean;
   isApproved?: boolean;
   approvedByName?: string;
   approvedAt?: string;
@@ -303,6 +312,14 @@ export interface OrthoPhoto {
   isSelectedForReport?: boolean;
 }
 
+export interface PhotoAnalysisListItem {
+  id: string;
+  orthoCaseId: string;
+  viewType: "profile" | "frontal";
+  imageFileUrl: string;
+  analysisDate: string;
+}
+
 export interface UpdateOrthoPhotoRequest {
   category?: string;
   subtype?: string;
@@ -343,10 +360,17 @@ export interface OrthoOverview {
   visitsCount: number;
   photosCount: number;
   cephAnalysesCount: number;
+  photoAnalysesCount: number;
   latestCephAnalysisId?: string;
   latestCephAnalysisDate?: string;
   cephDiagnosisSyncedAt?: string;
   isCephDiagnosisOutdated?: boolean;
+  latestProfileAnalysisId?: string;
+  latestProfileAnalysisDate?: string;
+  latestFrontalAnalysisId?: string;
+  latestFrontalAnalysisDate?: string;
+  photoAnalysisSyncedAt?: string;
+  isPhotoAnalysisSyncOutdated?: boolean;
   hasRetention: boolean;
   checklistCompleted: number;
   checklistTotal: number;

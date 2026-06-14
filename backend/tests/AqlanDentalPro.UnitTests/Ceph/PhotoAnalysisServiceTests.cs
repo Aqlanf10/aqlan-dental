@@ -117,4 +117,175 @@ public class PhotoAnalysisServiceTests
         (await svc.SoftDeleteAsync(created!.Id)).Should().BeTrue();
         (await svc.ListAsync(caseId)).Should().BeEmpty("soft-deleted rows are filtered by the global query filter");
     }
+
+    [Fact]
+    public async Task Create_ProfileAnalysis_AutoSyncsDraftIntoUnapprovedOrthoDiagnosis()
+    {
+        await using var db = CreateDb();
+        var caseId = await SeedCaseAsync(db);
+        var svc = CreateService(db);
+
+        var (created, error) = await svc.CreateAsync(new SavePhotoAnalysisRequest
+        {
+            OrthoCaseId = caseId,
+            ViewType = "profile",
+            ImageFileUrl = "/uploads/profile.jpg",
+            MeasurementsJson = """
+                [
+                  {
+                    "key": "FacialConvexity",
+                    "nameAr": "تحدب الوجه",
+                    "value": 19,
+                    "severity": "mild",
+                    "interpretationAr": "ملف محدب"
+                  }
+                ]
+                """,
+        });
+
+        error.Should().BeNull();
+        var diagnosis = await db.OrthoDiagnoses.SingleAsync(d => d.OrthoCaseId == caseId);
+        diagnosis.ProfileSourceAnalysisId.Should().Be(created!.Id);
+        diagnosis.FrontalSourceAnalysisId.Should().BeNull();
+        diagnosis.PhotoAnalysisSummary.Should().Contain("تحليل البروفايل");
+        diagnosis.PhotoAnalysisSummary.Should().Contain("ملف محدب");
+        diagnosis.SoftTissueDiagnosis.Should().Be(diagnosis.PhotoAnalysisSummary);
+        diagnosis.PhotoAnalysisSyncedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Create_FrontalAfterProfile_CombinesBothPhotoAnalysesInDiagnosis()
+    {
+        await using var db = CreateDb();
+        var caseId = await SeedCaseAsync(db);
+        var svc = CreateService(db);
+
+        var (profile, _) = await svc.CreateAsync(new SavePhotoAnalysisRequest
+        {
+            OrthoCaseId = caseId,
+            ViewType = "profile",
+            ImageFileUrl = "/uploads/profile.jpg",
+            MeasurementsJson = """
+                [{"key":"FacialConvexity","value":12,"severity":"normal"}]
+                """,
+        });
+        var (frontal, error) = await svc.CreateAsync(new SavePhotoAnalysisRequest
+        {
+            OrthoCaseId = caseId,
+            ViewType = "frontal",
+            ImageFileUrl = "/uploads/frontal.jpg",
+            MeasurementsJson = """
+                [
+                  {"key":"EyeSymmetry","value":1.2,"severity":"mild","interpretationAr":"عدم تناظر عرض العينين"},
+                  {"key":"MouthCant","value":0.08,"severity":"mild","interpretationAr":"ميل خط الفم"}
+                ]
+                """,
+        });
+
+        error.Should().BeNull();
+        var diagnosis = await db.OrthoDiagnoses.SingleAsync(d => d.OrthoCaseId == caseId);
+        diagnosis.ProfileSourceAnalysisId.Should().Be(profile!.Id);
+        diagnosis.FrontalSourceAnalysisId.Should().Be(frontal!.Id);
+        diagnosis.PhotoAnalysisSummary.Should().Contain("تحليل البروفايل");
+        diagnosis.PhotoAnalysisSummary.Should().Contain("تحليل الصورة الأمامية");
+        diagnosis.PhotoAnalysisSummary.Should().Contain("عدم تناظر عرض العينين");
+        diagnosis.PhotoAnalysisSummary.Should().Contain("ميل خط الفم");
+    }
+
+    [Fact]
+    public async Task Create_NewPhotoAnalysis_DoesNotOverwriteApprovedDiagnosis()
+    {
+        await using var db = CreateDb();
+        var caseId = await SeedCaseAsync(db);
+        var originalProfileId = Guid.NewGuid();
+        db.OrthoDiagnoses.Add(new OrthoDiagnosis
+        {
+            OrthoCaseId = caseId,
+            SoftTissueDiagnosis = "تشخيص الأخصائي المعتمد",
+            PhotoAnalysisSummary = "ملخص سابق",
+            ProfileSourceAnalysisId = originalProfileId,
+            PhotoAnalysisSyncedAt = DateTime.UtcNow.AddDays(-2),
+            ApprovedAt = DateTime.UtcNow.AddDays(-1),
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var (created, error) = await CreateService(db).CreateAsync(new SavePhotoAnalysisRequest
+        {
+            OrthoCaseId = caseId,
+            ViewType = "profile",
+            ImageFileUrl = "/uploads/new-profile.jpg",
+            MeasurementsJson = """
+                [{"key":"FacialConvexity","value":20,"severity":"severe","interpretationAr":"ملف محدب واضح"}]
+                """,
+        });
+
+        error.Should().BeNull();
+        created.Should().NotBeNull();
+        var diagnosis = await db.OrthoDiagnoses.SingleAsync(d => d.OrthoCaseId == caseId);
+        diagnosis.SoftTissueDiagnosis.Should().Be("تشخيص الأخصائي المعتمد");
+        diagnosis.PhotoAnalysisSummary.Should().Be("ملخص سابق");
+        diagnosis.ProfileSourceAnalysisId.Should().Be(originalProfileId);
+    }
+
+    [Fact]
+    public async Task Create_NewPhotoAnalysis_RefreshesSoftTissueText_WhenItStillMatchesPreviousAutoSummary()
+    {
+        await using var db = CreateDb();
+        var caseId = await SeedCaseAsync(db);
+        var svc = CreateService(db);
+
+        await svc.CreateAsync(new SavePhotoAnalysisRequest
+        {
+            OrthoCaseId = caseId,
+            ViewType = "profile",
+            ImageFileUrl = "/uploads/profile-1.jpg",
+            MeasurementsJson = """[{"key":"FacialConvexity","value":12,"severity":"normal"}]""",
+        });
+        var diagnosis = await db.OrthoDiagnoses.SingleAsync(d => d.OrthoCaseId == caseId);
+        var firstSummary = diagnosis.PhotoAnalysisSummary;
+
+        await svc.CreateAsync(new SavePhotoAnalysisRequest
+        {
+            OrthoCaseId = caseId,
+            ViewType = "profile",
+            ImageFileUrl = "/uploads/profile-2.jpg",
+            MeasurementsJson = """[{"key":"FacialConvexity","value":20,"severity":"severe"}]""",
+        });
+
+        diagnosis = await db.OrthoDiagnoses.SingleAsync(d => d.OrthoCaseId == caseId);
+        diagnosis.PhotoAnalysisSummary.Should().NotBe(firstSummary);
+        diagnosis.SoftTissueDiagnosis.Should().Be(diagnosis.PhotoAnalysisSummary);
+    }
+
+    [Fact]
+    public async Task Create_NewPhotoAnalysis_PreservesDoctorAuthoredSoftTissueText()
+    {
+        await using var db = CreateDb();
+        var caseId = await SeedCaseAsync(db);
+        var svc = CreateService(db);
+
+        await svc.CreateAsync(new SavePhotoAnalysisRequest
+        {
+            OrthoCaseId = caseId,
+            ViewType = "profile",
+            ImageFileUrl = "/uploads/profile-1.jpg",
+            MeasurementsJson = """[{"key":"FacialConvexity","value":12,"severity":"normal"}]""",
+        });
+        var diagnosis = await db.OrthoDiagnoses.SingleAsync(d => d.OrthoCaseId == caseId);
+        diagnosis.SoftTissueDiagnosis = "Doctor-authored soft tissue diagnosis";
+        await db.SaveChangesAsync();
+
+        await svc.CreateAsync(new SavePhotoAnalysisRequest
+        {
+            OrthoCaseId = caseId,
+            ViewType = "frontal",
+            ImageFileUrl = "/uploads/frontal.jpg",
+            MeasurementsJson = """[{"key":"EyeSymmetry","value":2,"severity":"mild"}]""",
+        });
+
+        diagnosis = await db.OrthoDiagnoses.SingleAsync(d => d.OrthoCaseId == caseId);
+        diagnosis.PhotoAnalysisSummary.Should().Contain("تحليل الصورة الأمامية");
+        diagnosis.SoftTissueDiagnosis.Should().Be("Doctor-authored soft tissue diagnosis");
+    }
 }

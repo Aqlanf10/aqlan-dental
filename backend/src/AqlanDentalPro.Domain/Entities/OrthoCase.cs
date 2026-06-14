@@ -29,6 +29,7 @@ public class OrthoCase : BaseEntity
     public ICollection<TreatmentStage> Stages { get; set; } = [];
     public RetentionRecord? RetentionRecord { get; set; }
     public ICollection<CephAnalysis> CephAnalyses { get; set; } = [];
+    public ICollection<PhotoAnalysis> PhotoAnalyses { get; set; } = [];
     public ICollection<ModelAnalysis> ModelAnalyses { get; set; } = [];
     public ExtractionDecision? ExtractionDecision { get; set; }
     public ICollection<LabOrder> LabOrders { get; set; } = [];

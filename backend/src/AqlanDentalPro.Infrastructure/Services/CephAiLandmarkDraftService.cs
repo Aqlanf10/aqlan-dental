@@ -198,17 +198,29 @@ public sealed class CephAiLandmarkDraftService(
         string inputSummary,
         int outputLength)
     {
-        db.OrthodonticAiLogs.Add(new OrthodonticAiLog
+        // Audit logging is best-effort. A failure here (e.g. the OrthodonticAiLogs
+        // table missing on an un-migrated database) must NEVER mask the honest AI
+        // error that follows, nor turn an expected 403/400 into a generic 500.
+        try
         {
-            AnalysisId = analysisId,
-            UserId = currentUser.UserId,
-            Action = Action,
-            ModelId = modelId,
-            Succeeded = succeeded,
-            ErrorSummary = errorSummary,
-            InputSummary = inputSummary,
-            OutputLength = outputLength,
-        });
-        await db.SaveChangesAsync();
+            db.OrthodonticAiLogs.Add(new OrthodonticAiLog
+            {
+                AnalysisId = analysisId,
+                UserId = currentUser.UserId,
+                Action = Action,
+                ModelId = modelId,
+                Succeeded = succeeded,
+                ErrorSummary = errorSummary,
+                InputSummary = inputSummary,
+                OutputLength = outputLength,
+            });
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "Failed to write OrthodonticAiLog audit row for analysis {AnalysisId} — continuing", analysisId);
+            db.ChangeTracker.Clear(); // drop the failed insert so later saves stay clean
+        }
     }
 }

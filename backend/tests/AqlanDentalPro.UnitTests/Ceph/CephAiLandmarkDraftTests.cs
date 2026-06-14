@@ -144,6 +144,41 @@ public class CephAiLandmarkDraftTests
         });
     }
 
+    [Fact]
+    public async Task LandmarkService_WhenAiDisabled_ThrowsHonestUnavailable_NotGenericError()
+    {
+        await using var db = CreateDb();
+        var analysis = new CephAnalysis
+        {
+            Id = Guid.NewGuid(), OrthoCaseId = Guid.NewGuid(),
+            AnalysisType = "steiner", XrayFileUrl = "/uploads/trace.jpg",
+        };
+        db.CephAnalyses.Add(analysis);
+        await db.SaveChangesAsync(); // no ai.* settings → AI disabled by default
+
+        var factory = new StubFactory(new CapturingHandler(ResponseWithEightPoints()));
+        var user = new Mock<ICurrentUserService>();
+        user.Setup(x => x.UserId).Returns(Guid.NewGuid());
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AiSettings:EncryptionKey"] = "unit-test-ai-encryption-key-that-is-long-enough",
+            }).Build();
+        var vault = new AiApiKeyVault(db, configuration, new Mock<ILogger<AiApiKeyVault>>().Object);
+        var settingsService = new CephAiDraftService(
+            db, [new GeminiAiDraftProvider(factory)], user.Object, vault,
+            new Mock<ILogger<CephAiDraftService>>().Object);
+        var service = new CephAiLandmarkDraftService(
+            db, settingsService, [new GeminiCephLandmarkDraftProvider(factory)], vault,
+            user.Object, new Mock<ILogger<CephAiLandmarkDraftService>>().Object);
+
+        // The honest "AI not enabled / no key" message must surface — never the
+        // generic 500 that an audit-write failure used to mask it behind.
+        var act = async () => await service.GenerateAsync(analysis.Id, 800, 600);
+        (await act.Should().ThrowAsync<AqlanDentalPro.Application.Exceptions.CephAiUnavailableException>())
+            .Which.Message.Should().Be(CephAiDraftService.DisabledMessageAr);
+    }
+
     private static string ResponseWithEightPoints()
     {
         var generated =

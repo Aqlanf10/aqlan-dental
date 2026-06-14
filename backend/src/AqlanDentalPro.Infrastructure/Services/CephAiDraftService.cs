@@ -284,18 +284,29 @@ public class CephAiDraftService(
         Guid analysisId, string? modelId, bool succeeded,
         string? errorSummary, string? inputSummary, int outputLength)
     {
-        db.OrthodonticAiLogs.Add(new OrthodonticAiLog
+        // Best-effort: an audit-write failure (e.g. missing OrthodonticAiLogs table
+        // on an un-migrated DB) must never mask the honest AI error or cause a 500.
+        try
         {
-            AnalysisId = analysisId,
-            UserId = currentUser.UserId,
-            Action = ActionDraftDiagnosis,
-            ModelId = modelId,
-            Succeeded = succeeded,
-            ErrorSummary = errorSummary,
-            InputSummary = inputSummary,
-            OutputLength = outputLength,
-        });
-        await db.SaveChangesAsync();
+            db.OrthodonticAiLogs.Add(new OrthodonticAiLog
+            {
+                AnalysisId = analysisId,
+                UserId = currentUser.UserId,
+                Action = ActionDraftDiagnosis,
+                ModelId = modelId,
+                Succeeded = succeeded,
+                ErrorSummary = errorSummary,
+                InputSummary = inputSummary,
+                OutputLength = outputLength,
+            });
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "Failed to write OrthodonticAiLog audit row for analysis {AnalysisId} — continuing", analysisId);
+            db.ChangeTracker.Clear();
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────

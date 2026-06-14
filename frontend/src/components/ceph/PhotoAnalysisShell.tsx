@@ -53,7 +53,12 @@ function ShellInner({ viewType, title, icon, uploadLabel, renderAnalyzer }: Prop
     try {
       const form = new FormData();
       form.append("file", file);
-      const { data } = await api.post<{ url: string }>("/api/uploads", form);
+      // The shared axios instance defaults to application/json, which makes
+      // Axios serialize FormData to JSON — override so the file is sent as
+      // multipart and UploadsController receives it.
+      const { data } = await api.post<{ url: string }>("/api/uploads", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
       setRelativeUrl(data.url);
       setInitialPoints(undefined);
       setImageUrl(resolveImageUrl(data.url) || data.url);

@@ -36,6 +36,10 @@ function ShellInner({ viewType, title, icon, uploadLabel, renderAnalyzer }: Prop
 
   const inputRef = useRef<HTMLInputElement>(null);
   const stateRef = useRef<{ points: Record<string, Pt>; measurements: unknown }>({ points: {}, measurements: [] });
+  // JSON of the points as they were last saved/loaded — used to detect edits so
+  // the PDF report (built from the persisted record) is never offered for a
+  // dirty, unsaved state.
+  const savedPointsRef = useRef<string>("");
 
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [relativeUrl, setRelativeUrl] = useState<string | null>(null);
@@ -45,6 +49,7 @@ function ShellInner({ viewType, title, icon, uploadLabel, renderAnalyzer }: Prop
   const [savedOk, setSavedOk] = useState(false);
   // Id of the currently saved/loaded analysis — enables the PDF report buttons.
   const [savedId, setSavedId] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
   const [pdfBusy, setPdfBusy] = useState<"download" | "print" | null>(null);
 
   const { saved, saving, error: saveError, save } = usePhotoAnalysisCase(orthoCaseId, viewType);
@@ -68,6 +73,8 @@ function ShellInner({ viewType, title, icon, uploadLabel, renderAnalyzer }: Prop
       setImageUrl(resolveImageUrl(data.url) || data.url);
       setSavedOk(false);
       setSavedId(null); // a fresh upload is an unsaved analysis
+      savedPointsRef.current = "";
+      setDirty(false);
     } catch (err) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       setError(msg ?? "تعذّر رفع الصورة — حاول مرة أخرى.");
@@ -90,6 +97,8 @@ function ShellInner({ viewType, title, icon, uploadLabel, renderAnalyzer }: Prop
       setRelativeUrl(data.imageFileUrl);
       setInitialPoints(pts);
       setImageUrl(resolveImageUrl(data.imageFileUrl) || data.imageFileUrl);
+      savedPointsRef.current = JSON.stringify(pts ?? {});
+      setDirty(false);
       setSavedId(item.id);
     } catch {
       setError("تعذّر تحميل التحليل المحفوظ");
@@ -114,13 +123,22 @@ function ShellInner({ viewType, title, icon, uploadLabel, renderAnalyzer }: Prop
 
   const onChange = useCallback((data: { points: Record<string, Pt>; measurements: unknown }) => {
     stateRef.current = data;
-    setSavedOk(false);
+    // An edit relative to the saved/loaded baseline marks the analysis dirty,
+    // hiding the PDF actions (the report is built from the persisted record).
+    const isDirty = JSON.stringify(data.points) !== savedPointsRef.current;
+    setDirty(isDirty);
+    if (isDirty) setSavedOk(false);
   }, []);
 
   const handleSave = async () => {
     if (!relativeUrl) return;
     const id = await save(relativeUrl, stateRef.current.points, stateRef.current.measurements);
-    if (id) { setSavedOk(true); setSavedId(id); }
+    if (id) {
+      setSavedOk(true);
+      setSavedId(id);
+      savedPointsRef.current = JSON.stringify(stateRef.current.points);
+      setDirty(false);
+    }
   };
 
   return (
@@ -152,7 +170,7 @@ function ShellInner({ viewType, title, icon, uploadLabel, renderAnalyzer }: Prop
               {savedOk ? "تم الحفظ" : "حفظ في الحالة"}
             </button>
           )}
-          {savedId && (
+          {savedId && !dirty && (
             <>
               <button onClick={() => reportPdf("download")} disabled={pdfBusy !== null}
                 title="تحميل تقرير PDF للتحليل المحفوظ"

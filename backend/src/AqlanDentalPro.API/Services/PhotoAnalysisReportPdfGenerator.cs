@@ -342,6 +342,14 @@ public class PhotoAnalysisReportPdfGenerator(AppDbContext db)
                     int h = (b[28] | (b[29] << 8)) & 0x3FFF;
                     if (w > 0 && h > 0) return (w, h);
                 }
+                if (fmt == "VP8L" && b[20] == 0x2F)
+                {
+                    // 14-bit width-1 and height-1 packed after the 0x2F signature.
+                    int b0 = b[21], b1 = b[22], b2 = b[23], b3 = b[24];
+                    int w = 1 + (((b1 & 0x3F) << 8) | b0);
+                    int h = 1 + (((b3 & 0x0F) << 10) | (b2 << 2) | ((b1 & 0xC0) >> 6));
+                    if (w > 0 && h > 0) return (w, h);
+                }
             }
         }
         catch { /* fall through */ }

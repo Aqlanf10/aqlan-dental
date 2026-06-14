@@ -70,9 +70,13 @@ public class CephReportPdfGenerator(AppDbContext db)
         ("Go", "Gn", "#F87171"),
         ("N",  "A",  "#FB923C"),
         ("N",  "B",  "#FCD34D"),
+        // Jarabak (Björk) polygon legs — S-N is drawn above; add S-Ar / Ar-Go / Go-Me.
+        ("S",  "Ar", "#C084FC"),
+        ("Ar", "Go", "#C084FC"),
+        ("Go", "Me", "#F87171"),
     ];
 
-    private static readonly string[] GroupOrder = ["steiner", "tweed", "mcnamara", "ricketts", "downs", "wits"];
+    private static readonly string[] GroupOrder = ["steiner", "tweed", "mcnamara", "ricketts", "downs", "jarabak", "wits"];
 
     private static readonly Dictionary<string, string> AnalysisGroupTitleAr = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -81,6 +85,7 @@ public class CephReportPdfGenerator(AppDbContext db)
         ["mcnamara"] = "تحليل ماكنامارا",
         ["ricketts"] = "تحليل ريكتس",
         ["downs"]    = "تحليل داونز",
+        ["jarabak"]  = "تحليل جاراباك (اتجاه النمو)",
         ["wits"]     = "مؤشر وتس (Wits)",
     };
 
@@ -91,6 +96,7 @@ public class CephReportPdfGenerator(AppDbContext db)
         ["mcnamara"] = "ماكنامارا",
         ["ricketts"] = "ريكتس",
         ["downs"]    = "داونز",
+        ["jarabak"]  = "جاراباك",
         ["wits"]     = "وتس",
         ["full"]     = "شامل",
     };

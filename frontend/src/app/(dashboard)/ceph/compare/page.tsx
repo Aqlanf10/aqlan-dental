@@ -24,9 +24,10 @@ const GROUP_AR: Record<string, string> = {
   mcnamara: "تحليل McNamara",
   ricketts: "تحليل Ricketts",
   downs: "تحليل Downs",
+  jarabak: "تحليل Jarabak",
   wits: "تحليل Wits",
 };
-const GROUP_ORDER = ["steiner", "tweed", "mcnamara", "ricketts", "downs", "wits", "other"];
+const GROUP_ORDER = ["steiner", "tweed", "mcnamara", "ricketts", "downs", "jarabak", "wits", "other"];
 
 const SEVERITY_AR: Record<MeasurementSeverity, string> = {
   normal: "طبيعي",

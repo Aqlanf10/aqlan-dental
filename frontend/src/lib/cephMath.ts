@@ -65,7 +65,7 @@ export function lineAngle(p1: Pt, p2: Pt): number {
 interface Norm {
   normal: number;
   sd: number;
-  unit: '°' | 'mm';
+  unit: '°' | 'mm' | '%';
   nameAr: string;
 }
 
@@ -126,6 +126,19 @@ export const DOWNS_NORMS: Record<string, Norm> = {
   'Mandibular-FH':   { normal: 21.9, sd: 4, unit: '°', nameAr: 'مستوى الفك السفلي / FH' },
 };
 
+// Jarabak (Björk) analysis: the four-angle polygon (saddle/articular/gonial +
+// their sum) describes the cranial base and mandibular form, while the
+// posterior/anterior facial-height ratio predicts the growth direction.
+// Norms from Jarabak & Fizzell. The ratio is a pure length ratio (S-Go / N-Me)
+// so it needs no calibration.
+export const JARABAK_NORMS: Record<string, Norm> = {
+  'Saddle-Angle':    { normal: 123, sd: 5, unit: '°', nameAr: 'الزاوية السرجية (N-S-Ar)' },
+  'Articular-Angle': { normal: 143, sd: 6, unit: '°', nameAr: 'الزاوية المفصلية (S-Ar-Go)' },
+  'Gonial-Angle':    { normal: 130, sd: 7, unit: '°', nameAr: 'الزاوية الفكية (Ar-Go-Me)' },
+  'Bjork-Sum':       { normal: 396, sd: 6, unit: '°', nameAr: 'مجموع زوايا بيورك' },
+  'Jarabak-Ratio':   { normal: 64,  sd: 4, unit: '%', nameAr: 'نسبة جاراباك (الارتفاع الخلفي/الأمامي)' },
+};
+
 // ---------------------------------------------------------------------------
 // API norm overrides
 // Fetched from GET /api/ceph-norms and overlaid on the built-in tables above.
@@ -161,7 +174,7 @@ function resolveNorm(name: string, builtin: Norm): { norm: Norm; override: ApiNo
     norm: {
       normal: ov.normalValue,
       sd: ov.stdDeviation,
-      unit: ov.unit === 'mm' || ov.unit === '°' ? ov.unit : builtin.unit,
+      unit: ov.unit === 'mm' || ov.unit === '°' || ov.unit === '%' ? ov.unit : builtin.unit,
       nameAr: ov.nameAr && ov.nameAr.trim() ? ov.nameAr : builtin.nameAr,
     },
     override: ov,
@@ -229,6 +242,11 @@ function arabicInterpretation(
     'UL-SLine':     ['الشفة العلوية بارزة أمام خط S', 'الشفة العلوية مرتدة خلف خط S'],
     'LL-SLine':     ['الشفة السفلية بارزة أمام خط S', 'الشفة السفلية مرتدة خلف خط S'],
     'Wits':         ['تنافر هيكلي من الصنف الثاني (AO أمام BO)', 'تنافر هيكلي من الصنف الثالث (BO أمام AO)'],
+    'Saddle-Angle':    ['الزاوية السرجية مفتوحة (وضع خلفي للحفرة الفكية)', 'الزاوية السرجية ضيقة (وضع أمامي للحفرة الفكية)'],
+    'Articular-Angle': ['الزاوية المفصلية مفتوحة — ميل لنمط عمودي', 'الزاوية المفصلية ضيقة — ميل لنمط أفقي'],
+    'Gonial-Angle':    ['زاوية الفك مفتوحة — نمط نمو عمودي وميل لعضة مفتوحة', 'زاوية الفك ضيقة — نمط نمو أفقي وميل لعضة عميقة'],
+    'Bjork-Sum':       ['مجموع الزوايا مرتفع — نمط نمو عمودي (دوران خلفي للفك)', 'مجموع الزوايا منخفض — نمط نمو أفقي (دوران أمامي للفك)'],
+    'Jarabak-Ratio':   ['نسبة عالية — اتجاه نمو أفقي (دوران أمامي مضاد لعقارب الساعة)', 'نسبة منخفضة — اتجاه نمو عمودي (دوران خلفي مع عقارب الساعة)'],
   };
 
   const [hi, lo] = map[name] ?? ['أعلى من المعدل', 'أقل من المعدل'];
@@ -491,13 +509,51 @@ export function computeDowns(lmMap: Record<string, Pt>): CephMeasurement[] {
 }
 
 // ---------------------------------------------------------------------------
+// Jarabak (Björk) analysis
+// ---------------------------------------------------------------------------
+//
+// The Björk polygon: saddle (N-S-Ar), articular (S-Ar-Go) and gonial
+// (Ar-Go-Me) angles, plus their sum (≈396° — higher = backward/vertical
+// rotation). The Jarabak ratio is posterior facial height (S-Go) over
+// anterior facial height (N-Me) as a percentage; ≥65% predicts a horizontal
+// (counter-clockwise) growth direction, <59% a vertical (clockwise) one.
+// All four angles and the ratio are scale-independent — no calibration needed.
+// ---------------------------------------------------------------------------
+
+export function computeJarabak(lmMap: Record<string, Pt>): CephMeasurement[] {
+  const G = (k: string) => lmMap[k];
+  const has = (...keys: string[]) => keys.every(k => lmMap[k]);
+  const r: CephMeasurement[] = [];
+  const add = (n: string, v: number | null) => r.push(makeMeasurement(n, v, JARABAK_NORMS[n], 'jarabak'));
+
+  const saddle    = has('N','S','Ar')  ? r1(angle3(G('N'),  G('S'),  G('Ar'))) : null;
+  const articular = has('S','Ar','Go') ? r1(angle3(G('S'),  G('Ar'), G('Go'))) : null;
+  const gonial    = has('Ar','Go','Me')? r1(angle3(G('Ar'), G('Go'), G('Me'))) : null;
+
+  add('Saddle-Angle',    saddle);
+  add('Articular-Angle', articular);
+  add('Gonial-Angle',    gonial);
+  add('Bjork-Sum',
+    saddle !== null && articular !== null && gonial !== null
+      ? r1(saddle + articular + gonial) : null);
+
+  // Posterior/anterior facial height ratio — a ratio of pixel distances, so it
+  // is valid even on an uncalibrated image.
+  add('Jarabak-Ratio',
+    has('S','Go','N','Me') && dist(G('N'),G('Me')) > 0
+      ? r1((dist(G('S'),G('Go')) / dist(G('N'),G('Me'))) * 100) : null);
+
+  return r;
+}
+
+// ---------------------------------------------------------------------------
 // Build combined list filtered by analysis type
 // ---------------------------------------------------------------------------
 
 export function buildMeasurementList(
   lmMap: Record<string, Pt>,
   mmPerPx: number | null,
-  groups: readonly MeasurementGroup[] = ['steiner','tweed','mcnamara','ricketts','downs','wits']
+  groups: readonly MeasurementGroup[] = ['steiner','tweed','mcnamara','ricketts','downs','jarabak','wits']
 ): CephMeasurement[] {
   const all: CephMeasurement[] = [];
   if (groups.includes('steiner'))  all.push(...computeSteiner(lmMap, mmPerPx));
@@ -505,6 +561,7 @@ export function buildMeasurementList(
   if (groups.includes('mcnamara')) all.push(...computeMcNamara(lmMap, mmPerPx));
   if (groups.includes('ricketts')) all.push(...computeRicketts(lmMap, mmPerPx));
   if (groups.includes('downs'))    all.push(...computeDowns(lmMap));
+  if (groups.includes('jarabak'))  all.push(...computeJarabak(lmMap));
   if (groups.includes('wits'))     all.push(...computeWits(lmMap, mmPerPx));
   return all;
 }

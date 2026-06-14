@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { dist, angle3, angleBetweenLines, perpDist, signedPerpDist, lineAngle } from '@/lib/cephMath';
+import {
+  dist, angle3, angleBetweenLines, perpDist, signedPerpDist, lineAngle,
+  computeJarabak,
+} from '@/lib/cephMath';
 
 type Pt = { x: number; y: number };
 
@@ -208,5 +211,53 @@ describe('lineAngle', () => {
     const p1: Pt = { x: 1, y: 0 };
     const p2: Pt = { x: 0, y: 0 };
     expect(lineAngle(p1, p2)).toBeCloseTo(180, 5);
+  });
+});
+
+// ─── computeJarabak ─────────────────────────────────────────────────────────
+
+describe('computeJarabak', () => {
+  // A plausible lateral-ceph landmark layout (screen coords: +y is down).
+  const lm: Record<string, Pt> = {
+    S:  { x: 100, y: 100 },
+    N:  { x: 220, y: 90  },
+    Ar: { x: 90,  y: 150 },
+    Go: { x: 110, y: 270 },
+    Me: { x: 185, y: 320 },
+  };
+
+  it('emits exactly the five Jarabak measurements in the jarabak group', () => {
+    const r = computeJarabak(lm);
+    expect(r.map(m => m.name)).toEqual([
+      'Saddle-Angle', 'Articular-Angle', 'Gonial-Angle', 'Bjork-Sum', 'Jarabak-Ratio',
+    ]);
+    expect(r.every(m => m.analysisGroup === 'jarabak')).toBe(true);
+  });
+
+  it('matches the underlying angle geometry', () => {
+    const r = computeJarabak(lm);
+    const v = (n: string) => r.find(m => m.name === n)!.value!;
+    expect(v('Saddle-Angle')).toBeCloseTo(angle3(lm.N, lm.S, lm.Ar), 0);
+    expect(v('Articular-Angle')).toBeCloseTo(angle3(lm.S, lm.Ar, lm.Go), 0);
+    expect(v('Gonial-Angle')).toBeCloseTo(angle3(lm.Ar, lm.Go, lm.Me), 0);
+  });
+
+  it('Björk sum equals the three component angles', () => {
+    const r = computeJarabak(lm);
+    const v = (n: string) => r.find(m => m.name === n)!.value!;
+    expect(v('Bjork-Sum')).toBeCloseTo(
+      v('Saddle-Angle') + v('Articular-Angle') + v('Gonial-Angle'), 0);
+  });
+
+  it('ratio is PFH/AFH as a percentage and needs no calibration', () => {
+    const r = computeJarabak(lm);
+    const ratio = (dist(lm.S, lm.Go) / dist(lm.N, lm.Me)) * 100;
+    expect(r.find(m => m.name === 'Jarabak-Ratio')!.value).toBeCloseTo(ratio, 0);
+    expect(r.find(m => m.name === 'Jarabak-Ratio')!.unit).toBe('%');
+  });
+
+  it('returns null values when required landmarks are missing', () => {
+    const r = computeJarabak({ S: { x: 0, y: 0 } });
+    expect(r.every(m => m.value === null)).toBe(true);
   });
 });

@@ -30,6 +30,32 @@ public static class CephNormSeeder
     }
 
     /// <summary>
+    /// Inserts only the factory rows that are MISSING from the table (matched by
+    /// MeasurementName + AnalysisGroup, including soft-deleted rows so the unique
+    /// index is never violated). Existing rows — even admin-customized ones — are
+    /// left untouched. This lets newly added analyses (e.g. Jarabak) light up on
+    /// already-seeded clinics at startup without a manual reset. Returns the
+    /// number of rows inserted (0 when nothing was missing).
+    /// </summary>
+    public static async Task<int> BackfillMissingDefaultsAsync(AppDbContext db, CancellationToken ct = default)
+    {
+        var existingKeys = (await db.CephNorms.IgnoreQueryFilters()
+                .Select(n => new { n.MeasurementName, n.AnalysisGroup })
+                .ToListAsync(ct))
+            .Select(k => (k.MeasurementName, k.AnalysisGroup))
+            .ToHashSet();
+
+        var missing = GetFactoryDefaults()
+            .Where(d => !existingKeys.Contains((d.MeasurementName, d.AnalysisGroup)))
+            .ToList();
+
+        if (missing.Count == 0) return 0;
+        db.CephNorms.AddRange(missing);
+        await db.SaveChangesAsync(ct);
+        return missing.Count;
+    }
+
+    /// <summary>
     /// Restores every norm row to factory values: existing rows (matched by
     /// MeasurementName + AnalysisGroup, including soft-deleted ones) are
     /// overwritten and re-activated; missing rows are inserted.
@@ -129,6 +155,18 @@ public static class CephNormSeeder
         Norm("Y-Axis", "محور Y (S-Gn/FH)", "downs", 59.4m, 4, "°", "Vertical", 30),
         Norm("Facial-Plane-FH", "مستوى الوجه (N-Pog) / FH", "downs", 87.8m, 3, "°", "Skeletal", 40),
         Norm("Mandibular-FH", "مستوى الفك السفلي / FH", "downs", 21.9m, 4, "°", "Vertical", 50),
+
+        // ── Jarabak (Björk polygon + facial-height ratio) ─────────────────────
+        Norm("Saddle-Angle", "الزاوية السرجية (N-S-Ar)", "jarabak", 123, 5, "°", "Skeletal", 10,
+            below: "وضع أمامي للحفرة الفكية", above: "وضع خلفي للحفرة الفكية"),
+        Norm("Articular-Angle", "الزاوية المفصلية (S-Ar-Go)", "jarabak", 143, 6, "°", "Skeletal", 20,
+            below: "ميل لنمط أفقي", above: "ميل لنمط عمودي"),
+        Norm("Gonial-Angle", "الزاوية الفكية (Ar-Go-Me)", "jarabak", 130, 7, "°", "Vertical", 30,
+            below: "نمط نمو أفقي (عضة عميقة)", above: "نمط نمو عمودي (عضة مفتوحة)"),
+        Norm("Bjork-Sum", "مجموع زوايا بيورك", "jarabak", 396, 6, "°", "Vertical", 40,
+            below: "نمط نمو أفقي (دوران أمامي)", above: "نمط نمو عمودي (دوران خلفي)"),
+        Norm("Jarabak-Ratio", "نسبة جاراباك (الارتفاع الخلفي/الأمامي)", "jarabak", 64, 4, "%", "Vertical", 50,
+            below: "اتجاه نمو عمودي", above: "اتجاه نمو أفقي"),
 
         // ── Wits ────────────────────────────────────────────────────────────
         Norm("Wits", "مسافة وتس (AO-BO)", "wits", 0, 1.5m, "mm", "Sagittal", 10,

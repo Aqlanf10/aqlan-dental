@@ -47,6 +47,9 @@ const PLANES = [
   { key: 'MaxP', pts: ['ANS', 'PNS'], color: '#FB923C', dash: [] as number[],   label: '' },
   { key: 'U1ax', pts: ['U1A', 'U1T'], color: '#34D399', dash: [] as number[],   label: '' },
   { key: 'L1ax', pts: ['L1A', 'L1T'], color: '#10B981', dash: [] as number[],   label: '' },
+  // Jarabak (Björk) polygon legs — S-N (=SN above) / S-Ar / Ar-Go / Go-Me (=MdP).
+  { key: 'SAr',  pts: ['S',   'Ar'],  color: '#C084FC', dash: [] as number[],   label: 'S-Ar' },
+  { key: 'ArGo', pts: ['Ar',  'Go'],  color: '#C084FC', dash: [] as number[],   label: 'Ar-Go' },
 ];
 
 // Planes that are part of the measurement overlay (drawn even when the

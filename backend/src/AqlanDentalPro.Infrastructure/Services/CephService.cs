@@ -281,6 +281,29 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
                 Add("Mandibular-FH",    "downs", ABLines(G("Go"),G("Me"),G("Po"),G("Or")), 21.9, 4, "°");
         }
 
+        // ── Jarabak (Björk polygon + facial-height ratio) ─────────────────────
+        if (groups.Contains("jarabak"))
+        {
+            double? saddle    = Has("N","S","Ar")   ? R1(Angle3T(G("N"),  G("S"),  G("Ar"))) : null;
+            double? articular = Has("S","Ar","Go")  ? R1(Angle3T(G("S"),  G("Ar"), G("Go"))) : null;
+            double? gonial    = Has("Ar","Go","Me") ? R1(Angle3T(G("Ar"), G("Go"), G("Me"))) : null;
+
+            if (saddle.HasValue)    Add("Saddle-Angle",    "jarabak", saddle.Value,    123, 5, "°");
+            if (articular.HasValue) Add("Articular-Angle", "jarabak", articular.Value, 143, 6, "°");
+            if (gonial.HasValue)    Add("Gonial-Angle",    "jarabak", gonial.Value,    130, 7, "°");
+            if (saddle.HasValue && articular.HasValue && gonial.HasValue)
+                Add("Bjork-Sum", "jarabak", saddle.Value + articular.Value + gonial.Value, 396, 6, "°");
+
+            // Posterior/anterior facial-height ratio (S-Go / N-Me) — a pure length
+            // ratio, valid even when the image is not calibrated.
+            if (Has("S","Go","N","Me"))
+            {
+                double afh = DistT(G("N"), G("Me"));
+                if (afh > 1e-9)
+                    Add("Jarabak-Ratio", "jarabak", DistT(G("S"), G("Go")) / afh * 100, 64, 4, "%");
+            }
+        }
+
         // ── Wits ─────────────────────────────────────────────────────────────
         if (groups.Contains("wits") && cal && Has("U1T","L1T","Go","Me","A","B"))
         {
@@ -949,8 +972,9 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         "mcnamara" => ["mcnamara"],
         "ricketts" => ["ricketts"],
         "downs"    => ["downs"],
+        "jarabak"  => ["jarabak"],
         "wits"     => ["wits"],
-        _          => ["steiner", "tweed", "mcnamara", "ricketts", "downs", "wits"]
+        _          => ["steiner", "tweed", "mcnamara", "ricketts", "downs", "jarabak", "wits"]
     };
 
     // Public: also used by CephReportPdfGenerator as the fallback when a
@@ -964,6 +988,8 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
             or "Upper-Lip-ELine" or "Lower-Lip-ELine" or "Nasolabial"  => "ricketts",
         "Convexity" or "AB-FacialPlane" or "Y-Axis"
             or "Facial-Plane-FH" or "Mandibular-FH"                    => "downs",
+        "Saddle-Angle" or "Articular-Angle" or "Gonial-Angle"
+            or "Bjork-Sum" or "Jarabak-Ratio"                          => "jarabak",
         "Wits"                                                          => "wits",
         _                                                               => "steiner"
     };
@@ -1009,6 +1035,12 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         "Y-Axis"           => "محور Y (S-Gn/FH)",
         "Facial-Plane-FH"  => "مستوى الوجه (N-Pog) / FH",
         "Mandibular-FH"    => "مستوى الفك السفلي / FH",
+        // Jarabak
+        "Saddle-Angle"     => "الزاوية السرجية (N-S-Ar)",
+        "Articular-Angle"  => "الزاوية المفصلية (S-Ar-Go)",
+        "Gonial-Angle"     => "الزاوية الفكية (Ar-Go-Me)",
+        "Bjork-Sum"        => "مجموع زوايا بيورك",
+        "Jarabak-Ratio"    => "نسبة جاراباك (الارتفاع الخلفي/الأمامي)",
         // Wits
         "Wits"             => "مسافة وتس (AO-BO)",
         _                  => name
@@ -1054,6 +1086,11 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
             "Y-Axis"        => above ? $"نمط نمو رأسي {s}" : $"نمط نمو أفقي {s}",
             "Facial-Plane-FH" => above ? $"مستوى الوجه بزاوية أعلى {s}" : $"مستوى الوجه بزاوية أقل {s}",
             "Mandibular-FH" => above ? $"مستوى الفك السفلي مرتفع {s}" : $"مستوى الفك السفلي منخفض {s}",
+            "Saddle-Angle"    => above ? $"الزاوية السرجية مفتوحة (وضع خلفي للحفرة الفكية) {s}" : $"الزاوية السرجية ضيقة (وضع أمامي للحفرة الفكية) {s}",
+            "Articular-Angle" => above ? $"الزاوية المفصلية مفتوحة — ميل لنمط عمودي {s}" : $"الزاوية المفصلية ضيقة — ميل لنمط أفقي {s}",
+            "Gonial-Angle"    => above ? $"زاوية الفك مفتوحة — نمط نمو عمودي {s}" : $"زاوية الفك ضيقة — نمط نمو أفقي {s}",
+            "Bjork-Sum"       => above ? $"مجموع الزوايا مرتفع — نمط نمو عمودي (دوران خلفي) {s}" : $"مجموع الزوايا منخفض — نمط نمو أفقي (دوران أمامي) {s}",
+            "Jarabak-Ratio"   => above ? $"نسبة عالية — اتجاه نمو أفقي {s}" : $"نسبة منخفضة — اتجاه نمو عمودي {s}",
             "Wits"          => above ? $"تنافر هيكلي من الصنف الثاني (AO أمام BO) {s}" : $"تنافر هيكلي من الصنف الثالث (BO أمام AO) {s}",
             _               => above ? $"أعلى من المعدل {s}" : $"أقل من المعدل {s}"
         };

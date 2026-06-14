@@ -1451,9 +1451,19 @@ public static class StartupDatabaseMaintenance
 
             var inserted = await CephNormSeeder.SeedIfEmptyAsync(cnDb);
             if (inserted > 0)
+            {
                 cnLogger.LogInformation("Ceph norms seeded ({Count} factory rows)", inserted);
+            }
             else
-                cnLogger.LogInformation("Ceph norms already exist, no seeding needed");
+            {
+                // Already-seeded clinics: insert only norms missing for newly
+                // added analyses (e.g. Jarabak) without touching customized rows.
+                var backfilled = await CephNormSeeder.BackfillMissingDefaultsAsync(cnDb);
+                if (backfilled > 0)
+                    cnLogger.LogInformation("Ceph norms backfilled ({Count} missing factory rows)", backfilled);
+                else
+                    cnLogger.LogInformation("Ceph norms already exist, no seeding needed");
+            }
         }
         catch (Exception ex)
         {

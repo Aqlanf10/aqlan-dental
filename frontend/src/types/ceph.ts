@@ -9,6 +9,7 @@ export type AnalysisType =
   | 'mcnamara'
   | 'ricketts'
   | 'downs'
+  | 'jarabak'
   | 'wits'
   | 'full';
 
@@ -19,6 +20,7 @@ export const ANALYSIS_TYPE_AR: Record<AnalysisType, string> = {
   mcnamara: 'ماكنامارا',
   ricketts: 'ريكتس',
   downs:    'داونز',
+  jarabak:  'جاراباك',
   wits:     'وتس',
   full:     'شامل',
 };
@@ -30,8 +32,9 @@ export const ANALYSIS_GROUPS: Record<AnalysisType, MeasurementGroup[]> = {
   mcnamara: ['mcnamara'],
   ricketts: ['ricketts'],
   downs:    ['downs'],
+  jarabak:  ['jarabak'],
   wits:     ['wits'],
-  full:     ['steiner', 'tweed', 'mcnamara', 'ricketts', 'downs', 'wits'],
+  full:     ['steiner', 'tweed', 'mcnamara', 'ricketts', 'downs', 'jarabak', 'wits'],
 };
 
 /** A measurement belongs to exactly one analysis group. */
@@ -41,6 +44,7 @@ export type MeasurementGroup =
   | 'mcnamara'
   | 'ricketts'
   | 'downs'
+  | 'jarabak'
   | 'wits';
 
 /** Anatomical region of a landmark — used only for UI grouping. */
@@ -82,7 +86,7 @@ export interface CephMeasurement {
   value: number | null;
   normal: number;
   stdDev: number;
-  unit: '°' | 'mm';
+  unit: '°' | 'mm' | '%';
   /** value − normal. `null` iff `value` is null. */
   deviation: number | null;
   severity: MeasurementSeverity;

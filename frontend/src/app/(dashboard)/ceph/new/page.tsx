@@ -40,6 +40,7 @@ const ANALYSIS_LABELS: Record<string, string> = {
   mcnamara: "ماكنامارا",
   ricketts: "ريكتس",
   downs: "داونز",
+  jarabak: "جاراباك (اتجاه النمو)",
   wits: "وتس (Wits)",
 };
 
@@ -302,6 +303,7 @@ function NewCephPageInner() {
                   <option value="mcnamara">ماكنامارا</option>
                   <option value="ricketts">ريكتس</option>
                   <option value="downs">داونز</option>
+                  <option value="jarabak">جاراباك (اتجاه النمو)</option>
                   <option value="wits">وتس (Wits)</option>
                 </select>
               </div>

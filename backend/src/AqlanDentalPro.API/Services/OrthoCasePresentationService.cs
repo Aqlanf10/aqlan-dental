@@ -5,6 +5,7 @@ using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using SkiaSharp;
 
 namespace AqlanDentalPro.API.Services;
 
@@ -622,12 +623,22 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
         try
         {
             var bytes = await File.ReadAllBytesAsync(path, cancellationToken);
-            return TryReadImageSize(bytes, out var width, out var height)
-                ? new PresentationImage(
+            if (TryReadImageSize(bytes, out var width, out var height))
+                return new PresentationImage(
                     label, bytes, width, height,
                     crop.X, crop.Y, crop.Width, crop.Height,
-                    crop.FlipHorizontal, crop.FlipVertical)
-                : null;
+                    crop.FlipHorizontal, crop.FlipVertical);
+
+            // Other formats (e.g. WebP) aren't read by the PNG/JPEG header sizer and
+            // PowerPoint can't embed them reliably — transcode to JPEG via SkiaSharp so
+            // the photo still appears instead of being silently dropped.
+            if (TryTranscodeToJpeg(bytes, out var jpeg, out var jw, out var jh))
+                return new PresentationImage(
+                    label, jpeg, jw, jh,
+                    crop.X, crop.Y, crop.Width, crop.Height,
+                    crop.FlipHorizontal, crop.FlipVertical);
+
+            return null;
         }
         catch (IOException)
         {
@@ -717,6 +728,34 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
         }
 
         return false;
+    }
+
+    // Decodes any SkiaSharp-supported format (WebP, BMP, GIF, …) and re-encodes JPEG,
+    // returning the decoded pixel dimensions. Best-effort: false on any failure.
+    internal static bool TryTranscodeToJpeg(byte[] source, out byte[] jpeg, out int width, out int height)
+    {
+        jpeg = [];
+        width = 0;
+        height = 0;
+        try
+        {
+            using var data = SKData.CreateCopy(source);
+            using var codec = SKCodec.Create(data);
+            if (codec is null) return false;
+            using var bitmap = SKBitmap.Decode(codec);
+            if (bitmap is null || bitmap.Width <= 0 || bitmap.Height <= 0) return false;
+            using var image = SKImage.FromBitmap(bitmap);
+            using var encoded = image.Encode(SKEncodedImageFormat.Jpeg, 90);
+            if (encoded is null) return false;
+            jpeg = encoded.ToArray();
+            width = bitmap.Width;
+            height = bitmap.Height;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool EqualsIgnoreCase(string? value, string expected) =>

@@ -270,6 +270,44 @@ public class OrthoCasePresentationTests
     }
 
     [Fact]
+    public async Task WebpPhoto_IsTranscodedAndEmbedded()
+    {
+        await using var db = CreateDb();
+        var caseId = await SeedCaseAsync(db, rich: false);
+        var uploads = Path.Combine(Path.GetTempPath(), $"ortho-webp-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(uploads);
+        var previous = Environment.GetEnvironmentVariable("UPLOADS_PATH");
+        try
+        {
+            Environment.SetEnvironmentVariable("UPLOADS_PATH", uploads);
+            var name = $"{Guid.NewGuid():N}.webp";
+            using (var bmp = new SkiaSharp.SKBitmap(12, 8))
+            using (var img = SkiaSharp.SKImage.FromBitmap(bmp))
+            using (var data = img.Encode(SkiaSharp.SKEncodedImageFormat.Webp, 90))
+                await File.WriteAllBytesAsync(Path.Combine(uploads, name), data.ToArray());
+
+            db.OrthoClinicalPhotos.Add(new OrthoClinicalPhoto
+            {
+                Id = Guid.NewGuid(), OrthoCaseId = caseId, PhotoUrl = $"/uploads/{name}",
+                Category = "Extraoral", Subtype = "Frontal", IsSelectedForReport = true, IsActive = true,
+            });
+            await db.SaveChangesAsync();
+
+            var bytes = await new OrthoCasePresentationService(db).GenerateAsync(
+                caseId, new GenerateOrthoCasePresentationRequest());
+            using var stream = new MemoryStream(bytes);
+            using var document = PresentationDocument.Open(stream, false);
+            // The WebP would be dropped without transcoding; assert it was embedded.
+            document.PresentationPart!.SlideParts.SelectMany(p => p.ImageParts).Should().NotBeEmpty();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("UPLOADS_PATH", previous);
+            if (Directory.Exists(uploads)) Directory.Delete(uploads, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task MissingCase_ThrowsArgumentException()
     {
         await using var db = CreateDb();

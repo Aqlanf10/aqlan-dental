@@ -245,24 +245,27 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
         // Before/after comparison — pair an initial-phase photo with a final-phase photo
         // of the same view (subtype). Images are interleaved [before, after, …] and the
         // builder lays them as labelled "قبل/بعد" columns.
-        var initialBySubtype = selectedPhotos
+        // Pair on category + subtype so the same clinical view is compared (an extraoral
+        // "Frontal" is never paired with an intraoral "Frontal").
+        var initialByView = selectedPhotos
             .Where(p => IsInitialPhoto(p) && HasText(p.Subtype))
-            .GroupBy(p => p.Subtype!, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-        var finalBySubtype = selectedPhotos
+            .GroupBy(BeforeAfterViewKey)
+            .ToDictionary(g => g.Key, g => g.First());
+        var finalByView = selectedPhotos
             .Where(p => IsFinalPhoto(p) && HasText(p.Subtype))
-            .GroupBy(p => p.Subtype!, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            .GroupBy(BeforeAfterViewKey)
+            .ToDictionary(g => g.Key, g => g.First());
         var beforeAfter = new List<PresentationImage>();
-        foreach (var subtype in initialBySubtype.Keys)
+        foreach (var (key, initialPhoto) in initialByView)
         {
             if (beforeAfter.Count >= 6) break; // up to 3 pairs
-            if (!finalBySubtype.TryGetValue(subtype, out var finalPhoto)) continue;
-            var before = loadedPhotos.GetValueOrDefault(initialBySubtype[subtype].Id);
+            if (!finalByView.TryGetValue(key, out var finalPhoto)) continue;
+            var before = loadedPhotos.GetValueOrDefault(initialPhoto.Id);
             var after = loadedPhotos.GetValueOrDefault(finalPhoto.Id);
             if (before is null || after is null) continue;
-            beforeAfter.Add(before with { Label = $"قبل — {subtype}" });
-            beforeAfter.Add(after with { Label = $"بعد — {subtype}" });
+            var label = initialPhoto.Subtype!.Trim();
+            beforeAfter.Add(before with { Label = $"قبل — {label}" });
+            beforeAfter.Add(after with { Label = $"بعد — {label}" });
         }
         if (beforeAfter.Count >= 2)
             contents.Add(Content(Slide(OrthoPresentationSlideType.BeforeAfter, "المقارنة: قبل وبعد", false),
@@ -290,6 +293,11 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
         EqualsIgnoreCase(photo.TreatmentPhase, "Final") ||
         EqualsIgnoreCase(photo.TreatmentPhase, "Debond") ||
         EqualsIgnoreCase(photo.TreatmentPhase, "PostTreatment");
+
+    // Pairing key for before/after = clinical view (category/type + subtype), case-insensitive.
+    private static string BeforeAfterViewKey(OrthoClinicalPhoto photo) =>
+        $"{(photo.Category ?? photo.PhotoType ?? string.Empty).Trim().ToLowerInvariant()}|" +
+        $"{(photo.Subtype ?? string.Empty).Trim().ToLowerInvariant()}";
 
     // Initial/diagnostic records: untagged photos or the pretreatment phases.
     private static bool IsInitialPhoto(OrthoClinicalPhoto photo) =>

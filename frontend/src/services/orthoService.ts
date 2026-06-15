@@ -101,4 +101,22 @@ export const orthoService = {
   getChecklist: (caseId: string) => api.get<RecordsChecklist>(`${BASE}/${caseId}/checklist`),
   saveChecklist: (caseId: string, data: Partial<RecordsChecklist>) =>
     api.put(`${BASE}/${caseId}/checklist`, data),
+
+  getCasePresentationDefinition: (caseId: string) =>
+    api.get<OrthoPresentationDefinition>(`${BASE}/${caseId}/case-presentation/definition`),
 };
+
+export interface OrthoPresentationDefinitionSlide {
+  order: number;
+  type: string;
+  title: string;
+  required: boolean;
+  hasData: boolean;
+}
+
+export interface OrthoPresentationDefinition {
+  template: string;
+  totalSlides: number;
+  readySlides: number;
+  slides: OrthoPresentationDefinitionSlide[];
+}

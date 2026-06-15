@@ -188,33 +188,43 @@ export function CasePresentationPanel({ caseId }: { caseId: string }) {
           تضمين الشرائح الفارغة (الأقسام بلا بيانات بعد)
         </label>
 
-        {definitionQ.data && (
-          <div className="mt-3">
-            <button type="button" onClick={() => setShowSlides((v) => !v)}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-clinic-blue hover:underline">
-              <ListOrdered className="h-3.5 w-3.5" />
-              {showSlides ? "إخفاء" : "عرض"} محتوى العرض ({definitionQ.data.slides.length} شريحة · {definitionQ.data.readySlides} جاهزة)
-            </button>
-            {showSlides && (
-              <ol className="mt-2 grid gap-1 sm:grid-cols-2">
-                {definitionQ.data.slides.map((s, i) => {
-                  const shown = includeEmpty || s.required || s.hasData;
-                  return (
+        {definitionQ.data && (() => {
+          // Reflect exactly what will be in the downloaded file: when "include empty"
+          // is off the generator drops optional slides without data, so the count and
+          // per-slide numbering here must match that included subset.
+          let position = 0;
+          const rows = definitionQ.data.slides.map((s) => {
+            const included = includeEmpty || s.required || s.hasData;
+            if (included) position += 1;
+            return { s, included, number: included ? position : null };
+          });
+          const includedCount = rows.filter((r) => r.included).length;
+          const readyCount = definitionQ.data.slides.filter((s) => s.hasData).length;
+          return (
+            <div className="mt-3">
+              <button type="button" onClick={() => setShowSlides((v) => !v)}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-clinic-blue hover:underline">
+                <ListOrdered className="h-3.5 w-3.5" />
+                {showSlides ? "إخفاء" : "عرض"} محتوى العرض ({includedCount} شريحة · {readyCount} جاهزة)
+              </button>
+              {showSlides && (
+                <ol className="mt-2 grid gap-1 sm:grid-cols-2">
+                  {rows.map(({ s, included, number }, i) => (
                     <li key={`${s.type}-${i}`}
                       className={cn("flex items-center gap-2 rounded px-2 py-1 text-[11px]",
-                        shown ? "bg-white" : "bg-gray-50 opacity-50")}>
-                      <span className="w-5 text-gray-400 tabular-nums">{i + 1}.</span>
+                        included ? "bg-white" : "bg-gray-50 opacity-50")}>
+                      <span className="w-5 text-gray-400 tabular-nums">{number ? `${number}.` : "—"}</span>
                       {s.hasData
                         ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-500" />
                         : <Circle className="h-3.5 w-3.5 shrink-0 text-gray-300" />}
                       <span className={s.hasData ? "text-gray-800" : "text-gray-400"}>{s.title}</span>
                     </li>
-                  );
-                })}
-              </ol>
-            )}
-          </div>
-        )}
+                  ))}
+                </ol>
+              )}
+            </div>
+          );
+        })()}
 
         {presentationError && (
           <p role="alert" className="mt-2 text-xs font-medium text-red-600">

@@ -229,6 +229,56 @@ public class OrthoCasesController(
         }
     }
 
+    [HttpGet("{id:guid}/case-presentation/definition")]
+    public async Task<IActionResult> GetCasePresentationDefinition(
+        Guid id,
+        [FromServices] AqlanDentalPro.API.Services.OrthoCasePresentationService generator)
+    {
+        var accessError = await GetCaseAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        try
+        {
+            return Ok(await generator.GetDefinitionAsync(id));
+        }
+        catch (ArgumentException)
+        {
+            return NotFound(new { message = "حالة التقويم غير موجودة" });
+        }
+    }
+
+    [HttpPost("{id:guid}/case-presentation/pptx")]
+    public async Task<IActionResult> GenerateCasePresentation(
+        Guid id,
+        [FromBody] AqlanDentalPro.API.Services.GenerateOrthoCasePresentationRequest? request,
+        [FromServices] AqlanDentalPro.API.Services.OrthoCasePresentationService generator,
+        [FromServices] ILogger<OrthoCasesController> logger)
+    {
+        var accessError = await GetCaseAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        try
+        {
+            var presentation = await generator.GenerateAsync(
+                id,
+                request ?? new AqlanDentalPro.API.Services.GenerateOrthoCasePresentationRequest(),
+                HttpContext.RequestAborted);
+            return File(
+                presentation,
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                $"ortho-case-{id}.pptx");
+        }
+        catch (ArgumentException)
+        {
+            return NotFound(new { message = "حالة التقويم غير موجودة" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to generate orthodontic case presentation for case {CaseId}", id);
+            return StatusCode(500, new { message = "تعذر إنشاء عرض الحالة حالياً" });
+        }
+    }
+
     [HttpGet("{id:guid}/overview")]
     public async Task<IActionResult> GetOverview(Guid id)
     {

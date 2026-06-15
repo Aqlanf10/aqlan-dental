@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Presentation, CheckCircle2, Circle, FileDown, Loader2, Sparkles } from "lucide-react";
 import api from "@/lib/api";
 import { useOrthoOverview, useOrthoPhotos } from "@/hooks/useOrtho";
-import { downloadPdfFromApi } from "@/lib/pdfDownload";
+import { downloadPdfFromApi, extractPdfError } from "@/lib/pdfDownload";
 import { cn } from "@/lib/utils";
 
 interface Checklist {
@@ -14,11 +14,10 @@ interface Checklist {
   upperOcclusal?: boolean; lowerOcclusal?: boolean; opg?: boolean; lateralCeph?: boolean; studyModels?: boolean;
 }
 
-/** Reports / Case-Presentation tab. Sprint 1: a readiness checklist of what the
- *  PowerPoint case presentation will need + links to the existing PDF reports.
- *  The PPTX generator itself lands in a later sprint. */
+/** Reports and case-presentation workspace: readiness, PDF reports, and PPTX export. */
 export function CasePresentationPanel({ caseId }: { caseId: string }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [presentationError, setPresentationError] = useState<string | null>(null);
 
   const overviewQ = useOrthoOverview(caseId);
   const photosQ = useOrthoPhotos(caseId);
@@ -68,6 +67,34 @@ export function CasePresentationPanel({ caseId }: { caseId: string }) {
     try { await downloadPdfFromApi(url, filename); }
     catch { /* download helper surfaces errors; allow retry */ }
     finally { setBusy(null); }
+  };
+
+  const downloadPresentation = async () => {
+    setBusy("pptx");
+    setPresentationError(null);
+    try {
+      const response = await api.post(
+        `/api/ortho-cases/${caseId}/case-presentation/pptx`,
+        { includeEmptyOptionalSlides: true },
+        { responseType: "blob" }
+      );
+      const blob = new Blob(
+        [response.data],
+        { type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" }
+      );
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = `ortho-case-${caseId}.pptx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      setPresentationError(await extractPdfError(error));
+    } finally {
+      setBusy(null);
+    }
   };
 
   const reports: { key: string; label: string; url: string; filename: string; enabled: boolean }[] = [
@@ -126,21 +153,30 @@ export function CasePresentationPanel({ caseId }: { caseId: string }) {
         <span className="text-[11px] text-gray-400">تقارير تحليل الصور متاحة في تبويب «تحليل الصور».</span>
       </div>
 
-      {/* PPTX placeholder */}
-      <div className="rounded-lg border border-dashed border-clinic-blue/40 bg-clinic-blue-50/40 p-4">
+      {/* PPTX generation */}
+      <div className="rounded-lg border border-clinic-blue/30 bg-clinic-blue-50/40 p-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-clinic-blue" />
             <span className="text-sm font-medium text-clinic-navy">إنشاء عرض الحالة (PowerPoint)</span>
           </div>
-          <button disabled
-            className="cursor-not-allowed rounded-lg bg-gray-200 px-3 py-1.5 text-xs font-medium text-gray-500">
-            قريبًا
+          <button
+            type="button"
+            onClick={downloadPresentation}
+            disabled={busy !== null}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-clinic-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-clinic-blue-600 disabled:cursor-not-allowed disabled:opacity-60">
+            {busy === "pptx" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
+            تنزيل PowerPoint
           </button>
         </div>
         <p className="mt-2 text-[11px] text-gray-500">
-          سيولّد عرضًا أكاديميًا (PowerPoint) من بيانات الحالة المعتمدة وصورها المحضّرة. أكمل عناصر الجاهزية أعلاه أولًا.
+          يولّد ملفًا من بيانات الحالة الحالية والصور المختارة، ويستخدم الصور المجهزة عند توفرها دون تمديد أو تشويه.
         </p>
+        {presentationError && (
+          <p role="alert" className="mt-2 text-xs font-medium text-red-600">
+            {presentationError}
+          </p>
+        )}
       </div>
     </div>
   );

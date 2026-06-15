@@ -51,6 +51,7 @@ public static class ServiceRegistrationConfiguration
         services.AddScoped<AqlanDentalPro.API.Services.PhotoAnalysisReportPdfGenerator>();
         services.AddScoped<AqlanDentalPro.API.Services.OrthoModelAnalysisReportPdfGenerator>();
         services.AddScoped<AqlanDentalPro.API.Services.OrthoCaseSummaryReportPdfGenerator>();
+        services.AddScoped<AqlanDentalPro.API.Services.OrthoCasePresentationService>();
         services.AddScoped<IPatientPortalService, PatientPortalService>();
         services.AddScoped<IWhatsAppService, WhatsAppService>();
         services.AddScoped<INotificationService, AqlanDentalPro.Infrastructure.Services.NotificationService>();

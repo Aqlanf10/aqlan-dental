@@ -95,6 +95,18 @@ public class OrthoCasesController(
     ICurrentUserService currentUser,
     IPatientAccessService patientAccess) : ControllerBase
 {
+    private static readonly HashSet<string> ImagePreparationStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "PreparedForReport",
+        "SelectedForPresentation",
+        "ApprovedForPresentation",
+    };
+
+    private static readonly HashSet<string> ImageAspectRatios = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Original", "4:5", "3:4", "16:9", "2:1", "4:3", "1:1",
+    };
+
     [HttpGet]
     public async Task<IActionResult> GetList(
         [FromQuery] int page = 1,
@@ -161,6 +173,30 @@ public class OrthoCasesController(
 
         return await patientAccess.CanAccessPatientAsync(patientId.Value) ? null : Forbid();
     }
+
+    private static object MapImagePreparation(
+        OrthoClinicalPhoto photo,
+        OrthoImagePreparation? preparation) => new
+    {
+        photoId = photo.Id,
+        originalPhotoUrl = photo.PhotoUrl,
+        preparedImageUrl = preparation?.PreparedImageUrl,
+        cropX = preparation?.CropX ?? 0m,
+        cropY = preparation?.CropY ?? 0m,
+        cropWidth = preparation?.CropWidth ?? 1m,
+        cropHeight = preparation?.CropHeight ?? 1m,
+        zoom = preparation?.Zoom ?? 1m,
+        rotationDegrees = preparation?.RotationDegrees ?? 0,
+        brightness = preparation?.Brightness ?? 0,
+        contrast = preparation?.Contrast ?? 0,
+        flipHorizontal = preparation?.FlipHorizontal ?? false,
+        flipVertical = preparation?.FlipVertical ?? false,
+        aspectRatio = preparation?.AspectRatio ?? "Original",
+        preset = preparation?.Preset,
+        status = preparation?.Status ?? "OriginalUploaded",
+        preparedAt = preparation?.PreparedAt,
+        approvedAt = preparation?.ApprovedAt,
+    };
 
     // GET /api/ortho-cases/{id}/case-summary/report/pdf — unified Arabic case summary PDF.
     // Aggregates existing data only (no new computation). Same OrthoAccess policy +
@@ -1508,6 +1544,8 @@ public class OrthoCasesController(
             photo.Subtype,
             photo.TreatmentPhase,
             photo.IsSelectedForReport,
+            PreparationStatus = "OriginalUploaded",
+            IsPreparedForReport = false,
         });
     }
 
@@ -1545,6 +1583,13 @@ public class OrthoCasesController(
                 p.Subtype,
                 p.TreatmentPhase,
                 p.IsSelectedForReport,
+                PreparationStatus = p.ImagePreparation != null
+                    ? p.ImagePreparation.Status
+                    : "OriginalUploaded",
+                IsPreparedForReport = p.ImagePreparation != null,
+                PreparedImageUrl = p.ImagePreparation != null
+                    ? p.ImagePreparation.PreparedImageUrl
+                    : null,
             })
             .ToListAsync();
         return Ok(photos);
@@ -1592,6 +1637,112 @@ public class OrthoCasesController(
             photo.IsSelectedForReport,
             message = "تم تحديث بيانات الصورة",
         });
+    }
+
+    [HttpGet("{id:guid}/photos/{photoId:guid}/preparation")]
+    public async Task<IActionResult> GetImagePreparation(Guid id, Guid photoId)
+    {
+        var accessError = await GetCaseAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        var photo = await db.OrthoClinicalPhotos
+            .AsNoTracking()
+            .Include(p => p.ImagePreparation)
+            .FirstOrDefaultAsync(p => p.Id == photoId && p.OrthoCaseId == id);
+        if (photo is null) return NotFound(new { message = "الصورة غير موجودة" });
+
+        return Ok(MapImagePreparation(photo, photo.ImagePreparation));
+    }
+
+    [HttpPut("{id:guid}/photos/{photoId:guid}/preparation")]
+    public async Task<IActionResult> SaveImagePreparation(
+        Guid id,
+        Guid photoId,
+        [FromBody] SaveOrthoImagePreparationRequest req)
+    {
+        var accessError = await GetCaseAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        var photo = await db.OrthoClinicalPhotos
+            .Include(p => p.ImagePreparation)
+            .FirstOrDefaultAsync(p => p.Id == photoId && p.OrthoCaseId == id);
+        if (photo is null) return NotFound(new { message = "الصورة غير موجودة" });
+
+        if (req.CropX < 0 || req.CropY < 0 || req.CropWidth <= 0 || req.CropHeight <= 0 ||
+            req.CropX + req.CropWidth > 1.00001m || req.CropY + req.CropHeight > 1.00001m)
+            return BadRequest(new { message = "حدود القص غير صالحة" });
+        if (req.Zoom is < 1 or > 4)
+            return BadRequest(new { message = "قيمة التكبير يجب أن تكون بين 1 و 4" });
+        if (req.RotationDegrees is < -180 or > 180)
+            return BadRequest(new { message = "زاوية الدوران يجب أن تكون بين -180 و 180" });
+        if (req.Brightness is < -100 or > 100 || req.Contrast is < -100 or > 100)
+            return BadRequest(new { message = "الإضاءة والتباين يجب أن يكونا بين -100 و 100" });
+        if (!ImageAspectRatios.TryGetValue(req.AspectRatio?.Trim() ?? "Original", out var aspectRatio))
+            return BadRequest(new { message = "نسبة أبعاد الصورة غير مدعومة" });
+        if (!ImagePreparationStatuses.TryGetValue(req.Status?.Trim() ?? "PreparedForReport", out var status))
+            return BadRequest(new { message = "حالة تجهيز الصورة غير صالحة" });
+
+        var preparation = photo.ImagePreparation;
+        if (preparation is null)
+        {
+            preparation = new OrthoImagePreparation
+            {
+                OrthoClinicalPhotoId = photo.Id,
+                PreparedAt = DateTime.UtcNow,
+            };
+            db.OrthoImagePreparations.Add(preparation);
+        }
+
+        preparation.CropX = req.CropX;
+        preparation.CropY = req.CropY;
+        preparation.CropWidth = req.CropWidth;
+        preparation.CropHeight = req.CropHeight;
+        preparation.Zoom = req.Zoom;
+        preparation.RotationDegrees = req.RotationDegrees;
+        preparation.Brightness = req.Brightness;
+        preparation.Contrast = req.Contrast;
+        preparation.FlipHorizontal = req.FlipHorizontal;
+        preparation.FlipVertical = req.FlipVertical;
+        preparation.AspectRatio = aspectRatio;
+        preparation.Preset = string.IsNullOrWhiteSpace(req.Preset) ? null : req.Preset.Trim();
+        preparation.Status = status;
+        preparation.PreparedAt ??= DateTime.UtcNow;
+
+        if (status == "ApprovedForPresentation")
+        {
+            preparation.ApprovedBy = currentUser.UserId;
+            preparation.ApprovedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            preparation.ApprovedBy = null;
+            preparation.ApprovedAt = null;
+        }
+
+        photo.IsSelectedForReport =
+            status is "SelectedForPresentation" or "ApprovedForPresentation";
+
+        await db.SaveChangesAsync();
+        return Ok(MapImagePreparation(photo, preparation));
+    }
+
+    [HttpDelete("{id:guid}/photos/{photoId:guid}/preparation")]
+    public async Task<IActionResult> ResetImagePreparation(Guid id, Guid photoId)
+    {
+        var accessError = await GetCaseAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        var photo = await db.OrthoClinicalPhotos
+            .Include(p => p.ImagePreparation)
+            .FirstOrDefaultAsync(p => p.Id == photoId && p.OrthoCaseId == id);
+        if (photo is null) return NotFound(new { message = "الصورة غير موجودة" });
+
+        if (photo.ImagePreparation is not null)
+            db.OrthoImagePreparations.Remove(photo.ImagePreparation);
+        photo.IsSelectedForReport = false;
+        await db.SaveChangesAsync();
+
+        return Ok(MapImagePreparation(photo, null));
     }
 
     [HttpDelete("{id:guid}/photos/{photoId:guid}")]
@@ -1738,4 +1889,21 @@ public sealed class UpdateOrthoPhotoRequest
     public string? TreatmentPhase { get; init; }
     public bool? IsSelectedForReport { get; init; }
     public string? Caption   { get; init; }
+}
+
+public sealed class SaveOrthoImagePreparationRequest
+{
+    public decimal CropX { get; init; }
+    public decimal CropY { get; init; }
+    public decimal CropWidth { get; init; } = 1m;
+    public decimal CropHeight { get; init; } = 1m;
+    public decimal Zoom { get; init; } = 1m;
+    public int RotationDegrees { get; init; }
+    public int Brightness { get; init; }
+    public int Contrast { get; init; }
+    public bool FlipHorizontal { get; init; }
+    public bool FlipVertical { get; init; }
+    public string? AspectRatio { get; init; } = "Original";
+    public string? Preset { get; init; }
+    public string? Status { get; init; } = "PreparedForReport";
 }

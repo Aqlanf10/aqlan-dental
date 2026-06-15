@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Presentation, CheckCircle2, Circle, FileDown, Loader2, Sparkles } from "lucide-react";
 import api from "@/lib/api";
-import { useOrthoOverview } from "@/hooks/useOrtho";
+import { useOrthoOverview, useOrthoPhotos } from "@/hooks/useOrtho";
 import { downloadPdfFromApi } from "@/lib/pdfDownload";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +21,7 @@ export function CasePresentationPanel({ caseId }: { caseId: string }) {
   const [busy, setBusy] = useState<string | null>(null);
 
   const overviewQ = useOrthoOverview(caseId);
+  const photosQ = useOrthoPhotos(caseId);
   const checklistQ = useQuery({
     queryKey: ["ortho-checklist", caseId],
     enabled: !!caseId, retry: false,
@@ -39,6 +40,8 @@ export function CasePresentationPanel({ caseId }: { caseId: string }) {
   const c = checklistQ.data ?? {};
   const bool = (v: unknown) => v === true;
   const num = (v: unknown) => (typeof v === "number" ? v : 0);
+  const selectedPhotos = (photosQ.data ?? []).filter((photo) => photo.isSelectedForReport);
+  const preparedSelectedPhotos = selectedPhotos.filter((photo) => photo.isPreparedForReport);
 
   const items: { label: string; ready: boolean; note?: string }[] = [
     { label: "صور خارج الفم", ready: bool(c.extraoralFrontal) && bool(c.extraoralProfile) && bool(c.extraoralSmile) },
@@ -50,6 +53,11 @@ export function CasePresentationPanel({ caseId }: { caseId: string }) {
     { label: "خطة علاج معتمدة", ready: bool(o.isTreatmentPlanApproved) },
     { label: "زيارات / صور تقدّم", ready: num(o.visitsCount) > 0 },
     { label: "خطة الاحتفاظ", ready: bool(o.hasRetention) },
+    {
+      label: "الصور المختارة مجهزة للعرض",
+      ready: selectedPhotos.length > 0 && preparedSelectedPhotos.length === selectedPhotos.length,
+      note: `${preparedSelectedPhotos.length}/${selectedPhotos.length}`,
+    },
   ];
   const readyCount = items.filter((i) => i.ready).length;
   const latestCephId = o.latestCephAnalysisId as string | undefined;
@@ -68,7 +76,7 @@ export function CasePresentationPanel({ caseId }: { caseId: string }) {
     { key: "ceph", label: "تقرير السيفالو PDF", url: `/api/ceph/${latestCephId}/report/pdf`, filename: `ceph-${latestCephId}.pdf`, enabled: Boolean(latestCephId) },
   ];
 
-  const loading = overviewQ.isLoading || checklistQ.isLoading;
+  const loading = overviewQ.isLoading || checklistQ.isLoading || photosQ.isLoading;
 
   return (
     <div className="space-y-5" dir="rtl">
@@ -94,6 +102,7 @@ export function CasePresentationPanel({ caseId }: { caseId: string }) {
               <li key={i.label} className="flex items-center gap-2 text-sm">
                 {i.ready ? <CheckCircle2 className="h-4 w-4 text-green-500" /> : <Circle className="h-4 w-4 text-gray-300" />}
                 <span className={i.ready ? "text-gray-800" : "text-gray-400"}>{i.label}</span>
+                {i.note && <span className="text-[11px] text-gray-400">{i.note}</span>}
               </li>
             ))}
           </ul>

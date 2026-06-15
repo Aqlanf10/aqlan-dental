@@ -310,6 +310,52 @@ export interface OrthoPhoto {
   treatmentPhase?: string | null;
   /** مُدرجة في تقرير الحالة */
   isSelectedForReport?: boolean;
+  preparationStatus?: OrthoImagePreparationStatus;
+  isPreparedForReport?: boolean;
+  preparedImageUrl?: string | null;
+}
+
+export type OrthoImagePreparationStatus =
+  | "OriginalUploaded"
+  | "PreparedForReport"
+  | "SelectedForPresentation"
+  | "ApprovedForPresentation";
+
+export interface OrthoImagePreparation {
+  photoId: string;
+  originalPhotoUrl: string;
+  preparedImageUrl?: string | null;
+  cropX: number;
+  cropY: number;
+  cropWidth: number;
+  cropHeight: number;
+  zoom: number;
+  rotationDegrees: number;
+  brightness: number;
+  contrast: number;
+  flipHorizontal: boolean;
+  flipVertical: boolean;
+  aspectRatio: string;
+  preset?: string | null;
+  status: OrthoImagePreparationStatus;
+  preparedAt?: string | null;
+  approvedAt?: string | null;
+}
+
+export interface SaveOrthoImagePreparationRequest {
+  cropX: number;
+  cropY: number;
+  cropWidth: number;
+  cropHeight: number;
+  zoom: number;
+  rotationDegrees: number;
+  brightness: number;
+  contrast: number;
+  flipHorizontal: boolean;
+  flipVertical: boolean;
+  aspectRatio: string;
+  preset?: string | null;
+  status: Exclude<OrthoImagePreparationStatus, "OriginalUploaded">;
 }
 
 export interface PhotoAnalysisListItem {

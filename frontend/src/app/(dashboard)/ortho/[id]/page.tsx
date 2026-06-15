@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ClipboardCheck,
+  Crop,
   FileText,
   GitBranch,
   GitCompareArrows,
@@ -110,6 +111,7 @@ import { CastAnalysisPanel } from "@/components/ortho/CastAnalysisPanel";
 import { FacialPhotoPanel } from "@/components/ortho/FacialPhotoPanel";
 import { LabOrdersPanel } from "@/components/ortho/LabOrdersPanel";
 import { CasePresentationPanel } from "@/components/ortho/CasePresentationPanel";
+import { OrthoImagePreparationDialog } from "@/components/ortho/OrthoImagePreparationDialog";
 import api from "@/lib/api";
 
 /* ------------------------------------------------------------------ */
@@ -464,6 +466,7 @@ function RecordsPanel({ caseId }: { caseId: string }) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewIndex, setPreviewIndex] = useState(0);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [preparingPhoto, setPreparingPhoto] = useState<OrthoPhoto | null>(null);
   const [phaseFilter, setPhaseFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -951,6 +954,11 @@ function RecordsPanel({ caseId }: { caseId: string }) {
                   </div>
                   {/* Phase + subtype/type badges */}
                   <div className="absolute top-2 right-2 flex max-w-[75%] flex-wrap justify-end gap-1">
+                    {p.isPreparedForReport && (
+                      <span className="rounded bg-emerald-600/90 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                        مجهزة
+                      </span>
+                    )}
                     {p.treatmentPhase && TREATMENT_PHASE_LABELS[p.treatmentPhase] && (
                       <span
                         className={cn(
@@ -991,6 +999,17 @@ function RecordsPanel({ caseId }: { caseId: string }) {
                       className="h-3.5 w-3.5"
                       fill={p.isSelectedForReport ? "currentColor" : "none"}
                     />
+                  </button>
+                  <button
+                    type="button"
+                    title="تجهيز الصورة"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPreparingPhoto(p);
+                    }}
+                    className="absolute bottom-2 right-2 z-10 rounded-full bg-black/45 p-1.5 text-white opacity-0 transition hover:bg-clinic-blue group-hover:opacity-100"
+                  >
+                    <Crop className="h-3.5 w-3.5" />
                   </button>
                   {/* Delete button */}
                   {deleteConfirm === p.id ? (
@@ -1047,6 +1066,16 @@ function RecordsPanel({ caseId }: { caseId: string }) {
         }))}
         currentIndex={previewIndex}
         onNavigate={setPreviewIndex}
+      />
+      <OrthoImagePreparationDialog
+        caseId={caseId}
+        photo={preparingPhoto}
+        open={preparingPhoto !== null}
+        onClose={() => setPreparingPhoto(null)}
+        onSaved={() => {
+          refetchPhotos();
+          refetchChecklist();
+        }}
       />
     </div>
   );

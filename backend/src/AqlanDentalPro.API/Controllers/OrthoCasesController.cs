@@ -2,6 +2,7 @@ using AqlanDentalPro.Application.DTOs.Ortho;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -95,6 +96,7 @@ public class OrthoCasesController(
     ICurrentUserService currentUser,
     IPatientAccessService patientAccess) : ControllerBase
 {
+    private const int DefaultOrthoFollowUpIntervalDays = 21;
     private static readonly HashSet<string> ImagePreparationStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
         "PreparedForReport",
@@ -414,6 +416,113 @@ public class OrthoCasesController(
     {
         var result = await service.AddVisitAsync(id, req);
         return Ok(result);
+    }
+
+    [HttpPost("{id:guid}/visits/{visitId:guid}/next-appointment")]
+    public async Task<IActionResult> CreateNextAppointment(
+        Guid id,
+        Guid visitId,
+        [FromBody] CreateOrthoFollowUpAppointmentRequest req)
+    {
+        var accessError = await GetCaseAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        var orthoCase = await db.OrthoCases
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == id && c.IsActive);
+        if (orthoCase is null)
+            return NotFound(new { message = "حالة التقويم غير موجودة" });
+
+        var visit = await db.OrthoVisits
+            .FirstOrDefaultAsync(v => v.Id == visitId && v.OrthoCaseId == id && v.IsActive);
+        if (visit is null)
+            return NotFound(new { message = "زيارة التقويم غير موجودة" });
+
+        var appointmentDate = visit.NextAppointmentDate
+            ?? visit.VisitDate.AddDays(DefaultOrthoFollowUpIntervalDays);
+        if (!string.IsNullOrWhiteSpace(req.AppointmentDate)
+            && !DateOnly.TryParse(req.AppointmentDate, out appointmentDate))
+            return BadRequest(new { message = "صيغة تاريخ الموعد غير صالحة" });
+
+        var startTime = new TimeOnly(9, 0);
+        if (!string.IsNullOrWhiteSpace(req.StartTime)
+            && !TimeOnly.TryParse(req.StartTime, out startTime))
+            return BadRequest(new { message = "صيغة وقت الموعد غير صالحة" });
+
+        var durationMinutes = req.DurationMinutes ?? 30;
+        if (durationMinutes is < 5 or > 480)
+            return BadRequest(new { message = "مدة الموعد يجب أن تكون بين 5 و480 دقيقة" });
+
+        var doctorId = req.DoctorId ?? visit.DoctorId ?? orthoCase.DoctorId;
+        if (!doctorId.HasValue)
+            return BadRequest(new { message = "يجب تحديد طبيب لموعد المتابعة" });
+
+        var doctorExists = await db.Doctors
+            .IgnoreQueryFilters()
+            .AnyAsync(d => d.Id == doctorId.Value && d.IsActive);
+        if (!doctorExists)
+            return BadRequest(new { message = "الطبيب المحدد غير موجود أو غير فعال" });
+
+        var endTime = startTime.AddMinutes(durationMinutes);
+        var alreadyScheduled = await db.Appointments
+            .IgnoreQueryFilters()
+            .AnyAsync(a => a.OrthoCaseId == id
+                && a.PatientId == orthoCase.PatientId
+                && a.AppointmentDate == appointmentDate
+                && a.IsActive
+                && a.Status != AppointmentStatus.Cancelled
+                && a.Status != AppointmentStatus.NoShow);
+        if (alreadyScheduled)
+            return Conflict(new { message = "يوجد موعد متابعة تقويم مسجل في هذا التاريخ" });
+
+        var hasConflict = await db.Appointments
+            .IgnoreQueryFilters()
+            .AnyAsync(a => a.DoctorId == doctorId.Value
+                && a.AppointmentDate == appointmentDate
+                && a.StartTime < endTime
+                && a.EndTime > startTime
+                && a.IsActive
+                && a.Status != AppointmentStatus.Cancelled
+                && a.Status != AppointmentStatus.NoShow);
+        if (hasConflict)
+            return Conflict(new { message = "يوجد تعارض في مواعيد الطبيب في هذا الوقت" });
+
+        var appointment = new Appointment
+        {
+            PatientId = orthoCase.PatientId,
+            DoctorId = doctorId.Value,
+            BranchId = orthoCase.BranchId ?? currentUser.BranchId,
+            OrthoCaseId = id,
+            AppointmentDate = appointmentDate,
+            StartTime = startTime,
+            EndTime = endTime,
+            DurationMinutes = durationMinutes,
+            AppointmentType = string.IsNullOrWhiteSpace(req.AppointmentType)
+                ? visit.NextAppointmentType ?? "OrthoFollowUp"
+                : req.AppointmentType.Trim(),
+            Specialty = Specialty.Orthodontics,
+            ServiceId = req.ServiceId,
+            Notes = req.Notes,
+            CreatedBy = currentUser.UserId
+        };
+
+        visit.NextAppointmentDate = appointmentDate;
+        visit.NextAppointmentType = appointment.AppointmentType;
+        db.Appointments.Add(appointment);
+        await db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            appointment.Id,
+            appointment.OrthoCaseId,
+            appointment.PatientId,
+            appointment.DoctorId,
+            AppointmentDate = appointment.AppointmentDate.ToString("yyyy-MM-dd"),
+            StartTime = appointment.StartTime.ToString("HH:mm"),
+            appointment.DurationMinutes,
+            appointment.AppointmentType,
+            message = "تم إنشاء موعد متابعة التقويم"
+        });
     }
 
     // ─── Stages ──────────────────────────────────────────────────────────────────
@@ -1763,6 +1872,17 @@ public class OrthoCasesController(
 public class UpdateStageRequest
 {
     public string Status { get; set; } = string.Empty;
+}
+
+public sealed class CreateOrthoFollowUpAppointmentRequest
+{
+    public string? AppointmentDate { get; init; }
+    public string? StartTime { get; init; }
+    public int? DurationMinutes { get; init; }
+    public string? AppointmentType { get; init; }
+    public Guid? DoctorId { get; init; }
+    public Guid? ServiceId { get; init; }
+    public string? Notes { get; init; }
 }
 
 public sealed class AddProblemItemRequest

@@ -1005,6 +1005,15 @@ export default function DoctorClinicPage() {
                       {isActive && p.inRoomSince && (
                         <p className="text-[9px] font-semibold text-[#16a34a]">{fmtSessionDuration(p.inRoomSince)}</p>
                       )}
+                      {p.hasActiveOrthoCase && (
+                        <div className="mt-1 rounded border border-violet-100 bg-violet-50 px-1.5 py-1 text-[9px] text-violet-800">
+                          <span className="font-bold">{p.orthoCaseNumber ?? "تقويم نشط"}</span>
+                          {p.orthoCurrentStage && <span> · {p.orthoCurrentStage}</span>}
+                          {p.orthoNextAppointmentDate && (
+                            <span className="block text-violet-600">التالي: {p.orthoNextAppointmentDate}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                   {isPatientSentForBadge && (

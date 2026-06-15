@@ -170,8 +170,12 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     }
 
     [HttpPost]
-    public async Task<ActionResult<AppointmentDto>> Create([FromBody] CreateAppointmentRequest req)
+    public async Task<IActionResult> Create([FromBody] CreateAppointmentRequest req)
     {
+        var orthoValidation = await ValidateOrthoCaseLinkAsync(req);
+        if (orthoValidation != null)
+            return orthoValidation;
+
         // Check room conflict BEFORE creating the appointment to avoid ghost appointments
         if (req.ClinicRoomId.HasValue)
         {
@@ -200,8 +204,12 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     }
 
     [HttpPut("{id:guid}")]
-    public async Task<ActionResult<AppointmentDto>> Update(Guid id, [FromBody] CreateAppointmentRequest req)
+    public async Task<IActionResult> Update(Guid id, [FromBody] CreateAppointmentRequest req)
     {
+        var orthoValidation = await ValidateOrthoCaseLinkAsync(req);
+        if (orthoValidation != null)
+            return orthoValidation;
+
         // Check room conflict BEFORE updating the appointment to avoid ghost state
         if (req.ClinicRoomId.HasValue)
         {
@@ -228,6 +236,23 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
             return error.Contains("تعارض") ? Conflict(new { message = error }) : NotFound(new { message = error });
 
         return Ok(result);
+    }
+
+    private async Task<IActionResult?> ValidateOrthoCaseLinkAsync(CreateAppointmentRequest req)
+    {
+        if (!req.OrthoCaseId.HasValue)
+            return null;
+
+        var validCase = await db.OrthoCases
+            .IgnoreQueryFilters()
+            .AnyAsync(c => c.Id == req.OrthoCaseId.Value
+                && c.PatientId == req.PatientId
+                && c.IsActive
+                && c.Status == OrthoCaseStatus.Active);
+
+        return validCase
+            ? null
+            : BadRequest(new { message = "حالة التقويم غير موجودة أو لا تخص المريض المحدد" });
     }
 
     [HttpPut("{id:guid}/status")]

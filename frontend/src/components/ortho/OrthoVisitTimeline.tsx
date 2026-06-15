@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import type { OrthoVisit, CreateOrthoVisitRequest } from "@/types/ortho";
 import api from "@/lib/api";
 import { formatArabicDate, localDateString } from "@/lib/utils";
-import { Plus, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, ChevronDown, ChevronUp, CalendarPlus, CheckCircle2 } from "lucide-react";
 
 interface Props {
   caseId: string;
@@ -37,6 +37,9 @@ export function OrthoVisitTimeline({ caseId, visits: initialVisits, onVisitAdded
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [schedulingId, setSchedulingId] = useState<string | null>(null);
+  const [scheduledVisits, setScheduledVisits] = useState<Set<string>>(new Set());
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
 
   const { register, handleSubmit, reset } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -68,6 +71,29 @@ export function OrthoVisitTimeline({ caseId, visits: initialVisits, onVisitAdded
     } catch {
     } finally {
       setSaving(false);
+    }
+  };
+
+  const createNextAppointment = async (visit: OrthoVisit) => {
+    setSchedulingId(visit.id);
+    setScheduleError(null);
+    try {
+      await api.post(`/api/ortho-cases/${caseId}/visits/${visit.id}/next-appointment`, {
+        appointmentDate: visit.nextAppointmentDate || undefined,
+        appointmentType: visit.nextAppointmentType || "OrthoFollowUp",
+      });
+      setScheduledVisits(previous => new Set(previous).add(visit.id));
+    } catch (error: unknown) {
+      const message =
+        typeof error === "object"
+        && error !== null
+        && "response" in error
+        && typeof (error as { response?: { data?: { message?: string } } }).response?.data?.message === "string"
+          ? (error as { response: { data: { message: string } } }).response.data.message
+          : "تعذر إنشاء موعد المتابعة";
+      setScheduleError(message);
+    } finally {
+      setSchedulingId(null);
     }
   };
 
@@ -168,7 +194,8 @@ export function OrthoVisitTimeline({ caseId, visits: initialVisits, onVisitAdded
               </button>
 
               {expandedId === v.id && (
-                <div className="px-4 pb-4 pt-1 grid grid-cols-2 md:grid-cols-3 gap-3 border-t border-gray-100">
+                <div className="px-4 pb-4 pt-3 border-t border-gray-100">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   {[
                     ["السلك العلوي", v.wireUpper],
                     ["السلك السفلي", v.wireLower],
@@ -187,6 +214,32 @@ export function OrthoVisitTimeline({ caseId, visits: initialVisits, onVisitAdded
                       <p className="text-xs text-gray-400">الملاحظات</p>
                       <p className="text-sm text-gray-700">{v.clinicalNotes}</p>
                     </div>
+                  )}
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3">
+                    <p className="text-xs text-gray-500">
+                      {v.nextAppointmentDate
+                        ? `التاريخ المقترح: ${v.nextAppointmentDate}`
+                        : "سيُقترح الموعد تلقائياً بعد 21 يوماً من الزيارة"}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => createNextAppointment(v)}
+                      disabled={schedulingId === v.id || scheduledVisits.has(v.id)}
+                      className="inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {scheduledVisits.has(v.id)
+                        ? <CheckCircle2 className="h-4 w-4" />
+                        : <CalendarPlus className="h-4 w-4" />}
+                      {scheduledVisits.has(v.id)
+                        ? "تم إنشاء الموعد"
+                        : schedulingId === v.id
+                          ? "جارٍ الإنشاء..."
+                          : "إنشاء الموعد التالي"}
+                    </button>
+                  </div>
+                  {scheduleError && expandedId === v.id && (
+                    <p className="mt-2 text-xs font-medium text-red-600">{scheduleError}</p>
                   )}
                 </div>
               )}

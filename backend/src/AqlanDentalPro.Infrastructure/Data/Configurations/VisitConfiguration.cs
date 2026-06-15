@@ -19,5 +19,12 @@ public class VisitConfiguration : IEntityTypeConfiguration<Visit>
         builder.Property(v => v.CheckoutStatus).HasMaxLength(30).IsRequired(false);
         builder.Property(v => v.ReadyForCheckoutAt).IsRequired(false);
         builder.Property(v => v.AmountDueReference).HasPrecision(12, 2).IsRequired(false);
+        builder.Property(v => v.OrthoCaseId).IsRequired(false);
+        builder.HasIndex(v => v.OrthoCaseId);
+
+        builder.HasOne(v => v.OrthoCase)
+            .WithMany()
+            .HasForeignKey(v => v.OrthoCaseId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

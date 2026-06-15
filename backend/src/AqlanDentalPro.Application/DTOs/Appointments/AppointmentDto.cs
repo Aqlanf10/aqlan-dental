@@ -27,6 +27,7 @@ public class AppointmentDto
     // Patient Journey fields (Sprint: Command Center)
     public Guid? ServiceId { get; set; }
     public Guid? ClinicRoomId { get; set; }
+    public Guid? OrthoCaseId { get; set; }
 
     // Reminder availability (for frontend button state)
     /// <summary>Whether the patient has an email on file (for showing/disabling email reminder button).</summary>
@@ -45,6 +46,7 @@ public class CreateAppointmentRequest
     public string? Notes { get; set; }
     public Guid? ServiceId { get; set; }
     public Guid? ClinicRoomId { get; set; }
+    public Guid? OrthoCaseId { get; set; }
 }
 
 public class UpdateAppointmentStatusRequest

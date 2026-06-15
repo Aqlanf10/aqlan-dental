@@ -46,6 +46,8 @@ public class Appointment : BaseEntity
     public Guid? ServiceId { get; set; }
     /// <summary>Selected room from ClinicRooms table.</summary>
     public Guid? ClinicRoomId { get; set; }
+    /// <summary>Optional orthodontic case linked to this appointment.</summary>
+    public Guid? OrthoCaseId { get; set; }
 
     public Patient Patient { get; set; } = null!;
     public Doctor Doctor { get; set; } = null!;
@@ -53,4 +55,5 @@ public class Appointment : BaseEntity
     public Visit? Visit { get; set; }
     public ClinicService? Service { get; set; }
     public ClinicRoom? ClinicRoom { get; set; }
+    public OrthoCase? OrthoCase { get; set; }
 }

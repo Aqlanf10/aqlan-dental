@@ -1817,7 +1817,8 @@ public class OrthoCasesController(
     public async Task<IActionResult> SaveImagePreparation(
         Guid id,
         Guid photoId,
-        [FromBody] SaveOrthoImagePreparationRequest req)
+        [FromBody] SaveOrthoImagePreparationRequest req,
+        [FromServices] AqlanDentalPro.API.Services.OrthoImagePreparationRenderer renderer)
     {
         var accessError = await GetCaseAccessErrorAsync(id);
         if (accessError is not null) return accessError;
@@ -1881,12 +1882,24 @@ public class OrthoCasesController(
         photo.IsSelectedForReport =
             status is "SelectedForPresentation" or "ApprovedForPresentation";
 
+        // Bake the adjustments into a fresh prepared image (best-effort). On success the
+        // reports use the fully-rendered copy; on failure PreparedImageUrl is cleared so
+        // they fall back to the original with native crop/flip — the save never fails.
+        var previousPreparedUrl = preparation.PreparedImageUrl;
+        var renderedUrl = renderer.Render(photo, preparation);
+        preparation.PreparedImageUrl = renderedUrl;
+        if (!string.IsNullOrWhiteSpace(previousPreparedUrl) && previousPreparedUrl != renderedUrl)
+            renderer.DeletePrepared(previousPreparedUrl);
+
         await db.SaveChangesAsync();
         return Ok(MapImagePreparation(photo, preparation));
     }
 
     [HttpDelete("{id:guid}/photos/{photoId:guid}/preparation")]
-    public async Task<IActionResult> ResetImagePreparation(Guid id, Guid photoId)
+    public async Task<IActionResult> ResetImagePreparation(
+        Guid id,
+        Guid photoId,
+        [FromServices] AqlanDentalPro.API.Services.OrthoImagePreparationRenderer renderer)
     {
         var accessError = await GetCaseAccessErrorAsync(id);
         if (accessError is not null) return accessError;
@@ -1897,7 +1910,10 @@ public class OrthoCasesController(
         if (photo is null) return NotFound(new { message = "الصورة غير موجودة" });
 
         if (photo.ImagePreparation is not null)
+        {
+            renderer.DeletePrepared(photo.ImagePreparation.PreparedImageUrl);
             db.OrthoImagePreparations.Remove(photo.ImagePreparation);
+        }
         photo.IsSelectedForReport = false;
         await db.SaveChangesAsync();
 

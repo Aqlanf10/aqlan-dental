@@ -106,7 +106,10 @@ internal static class PowerPointPresentationBuilder
         }
         else if (content.Definition.Type == OrthoPresentationSlideType.ThankYou)
         {
-            AddThankYouSlide(shapeTree, ref nextId, document, content.Definition.Title);
+            // Use the localized gratitude line (e.g. "شكراً لكم") for the body, not the
+            // section label, so default Arabic decks keep the warm closing copy.
+            var thanks = content.Lines.Count > 0 ? content.Lines[0] : content.Definition.Title;
+            AddThankYouSlide(shapeTree, ref nextId, document, thanks);
         }
         else if (content.Definition.Type == OrthoPresentationSlideType.BeforeAfter && content.Images.Count >= 2)
         {

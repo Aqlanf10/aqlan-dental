@@ -297,7 +297,8 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
 
         contents.Add(Content(Slide(OrthoPresentationSlideType.Retention, T("مرحلة الاحتفاظ", "Retention"), false),
             source.RetentionRecord is not null || HasText(source.RetentionPlan), Retention(source)));
-        contents.Add(Content(Slide(OrthoPresentationSlideType.ThankYou, T("ختام العرض", "Thank You"), true), true));
+        contents.Add(Content(Slide(OrthoPresentationSlideType.ThankYou, T("ختام العرض", "Thank You"), true),
+            true, [T("شكراً لكم", "Thank you!")]));
 
         return contents;
     }

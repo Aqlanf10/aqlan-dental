@@ -187,12 +187,14 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
                 latestModel is not null, table: CastAnalysis(latestModel)),
             Content(Slide(OrthoPresentationSlideType.Bolton, "تحليل بولتون", false),
                 latestModel?.BoltonOverall is not null || latestModel?.BoltonAnterior is not null, Bolton(latestModel)),
+            // Diagnostic synthesis follows the records/analyses: the problem list (grouped
+            // by category) → the formal diagnosis → treatment objectives → treatment plan.
+            Content(Slide(OrthoPresentationSlideType.ProblemList, "قائمة المشاكل التشخيصية", false),
+                source.ProblemList.Any(item => item.IsActive), ProblemList(source.ProblemList)),
             Content(Slide(OrthoPresentationSlideType.Diagnosis, "التشخيص", true),
                 source.Diagnosis is not null, Diagnosis(source.Diagnosis)),
             Content(Slide(OrthoPresentationSlideType.TreatmentObjectives, "أهداف العلاج", true),
                 HasText(approvedPlan?.TreatmentGoals), TextLines(("أهداف العلاج", approvedPlan?.TreatmentGoals))),
-            Content(Slide(OrthoPresentationSlideType.ProblemList, "قائمة المشاكل", false),
-                source.ProblemList.Any(item => item.IsActive), ProblemList(source.ProblemList)),
             Content(Slide(OrthoPresentationSlideType.TreatmentPlan, "خطة العلاج", true),
                 approvedPlan is not null, TreatmentPlanLines(approvedPlan)),
             Content(Slide(OrthoPresentationSlideType.Mechanotherapy, "الميكانيكا العلاجية", false),
@@ -419,15 +421,42 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
             ("تفسير العلاقة الأمامية", result?.Bolton?.AnteriorInterpretation));
     }
 
+    // Canonical orthodontic problem-list ordering (Ackerman–Proffit style): skeletal →
+    // dental → soft tissue → functional, then any other categories.
+    private static readonly (string[] Keys, string Label)[] ProblemCategories =
+    [
+        (["skeletal", "هيكلي"], "هيكلي"),
+        (["dental", "سني", "أسناني"], "سني"),
+        (["soft", "soft tissue", "الأنسجة الرخوة", "نسيج رخو", "رخو"], "الأنسجة الرخوة"),
+        (["functional", "وظيفي", "وظيفة"], "وظيفي"),
+    ];
+
+    private static (int Rank, string Label) ResolveProblemCategory(string? category)
+    {
+        if (HasText(category))
+        {
+            for (var i = 0; i < ProblemCategories.Length; i++)
+                if (ProblemCategories[i].Keys.Any(k =>
+                        category!.Contains(k, StringComparison.OrdinalIgnoreCase)))
+                    return (i, ProblemCategories[i].Label);
+            return (ProblemCategories.Length, category!.Trim());
+        }
+        return (ProblemCategories.Length + 1, "أخرى");
+    }
+
     private static IReadOnlyList<string> ProblemList(IEnumerable<ProblemListItem> problems) =>
+        // Ordered by canonical category, then SortOrder. The category is a per-item
+        // prefix (not a separate header line) so the line count equals the number of
+        // problems — grouping never costs a slide-capacity slot, so no item is dropped.
         problems
             .Where(item => item.IsActive)
-            .OrderBy(item => item.SortOrder)
-            .Select(item =>
+            .Select(item => (Cat: ResolveProblemCategory(item.Category), Item: item))
+            .OrderBy(x => x.Cat.Rank)
+            .ThenBy(x => x.Item.SortOrder)
+            .Select(x =>
             {
-                var head = HasText(item.Category) ? $"[{item.Category.Trim()}] " : string.Empty;
-                var severity = HasText(item.Severity) ? $" ({item.Severity!.Trim()})" : string.Empty;
-                return $"{head}{item.Description.Trim()}{severity}";
+                var severity = HasText(x.Item.Severity) ? $" ({x.Item.Severity!.Trim()})" : string.Empty;
+                return $"{x.Cat.Label}: {x.Item.Description.Trim()}{severity}";
             })
             .ToList();
 

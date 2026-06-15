@@ -179,8 +179,12 @@ public class OrthoCasePresentationTests
         types.Should().Contain(OrthoPresentationSlideType.Bolton);
         types.Should().Contain(OrthoPresentationSlideType.OcclusionAssessment);
         types.Should().Contain(OrthoPresentationSlideType.FacialAnalysis);
-        // Diagnosis precedes the treatment plan, which precedes the visit story.
+        // Diagnostic flow: problem list → diagnosis → treatment plan → the visit story.
+        types.IndexOf(OrthoPresentationSlideType.ProblemList)
+            .Should().BeLessThan(types.IndexOf(OrthoPresentationSlideType.Diagnosis));
         types.IndexOf(OrthoPresentationSlideType.Diagnosis)
+            .Should().BeLessThan(types.IndexOf(OrthoPresentationSlideType.TreatmentObjectives));
+        types.IndexOf(OrthoPresentationSlideType.TreatmentObjectives)
             .Should().BeLessThan(types.IndexOf(OrthoPresentationSlideType.TreatmentPlan));
         types.IndexOf(OrthoPresentationSlideType.TreatmentPlan)
             .Should().BeLessThan(types.IndexOf(OrthoPresentationSlideType.VisitProgress));

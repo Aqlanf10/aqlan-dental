@@ -1,6 +1,7 @@
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Presentation;
+using SkiaSharp;
 using A = DocumentFormat.OpenXml.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
 
@@ -39,8 +40,16 @@ internal static class PowerPointPresentationBuilder
             themePart.Theme = CreateTheme();
             slideLayoutPart.SlideLayout = CreateSlideLayout();
             slideLayoutPart.AddPart(slideMasterPart);
+
+            // Embed the generated "ocean blue" background on the master so every slide
+            // inherits the reference deck's themed background.
+            var backgroundPart = slideMasterPart.AddImagePart(ImagePartType.Png);
+            using (var bgStream = new MemoryStream(RenderOceanBackground(1280, 960)))
+                backgroundPart.FeedData(bgStream);
+            var backgroundRelId = slideMasterPart.GetIdOfPart(backgroundPart);
             slideMasterPart.SlideMaster = CreateSlideMaster(
-                slideMasterPart.GetIdOfPart(slideLayoutPart));
+                slideMasterPart.GetIdOfPart(slideLayoutPart),
+                backgroundRelId);
 
             var masterId = presentationPart.GetIdOfPart(slideMasterPart);
             presentationPart.Presentation.Append(
@@ -138,25 +147,8 @@ internal static class PowerPointPresentationBuilder
 
     private static void AddBackground(P.ShapeTree tree, ref uint id)
     {
-        tree.Append(CreateRectangle(
-            id++,
-            "Background",
-            0,
-            0,
-            SlideWidth,
-            SlideHeight,
-            White,
-            White));
-        // Thin green accent bar across the top (reference uses the green accent).
-        tree.Append(CreateRectangle(
-            id++,
-            "TopAccent",
-            0,
-            0,
-            SlideWidth,
-            90_000,
-            Green,
-            Green));
+        // No background rectangle — the themed "ocean blue" background comes from the
+        // slide master so it shows on every slide.
     }
 
     private static void AddHeader(
@@ -174,8 +166,8 @@ internal static class PowerPointPresentationBuilder
             SlideWidth - (Margin * 2),
             470_000,
             title,
-            2200,
-            Blue,
+            2400,
+            White,
             true,
             A.TextAlignmentTypeValues.Center));
 
@@ -183,12 +175,12 @@ internal static class PowerPointPresentationBuilder
             id++,
             "CaseNumber",
             Margin,
-            690_000,
+            720_000,
             SlideWidth - (Margin * 2),
             230_000,
             $"رقم الحالة: {caseNumber}",
             1000,
-            Muted,
+            "DCE6FF",
             false,
             A.TextAlignmentTypeValues.Center));
     }
@@ -212,7 +204,7 @@ internal static class PowerPointPresentationBuilder
             170_000,
             footer,
             850,
-            Muted,
+            "DCE6FF",
             false,
             A.TextAlignmentTypeValues.Center));
     }
@@ -222,36 +214,26 @@ internal static class PowerPointPresentationBuilder
         ref uint id,
         OrthoCasePresentationDocument document)
     {
-        tree.Append(CreateRectangle(
-            id++,
-            "TitlePanel",
-            900_000,
-            1_150_000,
-            SlideWidth - 1_800_000,
-            4_350_000,
-            LightBlue,
-            Border,
-            24_000));
+        // White text directly on the themed background (reference title layout).
         tree.Append(CreateTextBox(
-            id++, "ClinicName", 1_300_000, 1_420_000, SlideWidth - 2_600_000, 460_000,
-            document.ClinicName, 1700, Blue, true, A.TextAlignmentTypeValues.Center));
+            id++, "ClinicName", 900_000, 1_350_000, SlideWidth - 1_800_000, 460_000,
+            document.ClinicName, 1600, White, true, A.TextAlignmentTypeValues.Center));
         tree.Append(CreateTextBox(
-            id++, "Title", 1_300_000, 2_050_000, SlideWidth - 2_600_000, 760_000,
-            "عرض حالة تقويمية", 3400, Navy, true, A.TextAlignmentTypeValues.Center));
+            id++, "Title", 900_000, 2_150_000, SlideWidth - 1_800_000, 760_000,
+            "عرض حالة تقويمية", 3400, White, true, A.TextAlignmentTypeValues.Center));
         tree.Append(CreateTextBox(
-            id++, "Patient", 1_300_000, 2_980_000, SlideWidth - 2_600_000, 480_000,
-            document.PatientName, 2200, TextColor, true, A.TextAlignmentTypeValues.Center));
-        // Lead-doctor identity block (name — title, then credentials) from Settings.
+            id++, "Patient", 900_000, 3_080_000, SlideWidth - 1_800_000, 480_000,
+            document.PatientName, 2200, "FFF2A8", true, A.TextAlignmentTypeValues.Center));
         var doctorLine = string.IsNullOrWhiteSpace(document.LeadDoctorTitle)
             ? document.LeadDoctor
             : $"{document.LeadDoctor} — {document.LeadDoctorTitle}";
         tree.Append(CreateTextBox(
-            id++, "Doctor", 1_300_000, 3_700_000, SlideWidth - 2_600_000, 440_000,
-            doctorLine, 1550, Blue, true, A.TextAlignmentTypeValues.Center));
+            id++, "Doctor", 900_000, 3_820_000, SlideWidth - 1_800_000, 440_000,
+            doctorLine, 1550, White, true, A.TextAlignmentTypeValues.Center));
         if (!string.IsNullOrWhiteSpace(document.LeadDoctorCredentials))
             tree.Append(CreateTextBox(
-                id++, "Credentials", 1_300_000, 4_200_000, SlideWidth - 2_600_000, 400_000,
-                document.LeadDoctorCredentials, 1150, Muted, false, A.TextAlignmentTypeValues.Center));
+                id++, "Credentials", 900_000, 4_320_000, SlideWidth - 1_800_000, 400_000,
+                document.LeadDoctorCredentials, 1150, "DCE6FF", false, A.TextAlignmentTypeValues.Center));
     }
 
     private static void AddThankYouSlide(
@@ -268,7 +250,7 @@ internal static class PowerPointPresentationBuilder
             900_000,
             "شكراً لكم",
             4300,
-            Navy,
+            White,
             true,
             A.TextAlignmentTypeValues.Center));
         tree.Append(CreateTextBox(
@@ -280,7 +262,7 @@ internal static class PowerPointPresentationBuilder
             600_000,
             document.ClinicName,
             2000,
-            Blue,
+            "DCE6FF",
             false,
             A.TextAlignmentTypeValues.Center));
     }
@@ -291,17 +273,30 @@ internal static class PowerPointPresentationBuilder
         IReadOnlyList<string> lines)
     {
         var limited = lines.Where(line => !string.IsNullOrWhiteSpace(line)).Take(12).ToList();
-        var height = Math.Max(500_000, 4_900_000 / Math.Max(1, limited.Count));
-        var y = 1_100_000L;
+        if (limited.Count == 0) { AddEmptyState(tree, ref id); return; }
+
+        // White rounded content panel so the dark text reads on the themed background.
+        const long panelX = 560_000;
+        const long panelTop = 1_080_000;
+        var panelW = SlideWidth - (panelX * 2);
+        var panelBottom = SlideHeight - 640_000;
+        tree.Append(CreateRoundRectangle(id++, "ContentPanel", panelX, panelTop, panelW, panelBottom - panelTop, White, Border));
+
+        var innerX = panelX + 220_000;
+        var innerW = panelW - 440_000;
+        var areaTop = panelTop + 200_000;
+        var areaHeight = (panelBottom - panelTop) - 400_000;
+        var height = Math.Min(560_000, areaHeight / Math.Max(1, limited.Count));
+        var y = areaTop;
 
         foreach (var line in limited)
         {
             tree.Append(CreateTextBox(
                 id++,
                 $"Line{id}",
-                900_000,
+                innerX,
                 y,
-                SlideWidth - 1_800_000,
+                innerW,
                 height,
                 $"• {line}",
                 1500,
@@ -661,6 +656,87 @@ internal static class PowerPointPresentationBuilder
                     Width = lineWidth,
                 }));
 
+    private static P.Shape CreateRoundRectangle(
+        uint id,
+        string name,
+        long x,
+        long y,
+        long width,
+        long height,
+        string fill,
+        string line) =>
+        new(
+            new P.NonVisualShapeProperties(
+                new P.NonVisualDrawingProperties { Id = id, Name = name },
+                new P.NonVisualShapeDrawingProperties(),
+                new ApplicationNonVisualDrawingProperties()),
+            new P.ShapeProperties(
+                new A.Transform2D(
+                    new A.Offset { X = x, Y = y },
+                    new A.Extents { Cx = width, Cy = height }),
+                new A.PresetGeometry(new A.AdjustValueList())
+                {
+                    Preset = A.ShapeTypeValues.RoundRectangle,
+                },
+                new A.SolidFill(new A.RgbColorModelHex { Val = fill }),
+                new A.Outline(
+                    new A.SolidFill(new A.RgbColorModelHex { Val = line }))
+                {
+                    Width = 9_000,
+                }));
+
+    // Generates the themed "ocean blue" background (radial blue gradient + a soft white
+    // arc near the bottom) so the deck visually matches the reference theme — created
+    // programmatically (no copyrighted theme asset is redistributed).
+    internal static byte[] RenderOceanBackground(int width, int height)
+    {
+        var info = new SKImageInfo(width, height);
+        using var surface = SKSurface.Create(info);
+        var canvas = surface.Canvas;
+
+        using (var bg = new SKPaint
+        {
+            IsAntialias = true,
+            Shader = SKShader.CreateRadialGradient(
+                new SKPoint(width * 0.5f, height * 0.32f),
+                width * 0.85f,
+                [new SKColor(0x2A, 0x6F, 0xE0), new SKColor(0x0B, 0x39, 0x9B)],
+                [0f, 1f],
+                SKShaderTileMode.Clamp),
+        })
+        {
+            canvas.DrawRect(0, 0, width, height, bg);
+        }
+
+        // Lighter band below a large arc, plus the thin white arc line.
+        var cx = width * 0.5f;
+        var cy = height * 2.15f;
+        var r = height * 1.78f;
+        using (var darker = new SKPaint { IsAntialias = true, Color = new SKColor(0x0A, 0x2F, 0x86) })
+        {
+            using var path = new SKPath();
+            path.AddCircle(cx, cy, r);
+            canvas.Save();
+            canvas.ClipPath(path, antialias: true);
+            canvas.DrawRect(0, 0, width, height, darker);
+            canvas.Restore();
+        }
+        using (var arc = new SKPaint
+        {
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = Math.Max(1.5f, height / 320f),
+            Color = SKColors.White.WithAlpha(210),
+        })
+        {
+            canvas.DrawCircle(cx, cy, r, arc);
+        }
+
+        using var image = surface.Snapshot();
+        using var data = image.Encode(SKEncodedImageFormat.Png, 92);
+        return data.ToArray();
+    }
+
     private static P.Shape CreateTextBox(
         uint id,
         string name,
@@ -760,9 +836,15 @@ internal static class PowerPointPresentationBuilder
             Preserve = true,
         };
 
-    private static P.SlideMaster CreateSlideMaster(string layoutRelationshipId) =>
+    private static P.SlideMaster CreateSlideMaster(string layoutRelationshipId, string backgroundRelId) =>
         new(
-            new P.CommonSlideData(CreateShapeTree()),
+            new P.CommonSlideData(
+                new P.Background(
+                    new P.BackgroundProperties(
+                        new A.BlipFill(
+                            new A.Blip { Embed = backgroundRelId },
+                            new A.Stretch(new A.FillRectangle())))),
+                CreateShapeTree()),
             new P.ColorMap
             {
                 Background1 = A.ColorSchemeIndexValues.Light1,

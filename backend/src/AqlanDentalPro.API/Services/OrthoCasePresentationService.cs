@@ -444,25 +444,21 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
         return (ProblemCategories.Length + 1, "أخرى");
     }
 
-    private static IReadOnlyList<string> ProblemList(IEnumerable<ProblemListItem> problems)
-    {
-        var lines = new List<string>();
-        var groups = problems
+    private static IReadOnlyList<string> ProblemList(IEnumerable<ProblemListItem> problems) =>
+        // Ordered by canonical category, then SortOrder. The category is a per-item
+        // prefix (not a separate header line) so the line count equals the number of
+        // problems — grouping never costs a slide-capacity slot, so no item is dropped.
+        problems
             .Where(item => item.IsActive)
-            .GroupBy(item => ResolveProblemCategory(item.Category))
-            .OrderBy(g => g.Key.Rank);
-
-        foreach (var group in groups)
-        {
-            lines.Add($"▪ {group.Key.Label}");
-            foreach (var item in group.OrderBy(i => i.SortOrder))
+            .Select(item => (Cat: ResolveProblemCategory(item.Category), Item: item))
+            .OrderBy(x => x.Cat.Rank)
+            .ThenBy(x => x.Item.SortOrder)
+            .Select(x =>
             {
-                var severity = HasText(item.Severity) ? $" ({item.Severity!.Trim()})" : string.Empty;
-                lines.Add($"   - {item.Description.Trim()}{severity}");
-            }
-        }
-        return lines;
-    }
+                var severity = HasText(x.Item.Severity) ? $" ({x.Item.Severity!.Trim()})" : string.Empty;
+                return $"{x.Cat.Label}: {x.Item.Description.Trim()}{severity}";
+            })
+            .ToList();
 
     private static IReadOnlyList<string> VisitLines(OrthoVisit visit) =>
         TextLines(

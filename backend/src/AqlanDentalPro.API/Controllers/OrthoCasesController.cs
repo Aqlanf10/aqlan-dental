@@ -91,7 +91,8 @@ public sealed class UpsertClinicalExamRequest
 public class OrthoCasesController(
     OrthoService service,
     AppDbContext db,
-    ICurrentUserService currentUser) : ControllerBase
+    ICurrentUserService currentUser,
+    IPatientAccessService patientAccess) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetList(
@@ -111,6 +112,53 @@ public class OrthoCasesController(
     {
         var result = await service.GetByIdAsync(id);
         return result == null ? NotFound(new { message = "الحالة التقويمية غير موجودة" }) : Ok(result);
+    }
+
+    // GET /api/ortho-cases/{id}/lab-orders — read-only lab orders linked to this case
+    // (Sprint 1: surfaces existing LabOrder.OrthoCaseId; the Lab module remains the
+    // source of truth — no duplication). Enforces per-patient access.
+    [HttpGet("{id:guid}/lab-orders")]
+    public async Task<IActionResult> GetLabOrders(Guid id)
+    {
+        var accessError = await GetCaseAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        var orders = await db.LabOrders
+            .AsNoTracking()
+            .Where(o => o.OrthoCaseId == id && o.IsActive)
+            .OrderByDescending(o => o.CreatedAt)
+            .Select(o => new
+            {
+                id = o.Id,
+                orderNumber = o.OrderNumber,
+                applianceType = o.ApplianceType,
+                status = o.Status,
+                priority = o.Priority,
+                labName = o.LabName,
+                totalCost = o.TotalCost,
+                sentDate = o.SentDate,
+                expectedDate = o.ExpectedDate,
+                receivedDate = o.ReceivedDate,
+                deliveredDate = o.DeliveredDate,
+            })
+            .ToListAsync();
+
+        return Ok(orders);
+    }
+
+    // Same per-patient guard pattern as CephController.
+    private async Task<IActionResult?> GetCaseAccessErrorAsync(Guid orthoCaseId)
+    {
+        var patientId = await db.OrthoCases
+            .AsNoTracking()
+            .Where(c => c.Id == orthoCaseId && c.IsActive)
+            .Select(c => (Guid?)c.PatientId)
+            .FirstOrDefaultAsync();
+
+        if (!patientId.HasValue)
+            return NotFound(new { message = "الحالة التقويمية غير موجودة" });
+
+        return await patientAccess.CanAccessPatientAsync(patientId.Value) ? null : Forbid();
     }
 
     [HttpGet("{id:guid}/overview")]

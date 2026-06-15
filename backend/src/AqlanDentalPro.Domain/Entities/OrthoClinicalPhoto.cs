@@ -18,4 +18,5 @@ public class OrthoClinicalPhoto : BaseEntity
     public bool IsSelectedForReport { get; set; } = false;
 
     public OrthoCase OrthoCase { get; set; } = null!;
+    public OrthoImagePreparation? ImagePreparation { get; set; }
 }

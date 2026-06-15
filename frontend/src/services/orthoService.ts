@@ -5,6 +5,7 @@ import type {
   ExtractionDecision,
   OrthoCase,
   OrthoDiagnosis,
+  OrthoImagePreparation,
   OrthoOverview,
   OrthoPhoto,
   OrthoVisit,
@@ -13,6 +14,7 @@ import type {
   RecordsChecklist,
   RetentionRecord,
   RetentionVisit,
+  SaveOrthoImagePreparationRequest,
   TreatmentPlan,
   TreatmentStage,
   UpdateOrthoPhotoRequest,
@@ -84,6 +86,15 @@ export const orthoService = {
     api.post<OrthoPhoto>(`${BASE}/${caseId}/photos`, data),
   updatePhoto: (caseId: string, photoId: string, data: UpdateOrthoPhotoRequest) =>
     api.patch<OrthoPhoto>(`${BASE}/${caseId}/photos/${photoId}`, data),
+  getImagePreparation: (caseId: string, photoId: string) =>
+    api.get<OrthoImagePreparation>(`${BASE}/${caseId}/photos/${photoId}/preparation`),
+  saveImagePreparation: (
+    caseId: string,
+    photoId: string,
+    data: SaveOrthoImagePreparationRequest
+  ) => api.put<OrthoImagePreparation>(`${BASE}/${caseId}/photos/${photoId}/preparation`, data),
+  resetImagePreparation: (caseId: string, photoId: string) =>
+    api.delete<OrthoImagePreparation>(`${BASE}/${caseId}/photos/${photoId}/preparation`),
   deletePhoto: (caseId: string, photoId: string) =>
     api.delete(`${BASE}/${caseId}/photos/${photoId}`),
 

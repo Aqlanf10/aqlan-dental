@@ -22,6 +22,7 @@ public enum OrthoPresentationSlideType
     VisitProgress,
     ProgressPhotos,
     FinalRecords,
+    BeforeAfter,
     Retention,
     ThankYou,
 }

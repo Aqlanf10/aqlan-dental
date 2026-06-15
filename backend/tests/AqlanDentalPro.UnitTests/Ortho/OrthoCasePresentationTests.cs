@@ -219,6 +219,57 @@ public class OrthoCasePresentationTests
     }
 
     [Fact]
+    public async Task BeforeAfter_PairsInitialAndFinalPhotosOfSameView()
+    {
+        await using var db = CreateDb();
+        var caseId = await SeedCaseAsync(db, rich: false);
+        var uploads = Path.Combine(Path.GetTempPath(), $"ortho-ba-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(uploads);
+        var previous = Environment.GetEnvironmentVariable("UPLOADS_PATH");
+        try
+        {
+            Environment.SetEnvironmentVariable("UPLOADS_PATH", uploads);
+            async Task<string> Photo(string phase)
+            {
+                var name = $"{Guid.NewGuid():N}.png";
+                await File.WriteAllBytesAsync(Path.Combine(uploads, name), OnePixelPng);
+                db.OrthoClinicalPhotos.Add(new OrthoClinicalPhoto
+                {
+                    Id = Guid.NewGuid(), OrthoCaseId = caseId, PhotoUrl = $"/uploads/{name}",
+                    Category = "Extraoral", Subtype = "Frontal", TreatmentPhase = phase,
+                    IsSelectedForReport = true, IsActive = true,
+                });
+                return name;
+            }
+            await Photo("Initial");
+            await Photo("Final");
+            await db.SaveChangesAsync();
+
+            var bytes = await new OrthoCasePresentationService(db).GenerateAsync(
+                caseId, new GenerateOrthoCasePresentationRequest());
+            using var stream = new MemoryStream(bytes);
+            using var document = PresentationDocument.Open(stream, false);
+
+            var allText = string.Join("\n", document.PresentationPart!.SlideParts
+                .SelectMany(p => p.Slide.Descendants<A.Text>()).Select(t => t.Text));
+            allText.Should().Contain("المقارنة: قبل وبعد");
+            allText.Should().Contain("قبل — Frontal");
+            allText.Should().Contain("بعد — Frontal");
+
+            var definition = await new OrthoCasePresentationService(db).GetDefinitionAsync(caseId);
+            definition.Slides.Count(s => s.Type == OrthoPresentationSlideType.BeforeAfter).Should().Be(1);
+
+            var errors = new OpenXmlValidator().Validate(document).ToList();
+            errors.Should().BeEmpty(string.Join(Environment.NewLine, errors.Select(e => e.Description)));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("UPLOADS_PATH", previous);
+            if (Directory.Exists(uploads)) Directory.Delete(uploads, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task MissingCase_ThrowsArgumentException()
     {
         await using var db = CreateDb();

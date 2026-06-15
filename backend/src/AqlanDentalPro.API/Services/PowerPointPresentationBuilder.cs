@@ -95,6 +95,10 @@ internal static class PowerPointPresentationBuilder
         {
             AddThankYouSlide(shapeTree, ref nextId, document);
         }
+        else if (content.Definition.Type == OrthoPresentationSlideType.BeforeAfter && content.Images.Count >= 2)
+        {
+            AddBeforeAfterContent(slidePart, shapeTree, ref nextId, content);
+        }
         else if (content.Images.Count > 0)
         {
             AddImageContent(slidePart, shapeTree, ref nextId, content);
@@ -450,6 +454,42 @@ internal static class PowerPointPresentationBuilder
         }
 
         return boxes;
+    }
+
+    // Before/after comparison: images arrive interleaved [before, after, …]; each pair
+    // is one column with the initial photo on top and the final photo below, each
+    // captioned with its own "قبل/بعد — view" label.
+    private static void AddBeforeAfterContent(
+        SlidePart slidePart,
+        P.ShapeTree tree,
+        ref uint id,
+        PresentationSlideContent content)
+    {
+        var images = content.Images.Take(6).ToList();
+        var pairs = images.Count / 2;
+        if (pairs == 0) return;
+
+        const long startX = 700_000;
+        var columnWidth = (SlideWidth - 1_400_000) / pairs;
+        var imageWidth = columnWidth - 200_000;
+        const long imageHeight = 2_000_000;
+        const long topY = 1_200_000;
+        const long bottomY = 3_650_000;
+
+        for (var p = 0; p < pairs; p++)
+        {
+            var before = images[p * 2];
+            var after = images[(p * 2) + 1];
+            var x = startX + (p * columnWidth) + 100_000;
+
+            AddImage(slidePart, tree, ref id, before, x, topY, imageWidth, imageHeight);
+            tree.Append(CreateTextBox(id++, $"BeforeLabel{p}", x, topY + imageHeight + 20_000,
+                imageWidth, 220_000, before.Label, 950, Navy, true, A.TextAlignmentTypeValues.Center));
+
+            AddImage(slidePart, tree, ref id, after, x, bottomY, imageWidth, imageHeight);
+            tree.Append(CreateTextBox(id++, $"AfterLabel{p}", x, bottomY + imageHeight + 20_000,
+                imageWidth, 220_000, after.Label, 950, Blue, true, A.TextAlignmentTypeValues.Center));
+        }
     }
 
     private static void AddImage(

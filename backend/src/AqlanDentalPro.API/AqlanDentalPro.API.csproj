@@ -7,6 +7,9 @@
     <UserSecretsId>aqlan-dental-pro-api</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="AqlanDentalPro.UnitTests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\AqlanDentalPro.Infrastructure\AqlanDentalPro.Infrastructure.csproj" />
     <ProjectReference Include="..\AqlanDentalPro.Application\AqlanDentalPro.Application.csproj" />
     <ProjectReference Include="..\AqlanDentalPro.Domain\AqlanDentalPro.Domain.csproj" />

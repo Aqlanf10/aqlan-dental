@@ -211,9 +211,13 @@ public class OrthoCaseSummaryReportPdfGenerator(AppDbContext db)
                     column.Item().Text(dx.Summary).FontSize(9).FontFamily(FontName);
             }
 
-            // 6. Treatment plan status
+            // 6. Treatment plan status — prefer the approved plan; fall back to the
+            // newest draft only when no approved plan exists (so a later draft
+            // alternative never hides an existing approved plan).
             Section(column, "خطة العلاج");
-            var plan = orthoCase.TreatmentPlans.OrderByDescending(t => t.CreatedAt).FirstOrDefault();
+            var plan = orthoCase.TreatmentPlans.Where(t => t.IsApproved)
+                    .OrderByDescending(t => t.ApprovedAt ?? t.CreatedAt).FirstOrDefault()
+                ?? orthoCase.TreatmentPlans.OrderByDescending(t => t.CreatedAt).FirstOrDefault();
             if (plan is null) NoData(column, "لا توجد خطة علاج.");
             else
             {

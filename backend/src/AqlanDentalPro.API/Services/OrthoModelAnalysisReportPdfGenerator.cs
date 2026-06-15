@@ -45,9 +45,13 @@ public class OrthoModelAnalysisReportPdfGenerator(AppDbContext db)
         }
         else
         {
+            // Non-null AnalysisDate first (PostgreSQL sorts NULLs first on DESC, which
+            // would otherwise surface a legacy null-dated row over the newest analysis),
+            // then by date, then by CreatedAt.
             analysis = await query
                 .Where(m => m.OrthoCaseId == orthoCaseId!.Value)
-                .OrderByDescending(m => m.AnalysisDate)
+                .OrderByDescending(m => m.AnalysisDate.HasValue)
+                .ThenByDescending(m => m.AnalysisDate)
                 .ThenByDescending(m => m.CreatedAt)
                 .FirstOrDefaultAsync();
         }

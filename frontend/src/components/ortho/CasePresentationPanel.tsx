@@ -19,7 +19,7 @@ interface Checklist {
 export function CasePresentationPanel({ caseId }: { caseId: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [presentationError, setPresentationError] = useState<string | null>(null);
-  const [includeEmpty, setIncludeEmpty] = useState(true);
+  const [includeEmpty, setIncludeEmpty] = useState(false);
   const [showSlides, setShowSlides] = useState(false);
 
   const overviewQ = useOrthoOverview(caseId);

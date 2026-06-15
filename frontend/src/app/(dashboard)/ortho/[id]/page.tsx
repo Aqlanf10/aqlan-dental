@@ -37,6 +37,7 @@ import {
   Smile,
   FlaskConical,
   Presentation,
+  Sparkles,
 } from "lucide-react";
 import { cn, formatArabicDate, formatYemeniRiyal } from "@/lib/utils";
 import { financeV3ContractsUrl } from "@/lib/financeRoutes";
@@ -111,6 +112,7 @@ import { CastAnalysisPanel } from "@/components/ortho/CastAnalysisPanel";
 import { FacialPhotoPanel } from "@/components/ortho/FacialPhotoPanel";
 import { LabOrdersPanel } from "@/components/ortho/LabOrdersPanel";
 import { CasePresentationPanel } from "@/components/ortho/CasePresentationPanel";
+import { OrthoCaseWizard } from "@/components/ortho/OrthoCaseWizard";
 import { OrthoImagePreparationDialog } from "@/components/ortho/OrthoImagePreparationDialog";
 import api from "@/lib/api";
 
@@ -135,6 +137,7 @@ type Tab =
   | "retention"
   | "lab"
   | "finance"
+  | "wizard"
   | "reports";
 
 /* ------------------------------------------------------------------ */
@@ -158,6 +161,7 @@ const TABS: { key: Tab; label: string; icon: typeof Activity }[] = [
   { key: "retention", label: "الاحتفاظ", icon: ShieldCheck },
   { key: "lab", label: "المختبر", icon: FlaskConical },
   { key: "finance", label: "المالية", icon: Wallet },
+  { key: "wizard", label: "المعالج", icon: Sparkles },
   { key: "reports", label: "التقارير", icon: Presentation },
 ];
 
@@ -3324,6 +3328,9 @@ export default function OrthoCaseDetailPage() {
           {activeTab === "lab" && <LabOrdersPanel caseId={id} />}
           {activeTab === "finance" && (
             <FinancePanel caseId={id} patientId={orthoCase.patientId} />
+          )}
+          {activeTab === "wizard" && (
+            <OrthoCaseWizard caseId={id} patientId={orthoCase.patientId} onNavigate={selectTab} />
           )}
           {activeTab === "reports" && <CasePresentationPanel caseId={id} />}
         </div>

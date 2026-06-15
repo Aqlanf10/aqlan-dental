@@ -32,6 +32,10 @@ import {
   UserSquare2,
   Wallet,
   X,
+  Microscope,
+  Smile,
+  FlaskConical,
+  Presentation,
 } from "lucide-react";
 import { cn, formatArabicDate, formatYemeniRiyal } from "@/lib/utils";
 import { financeV3ContractsUrl } from "@/lib/financeRoutes";
@@ -102,6 +106,10 @@ import { OrthoStagesTimeline } from "@/components/ortho/OrthoStagesTimeline";
 import { ImagePreviewModal } from "@/components/shared/ImagePreviewModal";
 import { OrthoVisitTimeline } from "@/components/ortho/OrthoVisitTimeline";
 import { OrthoBeforeAfterCompare } from "@/components/ortho/OrthoBeforeAfterCompare";
+import { CastAnalysisPanel } from "@/components/ortho/CastAnalysisPanel";
+import { FacialPhotoPanel } from "@/components/ortho/FacialPhotoPanel";
+import { LabOrdersPanel } from "@/components/ortho/LabOrdersPanel";
+import { CasePresentationPanel } from "@/components/ortho/CasePresentationPanel";
 import api from "@/lib/api";
 
 /* ------------------------------------------------------------------ */
@@ -113,15 +121,19 @@ type Tab =
   | "records"
   | "compare"
   | "exam"
-  | "problems"
+  | "cast"
   | "ceph"
+  | "facial"
+  | "problems"
   | "diagnosis"
   | "plan"
   | "stages"
   | "visits"
   | "extraction"
   | "retention"
-  | "finance";
+  | "lab"
+  | "finance"
+  | "reports";
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -132,15 +144,19 @@ const TABS: { key: Tab; label: string; icon: typeof Activity }[] = [
   { key: "records", label: "السجلات", icon: Camera },
   { key: "compare", label: "مقارنة قبل/بعد", icon: Images },
   { key: "exam", label: "الفحص", icon: Stethoscope },
-  { key: "problems", label: "المشاكل", icon: ListChecks },
+  { key: "cast", label: "تحليل النماذج", icon: Microscope },
   { key: "ceph", label: "السيفالو", icon: ScanLine },
+  { key: "facial", label: "تحليل الصور", icon: Smile },
+  { key: "problems", label: "المشاكل", icon: ListChecks },
   { key: "diagnosis", label: "التشخيص", icon: ClipboardCheck },
   { key: "plan", label: "الخطة", icon: FileText },
   { key: "stages", label: "المراحل", icon: GitBranch },
   { key: "visits", label: "الزيارات", icon: Calendar },
   { key: "extraction", label: "الخلع", icon: Scissors },
   { key: "retention", label: "الاحتفاظ", icon: ShieldCheck },
+  { key: "lab", label: "المختبر", icon: FlaskConical },
   { key: "finance", label: "المالية", icon: Wallet },
+  { key: "reports", label: "التقارير", icon: Presentation },
 ];
 
 const inputCls =
@@ -3068,6 +3084,7 @@ export default function OrthoCaseDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const { data: orthoCase, isLoading } = useOrthoCase(id);
+  const { data: overview } = useOrthoOverview(id);
   const { data: stages = [] } = useOrthoStages(id);
   const { data: visits = [] } = useOrthoVisits(id);
   const [localStages, setLocalStages] = useState<TreatmentStage[]>([]);
@@ -3181,6 +3198,37 @@ export default function OrthoCaseDetailPage() {
             {stageProgress}%
           </span>
         </div>
+
+        {/* Quick case stats */}
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {[
+            { label: "المرحلة الحالية", value: orthoCase.currentStage || "—" },
+            { label: "الموعد القادم", value: overview?.nextAppointmentDate ? formatArabicDate(overview.nextAppointmentDate) : "—" },
+            { label: "جاهزية السجلات", value: overview ? `${overview.checklistCompleted ?? 0}/${overview.checklistTotal ?? 0}` : "—" },
+            { label: "المتبقّي المالي", value: overview?.contractRemaining != null ? formatYemeniRiyal(overview.contractRemaining) : "—" },
+          ].map((s) => (
+            <div key={s.label} className="rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2">
+              <div className="text-[11px] text-gray-500">{s.label}</div>
+              <div className="truncate text-sm font-semibold text-gray-900">{s.value}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Quick actions */}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Link href={`/ceph/new?orthoCaseId=${orthoCase.id}`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+            <ScanLine className="h-3.5 w-3.5" />تحليل سيفالو جديد
+          </Link>
+          <Link href={`/ceph/photo?orthoCaseId=${orthoCase.id}`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+            <UserSquare2 className="h-3.5 w-3.5" />تحليل صورة
+          </Link>
+          <Link href={`/ortho/${orthoCase.id}/model-analysis`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+            <Microscope className="h-3.5 w-3.5" />تحليل نماذج
+          </Link>
+        </div>
       </section>
 
       {/* Tab navigation */}
@@ -3210,8 +3258,10 @@ export default function OrthoCaseDetailPage() {
           {activeTab === "records" && <RecordsPanel caseId={id} />}
           {activeTab === "compare" && <OrthoBeforeAfterCompare caseId={id} />}
           {activeTab === "exam" && <ClinicalExamPanel caseId={id} />}
+          {activeTab === "cast" && <CastAnalysisPanel caseId={id} />}
           {activeTab === "problems" && <ProblemsPanel caseId={id} />}
           {activeTab === "ceph" && <CephPanel caseId={id} />}
+          {activeTab === "facial" && <FacialPhotoPanel caseId={id} />}
           {activeTab === "diagnosis" && <DiagnosisPanel caseId={id} />}
           {activeTab === "plan" && <TreatmentPlanPanel caseId={id} />}
           {activeTab === "stages" && (
@@ -3242,9 +3292,11 @@ export default function OrthoCaseDetailPage() {
           )}
           {activeTab === "extraction" && <ExtractionPanel caseId={id} />}
           {activeTab === "retention" && <RetentionPanel caseId={id} />}
+          {activeTab === "lab" && <LabOrdersPanel caseId={id} />}
           {activeTab === "finance" && (
             <FinancePanel caseId={id} patientId={orthoCase.patientId} />
           )}
+          {activeTab === "reports" && <CasePresentationPanel caseId={id} />}
         </div>
       </section>
     </div>

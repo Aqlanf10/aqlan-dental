@@ -6,6 +6,7 @@ using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -64,6 +65,65 @@ public class OrthoModelAnalysesController(
         return row is null
             ? NotFound(new { message = "تحليل النماذج غير موجود" })
             : Ok(ToResponse(row));
+    }
+
+    // GET api/ortho-cases/{orthoCaseId}/model-analyses/latest/report/pdf
+    [HttpGet("latest/report/pdf")]
+    public async Task<IActionResult> GetLatestReportPdf(
+        Guid orthoCaseId,
+        [FromServices] AqlanDentalPro.API.Services.OrthoModelAnalysisReportPdfGenerator generator,
+        [FromServices] ILogger<OrthoModelAnalysesController> logger)
+    {
+        var accessError = await GetCaseAccessErrorAsync(orthoCaseId);
+        if (accessError is not null) return accessError;
+
+        try
+        {
+            var pdf = await generator.GenerateLatestAsync(orthoCaseId);
+            return File(pdf, "application/pdf", $"model-analysis-{orthoCaseId}.pdf");
+        }
+        catch (ArgumentException)
+        {
+            return NotFound(new { message = "لا يوجد تحليل نماذج لهذه الحالة" });
+        }
+        catch (Exception ex)
+        {
+            // Never expose exception details in the HTTP response — log only.
+            logger.LogError(ex, "Failed to generate model analysis report PDF for case {CaseId}", orthoCaseId);
+            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إنشاء تقرير تحليل النماذج" });
+        }
+    }
+
+    // GET api/ortho-cases/{orthoCaseId}/model-analyses/{id}/report/pdf
+    [HttpGet("{id:guid}/report/pdf")]
+    public async Task<IActionResult> GetReportPdf(
+        Guid orthoCaseId,
+        Guid id,
+        [FromServices] AqlanDentalPro.API.Services.OrthoModelAnalysisReportPdfGenerator generator,
+        [FromServices] ILogger<OrthoModelAnalysesController> logger)
+    {
+        var accessError = await GetCaseAccessErrorAsync(orthoCaseId);
+        if (accessError is not null) return accessError;
+
+        // Ensure the analysis belongs to the accessed case before rendering.
+        var exists = await db.ModelAnalyses.AsNoTracking()
+            .AnyAsync(m => m.Id == id && m.OrthoCaseId == orthoCaseId);
+        if (!exists) return NotFound(new { message = "تحليل النماذج غير موجود" });
+
+        try
+        {
+            var pdf = await generator.GenerateAsync(id);
+            return File(pdf, "application/pdf", $"model-analysis-{id}.pdf");
+        }
+        catch (ArgumentException)
+        {
+            return NotFound(new { message = "تحليل النماذج غير موجود" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to generate model analysis report PDF {AnalysisId}", id);
+            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إنشاء تقرير تحليل النماذج" });
+        }
     }
 
     [HttpPost("preview")]

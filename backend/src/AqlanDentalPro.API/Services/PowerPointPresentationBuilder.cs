@@ -402,7 +402,7 @@ internal static class PowerPointPresentationBuilder
                 220_000,
                 image.Label,
                 850,
-                Muted,
+                White,
                 false,
                     A.TextAlignmentTypeValues.Center));
         }
@@ -418,7 +418,7 @@ internal static class PowerPointPresentationBuilder
                 350_000,
                 string.Join(" | ", content.Lines.Take(3)),
                 900,
-                TextColor,
+                "DCE6FF",
                 false,
                 A.TextAlignmentTypeValues.Center));
         }
@@ -484,11 +484,11 @@ internal static class PowerPointPresentationBuilder
 
             AddImage(slidePart, tree, ref id, before, x, topY, imageWidth, imageHeight);
             tree.Append(CreateTextBox(id++, $"BeforeLabel{p}", x, topY + imageHeight + 20_000,
-                imageWidth, 220_000, before.Label, 950, Navy, true, A.TextAlignmentTypeValues.Center));
+                imageWidth, 220_000, before.Label, 950, White, true, A.TextAlignmentTypeValues.Center));
 
             AddImage(slidePart, tree, ref id, after, x, bottomY, imageWidth, imageHeight);
             tree.Append(CreateTextBox(id++, $"AfterLabel{p}", x, bottomY + imageHeight + 20_000,
-                imageWidth, 220_000, after.Label, 950, Blue, true, A.TextAlignmentTypeValues.Center));
+                imageWidth, 220_000, after.Label, 950, "C8F5E8", true, A.TextAlignmentTypeValues.Center));
         }
     }
 

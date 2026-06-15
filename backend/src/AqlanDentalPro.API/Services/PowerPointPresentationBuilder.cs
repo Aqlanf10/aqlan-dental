@@ -85,7 +85,7 @@ internal static class PowerPointPresentationBuilder
 
         AddBackground(shapeTree, ref nextId);
         AddHeader(shapeTree, ref nextId, content.Definition.Title, document.CaseNumber);
-        AddFooter(shapeTree, ref nextId, document.ClinicName, content.Definition.Order);
+        AddFooter(shapeTree, ref nextId, document, content.Definition.Order);
 
         if (content.Definition.Type == OrthoPresentationSlideType.Title)
         {
@@ -188,9 +188,13 @@ internal static class PowerPointPresentationBuilder
     private static void AddFooter(
         P.ShapeTree tree,
         ref uint id,
-        string clinicName,
+        OrthoCasePresentationDocument document,
         int slideNumber)
     {
+        // Footer carries the clinic identity + contact (Settings) — same as the PDF reports.
+        var footer = string.IsNullOrWhiteSpace(document.Contact)
+            ? $"{document.ClinicName}   |   {slideNumber}"
+            : $"{document.ClinicName}   |   {document.Contact}   |   {slideNumber}";
         tree.Append(CreateTextBox(
             id++,
             "FooterClinic",
@@ -198,7 +202,7 @@ internal static class PowerPointPresentationBuilder
             SlideHeight - 330_000,
             SlideWidth - (Margin * 2),
             170_000,
-            $"{clinicName}   |   {slideNumber}",
+            footer,
             850,
             Muted,
             false,
@@ -214,48 +218,32 @@ internal static class PowerPointPresentationBuilder
             id++,
             "TitlePanel",
             900_000,
-            1_300_000,
+            1_150_000,
             SlideWidth - 1_800_000,
-            3_900_000,
+            4_350_000,
             LightBlue,
             Border,
             24_000));
         tree.Append(CreateTextBox(
-            id++,
-            "Title",
-            1_300_000,
-            1_850_000,
-            SlideWidth - 2_600_000,
-            800_000,
-            "عرض حالة تقويمية",
-            3600,
-            Navy,
-            true,
-            A.TextAlignmentTypeValues.Center));
+            id++, "ClinicName", 1_300_000, 1_420_000, SlideWidth - 2_600_000, 460_000,
+            document.ClinicName, 1700, Blue, true, A.TextAlignmentTypeValues.Center));
         tree.Append(CreateTextBox(
-            id++,
-            "Patient",
-            1_300_000,
-            2_850_000,
-            SlideWidth - 2_600_000,
-            500_000,
-            document.PatientName,
-            2300,
-            TextColor,
-            true,
-            A.TextAlignmentTypeValues.Center));
+            id++, "Title", 1_300_000, 2_050_000, SlideWidth - 2_600_000, 760_000,
+            "عرض حالة تقويمية", 3400, Navy, true, A.TextAlignmentTypeValues.Center));
         tree.Append(CreateTextBox(
-            id++,
-            "Doctor",
-            1_300_000,
-            3_650_000,
-            SlideWidth - 2_600_000,
-            500_000,
-            document.LeadDoctor,
-            1600,
-            Blue,
-            false,
-            A.TextAlignmentTypeValues.Center));
+            id++, "Patient", 1_300_000, 2_980_000, SlideWidth - 2_600_000, 480_000,
+            document.PatientName, 2200, TextColor, true, A.TextAlignmentTypeValues.Center));
+        // Lead-doctor identity block (name — title, then credentials) from Settings.
+        var doctorLine = string.IsNullOrWhiteSpace(document.LeadDoctorTitle)
+            ? document.LeadDoctor
+            : $"{document.LeadDoctor} — {document.LeadDoctorTitle}";
+        tree.Append(CreateTextBox(
+            id++, "Doctor", 1_300_000, 3_700_000, SlideWidth - 2_600_000, 440_000,
+            doctorLine, 1550, Blue, true, A.TextAlignmentTypeValues.Center));
+        if (!string.IsNullOrWhiteSpace(document.LeadDoctorCredentials))
+            tree.Append(CreateTextBox(
+                id++, "Credentials", 1_300_000, 4_200_000, SlideWidth - 2_600_000, 400_000,
+                document.LeadDoctorCredentials, 1150, Muted, false, A.TextAlignmentTypeValues.Center));
     }
 
     private static void AddThankYouSlide(

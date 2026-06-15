@@ -36,8 +36,8 @@ public class OrthoCasePresentationTests
 
         using var stream = new MemoryStream(bytes);
         using var document = PresentationDocument.Open(stream, false);
-        // 19 fixed narrative sections (no visits/progress photos for a sparse case).
-        document.PresentationPart!.SlideParts.Should().HaveCount(19);
+        // 20 fixed narrative sections (no visits/progress photos for a sparse case).
+        document.PresentationPart!.SlideParts.Should().HaveCount(20);
 
         var errors = new OpenXmlValidator().Validate(document).ToList();
         errors.Should().BeEmpty(
@@ -141,8 +141,8 @@ public class OrthoCasePresentationTests
             .GetDefinitionAsync(caseId);
 
         definition.Template.Should().Be("CasePresentation");
-        // 19 fixed sections + one per-visit slide (the rich case seeds a single visit).
-        definition.Slides.Should().HaveCount(20);
+        // 20 fixed sections + one per-visit slide (the rich case seeds a single visit).
+        definition.Slides.Should().HaveCount(21);
         definition.Slides.Should().ContainSingle(
             slide => slide.Type == OrthoPresentationSlideType.CephalometricMeasurements &&
                      slide.HasData);

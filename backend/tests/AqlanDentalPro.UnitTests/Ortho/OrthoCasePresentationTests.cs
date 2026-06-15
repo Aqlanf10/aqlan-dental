@@ -308,6 +308,32 @@ public class OrthoCasePresentationTests
     }
 
     [Fact]
+    public async Task ModuleLanguageSetting_RendersEnglishTitles()
+    {
+        await using var db = CreateDb();
+        var caseId = await SeedCaseAsync(db, rich: false);
+        db.Settings.Add(new Setting { Id = Guid.NewGuid(), Key = "ui.lang.ortho", Value = "en", Category = "ui" });
+        await db.SaveChangesAsync();
+
+        var service = new OrthoCasePresentationService(db);
+        var definition = await service.GetDefinitionAsync(caseId);
+        var titles = definition.Slides.Select(s => s.Title).ToList();
+
+        titles.Should().Contain("Case Presentation");
+        titles.Should().Contain("Diagnosis");
+        titles.Should().Contain("Treatment Plan");
+        titles.Should().NotContain("التشخيص");
+
+        // The generated deck text is also English.
+        var bytes = await service.GenerateAsync(caseId, new GenerateOrthoCasePresentationRequest());
+        using var stream = new MemoryStream(bytes);
+        using var document = PresentationDocument.Open(stream, false);
+        var allText = string.Join("\n", document.PresentationPart!.SlideParts
+            .SelectMany(p => p.Slide.Descendants<A.Text>()).Select(t => t.Text));
+        allText.Should().Contain("Diagnosis");
+    }
+
+    [Fact]
     public async Task MissingCase_ThrowsArgumentException()
     {
         await using var db = CreateDb();

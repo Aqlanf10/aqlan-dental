@@ -95,16 +95,18 @@ internal static class PowerPointPresentationBuilder
         var nextId = 2U;
 
         AddBackground(shapeTree, ref nextId);
-        AddHeader(shapeTree, ref nextId, content.Definition.Title, document.CaseNumber);
+        var isCover = content.Definition.Type is OrthoPresentationSlideType.Title or OrthoPresentationSlideType.ThankYou;
+        if (!isCover)
+            AddHeader(shapeTree, ref nextId, content.Definition.Title, document.CaseNumber);
         AddFooter(shapeTree, ref nextId, document, content.Definition.Order);
 
         if (content.Definition.Type == OrthoPresentationSlideType.Title)
         {
-            AddTitleSlide(shapeTree, ref nextId, document);
+            AddTitleSlide(shapeTree, ref nextId, document, content.Definition.Title);
         }
         else if (content.Definition.Type == OrthoPresentationSlideType.ThankYou)
         {
-            AddThankYouSlide(shapeTree, ref nextId, document);
+            AddThankYouSlide(shapeTree, ref nextId, document, content.Definition.Title);
         }
         else if (content.Definition.Type == OrthoPresentationSlideType.BeforeAfter && content.Images.Count >= 2)
         {
@@ -212,7 +214,8 @@ internal static class PowerPointPresentationBuilder
     private static void AddTitleSlide(
         P.ShapeTree tree,
         ref uint id,
-        OrthoCasePresentationDocument document)
+        OrthoCasePresentationDocument document,
+        string title)
     {
         // White text directly on the themed background (reference title layout).
         tree.Append(CreateTextBox(
@@ -220,7 +223,7 @@ internal static class PowerPointPresentationBuilder
             document.ClinicName, 1600, White, true, A.TextAlignmentTypeValues.Center));
         tree.Append(CreateTextBox(
             id++, "Title", 900_000, 2_150_000, SlideWidth - 1_800_000, 760_000,
-            "عرض حالة تقويمية", 3400, White, true, A.TextAlignmentTypeValues.Center));
+            title, 3400, White, true, A.TextAlignmentTypeValues.Center));
         tree.Append(CreateTextBox(
             id++, "Patient", 900_000, 3_080_000, SlideWidth - 1_800_000, 480_000,
             document.PatientName, 2200, "FFF2A8", true, A.TextAlignmentTypeValues.Center));
@@ -239,7 +242,8 @@ internal static class PowerPointPresentationBuilder
     private static void AddThankYouSlide(
         P.ShapeTree tree,
         ref uint id,
-        OrthoCasePresentationDocument document)
+        OrthoCasePresentationDocument document,
+        string title)
     {
         tree.Append(CreateTextBox(
             id++,
@@ -248,7 +252,7 @@ internal static class PowerPointPresentationBuilder
             2_100_000,
             SlideWidth - (Margin * 2),
             900_000,
-            "شكراً لكم",
+            title,
             4300,
             White,
             true,

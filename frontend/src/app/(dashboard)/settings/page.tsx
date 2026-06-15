@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   Settings, Users, Shield, Save, Plus, X, UserCheck, UserX,
-  FileSearch, Globe, Stethoscope, DoorOpen, Search, Filter,
+  FileSearch, Globe, Stethoscope, DoorOpen, Search, Filter, Languages,
   Trash2, RotateCcw, KeyRound, Copy, AlertTriangle,
   UserCog, Loader2, ShieldAlert, CheckCircle2, XCircle,
   Mail, MailWarning, Clock, Send, CreditCard, FlaskConical, Banknote,
@@ -2120,6 +2120,18 @@ export default function SettingsPage() {
           <div>
             <p className="font-semibold text-gray-900">طرق الدفع</p>
             <p className="text-sm text-gray-500">إدارة طرق الدفع المتاحة والرقم المرجعي</p>
+          </div>
+        </Link>
+        <Link
+          href="/settings/language"
+          className="flex items-center gap-4 bg-white rounded-xl border border-gray-200 shadow-sm p-4 hover:border-clinic-blue hover:shadow-md transition group"
+        >
+          <div className="w-10 h-10 rounded-xl bg-sky-50 flex items-center justify-center flex-shrink-0 group-hover:bg-sky-100 transition">
+            <Languages className="w-5 h-5 text-sky-600" />
+          </div>
+          <div>
+            <p className="font-semibold text-gray-900">لغة الوحدات</p>
+            <p className="text-sm text-gray-500">التحكم بلغة كل وحدة (عربي / إنجليزي)</p>
           </div>
         </Link>
       </div>

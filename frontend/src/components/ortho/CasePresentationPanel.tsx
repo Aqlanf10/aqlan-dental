@@ -2,9 +2,10 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Presentation, CheckCircle2, Circle, FileDown, Loader2, Sparkles } from "lucide-react";
+import { Presentation, CheckCircle2, Circle, FileDown, Loader2, Sparkles, ListOrdered } from "lucide-react";
 import api from "@/lib/api";
 import { useOrthoOverview, useOrthoPhotos } from "@/hooks/useOrtho";
+import { orthoService } from "@/services/orthoService";
 import { downloadPdfFromApi, extractPdfError } from "@/lib/pdfDownload";
 import { cn } from "@/lib/utils";
 
@@ -18,9 +19,16 @@ interface Checklist {
 export function CasePresentationPanel({ caseId }: { caseId: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [presentationError, setPresentationError] = useState<string | null>(null);
+  const [includeEmpty, setIncludeEmpty] = useState(true);
+  const [showSlides, setShowSlides] = useState(false);
 
   const overviewQ = useOrthoOverview(caseId);
   const photosQ = useOrthoPhotos(caseId);
+  const definitionQ = useQuery({
+    queryKey: ["ortho-presentation-definition", caseId],
+    enabled: !!caseId, retry: false,
+    queryFn: async () => (await orthoService.getCasePresentationDefinition(caseId)).data,
+  });
   const checklistQ = useQuery({
     queryKey: ["ortho-checklist", caseId],
     enabled: !!caseId, retry: false,
@@ -75,7 +83,7 @@ export function CasePresentationPanel({ caseId }: { caseId: string }) {
     try {
       const response = await api.post(
         `/api/ortho-cases/${caseId}/case-presentation/pptx`,
-        { includeEmptyOptionalSlides: true },
+        { includeEmptyOptionalSlides: includeEmpty },
         { responseType: "blob" }
       );
       const blob = new Blob(
@@ -172,6 +180,42 @@ export function CasePresentationPanel({ caseId }: { caseId: string }) {
         <p className="mt-2 text-[11px] text-gray-500">
           يولّد ملفًا من بيانات الحالة الحالية والصور المختارة، ويستخدم الصور المجهزة عند توفرها دون تمديد أو تشويه.
         </p>
+
+        <label className="mt-3 flex items-center gap-2 text-xs text-gray-600">
+          <input type="checkbox" checked={includeEmpty}
+            onChange={(e) => setIncludeEmpty(e.target.checked)}
+            className="h-3.5 w-3.5 accent-clinic-blue" />
+          تضمين الشرائح الفارغة (الأقسام بلا بيانات بعد)
+        </label>
+
+        {definitionQ.data && (
+          <div className="mt-3">
+            <button type="button" onClick={() => setShowSlides((v) => !v)}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-clinic-blue hover:underline">
+              <ListOrdered className="h-3.5 w-3.5" />
+              {showSlides ? "إخفاء" : "عرض"} محتوى العرض ({definitionQ.data.slides.length} شريحة · {definitionQ.data.readySlides} جاهزة)
+            </button>
+            {showSlides && (
+              <ol className="mt-2 grid gap-1 sm:grid-cols-2">
+                {definitionQ.data.slides.map((s, i) => {
+                  const shown = includeEmpty || s.required || s.hasData;
+                  return (
+                    <li key={`${s.type}-${i}`}
+                      className={cn("flex items-center gap-2 rounded px-2 py-1 text-[11px]",
+                        shown ? "bg-white" : "bg-gray-50 opacity-50")}>
+                      <span className="w-5 text-gray-400 tabular-nums">{i + 1}.</span>
+                      {s.hasData
+                        ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-500" />
+                        : <Circle className="h-3.5 w-3.5 shrink-0 text-gray-300" />}
+                      <span className={s.hasData ? "text-gray-800" : "text-gray-400"}>{s.title}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </div>
+        )}
+
         {presentationError && (
           <p role="alert" className="mt-2 text-xs font-medium text-red-600">
             {presentationError}

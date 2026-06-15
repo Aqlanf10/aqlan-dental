@@ -11,6 +11,7 @@ using A = DocumentFormat.OpenXml.Drawing;
 
 namespace AqlanDentalPro.UnitTests.Ortho;
 
+[Collection("ai-env")]
 public class OrthoCasePresentationTests
 {
     private static readonly byte[] OnePixelPng = Convert.FromBase64String(
@@ -24,7 +25,7 @@ public class OrthoCasePresentationTests
             .Options);
 
     [Fact]
-    public async Task SparseCase_GeneratesValidFoundationPresentationWithSixteenSlides()
+    public async Task SparseCase_GeneratesValidNarrativePresentationWithFixedSections()
     {
         await using var db = CreateDb();
         var caseId = await SeedCaseAsync(db, rich: false);
@@ -35,7 +36,8 @@ public class OrthoCasePresentationTests
 
         using var stream = new MemoryStream(bytes);
         using var document = PresentationDocument.Open(stream, false);
-        document.PresentationPart!.SlideParts.Should().HaveCount(16);
+        // 19 fixed narrative sections (no visits/progress photos for a sparse case).
+        document.PresentationPart!.SlideParts.Should().HaveCount(19);
 
         var errors = new OpenXmlValidator().Validate(document).ToList();
         errors.Should().BeEmpty(
@@ -138,11 +140,50 @@ public class OrthoCasePresentationTests
         var definition = await new OrthoCasePresentationService(db)
             .GetDefinitionAsync(caseId);
 
-        definition.Template.Should().Be("Foundation");
-        definition.Slides.Should().HaveCount(16);
+        definition.Template.Should().Be("CasePresentation");
+        // 19 fixed sections + one per-visit slide (the rich case seeds a single visit).
+        definition.Slides.Should().HaveCount(20);
         definition.Slides.Should().ContainSingle(
             slide => slide.Type == OrthoPresentationSlideType.CephalometricMeasurements &&
                      slide.HasData);
+        definition.Slides.Count(slide => slide.Type == OrthoPresentationSlideType.VisitProgress)
+            .Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Narrative_ExpandsOneSlidePerVisit_AndFollowsReferenceOrder()
+    {
+        await using var db = CreateDb();
+        var caseId = await SeedCaseAsync(db, rich: true);
+        for (var n = 2; n <= 4; n++) // add visits 2..4 (rich case already seeded visit 1)
+            db.OrthoVisits.Add(new OrthoVisit
+            {
+                Id = Guid.NewGuid(), OrthoCaseId = caseId, VisitNumber = n,
+                VisitDate = new DateOnly(2026, 6, n), VisitType = "Adjustment",
+                ClinicalNotes = $"ضبط {n}", IsActive = true,
+            });
+        db.ProblemListItems.Add(new ProblemListItem
+        {
+            Id = Guid.NewGuid(), OrthoCaseId = caseId, Category = "Dental",
+            Description = "ازدحام", Severity = "متوسط", SortOrder = 0, IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var definition = await new OrthoCasePresentationService(db).GetDefinitionAsync(caseId);
+        var types = definition.Slides.Select(s => s.Type).ToList();
+
+        types.First().Should().Be(OrthoPresentationSlideType.Title);
+        types.Last().Should().Be(OrthoPresentationSlideType.ThankYou);
+        types.Count(t => t == OrthoPresentationSlideType.VisitProgress).Should().Be(4);
+        types.Should().Contain(OrthoPresentationSlideType.ProblemList);
+        types.Should().Contain(OrthoPresentationSlideType.Bolton);
+        types.Should().Contain(OrthoPresentationSlideType.OcclusionAssessment);
+        types.Should().Contain(OrthoPresentationSlideType.FacialAnalysis);
+        // Diagnosis precedes the treatment plan, which precedes the visit story.
+        types.IndexOf(OrthoPresentationSlideType.Diagnosis)
+            .Should().BeLessThan(types.IndexOf(OrthoPresentationSlideType.TreatmentPlan));
+        types.IndexOf(OrthoPresentationSlideType.TreatmentPlan)
+            .Should().BeLessThan(types.IndexOf(OrthoPresentationSlideType.VisitProgress));
     }
 
     [Fact]

@@ -19,6 +19,7 @@ namespace AqlanDentalPro.UnitTests.Ortho;
 /// Sprint-polish regressions: the prepared crop region + flips actually reach the
 /// PowerPoint, age is computed correctly, and photo deletion enforces patient access.
 /// </summary>
+[Collection("ai-env")]
 public class OrthoPresentationPolishTests
 {
     private static readonly byte[] OnePixelPng = Convert.FromBase64String(

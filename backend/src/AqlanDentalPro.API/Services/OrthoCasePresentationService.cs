@@ -242,6 +242,32 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
             contents.Add(Content(Slide(OrthoPresentationSlideType.FinalRecords, "النتائج بعد العلاج", false),
                 chunk.Count > 0, images: chunk));
 
+        // Before/after comparison — pair an initial-phase photo with a final-phase photo
+        // of the same view (subtype). Images are interleaved [before, after, …] and the
+        // builder lays them as labelled "قبل/بعد" columns.
+        var initialBySubtype = selectedPhotos
+            .Where(p => IsInitialPhoto(p) && HasText(p.Subtype))
+            .GroupBy(p => p.Subtype!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var finalBySubtype = selectedPhotos
+            .Where(p => IsFinalPhoto(p) && HasText(p.Subtype))
+            .GroupBy(p => p.Subtype!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var beforeAfter = new List<PresentationImage>();
+        foreach (var subtype in initialBySubtype.Keys)
+        {
+            if (beforeAfter.Count >= 6) break; // up to 3 pairs
+            if (!finalBySubtype.TryGetValue(subtype, out var finalPhoto)) continue;
+            var before = loadedPhotos.GetValueOrDefault(initialBySubtype[subtype].Id);
+            var after = loadedPhotos.GetValueOrDefault(finalPhoto.Id);
+            if (before is null || after is null) continue;
+            beforeAfter.Add(before with { Label = $"قبل — {subtype}" });
+            beforeAfter.Add(after with { Label = $"بعد — {subtype}" });
+        }
+        if (beforeAfter.Count >= 2)
+            contents.Add(Content(Slide(OrthoPresentationSlideType.BeforeAfter, "المقارنة: قبل وبعد", false),
+                true, images: beforeAfter));
+
         contents.Add(Content(Slide(OrthoPresentationSlideType.Retention, "مرحلة الاحتفاظ", false),
             source.RetentionRecord is not null || HasText(source.RetentionPlan), Retention(source)));
         contents.Add(Content(Slide(OrthoPresentationSlideType.ThankYou, "ختام العرض", true), true));
@@ -259,6 +285,18 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
          !EqualsIgnoreCase(photo.TreatmentPhase, "Initial") &&
          !EqualsIgnoreCase(photo.TreatmentPhase, "Pretreatment") &&
          !EqualsIgnoreCase(photo.TreatmentPhase, "Final"));
+
+    private static bool IsFinalPhoto(OrthoClinicalPhoto photo) =>
+        EqualsIgnoreCase(photo.TreatmentPhase, "Final") ||
+        EqualsIgnoreCase(photo.TreatmentPhase, "Debond") ||
+        EqualsIgnoreCase(photo.TreatmentPhase, "PostTreatment");
+
+    // Initial/diagnostic records: untagged photos or the pretreatment phases.
+    private static bool IsInitialPhoto(OrthoClinicalPhoto photo) =>
+        !HasText(photo.TreatmentPhase) ||
+        EqualsIgnoreCase(photo.TreatmentPhase, "Initial") ||
+        EqualsIgnoreCase(photo.TreatmentPhase, "Pretreatment") ||
+        EqualsIgnoreCase(photo.TreatmentPhase, "Baseline");
 
     private static IEnumerable<List<T>> Chunk<T>(IReadOnlyList<T> items, int size)
     {

@@ -8,16 +8,18 @@ namespace AqlanDentalPro.API.Services;
 
 internal static class PowerPointPresentationBuilder
 {
-    private const long SlideWidth = 12_192_000;
+    // 4:3 (screen4x3) and palette matched to the reference clinical case-presentation deck.
+    private const long SlideWidth = 9_144_000;
     private const long SlideHeight = 6_858_000;
-    private const long Margin = 420_000;
-    private const string Navy = "173B5E";
-    private const string Blue = "2F75B5";
-    private const string LightBlue = "EAF2F8";
-    private const string TextColor = "1F2937";
-    private const string Muted = "64748B";
+    private const long Margin = 360_000;
+    private const string Navy = "2D2DB9";       // reference dark blue (titles)
+    private const string Blue = "3333CC";       // reference primary blue (accents)
+    private const string Green = "00CC99";      // reference green accent
+    private const string LightBlue = "CCCCFF";  // reference light panel
+    private const string TextColor = "1A1A1A";  // near-black body text
+    private const string Muted = "808080";      // reference grey
     private const string White = "FFFFFF";
-    private const string Border = "D8E1EA";
+    private const string Border = "B2B2B2";      // reference grey border
 
     public static byte[] Build(OrthoCasePresentationDocument model)
     {
@@ -49,7 +51,7 @@ internal static class PowerPointPresentationBuilder
                 {
                     Cx = (int)SlideWidth,
                     Cy = (int)SlideHeight,
-                    Type = SlideSizeValues.Screen16x9,
+                    Type = SlideSizeValues.Screen4x3,
                 },
                 new P.NotesSize { Cx = 6_858_000, Cy = 9_144_000 },
                 new P.DefaultTextStyle());
@@ -145,15 +147,16 @@ internal static class PowerPointPresentationBuilder
             SlideHeight,
             White,
             White));
+        // Thin green accent bar across the top (reference uses the green accent).
         tree.Append(CreateRectangle(
             id++,
             "TopAccent",
             0,
             0,
             SlideWidth,
-            95_000,
-            Blue,
-            Blue));
+            90_000,
+            Green,
+            Green));
     }
 
     private static void AddHeader(
@@ -162,31 +165,32 @@ internal static class PowerPointPresentationBuilder
         string title,
         string caseNumber)
     {
+        // Centered title near the top, matching the reference deck.
         tree.Append(CreateTextBox(
             id++,
             "SlideTitle",
             Margin,
-            180_000,
+            200_000,
             SlideWidth - (Margin * 2),
-            480_000,
+            470_000,
             title,
-            2400,
-            Navy,
+            2200,
+            Blue,
             true,
-            A.TextAlignmentTypeValues.Right));
+            A.TextAlignmentTypeValues.Center));
 
         tree.Append(CreateTextBox(
             id++,
             "CaseNumber",
             Margin,
-            680_000,
+            690_000,
             SlideWidth - (Margin * 2),
-            250_000,
+            230_000,
             $"رقم الحالة: {caseNumber}",
             1000,
             Muted,
             false,
-            A.TextAlignmentTypeValues.Right));
+            A.TextAlignmentTypeValues.Center));
     }
 
     private static void AddFooter(
@@ -425,23 +429,24 @@ internal static class PowerPointPresentationBuilder
         }
     }
 
+    // Layout tuned for the 4:3 slide (width 9,144,000).
     private static IReadOnlyList<ImageBox> GetImageBoxes(int count)
     {
         if (count <= 1)
-            return [new ImageBox(1_650_000, 1_100_000, 8_900_000, 4_650_000)];
+            return [new ImageBox(672_000, 1_150_000, 7_800_000, 4_550_000)];
 
         if (count == 2)
             return
             [
-                new ImageBox(650_000, 1_250_000, 5_250_000, 4_250_000),
-                new ImageBox(6_290_000, 1_250_000, 5_250_000, 4_250_000),
+                new ImageBox(400_000, 1_350_000, 4_140_000, 3_900_000),
+                new ImageBox(4_604_000, 1_350_000, 4_140_000, 3_900_000),
             ];
 
         var boxes = new List<ImageBox>();
-        var width = 3_500_000L;
-        var height = 2_050_000L;
-        var gap = 180_000L;
-        var startX = 650_000L;
+        var width = 2_680_000L;
+        var height = 2_000_000L;
+        var gap = 140_000L;
+        var startX = 400_000L;
         for (var i = 0; i < count; i++)
         {
             var row = i / 3;

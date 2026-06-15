@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
 using System.Globalization;
+using System.Text.Json;
+using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -9,26 +11,6 @@ namespace AqlanDentalPro.API.Services;
 public sealed class OrthoCasePresentationService(AppDbContext db)
 {
     private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
-
-    public static IReadOnlyList<OrthoPresentationSlideDefinition> FoundationSlides { get; } =
-    [
-        Define(1, OrthoPresentationSlideType.Title, "عرض الحالة التقويمية", true, ["caseNumber", "patientName", "doctorName"]),
-        Define(2, OrthoPresentationSlideType.PatientInformation, "بيانات المريض", true, ["patientNumber", "age", "gender", "startDate"]),
-        Define(3, OrthoPresentationSlideType.ChiefComplaint, "المقابلة والشكوى الرئيسية", false, ["chiefComplaint", "history"]),
-        Define(4, OrthoPresentationSlideType.ExtraoralPhotos, "الصور خارج الفم", false, images: ["frontal", "profile", "smile"]),
-        Define(5, OrthoPresentationSlideType.IntraoralPhotos, "الصور داخل الفم", false, images: ["frontal", "right", "left", "upper", "lower"]),
-        Define(6, OrthoPresentationSlideType.PanoramicXray, "الأشعة البانورامية", false, images: ["opg"]),
-        Define(7, OrthoPresentationSlideType.CephalometricSummary, "الأشعة السيفالومترية", false, ["analysisType", "diagnosis"], ["lateralCeph"]),
-        Define(8, OrthoPresentationSlideType.CephalometricMeasurements, "ملخص قياسات السيفالو", false, tables: ["measurements"]),
-        Define(9, OrthoPresentationSlideType.CastAnalysis, "تحليل النماذج وBolton", false, tables: ["castAnalysis"]),
-        Define(10, OrthoPresentationSlideType.Diagnosis, "التشخيص", true, ["skeletal", "dental", "softTissue", "functional", "etiology"]),
-        Define(11, OrthoPresentationSlideType.TreatmentObjectives, "أهداف العلاج", true, ["treatmentGoals"]),
-        Define(12, OrthoPresentationSlideType.TreatmentPlan, "خطة العلاج", true, ["planLabel", "appliance", "duration", "retention"]),
-        Define(13, OrthoPresentationSlideType.Mechanotherapy, "ملخص الميكانيكا العلاجية", false, ["brackets", "wire", "anchorage", "elastics", "tads"]),
-        Define(14, OrthoPresentationSlideType.VisitProgress, "متابعة الزيارات والتقدم", false, tables: ["visits"]),
-        Define(15, OrthoPresentationSlideType.Retention, "مرحلة الاحتفاظ", false, ["debondDate", "retainers", "instructions"]),
-        Define(16, OrthoPresentationSlideType.ThankYou, "ختام العرض", true),
-    ];
 
     public async Task<OrthoPresentationDefinitionResponse> GetDefinitionAsync(
         Guid orthoCaseId,
@@ -49,7 +31,7 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
             .ToList();
 
         return new OrthoPresentationDefinitionResponse(
-            "Foundation",
+            "CasePresentation",
             slides.Count,
             slides.Count(slide => slide.Required || slide.HasData),
             slides);
@@ -106,10 +88,12 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
             .Include(c => c.Doctor)
             .Include(c => c.ClinicalExam)
             .Include(c => c.Diagnosis)
+            .Include(c => c.ProblemList)
             .Include(c => c.TreatmentPlans)
             .Include(c => c.Visits)
             .Include(c => c.RetentionRecord)
             .Include(c => c.ModelAnalyses)
+            .Include(c => c.PhotoAnalyses)
             .Include(c => c.CephAnalyses)
                 .ThenInclude(analysis => analysis.Measurements)
             .Include(c => c.CephAnalyses)
@@ -166,81 +150,100 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
                 "الأشعة السيفالومترية",
                 cancellationToken);
 
-        var contents = new List<PresentationSlideContent>();
-        foreach (var definition in FoundationSlides)
+        // Slide sequence mirrors the reference clinical case-presentation deck: cover →
+        // records & analysis → diagnosis & plan → the treatment story (one slide per
+        // adjustment visit) → progress photos → retention → thanks.
+        var contents = new List<PresentationSlideContent>
         {
-            contents.Add(definition.Type switch
-            {
-                OrthoPresentationSlideType.Title => Content(definition, true),
-                OrthoPresentationSlideType.PatientInformation => Content(
-                    definition,
-                    true,
-                    PatientInformation(source)),
-                OrthoPresentationSlideType.ChiefComplaint => Content(
-                    definition,
-                    HasText(source.Patient.DentalHistory?.ChiefComplaint),
-                    ChiefComplaint(source)),
-                OrthoPresentationSlideType.ExtraoralPhotos => ImageContent(
-                    definition,
-                    selectedPhotos,
-                    loadedPhotos,
-                    photo => EqualsIgnoreCase(photo.Category, "Extraoral") ||
-                             EqualsIgnoreCase(photo.PhotoType, "Extraoral")),
-                OrthoPresentationSlideType.IntraoralPhotos => ImageContent(
-                    definition,
-                    selectedPhotos,
-                    loadedPhotos,
-                    photo => EqualsIgnoreCase(photo.Category, "Intraoral") ||
-                             EqualsIgnoreCase(photo.PhotoType, "Intraoral")),
-                OrthoPresentationSlideType.PanoramicXray => ImageContent(
-                    definition,
-                    selectedPhotos,
-                    loadedPhotos,
-                    photo => EqualsIgnoreCase(photo.Subtype, "OPG") ||
-                             EqualsIgnoreCase(photo.Subtype, "Panoramic")),
-                OrthoPresentationSlideType.CephalometricSummary => Content(
-                    definition,
-                    latestCeph is not null,
-                    CephSummary(latestCeph),
-                    cephImage is null ? [] : [cephImage]),
-                OrthoPresentationSlideType.CephalometricMeasurements => Content(
-                    definition,
-                    latestCeph?.Measurements.Any(item => item.IsActive) == true,
-                    table: CephMeasurements(latestCeph)),
-                OrthoPresentationSlideType.CastAnalysis => Content(
-                    definition,
-                    latestModel is not null,
-                    table: CastAnalysis(latestModel)),
-                OrthoPresentationSlideType.Diagnosis => Content(
-                    definition,
-                    source.Diagnosis is not null,
-                    Diagnosis(source.Diagnosis)),
-                OrthoPresentationSlideType.TreatmentObjectives => Content(
-                    definition,
-                    HasText(approvedPlan?.TreatmentGoals),
-                    TextLines(("أهداف العلاج", approvedPlan?.TreatmentGoals))),
-                OrthoPresentationSlideType.TreatmentPlan => Content(
-                    definition,
-                    approvedPlan is not null,
-                    TreatmentPlanLines(approvedPlan)),
-                OrthoPresentationSlideType.Mechanotherapy => Content(
-                    definition,
-                    HasMechanotherapy(approvedPlan),
-                    Mechanotherapy(approvedPlan)),
-                OrthoPresentationSlideType.VisitProgress => Content(
-                    definition,
-                    source.Visits.Any(item => item.IsActive),
-                    table: VisitProgress(source.Visits)),
-                OrthoPresentationSlideType.Retention => Content(
-                    definition,
-                    source.RetentionRecord is not null || HasText(source.RetentionPlan),
-                    Retention(source)),
-                OrthoPresentationSlideType.ThankYou => Content(definition, true),
-                _ => Content(definition, false),
-            });
+            Content(Slide(OrthoPresentationSlideType.Title, "عرض حالة تقويمية", true), true),
+            Content(Slide(OrthoPresentationSlideType.PatientInformation, "بيانات المريض", true), true,
+                PatientInformation(source)),
+            Content(Slide(OrthoPresentationSlideType.ChiefComplaint, "المقابلة والشكوى الرئيسية", false),
+                HasText(source.Patient.DentalHistory?.ChiefComplaint) || HasText(source.ClinicalExam?.Notes),
+                ChiefComplaint(source)),
+            ImageContent(Slide(OrthoPresentationSlideType.ExtraoralPhotos, "الصور خارج الفم", false),
+                selectedPhotos, loadedPhotos,
+                photo => EqualsIgnoreCase(photo.Category, "Extraoral") || EqualsIgnoreCase(photo.PhotoType, "Extraoral")),
+            Content(Slide(OrthoPresentationSlideType.FacialAnalysis, "التحليل الوجهي", false),
+                HasFacialData(source), FacialAnalysis(source)),
+            ImageContent(Slide(OrthoPresentationSlideType.IntraoralPhotos, "الصور داخل الفم", false),
+                selectedPhotos, loadedPhotos,
+                photo => EqualsIgnoreCase(photo.Category, "Intraoral") || EqualsIgnoreCase(photo.PhotoType, "Intraoral")),
+            Content(Slide(OrthoPresentationSlideType.OcclusionAssessment, "تقييم الإطباق", false),
+                source.ClinicalExam is not null, Occlusion(source.ClinicalExam)),
+            ImageContent(Slide(OrthoPresentationSlideType.PanoramicXray, "الأشعة البانورامية", false),
+                selectedPhotos, loadedPhotos,
+                photo => EqualsIgnoreCase(photo.Subtype, "OPG") || EqualsIgnoreCase(photo.Subtype, "Panoramic")),
+            Content(Slide(OrthoPresentationSlideType.CephalometricSummary, "الأشعة السيفالومترية", false),
+                latestCeph is not null, CephSummary(latestCeph), cephImage is null ? [] : [cephImage]),
+            Content(Slide(OrthoPresentationSlideType.CephalometricMeasurements, "جدول قياسات السيفالو", false),
+                latestCeph?.Measurements.Any(item => item.IsActive) == true, table: CephMeasurements(latestCeph)),
+            Content(Slide(OrthoPresentationSlideType.CastAnalysis, "تحليل النماذج الدراسية", false),
+                latestModel is not null, table: CastAnalysis(latestModel)),
+            Content(Slide(OrthoPresentationSlideType.Bolton, "تحليل بولتون", false),
+                latestModel?.BoltonOverall is not null || latestModel?.BoltonAnterior is not null, Bolton(latestModel)),
+            Content(Slide(OrthoPresentationSlideType.Diagnosis, "التشخيص", true),
+                source.Diagnosis is not null, Diagnosis(source.Diagnosis)),
+            Content(Slide(OrthoPresentationSlideType.TreatmentObjectives, "أهداف العلاج", true),
+                HasText(approvedPlan?.TreatmentGoals), TextLines(("أهداف العلاج", approvedPlan?.TreatmentGoals))),
+            Content(Slide(OrthoPresentationSlideType.ProblemList, "قائمة المشاكل", false),
+                source.ProblemList.Any(item => item.IsActive), ProblemList(source.ProblemList)),
+            Content(Slide(OrthoPresentationSlideType.TreatmentPlan, "خطة العلاج", true),
+                approvedPlan is not null, TreatmentPlanLines(approvedPlan)),
+            Content(Slide(OrthoPresentationSlideType.Mechanotherapy, "الميكانيكا العلاجية", false),
+                HasMechanotherapy(approvedPlan), Mechanotherapy(approvedPlan)),
+        };
+
+        // The treatment story — one slide per adjustment visit, in chronological order.
+        var visits = source.Visits
+            .Where(item => item.IsActive)
+            .OrderBy(item => item.VisitNumber)
+            .ThenBy(item => item.VisitDate)
+            .ToList();
+        foreach (var visit in visits)
+        {
+            contents.Add(Content(
+                Slide(OrthoPresentationSlideType.VisitProgress,
+                    $"زيارة {visit.VisitNumber.ToString(Invariant)} — {visit.VisitDate.ToString("yyyy-MM-dd", Invariant)}", false),
+                true, VisitLines(visit)));
         }
 
+        // Progress photo galleries (≤ 6 per slide) for any progress-tagged selected photos.
+        var progressImages = selectedPhotos
+            .Where(IsProgressPhoto)
+            .Select(photo => loadedPhotos.GetValueOrDefault(photo.Id))
+            .Where(image => image is not null)
+            .Cast<PresentationImage>()
+            .ToList();
+        foreach (var chunk in Chunk(progressImages, 6))
+        {
+            contents.Add(Content(
+                Slide(OrthoPresentationSlideType.ProgressPhotos, "صور التقدّم العلاجي", false),
+                chunk.Count > 0, images: chunk));
+        }
+
+        contents.Add(Content(Slide(OrthoPresentationSlideType.Retention, "مرحلة الاحتفاظ", false),
+            source.RetentionRecord is not null || HasText(source.RetentionPlan), Retention(source)));
+        contents.Add(Content(Slide(OrthoPresentationSlideType.ThankYou, "ختام العرض", true), true));
+
         return contents;
+    }
+
+    private static OrthoPresentationSlideDefinition Slide(
+        OrthoPresentationSlideType type, string title, bool required) =>
+        new(0, type, title, required, [], [], []);
+
+    private static bool IsProgressPhoto(OrthoClinicalPhoto photo) =>
+        EqualsIgnoreCase(photo.PhotoType, "Progress") ||
+        (HasText(photo.TreatmentPhase) &&
+         !EqualsIgnoreCase(photo.TreatmentPhase, "Initial") &&
+         !EqualsIgnoreCase(photo.TreatmentPhase, "Pretreatment") &&
+         !EqualsIgnoreCase(photo.TreatmentPhase, "Final"));
+
+    private static IEnumerable<List<T>> Chunk<T>(IReadOnlyList<T> items, int size)
+    {
+        for (var i = 0; i < items.Count; i += size)
+            yield return items.Skip(i).Take(size).ToList();
     }
 
     private static PresentationSlideContent ImageContent(
@@ -326,9 +329,8 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
     private static PresentationTable? CastAnalysis(ModelAnalysis? model)
     {
         if (model is null) return null;
+        // Bolton has its own dedicated slide; this table covers arch dimensions/ALD/Pont.
         var rows = new List<IReadOnlyList<string>>();
-        AddMeasurement(rows, "Bolton الكلي", model.BoltonOverall);
-        AddMeasurement(rows, "Bolton الأمامي", model.BoltonAnterior);
         AddMeasurement(rows, "مجموع 12 علوي", model.UpperSum12);
         AddMeasurement(rows, "مجموع 12 سفلي", model.LowerSum12);
         AddMeasurement(rows, "طول القوس العلوي", model.UpperArchLength);
@@ -338,6 +340,91 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
         AddMeasurement(rows, "Pont", model.PontIndex);
         return new PresentationTable(["التحليل", "القيمة"], rows);
     }
+
+    private static bool HasFacialData(OrthoCase source) =>
+        source.PhotoAnalyses.Any(a => a.IsActive) ||
+        HasText(source.Diagnosis?.FacialPattern) ||
+        (source.ClinicalExam is { } e && (
+            HasText(e.FacialSymmetry) || HasText(e.Profile) || HasText(e.SmileLine) ||
+            HasText(e.VerticalProportion) || e.LipsCompetence.HasValue));
+
+    private static IReadOnlyList<string> FacialAnalysis(OrthoCase source)
+    {
+        var e = source.ClinicalExam;
+        var lines = TextLines(
+            ("نمط الوجه", source.Diagnosis?.FacialPattern),
+            ("تناظر الوجه", e?.FacialSymmetry),
+            ("الملف الجانبي", e?.Profile),
+            ("كفاءة الشفاه", e?.LipsCompetence is null ? null : (e.LipsCompetence.Value ? "كفؤة" : "غير كفؤة")),
+            ("خط الابتسامة", e?.SmileLine),
+            ("التناسب الرأسي (الأثلاث)", e?.VerticalProportion)).ToList();
+
+        var profile = source.PhotoAnalyses.Where(a => a.IsActive && EqualsIgnoreCase(a.ViewType, "profile")).Count();
+        var frontal = source.PhotoAnalyses.Where(a => a.IsActive && EqualsIgnoreCase(a.ViewType, "frontal")).Count();
+        if (profile > 0 || frontal > 0)
+            lines.Add($"تحاليل الصور: {(frontal > 0 ? "أمامي ✓ " : string.Empty)}{(profile > 0 ? "جانبي ✓" : string.Empty)}".Trim());
+        return lines;
+    }
+
+    private static IReadOnlyList<string> Occlusion(OrthoClinicalExam? exam) =>
+        exam is null
+            ? []
+            : TextLines(
+                ("علاقة الأرحاء", FirstNonEmpty(exam.MolarRelation, exam.MolarRelationRight, exam.MolarRelationLeft)),
+                ("علاقة الأنياب", FirstNonEmpty(exam.CanineRelation, exam.CanineRelationRight, exam.CanineRelationLeft)),
+                ("علاقة القواطع", exam.IncisorRelation),
+                ("البزوغ الأفقي (Overjet)", exam.Overjet.HasValue ? $"{exam.Overjet.Value:0.#} مم" : null),
+                ("التطابق العمودي (Overbite)", exam.Overbite.HasValue ? $"{exam.Overbite.Value:0.#} مم"
+                    : exam.OverbitePercent.HasValue ? $"{exam.OverbitePercent.Value:0.#}%" : null),
+                ("عضّة معكوسة", exam.Crossbite ? FirstNonEmpty(exam.CrossbiteType, "نعم") : null),
+                ("عضّة مفتوحة", exam.OpenBite ? "نعم" : null),
+                ("عضّة عميقة", exam.DeepBite == true ? "نعم" : null),
+                ("ازدحام علوي", exam.UpperCrowdingMm.HasValue ? $"{exam.UpperCrowdingMm.Value:0.#} مم" : exam.UpperCrowding),
+                ("ازدحام سفلي", exam.LowerCrowdingMm.HasValue ? $"{exam.LowerCrowdingMm.Value:0.#} مم" : exam.LowerCrowding),
+                ("انزياح الخط المتوسط العلوي", exam.MidlineUpperShiftMm.HasValue ? $"{exam.MidlineUpperShiftMm.Value:0.#} مم" : exam.MidlineUpper),
+                ("انزياح الخط المتوسط السفلي", exam.MidlineLowerShiftMm.HasValue ? $"{exam.MidlineLowerShiftMm.Value:0.#} مم" : exam.MidlineLower),
+                ("منحنى شبه (Spee)", exam.CurveOfSpee));
+
+    private static IReadOnlyList<string> Bolton(ModelAnalysis? model)
+    {
+        if (model is null) return [];
+        DentalModelAnalysisResult? result = null;
+        try { result = JsonSerializer.Deserialize<DentalModelAnalysisResult>(model.ResultDataJson, JsonWeb); }
+        catch (JsonException) { /* summary columns only */ }
+
+        return TextLines(
+            ("النسبة الكلية (Overall)", model.BoltonOverall.HasValue ? $"{model.BoltonOverall.Value:0.0}%" : null),
+            ("النسبة الأمامية (Anterior)", model.BoltonAnterior.HasValue ? $"{model.BoltonAnterior.Value:0.0}%" : null),
+            ("التفاوت الكلي", result?.Bolton?.OverallDiscrepancy is { } od ? $"{od:0.0} مم" : null),
+            ("التفاوت الأمامي", result?.Bolton?.AnteriorDiscrepancy is { } ad ? $"{ad:0.0} مم" : null),
+            ("تفسير العلاقة الكلية", result?.Bolton?.OverallInterpretation),
+            ("تفسير العلاقة الأمامية", result?.Bolton?.AnteriorInterpretation));
+    }
+
+    private static IReadOnlyList<string> ProblemList(IEnumerable<ProblemListItem> problems) =>
+        problems
+            .Where(item => item.IsActive)
+            .OrderBy(item => item.SortOrder)
+            .Select(item =>
+            {
+                var head = HasText(item.Category) ? $"[{item.Category.Trim()}] " : string.Empty;
+                var severity = HasText(item.Severity) ? $" ({item.Severity!.Trim()})" : string.Empty;
+                return $"{head}{item.Description.Trim()}{severity}";
+            })
+            .ToList();
+
+    private static IReadOnlyList<string> VisitLines(OrthoVisit visit) =>
+        TextLines(
+            ("التاريخ", visit.VisitDate.ToString("yyyy-MM-dd", Invariant)),
+            ("النوع", visit.VisitType),
+            ("المرحلة", visit.CurrentStage),
+            ("السلك العلوي", visit.WireUpper),
+            ("السلك السفلي", visit.WireLower),
+            ("المطاطات", visit.ElasticsType),
+            ("البزوغ الحالي", visit.CurrentOverjet.HasValue ? $"{visit.CurrentOverjet.Value:0.#} مم" : null),
+            ("التطابق الحالي", visit.CurrentOverbite.HasValue ? $"{visit.CurrentOverbite.Value:0.#} مم" : null),
+            ("ملاحظات", visit.ClinicalNotes),
+            ("الموعد القادم", FormatDate(visit.NextAppointmentDate)));
 
     private static IReadOnlyList<string> Diagnosis(OrthoDiagnosis? diagnosis) =>
         diagnosis is null
@@ -384,25 +471,6 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
                 ("المطاطات", plan.UseElastics ? "مخططة" : "غير مخططة"),
                 ("المسامير التقويمية TADs", plan.UseTads ? "مخططة" : "غير مخططة"),
                 ("خطة القلع", plan.ExtractionPlan));
-
-    private static PresentationTable VisitProgress(IEnumerable<OrthoVisit> visits)
-    {
-        var rows = visits
-            .Where(item => item.IsActive)
-            .OrderByDescending(item => item.VisitDate)
-            .ThenByDescending(item => item.VisitNumber)
-            .Take(10)
-            .Select(item => (IReadOnlyList<string>)
-            [
-                item.VisitNumber.ToString(Invariant),
-                item.VisitDate.ToString("yyyy-MM-dd", Invariant),
-                item.VisitType ?? string.Empty,
-                item.CurrentStage ?? string.Empty,
-                item.ClinicalNotes ?? string.Empty,
-            ])
-            .ToList();
-        return new PresentationTable(["#", "التاريخ", "النوع", "المرحلة", "الملاحظات"], rows);
-    }
 
     private static IReadOnlyList<string> Retention(OrthoCase source) =>
         TextLines(
@@ -558,28 +626,16 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
         return false;
     }
 
-    private static OrthoPresentationSlideDefinition Define(
-        int order,
-        OrthoPresentationSlideType type,
-        string title,
-        bool required,
-        IReadOnlyList<string>? text = null,
-        IReadOnlyList<string>? images = null,
-        IReadOnlyList<string>? tables = null) =>
-        new(
-            order,
-            type,
-            title,
-            required,
-            text ?? [],
-            images ?? [],
-            tables ?? []);
-
     private static bool EqualsIgnoreCase(string? value, string expected) =>
         string.Equals(value, expected, StringComparison.OrdinalIgnoreCase);
 
     private static bool HasText(string? value) =>
         !string.IsNullOrWhiteSpace(value);
+
+    private static readonly JsonSerializerOptions JsonWeb = new(JsonSerializerDefaults.Web);
+
+    private static string? FirstNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(HasText);
 
     private static string JoinName(params string?[] values) =>
         string.Join(" ", values.Where(HasText).Select(value => value!.Trim()));

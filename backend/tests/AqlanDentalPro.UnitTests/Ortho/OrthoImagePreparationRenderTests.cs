@@ -20,6 +20,7 @@ namespace AqlanDentalPro.UnitTests.Ortho;
 /// brightness/contrast/aspect) into a new image, and SaveImagePreparation publishes it
 /// as PreparedImageUrl so reports use the fully-prepared copy. Failures degrade safely.
 /// </summary>
+[Collection("ai-env")]
 public class OrthoImagePreparationRenderTests
 {
     private static AppDbContext CreateDb() =>

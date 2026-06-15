@@ -187,6 +187,34 @@ public class OrthoCasePresentationTests
     }
 
     [Fact]
+    public async Task TitleAndFooter_CarryClinicIdentityFromSettings()
+    {
+        await using var db = CreateDb();
+        var caseId = await SeedCaseAsync(db, rich: false);
+        db.Settings.AddRange(
+            new Setting { Id = Guid.NewGuid(), Key = "clinic.name", Value = "مركز الدكتور عقلان" },
+            new Setting { Id = Guid.NewGuid(), Key = "clinic.lead_doctor", Value = "د. عقلان الكامل" },
+            new Setting { Id = Guid.NewGuid(), Key = "clinic.lead_doctor_title", Value = "أخصائي تقويم الأسنان" },
+            new Setting { Id = Guid.NewGuid(), Key = "clinic.lead_doctor_credentials", Value = "جامعة مانيلا المركزية — الفلبين" },
+            new Setting { Id = Guid.NewGuid(), Key = "clinic.phones", Value = "777000000" },
+            new Setting { Id = Guid.NewGuid(), Key = "clinic.location", Value = "تعز" });
+        await db.SaveChangesAsync();
+
+        var bytes = await new OrthoCasePresentationService(db).GenerateAsync(
+            caseId, new GenerateOrthoCasePresentationRequest());
+
+        using var stream = new MemoryStream(bytes);
+        using var document = PresentationDocument.Open(stream, false);
+        var allText = string.Join("\n", document.PresentationPart!.SlideParts
+            .SelectMany(p => p.Slide.Descendants<A.Text>()).Select(t => t.Text));
+
+        allText.Should().Contain("مركز الدكتور عقلان");
+        allText.Should().Contain("أخصائي تقويم الأسنان");
+        allText.Should().Contain("جامعة مانيلا المركزية — الفلبين");
+        allText.Should().Contain("تعز"); // footer contact
+    }
+
+    [Fact]
     public async Task MissingCase_ThrowsArgumentException()
     {
         await using var db = CreateDb();

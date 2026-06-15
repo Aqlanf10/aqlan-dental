@@ -67,10 +67,15 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
             source.Patient.MiddleName,
             source.Patient.LastName);
         var identity = await CephReportPdfGenerator.ResolveClinicIdentityAsync(db);
+        var contact = string.Join("   |   ",
+            new[] { identity.Phones, identity.Location }.Where(HasText));
 
         return PowerPointPresentationBuilder.Build(new OrthoCasePresentationDocument(
             identity.ClinicName,
             string.IsNullOrWhiteSpace(source.Doctor?.Name) ? identity.LeadDoctor : source.Doctor.Name,
+            identity.LeadDoctorTitle,
+            identity.LeadDoctorCredentials,
+            contact,
             source.CaseNumber,
             patientName,
             selected));
@@ -221,6 +226,19 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
                 Slide(OrthoPresentationSlideType.ProgressPhotos, "صور التقدّم العلاجي", false),
                 chunk.Count > 0, images: chunk));
         }
+
+        // Final / post-treatment records (debond) before the retention summary.
+        var finalImages = selectedPhotos
+            .Where(photo => HasText(photo.TreatmentPhase) &&
+                (EqualsIgnoreCase(photo.TreatmentPhase, "Final") || EqualsIgnoreCase(photo.TreatmentPhase, "Debond") ||
+                 EqualsIgnoreCase(photo.TreatmentPhase, "PostTreatment")))
+            .Select(photo => loadedPhotos.GetValueOrDefault(photo.Id))
+            .Where(image => image is not null)
+            .Cast<PresentationImage>()
+            .ToList();
+        foreach (var chunk in Chunk(finalImages, 6))
+            contents.Add(Content(Slide(OrthoPresentationSlideType.FinalRecords, "النتائج بعد العلاج", false),
+                chunk.Count > 0, images: chunk));
 
         contents.Add(Content(Slide(OrthoPresentationSlideType.Retention, "مرحلة الاحتفاظ", false),
             source.RetentionRecord is not null || HasText(source.RetentionPlan), Retention(source)));

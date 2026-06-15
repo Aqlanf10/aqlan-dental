@@ -21,6 +21,7 @@ public enum OrthoPresentationSlideType
     Mechanotherapy,
     VisitProgress,
     ProgressPhotos,
+    FinalRecords,
     Retention,
     ThankYou,
 }
@@ -82,6 +83,9 @@ internal sealed record PresentationSlideContent(
 internal sealed record OrthoCasePresentationDocument(
     string ClinicName,
     string LeadDoctor,
+    string LeadDoctorTitle,
+    string LeadDoctorCredentials,
+    string Contact,
     string CaseNumber,
     string PatientName,
     IReadOnlyList<PresentationSlideContent> Slides);

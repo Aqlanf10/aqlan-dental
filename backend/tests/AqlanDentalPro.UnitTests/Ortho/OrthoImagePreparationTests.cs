@@ -1,5 +1,7 @@
 using AqlanDentalPro.API.Controllers;
+using AqlanDentalPro.API.Services;
 using AqlanDentalPro.Application.Interfaces.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
@@ -16,6 +18,8 @@ public class OrthoImagePreparationTests : IDisposable
     private readonly AppDbContext _db;
     private readonly Mock<ICurrentUserService> _currentUser = new();
     private readonly Mock<IPatientAccessService> _patientAccess = new();
+    private readonly OrthoImagePreparationRenderer _renderer =
+        new(NullLogger<OrthoImagePreparationRenderer>.Instance);
     private readonly OrthoCasesController _controller;
 
     public OrthoImagePreparationTests()
@@ -93,7 +97,7 @@ public class OrthoImagePreparationTests : IDisposable
             AspectRatio = "4:5",
             Preset = "ExtraoralProfile",
             Status = "SelectedForPresentation",
-        });
+        }, _renderer);
 
         result.Should().BeOfType<OkObjectResult>();
         var photo = await _db.OrthoClinicalPhotos.SingleAsync(p => p.Id == photoId);
@@ -128,7 +132,7 @@ public class OrthoImagePreparationTests : IDisposable
             CropX = 0.7m,
             CropWidth = 0.5m,
             CropHeight = 1m,
-        });
+        }, _renderer);
 
         result.Should().BeOfType<BadRequestObjectResult>();
         (await _db.OrthoImagePreparations.CountAsync()).Should().Be(0);
@@ -142,7 +146,7 @@ public class OrthoImagePreparationTests : IDisposable
         deniedAccess.Setup(x => x.CanAccessPatientAsync(It.IsAny<Guid>())).ReturnsAsync(false);
         var controller = CreateController(deniedAccess.Object);
 
-        var result = await controller.SaveImagePreparation(caseId, photoId, new SaveOrthoImagePreparationRequest());
+        var result = await controller.SaveImagePreparation(caseId, photoId, new SaveOrthoImagePreparationRequest(), _renderer);
 
         result.Should().BeOfType<ForbidResult>();
         (await _db.OrthoImagePreparations.CountAsync()).Should().Be(0);
@@ -155,9 +159,9 @@ public class OrthoImagePreparationTests : IDisposable
         await _controller.SaveImagePreparation(caseId, photoId, new SaveOrthoImagePreparationRequest
         {
             Status = "ApprovedForPresentation",
-        });
+        }, _renderer);
 
-        var result = await _controller.ResetImagePreparation(caseId, photoId);
+        var result = await _controller.ResetImagePreparation(caseId, photoId, _renderer);
 
         result.Should().BeOfType<OkObjectResult>();
         (await _db.OrthoImagePreparations.CountAsync()).Should().Be(0);
@@ -174,7 +178,7 @@ public class OrthoImagePreparationTests : IDisposable
         {
             Status = "PreparedForReport",
             AspectRatio = "4:5",
-        });
+        }, _renderer);
 
         var value = ValueOf(await _controller.GetPhotos(caseId));
         var photo = ((System.Collections.IEnumerable)value).Cast<object>().Single();

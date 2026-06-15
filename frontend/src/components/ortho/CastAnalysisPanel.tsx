@@ -6,16 +6,19 @@ import { Microscope, ExternalLink, CheckCircle2, Loader2 } from "lucide-react";
 import api from "@/lib/api";
 import { formatArabicDate } from "@/lib/utils";
 
+// Mirrors OrthoModelAnalysesController.ToResponse: metrics live under `results`
+// (camelCase, Web JSON defaults), not as top-level fields.
 interface ModelAnalysis {
   id: string;
   analysisDate?: string;
-  boltonOverall?: number | null;
-  boltonAnterior?: number | null;
-  upperAld?: number | null;
-  lowerAld?: number | null;
-  pontIndex?: number | null;
   dentitionStage?: string | null;
   approvedAt?: string | null;
+  results?: {
+    bolton?: { overallRatio?: number | null; anteriorRatio?: number | null; overallDiscrepancy?: number | null } | null;
+    upperArch?: { discrepancy?: number | null } | null;
+    lowerArch?: { discrepancy?: number | null } | null;
+    pont?: { predictedIntermolarWidth?: number | null } | null;
+  } | null;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -80,11 +83,12 @@ export function CastAnalysisPanel({ caseId }: { caseId: string }) {
             )}
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            <Stat label="Bolton الكلي" value={num(data.boltonOverall, "%")} />
-            <Stat label="Bolton الأمامي" value={num(data.boltonAnterior, "%")} />
-            <Stat label="Pont" value={num(data.pontIndex)} />
-            <Stat label="ALD علوي" value={num(data.upperAld, " مم")} />
-            <Stat label="ALD سفلي" value={num(data.lowerAld, " مم")} />
+            <Stat label="نسبة Bolton الكلية" value={num(data.results?.bolton?.overallRatio, "%")} />
+            <Stat label="نسبة Bolton الأمامية" value={num(data.results?.bolton?.anteriorRatio, "%")} />
+            <Stat label="تفاوت Bolton الكلي" value={num(data.results?.bolton?.overallDiscrepancy, " مم")} />
+            <Stat label="ALD علوي" value={num(data.results?.upperArch?.discrepancy, " مم")} />
+            <Stat label="ALD سفلي" value={num(data.results?.lowerArch?.discrepancy, " مم")} />
+            <Stat label="Pont (رحوي متوقع)" value={num(data.results?.pont?.predictedIntermolarWidth, " مم")} />
           </div>
           <p className="text-[11px] text-gray-400">
             ملخّص للقراءة فقط — افتح الأداة الكاملة للحساب والتحرير والاعتماد.

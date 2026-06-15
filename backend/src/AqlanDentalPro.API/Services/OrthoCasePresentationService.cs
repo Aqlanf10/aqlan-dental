@@ -96,6 +96,7 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
             .Include(c => c.Diagnosis)
             .Include(c => c.ProblemList)
             .Include(c => c.TreatmentPlans)
+            .Include(c => c.Stages)
             .Include(c => c.Visits)
             .Include(c => c.RetentionRecord)
             .Include(c => c.ModelAnalyses)
@@ -200,6 +201,8 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
                 approvedPlan is not null, TreatmentPlanLines(approvedPlan)),
             Content(Slide(OrthoPresentationSlideType.Mechanotherapy, "الميكانيكا العلاجية", false),
                 HasMechanotherapy(approvedPlan), Mechanotherapy(approvedPlan)),
+            Content(Slide(OrthoPresentationSlideType.TreatmentStages, "مراحل العلاج", false),
+                source.Stages.Any(s => s.IsActive), table: TreatmentStages(source.Stages)),
         };
 
         // The treatment story — one slide per adjustment visit, in chronological order.
@@ -506,6 +509,32 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
                 return $"{x.Cat.Label}: {x.Item.Description.Trim()}{severity}";
             })
             .ToList();
+
+    private static PresentationTable? TreatmentStages(IEnumerable<TreatmentStage> stages)
+    {
+        var rows = stages
+            .Where(s => s.IsActive)
+            .OrderBy(s => s.StageOrder)
+            .Take(10)
+            .Select(s => (IReadOnlyList<string>)
+            [
+                s.StageName,
+                StageStatusAr(s.Status),
+                s.TargetDurationMonths.HasValue ? $"{s.TargetDurationMonths} شهر" : string.Empty,
+                s.StartedAt.HasValue ? s.StartedAt.Value.ToString("yyyy-MM-dd", Invariant) : string.Empty,
+            ])
+            .ToList();
+        return rows.Count == 0 ? null : new PresentationTable(["المرحلة", "الحالة", "المدة", "البدء"], rows);
+    }
+
+    private static string StageStatusAr(string? status) => status switch
+    {
+        "completed" => "مكتملة",
+        "active" or "in_progress" => "جارية",
+        "pending" => "قادمة",
+        "skipped" => "متخطّاة",
+        _ => status ?? "—",
+    };
 
     private static IReadOnlyList<string> VisitLines(OrthoVisit visit) =>
         TextLines(

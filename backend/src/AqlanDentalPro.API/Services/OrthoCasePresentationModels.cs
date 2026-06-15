@@ -19,6 +19,7 @@ public enum OrthoPresentationSlideType
     ProblemList,
     TreatmentPlan,
     Mechanotherapy,
+    TreatmentStages,
     VisitProgress,
     ProgressPhotos,
     FinalRecords,

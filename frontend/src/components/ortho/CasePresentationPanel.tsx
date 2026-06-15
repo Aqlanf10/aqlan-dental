@@ -18,7 +18,7 @@ interface Checklist {
  *  PowerPoint case presentation will need + links to the existing PDF reports.
  *  The PPTX generator itself lands in a later sprint. */
 export function CasePresentationPanel({ caseId }: { caseId: string }) {
-  const [cephBusy, setCephBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
 
   const overviewQ = useOrthoOverview(caseId);
   const checklistQ = useQuery({
@@ -53,13 +53,20 @@ export function CasePresentationPanel({ caseId }: { caseId: string }) {
   ];
   const readyCount = items.filter((i) => i.ready).length;
   const latestCephId = o.latestCephAnalysisId as string | undefined;
+  const hasModel = Boolean(modelQ.data);
 
-  const downloadCeph = async () => {
-    if (!latestCephId) return;
-    setCephBusy(true);
-    try { await downloadPdfFromApi(`/api/ceph/${latestCephId}/report/pdf`, `ceph-${latestCephId}.pdf`); }
-    catch { /* retry */ } finally { setCephBusy(false); }
+  const download = async (key: string, url: string, filename: string) => {
+    setBusy(key);
+    try { await downloadPdfFromApi(url, filename); }
+    catch { /* download helper surfaces errors; allow retry */ }
+    finally { setBusy(null); }
   };
+
+  const reports: { key: string; label: string; url: string; filename: string; enabled: boolean }[] = [
+    { key: "summary", label: "ملخّص الحالة PDF", url: `/api/ortho-cases/${caseId}/case-summary/report/pdf`, filename: `case-summary-${caseId}.pdf`, enabled: true },
+    { key: "model", label: "تحليل النماذج PDF", url: `/api/ortho-cases/${caseId}/model-analyses/latest/report/pdf`, filename: `model-analysis-${caseId}.pdf`, enabled: hasModel },
+    { key: "ceph", label: "تقرير السيفالو PDF", url: `/api/ceph/${latestCephId}/report/pdf`, filename: `ceph-${latestCephId}.pdf`, enabled: Boolean(latestCephId) },
+  ];
 
   const loading = overviewQ.isLoading || checklistQ.isLoading;
 
@@ -93,17 +100,21 @@ export function CasePresentationPanel({ caseId }: { caseId: string }) {
         )}
       </div>
 
-      {/* Existing reports */}
+      {/* Ready reports */}
       <div className="rounded-lg border border-gray-200 p-4 space-y-2">
-        <h4 className="text-xs font-semibold text-gray-600">التقارير الجاهزة</h4>
+        <h4 className="text-xs font-semibold text-gray-600">التقارير الجاهزة (PDF)</h4>
         <div className="flex flex-wrap gap-2">
-          <button onClick={downloadCeph} disabled={!latestCephId || cephBusy}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-            {cephBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
-            تقرير السيفالو PDF
-          </button>
-          <span className="text-[11px] text-gray-400 self-center">تقارير تحليل الصور متاحة في تبويب «تحليل الصور».</span>
+          {reports.map((r) => (
+            <button key={r.key} onClick={() => download(r.key, r.url, r.filename)}
+              disabled={!r.enabled || busy !== null}
+              title={r.enabled ? undefined : "غير متاح بعد لهذه الحالة"}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+              {busy === r.key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
+              {r.label}
+            </button>
+          ))}
         </div>
+        <span className="text-[11px] text-gray-400">تقارير تحليل الصور متاحة في تبويب «تحليل الصور».</span>
       </div>
 
       {/* PPTX placeholder */}

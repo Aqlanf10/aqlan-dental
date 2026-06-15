@@ -6,6 +6,7 @@ using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -159,6 +160,35 @@ public class OrthoCasesController(
             return NotFound(new { message = "الحالة التقويمية غير موجودة" });
 
         return await patientAccess.CanAccessPatientAsync(patientId.Value) ? null : Forbid();
+    }
+
+    // GET /api/ortho-cases/{id}/case-summary/report/pdf — unified Arabic case summary PDF.
+    // Aggregates existing data only (no new computation). Same OrthoAccess policy +
+    // per-patient access guard as the rest of the controller.
+    [HttpGet("{id:guid}/case-summary/report/pdf")]
+    public async Task<IActionResult> GetCaseSummaryPdf(
+        Guid id,
+        [FromServices] AqlanDentalPro.API.Services.OrthoCaseSummaryReportPdfGenerator generator,
+        [FromServices] ILogger<OrthoCasesController> logger)
+    {
+        var accessError = await GetCaseAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        try
+        {
+            var pdf = await generator.GenerateAsync(id);
+            return File(pdf, "application/pdf", $"case-summary-{id}.pdf");
+        }
+        catch (ArgumentException)
+        {
+            return NotFound(new { message = "الحالة التقويمية غير موجودة" });
+        }
+        catch (Exception ex)
+        {
+            // Never expose exception details in the HTTP response — log only.
+            logger.LogError(ex, "Failed to generate case summary PDF for case {CaseId}", id);
+            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إنشاء ملخّص الحالة" });
+        }
     }
 
     [HttpGet("{id:guid}/overview")]

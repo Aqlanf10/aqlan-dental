@@ -55,7 +55,13 @@ internal sealed record PresentationImage(
     string Label,
     byte[] Bytes,
     int PixelWidth,
-    int PixelHeight);
+    int PixelHeight,
+    double CropX = 0,
+    double CropY = 0,
+    double CropWidth = 1,
+    double CropHeight = 1,
+    bool FlipHorizontal = false,
+    bool FlipVertical = false);
 
 internal sealed record PresentationTable(
     IReadOnlyList<string> Headers,

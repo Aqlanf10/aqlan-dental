@@ -1907,6 +1907,9 @@ public class OrthoCasesController(
     [HttpDelete("{id:guid}/photos/{photoId:guid}")]
     public async Task<IActionResult> DeletePhoto(Guid id, Guid photoId)
     {
+        var accessError = await GetCaseAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
         var photo = await db.OrthoClinicalPhotos
             .FirstOrDefaultAsync(p => p.Id == photoId && p.OrthoCaseId == id);
         if (photo is null) return NotFound(new { message = "الصورة غير موجودة" });

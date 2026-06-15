@@ -274,7 +274,7 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
     private static IReadOnlyList<string> PatientInformation(OrthoCase source)
     {
         var age = source.Patient.DateOfBirth.HasValue
-            ? Math.Max(0, DateTime.UtcNow.Year - source.Patient.DateOfBirth.Value.Year).ToString(Invariant)
+            ? CalculateAge(source.Patient.DateOfBirth.Value).ToString(Invariant)
             : null;
         return TextLines(
             ("اسم المريض", JoinName(source.Patient.FirstName, source.Patient.MiddleName, source.Patient.LastName)),
@@ -424,17 +424,35 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
         OrthoClinicalPhoto photo,
         CancellationToken cancellationToken)
     {
-        var preferred = photo.ImagePreparation?.PreparedImageUrl;
-        var url = HasText(preferred) ? preferred : photo.PhotoUrl;
+        // A baked prepared image (PreparedImageUrl) wins when present; otherwise the
+        // original photo is used and the saved crop region + flips are applied at
+        // render time so the preparation the doctor set is honored in the deck.
+        var preparation = photo.ImagePreparation;
+        var preferred = preparation?.PreparedImageUrl;
+        var hasBaked = HasText(preferred);
+        var url = hasBaked ? preferred : photo.PhotoUrl;
         var label = photo.Caption ??
                     photo.Subtype ??
                     photo.PhotoType;
-        return await LoadImageAsync(url, label, cancellationToken);
+
+        // Don't re-apply crop/flip on top of an already-baked prepared image.
+        var crop = hasBaked || preparation is null
+            ? CropRegion.Full
+            : CropRegion.FromPreparation(preparation);
+
+        return await LoadImageAsync(url, label, crop, cancellationToken);
     }
 
     private static async Task<PresentationImage?> LoadImageAsync(
         string? url,
         string label,
+        CancellationToken cancellationToken) =>
+        await LoadImageAsync(url, label, CropRegion.Full, cancellationToken);
+
+    private static async Task<PresentationImage?> LoadImageAsync(
+        string? url,
+        string label,
+        CropRegion crop,
         CancellationToken cancellationToken)
     {
         var path = CephReportPdfGenerator.ResolveUploadFilePath(url);
@@ -444,7 +462,10 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
         {
             var bytes = await File.ReadAllBytesAsync(path, cancellationToken);
             return TryReadImageSize(bytes, out var width, out var height)
-                ? new PresentationImage(label, bytes, width, height)
+                ? new PresentationImage(
+                    label, bytes, width, height,
+                    crop.X, crop.Y, crop.Width, crop.Height,
+                    crop.FlipHorizontal, crop.FlipVertical)
                 : null;
         }
         catch (IOException)
@@ -455,6 +476,30 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
         {
             return null;
         }
+    }
+
+    /// <summary>Normalized crop region (fractions of the original image) plus flips,
+    /// derived from a saved <see cref="OrthoImagePreparation"/>.</summary>
+    private readonly record struct CropRegion(
+        double X, double Y, double Width, double Height,
+        bool FlipHorizontal, bool FlipVertical)
+    {
+        public static CropRegion Full { get; } = new(0, 0, 1, 1, false, false);
+
+        public static CropRegion FromPreparation(OrthoImagePreparation prep)
+        {
+            // Clamp into [0,1] and guard against zero/negative or out-of-bounds rectangles
+            // so a malformed record degrades to the full image rather than an invalid crop.
+            var x = Clamp01((double)prep.CropX);
+            var y = Clamp01((double)prep.CropY);
+            var w = Clamp01((double)prep.CropWidth);
+            var h = Clamp01((double)prep.CropHeight);
+            if (w <= 0 || h <= 0 || x + w > 1.0001 || y + h > 1.0001)
+                return new CropRegion(0, 0, 1, 1, prep.FlipHorizontal, prep.FlipVertical);
+            return new CropRegion(x, y, w, h, prep.FlipHorizontal, prep.FlipVertical);
+        }
+
+        private static double Clamp01(double value) => Math.Clamp(value, 0, 1);
     }
 
     internal static bool TryReadImageSize(
@@ -541,6 +586,16 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
 
     private static string? FormatDate(DateOnly? value) =>
         value?.ToString("yyyy-MM-dd", Invariant);
+
+    // Whole years, decremented when this year's birthday has not yet passed —
+    // matches the case-summary PDF so both reports agree on the patient's age.
+    internal static int CalculateAge(DateOnly dateOfBirth)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var age = today.Year - dateOfBirth.Year;
+        if (dateOfBirth > today.AddYears(-age)) age--;
+        return Math.Max(0, age);
+    }
 
     private static string FormatDecimal(decimal? value, string? unit = null) =>
         value.HasValue

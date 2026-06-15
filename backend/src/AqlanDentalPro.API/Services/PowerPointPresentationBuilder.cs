@@ -479,7 +479,15 @@ internal static class PowerPointPresentationBuilder
             imagePart.FeedData(imageStream);
 
         var relationshipId = slidePart.GetIdOfPart(imagePart);
-        var crop = CalculateCrop(image.PixelWidth, image.PixelHeight, width, height);
+        var crop = CalculateCrop(image, width, height);
+
+        var transform = new A.Transform2D(
+            new A.Offset { X = x, Y = y },
+            new A.Extents { Cx = width, Cy = height });
+        if (image.FlipHorizontal)
+            transform.HorizontalFlip = true;
+        if (image.FlipVertical)
+            transform.VerticalFlip = true;
 
         tree.Append(new P.Picture(
             new P.NonVisualPictureProperties(
@@ -498,37 +506,84 @@ internal static class PowerPointPresentationBuilder
                 },
                 new A.Stretch(new A.FillRectangle())),
             new P.ShapeProperties(
-                new A.Transform2D(
-                    new A.Offset { X = x, Y = y },
-                    new A.Extents { Cx = width, Cy = height }),
+                transform,
                 new A.PresetGeometry(new A.AdjustValueList())
                 {
                     Preset = A.ShapeTypeValues.Rectangle,
                 })));
     }
 
-    private static Crop CalculateCrop(
+    /// <summary>
+    /// Builds the DrawingML source rectangle (amount cropped off each edge, in
+    /// 1000ths of a percent) that first keeps the doctor's prepared crop region and
+    /// then aspect-fills the remaining sub-image into the slide box without distortion.
+    /// Exposed internally for unit testing the crop composition.
+    /// </summary>
+    internal static Crop CalculateCrop(
         int pixelWidth,
         int pixelHeight,
         long boxWidth,
-        long boxHeight)
+        long boxHeight,
+        double cropX = 0,
+        double cropY = 0,
+        double cropWidth = 1,
+        double cropHeight = 1)
     {
-        if (pixelWidth <= 0 || pixelHeight <= 0)
+        if (pixelWidth <= 0 || pixelHeight <= 0 || boxWidth <= 0 || boxHeight <= 0)
             return new Crop(0, 0, 0, 0);
 
-        var imageRatio = (double)pixelWidth / pixelHeight;
-        var boxRatio = (double)boxWidth / boxHeight;
-        if (Math.Abs(imageRatio - boxRatio) < 0.001)
-            return new Crop(0, 0, 0, 0);
-
-        if (imageRatio > boxRatio)
+        // Sanitize the prepared region; fall back to the full image when invalid.
+        if (cropWidth <= 0 || cropHeight <= 0 ||
+            cropX < 0 || cropY < 0 || cropX + cropWidth > 1.0001 || cropY + cropHeight > 1.0001)
         {
-            var crop = (int)Math.Round((1 - (boxRatio / imageRatio)) * 50_000);
-            return new Crop(crop, crop, 0, 0);
+            cropX = 0; cropY = 0; cropWidth = 1; cropHeight = 1;
         }
 
-        var verticalCrop = (int)Math.Round((1 - (imageRatio / boxRatio)) * 50_000);
-        return new Crop(0, 0, verticalCrop, verticalCrop);
+        // Edges cropped off the original by the prepared region.
+        var left = cropX;
+        var top = cropY;
+        var right = 1 - (cropX + cropWidth);
+        var bottom = 1 - (cropY + cropHeight);
+
+        // Aspect-fill the kept sub-image into the box, adding the residual crop
+        // within the sub-image's own dimensions (hence the cropWidth/cropHeight scale).
+        var subRatio = ((double)pixelWidth * cropWidth) / ((double)pixelHeight * cropHeight);
+        var boxRatio = (double)boxWidth / boxHeight;
+        if (Math.Abs(subRatio - boxRatio) > 0.001)
+        {
+            if (subRatio > boxRatio)
+            {
+                var extra = (1 - (boxRatio / subRatio)) / 2 * cropWidth;
+                left += extra;
+                right += extra;
+            }
+            else
+            {
+                var extra = (1 - (subRatio / boxRatio)) / 2 * cropHeight;
+                top += extra;
+                bottom += extra;
+            }
+        }
+
+        return new Crop(
+            ToCropUnits(left, right),
+            ToCropUnits(right, left),
+            ToCropUnits(top, bottom),
+            ToCropUnits(bottom, top));
+    }
+
+    private static Crop CalculateCrop(PresentationImage image, long boxWidth, long boxHeight) =>
+        CalculateCrop(
+            image.PixelWidth, image.PixelHeight, boxWidth, boxHeight,
+            image.CropX, image.CropY, image.CropWidth, image.CropHeight);
+
+    // Converts an edge fraction to DrawingML crop units (1000ths of a percent),
+    // clamped so the pair on an axis never removes the whole image.
+    private static int ToCropUnits(double edge, double opposite)
+    {
+        var value = (int)Math.Round(Math.Clamp(edge, 0, 1) * 100_000);
+        var oppositeValue = (int)Math.Round(Math.Clamp(opposite, 0, 1) * 100_000);
+        return Math.Clamp(value, 0, Math.Max(0, 99_000 - oppositeValue));
     }
 
     private static PartTypeInfo DetectImagePartType(byte[] bytes)
@@ -763,5 +818,5 @@ internal static class PowerPointPresentationBuilder
         { Name = "Aqlan Dental" };
 
     private sealed record ImageBox(long X, long Y, long Width, long Height);
-    private sealed record Crop(int Left, int Right, int Top, int Bottom);
+    internal sealed record Crop(int Left, int Right, int Top, int Bottom);
 }

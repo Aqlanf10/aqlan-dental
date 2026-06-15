@@ -42,6 +42,13 @@ export interface DoctorPatientItem {
   chiefComplaint?: string;
   inRoomSince?: string;
   visitCount?: number;
+  hasActiveOrthoCase?: boolean;
+  orthoCaseId?: string;
+  orthoCaseNumber?: string;
+  orthoCurrentStage?: string;
+  orthoLastVisitDate?: string;
+  orthoNextAppointmentDate?: string;
+  orthoContractRemaining?: number;
 }
 
 // ─── Fetch doctor's patients today ──────────────────────────────────────────

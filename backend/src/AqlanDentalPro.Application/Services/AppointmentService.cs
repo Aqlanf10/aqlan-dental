@@ -49,7 +49,8 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
             Notes = req.Notes,
             CreatedBy = currentUser.UserId,
             ServiceId = req.ServiceId,
-            ClinicRoomId = req.ClinicRoomId
+            ClinicRoomId = req.ClinicRoomId,
+            OrthoCaseId = req.OrthoCaseId
         };
 
         await repo.AddAsync(appointment);
@@ -147,6 +148,7 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         appointment.Notes           = req.Notes;
         appointment.ServiceId       = req.ServiceId;
         appointment.ClinicRoomId    = req.ClinicRoomId;
+        appointment.OrthoCaseId      = req.OrthoCaseId;
 
         repo.Update(appointment);
         await repo.SaveChangesAsync();
@@ -304,6 +306,7 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         CalledAt = a.CalledAt,
         InRoomAt = a.InRoomAt,
         ServiceId = a.ServiceId,
-        ClinicRoomId = a.ClinicRoomId
+        ClinicRoomId = a.ClinicRoomId,
+        OrthoCaseId = a.OrthoCaseId
     };
 }

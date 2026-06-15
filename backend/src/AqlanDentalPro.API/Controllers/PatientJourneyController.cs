@@ -196,14 +196,7 @@ public class PatientJourneyController(
             .ToDictionary(g => g.Key, g => g.Sum(p => p.Amount));
 
         // Patients with an active orthodontic case — single prefetch query for all today's patients
-        var orthoPatients = patientIds.Count > 0
-            ? (await db.OrthoCases
-                .IgnoreQueryFilters()
-                .Where(o => o.IsActive && o.Status == OrthoCaseStatus.Active && patientIds.Contains(o.PatientId))
-                .Select(o => o.PatientId)
-                .Distinct()
-                .ToListAsync()).ToHashSet()
-            : [];
+        var orthoSummaries = await LoadOrthoJourneySummariesAsync(patientIds);
 
         // Privacy: Doctors must not see patient phone numbers
         var isDoctor = patientAccessService.IsDoctor;
@@ -235,6 +228,7 @@ public class PatientJourneyController(
 
             string? checkoutStatus = visit?.CheckoutStatus;
             string nextAction = DetermineNextAction(a.Status, queueItem?.Status, checkoutStatus);
+            orthoSummaries.TryGetValue(a.PatientId, out var orthoSummary);
 
             // Compute in-room timestamp from queue item
             DateTime? inRoomSince = queueItem?.InRoomAt ?? queueItem?.StartedAt;
@@ -246,8 +240,8 @@ public class PatientJourneyController(
                 PatientName = BuildPatientDisplayName(a.Patient),
                 PatientNumber = a.Patient?.PatientNumber,
                 PatientPhone = isDoctor ? null : a.Patient?.Phone,
-                AppointmentTime = a.StartTime.ToString("HH:mm"),
-                AppointmentType = a.AppointmentType,
+                AppointmentTime = (string?)a.StartTime.ToString("HH:mm"),
+                AppointmentType = (string?)a.AppointmentType,
                 AppointmentStatus = a.Status.ToString(),
                 DoctorId = (Guid?)a.DoctorId,
                 DoctorName = a.Doctor?.Name ?? "",
@@ -274,7 +268,13 @@ public class PatientJourneyController(
                 HasDraftInvoice = hasDraftInvoice,
                 HasLabOrder = labOrder != null,
                 LabOrderStatus = labOrder?.Status,
-                HasActiveOrthoCase = orthoPatients.Contains(a.PatientId),
+                HasActiveOrthoCase = orthoSummary is not null,
+                OrthoCaseId = orthoSummary?.CaseId,
+                OrthoCaseNumber = orthoSummary?.CaseNumber,
+                OrthoCurrentStage = orthoSummary?.CurrentStage,
+                OrthoLastVisitDate = orthoSummary?.LastVisitDate?.ToString("yyyy-MM-dd"),
+                OrthoNextAppointmentDate = orthoSummary?.NextAppointmentDate?.ToString("yyyy-MM-dd"),
+                OrthoContractRemaining = orthoSummary?.ContractRemaining,
                 InRoomSince = inRoomSince,
                 NextAction = nextAction
             };
@@ -313,17 +313,12 @@ public class PatientJourneyController(
             var walkInPatientIds = walkInQueueItems.Select(q => q.PatientId).Distinct().ToList();
 
             // Extend the active-ortho prefetch set with walk-in patients not already covered
-            var uncoveredOrthoIds = walkInPatientIds.Where(id => !orthoPatients.Contains(id)).ToList();
+            var uncoveredOrthoIds = walkInPatientIds.Where(id => !orthoSummaries.ContainsKey(id)).ToList();
             if (uncoveredOrthoIds.Count > 0)
             {
-                var walkInOrthoPatients = await db.OrthoCases
-                    .IgnoreQueryFilters()
-                    .Where(o => o.IsActive && o.Status == OrthoCaseStatus.Active && uncoveredOrthoIds.Contains(o.PatientId))
-                    .Select(o => o.PatientId)
-                    .Distinct()
-                    .ToListAsync();
-                foreach (var id in walkInOrthoPatients)
-                    orthoPatients.Add(id);
+                var walkInOrthoSummaries = await LoadOrthoJourneySummariesAsync(uncoveredOrthoIds);
+                foreach (var pair in walkInOrthoSummaries)
+                    orthoSummaries[pair.Key] = pair.Value;
             }
             var walkInPayments = walkInPatientIds.Count > 0
                 ? (await db.Payments
@@ -346,6 +341,7 @@ public class PatientJourneyController(
                     queueStatus == ClinicQueueStatus.InProgress ? AppointmentStatus.InProgress :
                     AppointmentStatus.Completed,
                     queueStatus, checkoutStatus);
+                orthoSummaries.TryGetValue(q.PatientId, out var orthoSummary);
 
                 result.Add(new
                 {
@@ -364,7 +360,7 @@ public class PatientJourneyController(
                     RoomId = (Guid?)q.ClinicRoomId,
                     RoomName = q.RoomName,
                     QueueItemId = (Guid?)q.Id,
-                    QueueStatus = queueStatus.ToString(),
+                    QueueStatus = (string?)queueStatus.ToString(),
                     VisitId = visit?.Id,
                     VisitStatus = visit != null ? (checkoutStatus ?? "InProgress") : null,
                     ConsultationFeeRequired = false,
@@ -382,7 +378,13 @@ public class PatientJourneyController(
                     HasDraftInvoice = false,
                     HasLabOrder = false,
                     LabOrderStatus = (string?)null,
-                    HasActiveOrthoCase = orthoPatients.Contains(q.PatientId),
+                    HasActiveOrthoCase = orthoSummary is not null,
+                    OrthoCaseId = orthoSummary?.CaseId,
+                    OrthoCaseNumber = orthoSummary?.CaseNumber,
+                    OrthoCurrentStage = orthoSummary?.CurrentStage,
+                    OrthoLastVisitDate = orthoSummary?.LastVisitDate?.ToString("yyyy-MM-dd"),
+                    OrthoNextAppointmentDate = orthoSummary?.NextAppointmentDate?.ToString("yyyy-MM-dd"),
+                    OrthoContractRemaining = orthoSummary?.ContractRemaining,
                     InRoomSince = q.InRoomAt ?? q.StartedAt,
                     NextAction = nextAction
                 });
@@ -1255,7 +1257,8 @@ public class PatientJourneyController(
                 VisitDate = today,
                 DoctorId = appointment.DoctorId,
                 Specialty = appointment.Specialty,
-                ServiceId = appointment.ServiceId
+                ServiceId = appointment.ServiceId,
+                OrthoCaseId = appointment.OrthoCaseId
             };
 
             // FIX: Populate AmountDueReference from the service catalog price
@@ -1981,6 +1984,121 @@ public class PatientJourneyController(
         }
         return false;
     }
+
+    private async Task<Dictionary<Guid, OrthoJourneySummary>> LoadOrthoJourneySummariesAsync(
+        IReadOnlyCollection<Guid> patientIds)
+    {
+        if (patientIds.Count == 0)
+            return [];
+
+        var cases = await db.OrthoCases
+            .IgnoreQueryFilters()
+            .Where(c => c.IsActive
+                && c.Status == OrthoCaseStatus.Active
+                && patientIds.Contains(c.PatientId))
+            .Select(c => new
+            {
+                c.Id,
+                c.PatientId,
+                c.CaseNumber,
+                c.CurrentStage,
+                c.CreatedAt
+            })
+            .ToListAsync();
+
+        if (cases.Count == 0)
+            return [];
+
+        var selectedCases = cases
+            .GroupBy(c => c.PatientId)
+            .Select(g => g.OrderByDescending(c => c.CreatedAt).First())
+            .ToList();
+        var caseIds = selectedCases.Select(c => c.Id).ToList();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var visits = await db.OrthoVisits
+            .IgnoreQueryFilters()
+            .Where(v => v.IsActive && caseIds.Contains(v.OrthoCaseId))
+            .Select(v => new
+            {
+                v.OrthoCaseId,
+                v.VisitDate,
+                v.NextAppointmentDate
+            })
+            .ToListAsync();
+
+        var scheduledAppointments = await db.Appointments
+            .IgnoreQueryFilters()
+            .Where(a => a.IsActive
+                && a.OrthoCaseId.HasValue
+                && caseIds.Contains(a.OrthoCaseId.Value)
+                && a.AppointmentDate >= today
+                && a.Status != AppointmentStatus.Cancelled
+                && a.Status != AppointmentStatus.NoShow)
+            .Select(a => new
+            {
+                OrthoCaseId = a.OrthoCaseId!.Value,
+                a.AppointmentDate
+            })
+            .ToListAsync();
+
+        var contracts = await db.Contracts
+            .IgnoreQueryFilters()
+            .Include(c => c.Payments.Where(p => p.IsActive))
+            .Where(c => c.IsActive
+                && c.RelatedCaseId.HasValue
+                && caseIds.Contains(c.RelatedCaseId.Value))
+            .ToListAsync();
+
+        return selectedCases.ToDictionary(
+            c => c.PatientId,
+            c =>
+            {
+                var caseVisits = visits.Where(v => v.OrthoCaseId == c.Id).ToList();
+                var lastVisitDate = caseVisits
+                    .OrderByDescending(v => v.VisitDate)
+                    .Select(v => (DateOnly?)v.VisitDate)
+                    .FirstOrDefault();
+                var nextAppointmentDate = scheduledAppointments
+                    .Where(a => a.OrthoCaseId == c.Id)
+                    .OrderBy(a => a.AppointmentDate)
+                    .Select(a => (DateOnly?)a.AppointmentDate)
+                    .FirstOrDefault()
+                    ?? caseVisits
+                        .Where(v => v.NextAppointmentDate >= today)
+                        .OrderBy(v => v.NextAppointmentDate)
+                        .Select(v => v.NextAppointmentDate)
+                        .FirstOrDefault();
+
+                var contract = contracts
+                    .Where(x => x.RelatedCaseId == c.Id)
+                    .OrderByDescending(x => x.CreatedAt)
+                    .FirstOrDefault();
+                decimal? remaining = contract is null
+                    ? null
+                    : Math.Max(
+                        0,
+                        contract.TotalAmount
+                        - contract.DiscountAmount
+                        - contract.Payments.Sum(p => p.Amount));
+
+                return new OrthoJourneySummary(
+                    c.Id,
+                    c.CaseNumber,
+                    c.CurrentStage,
+                    lastVisitDate,
+                    nextAppointmentDate,
+                    remaining);
+            });
+    }
+
+    private sealed record OrthoJourneySummary(
+        Guid CaseId,
+        string CaseNumber,
+        string? CurrentStage,
+        DateOnly? LastVisitDate,
+        DateOnly? NextAppointmentDate,
+        decimal? ContractRemaining);
 
     private static string DetermineNextAction(AppointmentStatus apptStatus, ClinicQueueStatus? queueStatus, string? checkoutStatus)
     {

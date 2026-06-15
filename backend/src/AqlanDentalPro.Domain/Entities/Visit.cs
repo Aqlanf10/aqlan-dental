@@ -30,10 +30,13 @@ public class Visit : BaseEntity
     public decimal? AmountDueReference { get; set; }
     /// <summary>Suggested billing procedure from clinical diagnosis (without price).</summary>
     public string? ProposedProcedure { get; set; }
+    /// <summary>Optional orthodontic case associated with this clinical visit.</summary>
+    public Guid? OrthoCaseId { get; set; }
 
     public Patient Patient { get; set; } = null!;
     public Appointment? Appointment { get; set; }
     public Doctor? Doctor { get; set; }
+    public OrthoCase? OrthoCase { get; set; }
     public ICollection<GeneralTreatment> GeneralTreatments { get; set; } = [];
     public ICollection<Prescription> Prescriptions { get; set; } = [];
 }

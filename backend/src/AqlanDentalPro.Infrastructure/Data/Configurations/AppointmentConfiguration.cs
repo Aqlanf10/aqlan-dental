@@ -22,12 +22,14 @@ public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
         // Patient Journey fields (Sprint: Command Center)
         builder.Property(a => a.ServiceId).IsRequired(false);
         builder.Property(a => a.ClinicRoomId).IsRequired(false);
+        builder.Property(a => a.OrthoCaseId).IsRequired(false);
 
         // Composite index for conflict detection
         builder.HasIndex(a => new { a.DoctorId, a.AppointmentDate, a.StartTime });
 
         // Index for queue queries
         builder.HasIndex(a => a.AppointmentDate);
+        builder.HasIndex(a => a.OrthoCaseId);
 
         builder.HasOne(a => a.Patient)
             .WithMany(p => p.Appointments)
@@ -52,6 +54,11 @@ public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
         builder.HasOne(a => a.ClinicRoom)
             .WithMany()
             .HasForeignKey(a => a.ClinicRoomId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(a => a.OrthoCase)
+            .WithMany()
+            .HasForeignKey(a => a.OrthoCaseId)
             .OnDelete(DeleteBehavior.SetNull);
     }
 }

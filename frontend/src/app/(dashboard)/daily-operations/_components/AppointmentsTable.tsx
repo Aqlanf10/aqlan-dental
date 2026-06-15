@@ -11,15 +11,15 @@ import {
   Calendar, UserCheck, ClipboardList, DoorOpen, CheckCircle,
   MoreHorizontal, Eye, Phone, Clock,
   Building2, PanelRight, Timer, AlertCircle, Heart,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, GitBranch,
 } from "lucide-react";
 import {
-  APPT_STATUS_LABELS, ACTION_LABELS,
+  ACTION_LABELS,
   fmtTime, normalizePhone, ORANGE, NAVY,
   isAppointmentOverdue, fmtOverdueMinutes, fmtSessionDuration,
   type TodayJourneyItem,
 } from "../_lib/constants";
-import { StatusBadge as SharedStatusBadge, NextActionBadge as SharedNextActionBadge } from "@/components/shared/journey";
+import { StatusBadge as SharedStatusBadge } from "@/components/shared/journey";
 
 /* ─── Status badge (wraps shared component) ─────────────────────────────── */
 function StatusBadge({ status }: { status: string }) {
@@ -69,6 +69,26 @@ function MedicalAlertBadge() {
     <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold"
       style={{ background: "#fef2f2", color: "#dc2626" }}>
       <Heart className="w-2.5 h-2.5" />
+    </span>
+  );
+}
+
+function OrthoBadge({ item }: { item: TodayJourneyItem }) {
+  if (!item.hasActiveOrthoCase) return null;
+  const details = [
+    item.orthoCaseNumber,
+    item.orthoCurrentStage,
+    item.orthoNextAppointmentDate ? `الموعد: ${item.orthoNextAppointmentDate}` : null,
+  ].filter(Boolean).join(" | ");
+
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold"
+      style={{ background: "#f5f3ff", color: "#7c3aed", border: "1px solid #ddd6fe" }}
+      title={details || "حالة تقويم نشطة"}
+    >
+      <GitBranch className="w-2.5 h-2.5" />
+      تقويم
     </span>
   );
 }
@@ -410,6 +430,7 @@ function AppointmentRow({
             <PanelRight className="w-3 h-3 opacity-0 group-hover:opacity-40 transition-opacity" />
           </button>
           {item.visitCount != null && item.visitCount <= 1 && <NewPatientBadge />}
+          <OrthoBadge item={item} />
         </div>
       </td>
       {!isDoctor && (
@@ -590,6 +611,7 @@ function MobileCard({
           {item.patientName}
         </button>
         {item.visitCount != null && item.visitCount <= 1 && <NewPatientBadge />}
+        <OrthoBadge item={item} />
         <span className="text-xs" style={{ color: "#64748b" }}>{item.doctorName}</span>
         <NextActionBadge action={item.nextAction} />
         {(item.appointmentStatus === "InRoom" || item.appointmentStatus === "InProgress") && item.inRoomSince && (
@@ -614,6 +636,19 @@ function MobileCard({
               <span className="flex items-center gap-1">
                 <strong>الغرفة:</strong> {item.roomName}
               </span>
+            )}
+            {item.hasActiveOrthoCase && (
+              <div className="w-full rounded-lg border border-violet-100 bg-violet-50 p-2 text-[10px] text-violet-800">
+                <div className="font-bold">{item.orthoCaseNumber ?? "حالة تقويم نشطة"}</div>
+                <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1">
+                  {item.orthoCurrentStage && <span>المرحلة: {item.orthoCurrentStage}</span>}
+                  {item.orthoLastVisitDate && <span>آخر زيارة: {item.orthoLastVisitDate}</span>}
+                  {item.orthoNextAppointmentDate && <span>الموعد التالي: {item.orthoNextAppointmentDate}</span>}
+                  {item.orthoContractRemaining != null && (
+                    <span>المتبقي: {item.orthoContractRemaining.toLocaleString("ar-YE")} ر.ي</span>
+                  )}
+                </div>
+              </div>
             )}
           </div>
         </div>

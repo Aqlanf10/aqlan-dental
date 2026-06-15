@@ -67,6 +67,12 @@ export interface TodayJourneyItem {
   hasLabOrder?: boolean;
   labOrderStatus?: string;
   hasActiveOrthoCase?: boolean;
+  orthoCaseId?: string;
+  orthoCaseNumber?: string;
+  orthoCurrentStage?: string;
+  orthoLastVisitDate?: string;
+  orthoNextAppointmentDate?: string;
+  orthoContractRemaining?: number;
   amountDueReference?: number;
   treatmentDone?: string;
   chiefComplaint?: string;

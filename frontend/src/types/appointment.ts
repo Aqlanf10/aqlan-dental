@@ -18,6 +18,7 @@ export interface Appointment {
   serviceId?: string;
   serviceName?: string;
   clinicRoomId?: string;
+  orthoCaseId?: string;
   roomName?: string | null;
   // Queue / clinic-flow fields (Sprint 4.5)
   arrivedAt?: string | null;
@@ -38,6 +39,7 @@ export interface CreateAppointmentRequest {
   notes?: string;
   serviceId?: string;
   clinicRoomId?: string;
+  orthoCaseId?: string;
 }
 
 export interface BatchUpdateStatusRequest {

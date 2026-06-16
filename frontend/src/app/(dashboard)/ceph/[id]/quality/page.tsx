@@ -51,7 +51,8 @@ export default function CephAnalysisQualityPage() {
   const ready = checks.length > 0 && passed === checks.length;
   const landmarkCount = analysis?.landmarks?.length ?? 0;
   const measurementCount = analysis?.measurements?.length ?? 0;
-  const vtoReady = landmarkCount >= 24 && measurementCount > 0;
+  const calibrated = Boolean(analysis?.pixelsPerMm && analysis.pixelsPerMm > 0);
+  const vtoReady = calibrated && landmarkCount >= 24 && measurementCount > 0;
 
   if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="h-8 w-8 animate-spin text-clinic-blue" /></div>;
   if (!analysis) return <div className="py-20 text-center text-gray-400">التحليل غير موجود</div>;
@@ -68,7 +69,7 @@ export default function CephAnalysisQualityPage() {
           {vtoReady ? (
             <Link href={`/ceph/vto?analysisId=${encodeURIComponent(id)}`} title="فتح VTO كتصور تعليمي/تخطيطي فقط" className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800 hover:bg-blue-100"><Target className="h-4 w-4" />فتح VTO</Link>
           ) : (
-            <span aria-disabled="true" title="VTO غير جاهز: يجب حفظ النقاط والقياسات أولًا" className="inline-flex cursor-not-allowed items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700 opacity-80"><Target className="h-4 w-4" />فتح VTO</span>
+            <span aria-disabled="true" title="VTO غير جاهز: يجب حفظ المعايرة والنقاط والقياسات أولًا" className="inline-flex cursor-not-allowed items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700 opacity-80"><Target className="h-4 w-4" />فتح VTO</span>
           )}
           <Link href="/ceph" className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">قائمة السيفالو</Link>
         </div>
@@ -78,7 +79,7 @@ export default function CephAnalysisQualityPage() {
         <h2 className="mb-1 flex items-center gap-2 font-extrabold text-blue-950"><FileText className="h-5 w-5" />قرار التقرير والطباعة</h2>
         <p>PDF والطباعة يتمان من صفحة التحليل فقط، ويجب أن يعتمدا على قياسات محفوظة. إذا تغيّرت النقاط أو المعايرة، ارجع إلى صفحة التحليل واضغط &quot;حفظ وحساب&quot; أولًا.</p>
         <p className="mt-1 text-xs font-medium text-blue-800">VTO تصور تعليمي/تخطيطي فقط وليس تنبؤًا نهائيًا أو اعتمادًا للخطة. أي نقاط مساعدة بالذكاء الاصطناعي تبقى مسودة حتى يراجعها الطبيب يدويًا.</p>
-        {!vtoReady && <p className="mt-2 text-xs font-bold text-amber-800">VTO غير جاهز حاليًا: النقاط المكتملة والقياسات المحفوظة مطلوبة قبل فتحه.</p>}
+        {!vtoReady && <p className="mt-2 text-xs font-bold text-amber-800">VTO غير جاهز: يجب حفظ المعايرة والنقاط والقياسات أولًا</p>}
       </div>
 
       <div className={cn("rounded-2xl border p-4", ready ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50")}>

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Activity, AlertCircle, Brain, CheckCircle2, FileText, GitCompareArrows, Plus, Ruler, Smile, UserSquare2, X } from "lucide-react";
+import { Activity, AlertCircle, Brain, CheckCircle2, FileText, GitCompareArrows, Plus, Ruler, ShieldCheck, Smile, UserSquare2, X } from "lucide-react";
 import type { CephAnalysisList } from "@/types/ceph";
 import { ANALYSIS_TYPE_AR } from "@/types/ceph";
 import api from "@/lib/api";
@@ -41,6 +41,7 @@ export default function CephPage() {
           <p className="text-sm text-gray-500 mt-0.5">تحليل الأشعة السيفالومترية، المعالم، القياسات، التشخيص، المقارنة، VTO والتقارير</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Link href="/ceph/quality" className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 transition"><ShieldCheck className="w-4 h-4" />فحص الجودة</Link>
           <Link href="/ceph/photo" className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"><UserSquare2 className="w-4 h-4" />تحليل صورة بروفايل</Link>
           <Link href="/ceph/photo/frontal" className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"><Smile className="w-4 h-4" />تحليل صورة أمامية</Link>
           <Link href="/ceph/new" className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"><Plus className="w-4 h-4" />تحليل جديد</Link>

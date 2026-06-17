@@ -6,6 +6,7 @@ import {
   Brain, Calculator, Eye, EyeOff, Play, PlayCircle, ArrowRight,
   Save, CheckCircle2, ChevronRight, Loader2, FileDown, Printer,
   Sun, Contrast, RotateCcw, ListChecks, ImageIcon, FileText, ScanLine, Target,
+  User, FolderOpen,
 } from "lucide-react";
 import type { CephAnalysis, CephLandmark, CephDiagnosis, AnalysisType } from "@/types/ceph";
 import { ANALYSIS_GROUPS, ANALYSIS_TYPE_AR } from "@/types/ceph";
@@ -282,10 +283,27 @@ export default function CephAnalysisPage() {
             <ArrowRight className="w-4 h-4" />
           </Link>
           <div className="min-w-0">
-            <h1 className="text-base font-extrabold text-gray-900 truncate">{analysis.patientName}</h1>
-            <p className="text-[10px] text-gray-400">
-              {formatArabicDate(analysis.analysisDate)} · {ANALYSIS_TYPE_AR[analysis.analysisType] ?? analysis.analysisType}
-            </p>
+            {/* Direct link to the patient file — the doctor jumps straight from
+                the cephalometric workspace into the full record. */}
+            <Link href={`/patients/${analysis.patientId}`}
+              title="فتح ملف المريض"
+              className="group flex min-w-0 items-center gap-1.5">
+              <User className="h-3.5 w-3.5 flex-shrink-0 text-gray-400 group-hover:text-clinic-blue" />
+              <h1 className="truncate text-base font-extrabold text-gray-900 group-hover:text-clinic-blue group-hover:underline">
+                {analysis.patientName}
+              </h1>
+            </Link>
+            <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
+              <span>{formatArabicDate(analysis.analysisDate)} · {ANALYSIS_TYPE_AR[analysis.analysisType] ?? analysis.analysisType}</span>
+              {analysis.caseNumber && (
+                <Link href={`/ortho/${analysis.orthoCaseId}?tab=ceph`}
+                  title="فتح حالة التقويم"
+                  className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5 font-mono text-gray-500 hover:bg-clinic-blue-50 hover:text-clinic-blue">
+                  <FolderOpen className="h-2.5 w-2.5" />
+                  {analysis.caseNumber}
+                </Link>
+              )}
+            </div>
           </div>
         </div>
 

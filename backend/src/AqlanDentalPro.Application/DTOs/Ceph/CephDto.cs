@@ -62,6 +62,7 @@ public class CephAnalysisDetailDto
 {
     public Guid Id { get; set; }
     public Guid OrthoCaseId { get; set; }
+    public Guid PatientId { get; set; }
     public string CaseNumber { get; set; } = string.Empty;
     public string PatientName { get; set; } = string.Empty;
     public string AnalysisType { get; set; } = string.Empty;

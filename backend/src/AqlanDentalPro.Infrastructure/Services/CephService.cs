@@ -877,6 +877,7 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         {
             Id           = a.Id,
             OrthoCaseId  = a.OrthoCaseId,
+            PatientId    = a.OrthoCase.PatientId,
             CaseNumber   = a.OrthoCase.CaseNumber,
             PatientName  = a.OrthoCase.Patient.FirstName + " " + a.OrthoCase.Patient.LastName,
             AnalysisType = a.AnalysisType,

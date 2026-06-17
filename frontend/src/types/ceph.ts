@@ -142,6 +142,7 @@ export interface CephDiagnosis {
 export interface CephAnalysis {
   id: string;
   orthoCaseId: string;
+  patientId: string;
   caseNumber?: string;
   patientName: string;
   analysisType: AnalysisType;

@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import type { OrthoPhoto } from "@/types/ortho";
 import { CephReadinessBadge } from "@/components/ceph/CephReadinessBadge";
 import { cephReadinessFromAnalysis } from "@/lib/cephReadiness";
+import { pickLatestCeph } from "@/lib/cephSelection";
 import { OrthoImagePreparationDialog } from "./OrthoImagePreparationDialog";
 
 type StepStatus = "missing" | "partial" | "complete" | "approved";
@@ -116,7 +117,9 @@ export function OrthoCaseWizard({ caseId, patientId, onNavigate }:
   // good as the saved analysis, so read its readiness (same gate as the
   // analysis page) before letting the doctor generate.
   const cephQ = useCaseCephAnalyses(caseId);
-  const latestCeph = (cephQ.data ?? [])[0];
+  // Select the SAME analysis the deck generator renders (analysisDate DESC,
+  // then createdAt DESC) so wizard readiness matches the generated deck.
+  const latestCeph = pickLatestCeph(cephQ.data);
   const cephDetailQ = useCaseCephAnalysis(latestCeph?.id);
   const cephReadiness = cephDetailQ.data
     ? cephReadinessFromAnalysis(cephDetailQ.data, false)

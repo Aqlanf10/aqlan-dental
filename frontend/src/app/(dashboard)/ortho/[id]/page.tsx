@@ -87,6 +87,7 @@ import type {
 import { ANALYSIS_TYPE_AR } from "@/types/ceph";
 import { CephReadinessBadge } from "@/components/ceph/CephReadinessBadge";
 import { cephReadinessFromAnalysis } from "@/lib/cephReadiness";
+import { pickLatestCeph } from "@/lib/cephSelection";
 import {
   ANGLE_CLASS_LABELS,
   ARCH_FORM_LABELS,
@@ -247,7 +248,8 @@ function CephCaseStatusCard({
   onViewAll: () => void;
 }) {
   const { data: analyses = [], isLoading } = useCaseCephAnalyses(caseId);
-  const latest = analyses[0];
+  // Same selection the deck generator uses (analysisDate DESC, then createdAt DESC).
+  const latest = pickLatestCeph(analyses);
   const { data: detail } = useCaseCephAnalysis(latest?.id);
 
   const readiness = detail ? cephReadinessFromAnalysis(detail, false) : null;
@@ -1961,7 +1963,8 @@ function CephPanel({ caseId }: { caseId: string }) {
   const { data: analyses = [], isLoading } = useCaseCephAnalyses(caseId);
   const { data: photoAnalyses = [], isLoading: photoAnalysesLoading } =
     useCasePhotoAnalyses(caseId);
-  const latest = analyses[0];
+  // Same selection the deck generator uses (analysisDate DESC, then createdAt DESC).
+  const latest = pickLatestCeph(analyses);
   const latestProfile = photoAnalyses.find((analysis) => analysis.viewType === "profile");
   const latestFrontal = photoAnalyses.find((analysis) => analysis.viewType === "frontal");
   const { data: latestDetail } = useCaseCephAnalysis(latest?.id);
@@ -2101,7 +2104,7 @@ function CephPanel({ caseId }: { caseId: string }) {
           <div className="h-44 animate-pulse rounded-lg bg-gray-100" />
           <div className="h-44 animate-pulse rounded-lg bg-gray-100" />
         </div>
-      ) : analyses.length === 0 ? (
+      ) : !latest ? (
         <EmptyState text="لا يوجد تحليل سيفالومتري لهذه الحالة بعد" />
       ) : (
         <>

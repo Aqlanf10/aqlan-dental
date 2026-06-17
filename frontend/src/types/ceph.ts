@@ -206,4 +206,7 @@ export interface CephAnalysisList {
   aiAssisted: boolean;
   landmarkCount: number;
   hasMeasurements: boolean;
+  /** Creation timestamp (ISO) — tiebreaker for selecting the latest analysis,
+   *  matching the deck generator (analysisDate DESC, then createdAt DESC). */
+  createdAt: string;
 }

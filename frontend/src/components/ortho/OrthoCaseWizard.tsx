@@ -8,15 +8,17 @@ import {
   Ruler, Microscope, Sigma, ListChecks, ClipboardList, Target, GitBranch,
   FileText, Wrench, CalendarClock, Trophy, Shield, Presentation,
   CheckCircle2, CircleDashed, AlertCircle, BadgeCheck, ChevronLeft, Loader2,
-  Upload, Pencil, Sparkles,
+  Upload, Pencil, Sparkles, ExternalLink,
 } from "lucide-react";
 import api from "@/lib/api";
 import { orthoService, type OrthoPresentationDefinition } from "@/services/orthoService";
-import { useOrthoOverview, useOrthoPhotos } from "@/hooks/useOrtho";
+import { useOrthoOverview, useOrthoPhotos, useCaseCephAnalyses, useCaseCephAnalysis } from "@/hooks/useOrtho";
 import { resolveImageUrl } from "@/hooks/useClinicBranding";
 import { toast } from "@/stores/toastStore";
 import { cn } from "@/lib/utils";
 import type { OrthoPhoto } from "@/types/ortho";
+import { CephReadinessBadge } from "@/components/ceph/CephReadinessBadge";
+import { cephReadinessFromAnalysis } from "@/lib/cephReadiness";
 import { OrthoImagePreparationDialog } from "./OrthoImagePreparationDialog";
 
 type StepStatus = "missing" | "partial" | "complete" | "approved";
@@ -110,8 +112,22 @@ export function OrthoCaseWizard({ caseId, patientId, onNavigate }:
     queryFn: async () => (await orthoService.getCasePresentationDefinition(caseId)).data,
   });
 
+  // Cephalometric state & quality — the deck's measurements slide is only as
+  // good as the saved analysis, so read its readiness (same gate as the
+  // analysis page) before letting the doctor generate.
+  const cephQ = useCaseCephAnalyses(caseId);
+  const latestCeph = (cephQ.data ?? [])[0];
+  const cephDetailQ = useCaseCephAnalysis(latestCeph?.id);
+  const cephReadiness = cephDetailQ.data
+    ? cephReadinessFromAnalysis(cephDetailQ.data, false)
+    : null;
+
   const o = (overviewQ.data ?? {}) as Record<string, unknown>;
   const photos = photosQ.data ?? [];
+  // Image-preparation quality of the photos that will actually appear in the deck.
+  const selectedPhotos = photos.filter((p) => p.isSelectedForReport);
+  const preparedSelected = selectedPhotos.filter((p) => p.isPreparedForReport);
+  const photosNeedPrep = selectedPhotos.length > 0 && preparedSelected.length < selectedPhotos.length;
   const hasDataByType = useMemo(() => {
     const map: Record<string, boolean> = {};
     (defQ.data as OrthoPresentationDefinition | undefined)?.slides.forEach((s) => { map[s.type] = s.hasData; });
@@ -130,6 +146,12 @@ export function OrthoCaseWizard({ caseId, patientId, onNavigate }:
       const filled = step.photoSlots.filter((s) => photosFor(s)).length;
       if (filled === 0) return "missing";
       return filled === step.photoSlots.length ? "complete" : "partial";
+    }
+    // Ceph measurements: reflect the real analysis readiness, not just slide data.
+    if (step.key === "cephmeas") {
+      if (!latestCeph) return "missing";
+      if (cephReadiness && cephReadiness.ready) return "complete";
+      return "partial";
     }
     const has = (step.slideTypes ?? []).some((t) => hasDataByType[t]);
     return has ? "complete" : "missing";
@@ -223,6 +245,26 @@ export function OrthoCaseWizard({ caseId, patientId, onNavigate }:
                     </div>
                   )}
 
+                  {/* Ceph step: show real analysis readiness so the doctor knows
+                      the measurements slide will be accurate before generating. */}
+                  {step.key === "cephmeas" && (
+                    <div className="mt-2 space-y-2">
+                      {!latestCeph ? (
+                        <p className="text-[11px] text-amber-700">
+                          لا يوجد تحليل سيفالومتري محسوب لهذه الحالة — أنشئ تحليلًا واحفظ نقاطه من تبويب السيفالو.
+                        </p>
+                      ) : (
+                        <>
+                          {cephReadiness && <CephReadinessBadge readiness={cephReadiness} variant="bar" />}
+                          <Link href={`/ceph/${latestCeph.id}`}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-clinic-blue/30 bg-clinic-blue/5 px-3 py-1.5 text-[11px] font-medium text-clinic-blue hover:bg-clinic-blue/10">
+                            <ExternalLink className="h-3.5 w-3.5" />فتح تحليل السيفالو
+                          </Link>
+                        </>
+                      )}
+                    </div>
+                  )}
+
                   {step.kind === "photos" && step.photoSlots && (
                     <div className="grid gap-2 sm:grid-cols-2">
                       {step.photoSlots.map((slot) => (
@@ -248,6 +290,34 @@ export function OrthoCaseWizard({ caseId, patientId, onNavigate }:
                           )}
                         </ul>
                       </div>
+
+                      {/* Quality pre-check: warn about ceph/image issues that would
+                          weaken the deck, before generating. */}
+                      {(latestCeph && cephReadiness && !cephReadiness.ready) || photosNeedPrep ? (
+                        <div className="space-y-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                          <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-800">
+                            <AlertCircle className="h-3.5 w-3.5" />فحص الجودة قبل التوليد
+                          </p>
+                          {latestCeph && cephReadiness && !cephReadiness.ready && (
+                            <p className="text-[11px] text-amber-700">
+                              تحليل السيفالو غير مكتمل ({cephReadiness.reason}) — قد تظهر شريحة القياسات ناقصة.{" "}
+                              <Link href={`/ceph/${latestCeph.id}`} className="font-medium text-clinic-blue hover:underline">
+                                فتح التحليل لإكماله
+                              </Link>
+                            </p>
+                          )}
+                          {photosNeedPrep && (
+                            <p className="text-[11px] text-amber-700">
+                              بعض الصور المختارة غير مُجهّزة للعرض ({preparedSelected.length}/{selectedPhotos.length}) —
+                              جهّزها من خطوات الصور لتظهر دون قص أو تشويه.
+                            </p>
+                          )}
+                        </div>
+                      ) : selectedPhotos.length > 0 && latestCeph ? (
+                        <p className="flex items-center gap-1.5 text-[11px] text-green-700">
+                          <CheckCircle2 className="h-3.5 w-3.5" />السيفالو جاهز والصور المختارة مُجهّزة للعرض.
+                        </p>
+                      ) : null}
                       <div className="flex flex-wrap gap-2">
                         <button type="button" onClick={() => generate(false)} disabled={busy}
                           className="inline-flex items-center gap-1.5 rounded-lg bg-clinic-blue px-3 py-1.5 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50">

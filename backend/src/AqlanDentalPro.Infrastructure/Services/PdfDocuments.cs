@@ -8,7 +8,7 @@ using QuestPDF.Infrastructure;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
-public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payment) : IDocument
+public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payment, FinanceClinicIdentity Identity) : IDocument
 {
     private const string FontName = PdfService.ArabicFontName;
 
@@ -47,8 +47,13 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
             {
                 row.RelativeItem().AlignRight().Column(col =>
                 {
-                    col.Item().Text("مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان")
+                    col.Item().Text(Identity.Name)
                         .Bold().FontSize(9).FontColor("#1a3a5c");
+                    if (Identity.HasLeadDoctor)
+                        col.Item().Text(Identity.HasLeadDoctorTitle
+                                ? $"{Identity.LeadDoctor} — {Identity.LeadDoctorTitle}"
+                                : Identity.LeadDoctor)
+                            .FontSize(7).FontColor(Colors.Grey.Darken1);
                 });
 
                 var logoPath = ResolveLogoPath();
@@ -159,7 +164,7 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
         container.Column(column =>
         {
             column.Item().LineHorizontal(0.5f).LineColor("#f5922e");
-            column.Item().PaddingTop(3).AlignCenter().Text("هاتف: 04-253028  |  تعز، اليمن — شارع التحرير الأعلى")
+            column.Item().PaddingTop(3).AlignCenter().Text(Identity.ContactLine)
                 .FontSize(6).FontColor("#1a3a5c");
             column.Item().AlignCenter().Text("شكراً لثقتكم بنا — نتمنى لكم دوام الصحة والعافية")
                 .FontSize(6).FontColor(Colors.Grey.Darken1);
@@ -181,7 +186,7 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
     }
 }
 
-public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient Patient, List<AqlanDentalPro.Domain.Entities.Payment> Payments) : IDocument
+public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient Patient, List<AqlanDentalPro.Domain.Entities.Payment> Payments, FinanceClinicIdentity Identity) : IDocument
 {
     private const string FontName = PdfService.ArabicFontName;
 
@@ -219,11 +224,19 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
             {
                 row.RelativeItem().AlignRight().Column(col =>
                 {
-                    col.Item().Text("مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان")
+                    col.Item().Text(Identity.Name)
                         .Bold().FontSize(13).FontColor("#1a3a5c");
-                    col.Item().Text("تعز، اليمن — شارع التحرير الأعلى")
+                    if (Identity.HasLeadDoctor)
+                    {
+                        col.Item().Text(Identity.LeadDoctor).Bold().FontSize(9).FontColor("#1a3a5c");
+                        if (Identity.HasLeadDoctorTitle)
+                            col.Item().Text(Identity.LeadDoctorTitle).FontSize(8).FontColor(Colors.Grey.Darken2);
+                        if (Identity.HasLeadDoctorCredentials)
+                            col.Item().Text(Identity.LeadDoctorCredentials).FontSize(7).FontColor(Colors.Grey.Darken1);
+                    }
+                    col.Item().Text(Identity.Location)
                         .FontSize(8).FontColor(Colors.Grey.Darken2);
-                    col.Item().Text("هاتف: 04-253028")
+                    col.Item().Text(Identity.Phones)
                         .FontSize(8).FontColor(Colors.Grey.Darken2);
                 });
 
@@ -349,7 +362,7 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
             {
                 row.RelativeItem().Column(col =>
                 {
-                    col.Item().Text("مركز الدكتور عقلان الكامل — كشف الحساب المالي").FontSize(7).FontColor(Colors.Grey.Darken1);
+                    col.Item().Text($"{Identity.Name} — كشف الحساب المالي").FontSize(7).FontColor(Colors.Grey.Darken1);
                     col.Item().Text("شكراً لثقتكم بنا").FontSize(7).FontColor(Colors.Grey.Darken1);
                 });
                 row.ConstantItem(120).Text($"طبع في: {DateTime.UtcNow:yyyy-MM-dd HH:mm}").FontSize(6).FontColor(Colors.Grey.Lighten1);
@@ -375,7 +388,7 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
 /// <summary>
 /// QuestPDF document for printing invoices with Arabic/RTL support.
 /// </summary>
-public class InvoiceDocument(Invoice Invoice) : IDocument
+public class InvoiceDocument(Invoice Invoice, FinanceClinicIdentity Identity) : IDocument
 {
     private const string FontName = PdfService.ArabicFontName;
 
@@ -413,11 +426,19 @@ public class InvoiceDocument(Invoice Invoice) : IDocument
             {
                 row.RelativeItem().AlignRight().Column(col =>
                 {
-                    col.Item().Text("مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان")
+                    col.Item().Text(Identity.Name)
                         .Bold().FontSize(14).FontFamily(FontName).FontColor("#1a3a5c");
-                    col.Item().Text("تعز، اليمن — شارع التحرير الأعلى")
+                    if (Identity.HasLeadDoctor)
+                    {
+                        col.Item().Text(Identity.LeadDoctor).Bold().FontSize(9).FontFamily(FontName).FontColor("#1a3a5c");
+                        if (Identity.HasLeadDoctorTitle)
+                            col.Item().Text(Identity.LeadDoctorTitle).FontSize(8).FontFamily(FontName).FontColor(Colors.Grey.Darken2);
+                        if (Identity.HasLeadDoctorCredentials)
+                            col.Item().Text(Identity.LeadDoctorCredentials).FontSize(7).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
+                    }
+                    col.Item().Text(Identity.Location)
                         .FontSize(8).FontFamily(FontName).FontColor(Colors.Grey.Darken2);
-                    col.Item().Text("هاتف: 04-253028")
+                    col.Item().Text(Identity.Phones)
                         .FontSize(8).FontFamily(FontName).FontColor(Colors.Grey.Darken2);
                 });
 
@@ -614,7 +635,7 @@ public class InvoiceDocument(Invoice Invoice) : IDocument
             {
                 row.RelativeItem().Column(col =>
                 {
-                    col.Item().Text("مركز الدكتور عقلان الكامل — فاتورة").FontSize(7).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
+                    col.Item().Text($"{Identity.Name} — فاتورة").FontSize(7).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
                     col.Item().Text("شكراً لثقتكم بنا").FontSize(7).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
                 });
                 row.ConstantItem(120).Text($"طبعت: {DateTime.UtcNow:yyyy-MM-dd HH:mm}").FontSize(7).FontColor(Colors.Grey.Lighten1);

@@ -153,7 +153,8 @@ public class PdfService : IPdfService
 
         EnsureFontsRegistered();
 
-        var document = new PaymentReceiptDocument(payment);
+        var identity = await FinanceClinicIdentity.ResolveAsync(_db);
+        var document = new PaymentReceiptDocument(payment, identity);
         var bytes = document.GeneratePdf();
         return bytes;
     }
@@ -176,7 +177,8 @@ public class PdfService : IPdfService
 
         EnsureFontsRegistered();
 
-        var document = new FinancialStatementDocument(patient, payments);
+        var identity = await FinanceClinicIdentity.ResolveAsync(_db);
+        var document = new FinancialStatementDocument(patient, payments, identity);
         var bytes = document.GeneratePdf();
         return bytes;
     }
@@ -195,7 +197,8 @@ public class PdfService : IPdfService
 
         EnsureFontsRegistered();
 
-        var document = new InvoiceDocument(invoice);
+        var identity = await FinanceClinicIdentity.ResolveAsync(_db);
+        var document = new InvoiceDocument(invoice, identity);
         var bytes = document.GeneratePdf();
         return bytes;
     }

@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -153,7 +154,8 @@ public class PdfService : IPdfService
 
         EnsureFontsRegistered();
 
-        var document = new PaymentReceiptDocument(payment);
+        var identity = await FinanceClinicIdentity.ResolveAsync(_db);
+        var document = new PaymentReceiptDocument(payment, identity);
         var bytes = document.GeneratePdf();
         return bytes;
     }
@@ -176,7 +178,8 @@ public class PdfService : IPdfService
 
         EnsureFontsRegistered();
 
-        var document = new FinancialStatementDocument(patient, payments);
+        var identity = await FinanceClinicIdentity.ResolveAsync(_db);
+        var document = new FinancialStatementDocument(patient, payments, identity);
         var bytes = document.GeneratePdf();
         return bytes;
     }
@@ -195,8 +198,51 @@ public class PdfService : IPdfService
 
         EnsureFontsRegistered();
 
-        var document = new InvoiceDocument(invoice);
+        var identity = await FinanceClinicIdentity.ResolveAsync(_db);
+        var document = new InvoiceDocument(invoice, identity);
         var bytes = document.GeneratePdf();
         return bytes;
     }
+
+    public async Task<byte[]> GenerateExpenseDisbursementVoucherAsync(Guid expenseId)
+    {
+        var expense = await _db.OperationalExpenses
+            .Include(e => e.Supplier)
+            .FirstOrDefaultAsync(e => e.Id == expenseId);
+
+        if (expense == null)
+            throw new ArgumentException("المصروف غير موجود");
+
+        EnsureFontsRegistered();
+
+        var identity = await FinanceClinicIdentity.ResolveAsync(_db);
+        var model = new DisbursementVoucherModel
+        {
+            VoucherNumber = expense.ExpenseNumber,
+            Date = expense.ExpenseDate,
+            CategoryLabel = ExpenseCategoryLabel(expense.Category),
+            PayeeName = expense.Supplier?.Name ?? expense.Title,
+            Amount = expense.Amount,
+            Description = expense.Title,
+            PaymentMethod = expense.PaymentMethod,
+            Notes = expense.Notes,
+        };
+
+        return new DisbursementVoucherDocument(model, identity).GeneratePdf();
+    }
+
+    private static string ExpenseCategoryLabel(ExpenseCategory category) => category switch
+    {
+        ExpenseCategory.Rent => "إيجار",
+        ExpenseCategory.Utilities => "خدمات (كهرباء/مياه/اتصالات)",
+        ExpenseCategory.LabFees => "أتعاب مختبر",
+        ExpenseCategory.Marketing => "تسويق وإعلان",
+        ExpenseCategory.ClinicSupplies => "مستلزمات عيادية",
+        ExpenseCategory.Maintenance => "صيانة",
+        ExpenseCategory.Salaries => "رواتب وأجور",
+        ExpenseCategory.Commissions => "عمولات أطباء",
+        ExpenseCategory.Taxes => "ضرائب ورسوم",
+        ExpenseCategory.Miscellaneous => "نثريات",
+        _ => category.ToString(),
+    };
 }

@@ -43,6 +43,25 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
     /// </summary>
     private const decimal ApprovalThreshold = 50_000m;
 
+    /// <summary>سند صرف (quarter-A4) PDF for an operational expense.</summary>
+    [HttpGet("{id:guid}/voucher/pdf")]
+    public async Task<IActionResult> DownloadDisbursementVoucher(Guid id, [FromServices] IPdfService pdfService)
+    {
+        var exists = await db.OperationalExpenses.AnyAsync(e => e.Id == id && e.IsActive);
+        if (!exists)
+            return NotFound(new { message = "المصروف غير موجود" });
+
+        try
+        {
+            var pdf = await pdfService.GenerateExpenseDisbursementVoucherAsync(id);
+            return File(pdf, "application/pdf", $"disbursement-voucher-{id}.pdf");
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateExpenseRequest req)
     {

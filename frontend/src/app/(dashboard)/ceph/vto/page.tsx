@@ -4,7 +4,7 @@ import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, AlertTriangle, Target, RotateCcw, Printer } from "lucide-react";
+import { ArrowRight, AlertTriangle, Target, RotateCcw, Printer, ShieldCheck } from "lucide-react";
 import api from "@/lib/api";
 import { applyVtoMovements, approxOverjetMm } from "@/lib/cephMath";
 import { CephVtoCanvas } from "@/components/ceph/CephVtoCanvas";
@@ -103,10 +103,18 @@ function VtoPageInner() {
             {data && <p className="text-sm text-gray-500 mt-0.5">{data.patientName}</p>}
           </div>
         </div>
-        <button onClick={() => window.print()}
-          className="no-print flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition">
-          <Printer className="w-3.5 h-3.5" />طباعة
-        </button>
+        <div className="no-print flex flex-wrap items-center gap-2">
+          <Link
+            href={`/ceph/${analysisId}/quality`}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 transition"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />فحص الجودة
+          </Link>
+          <button onClick={() => window.print()}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition">
+            <Printer className="w-3.5 h-3.5" />طباعة
+          </button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -118,6 +126,11 @@ function VtoPageInner() {
         </div>
       ) : (
         <>
+          <div className="no-print bg-blue-50 border border-blue-200 rounded-lg p-2.5 text-[11px] leading-5 text-blue-800">
+            قبل استخدام VTO كمرجع تعليمي أو طباعته، افتح فحص الجودة وتأكد من الصورة والمعايرة والنقاط والقياسات.
+            <Link href={`/ceph/${analysisId}/quality`} className="ms-1 font-bold underline">فتح فحص الجودة</Link>
+          </div>
+
           {/* Honest disclaimer */}
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-[11px] text-amber-800">
             يعرض هذا التتبّع الحركات التي يخطّط لها الأخصائي يدويًا فقط (إزاحة جسمية للقواطع)، وليس تنبؤًا آليًا

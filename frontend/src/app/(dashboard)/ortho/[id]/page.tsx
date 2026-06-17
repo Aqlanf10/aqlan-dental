@@ -28,6 +28,7 @@ import {
   ShieldCheck,
   Star,
   Stethoscope,
+  Target,
   Trash2,
   User,
   UserSquare2,
@@ -84,6 +85,8 @@ import type {
   TreatmentStage,
 } from "@/types/ortho";
 import { ANALYSIS_TYPE_AR } from "@/types/ceph";
+import { CephReadinessBadge } from "@/components/ceph/CephReadinessBadge";
+import { cephReadinessFromAnalysis } from "@/lib/cephReadiness";
 import {
   ANGLE_CLASS_LABELS,
   ARCH_FORM_LABELS,
@@ -225,6 +228,114 @@ function SaveButton({
 }
 
 /* ------------------------------------------------------------------ */
+/*  CephCaseStatusCard — latest ceph at a glance from the case file    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Surfaces the latest cephalometric analysis inside the ortho case file:
+ * is it ready for a report/VTO, is the PDF report available, is the VTO ready,
+ * and a direct link to open it. The "ready" verdict reuses the same saved-data
+ * gate as the analysis page (image + calibration + points + measurements),
+ * which needs the full record — so the detail is fetched (React Query caches it
+ * and shares it with the ceph tab).
+ */
+function CephCaseStatusCard({
+  caseId,
+  onViewAll,
+}: {
+  caseId: string;
+  onViewAll: () => void;
+}) {
+  const { data: analyses = [], isLoading } = useCaseCephAnalyses(caseId);
+  const latest = analyses[0];
+  const { data: detail } = useCaseCephAnalysis(latest?.id);
+
+  const readiness = detail ? cephReadinessFromAnalysis(detail, false) : null;
+  const hasReport = detail
+    ? (detail.measurements?.length ?? 0) > 0
+    : Boolean(latest?.hasMeasurements);
+  const vtoReady = (detail?.landmarks?.length ?? latest?.landmarkCount ?? 0) > 0;
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+          <ScanLine className="h-4 w-4 text-clinic-blue" />
+          حالة السيفالو
+        </p>
+        {analyses.length > 0 && (
+          <button
+            type="button"
+            onClick={onViewAll}
+            className="text-xs font-medium text-clinic-blue hover:underline"
+          >
+            عرض الكل ({analyses.length})
+          </button>
+        )}
+      </div>
+
+      {isLoading ? (
+        <div className="mt-3 h-16 animate-pulse rounded-lg bg-gray-100" />
+      ) : !latest ? (
+        <div className="mt-3">
+          <p className="text-sm text-gray-400">لا يوجد تحليل سيفالومتري بعد.</p>
+          <Link
+            href={`/ceph/new?orthoCaseId=${caseId}`}
+            className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-clinic-blue hover:underline"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            بدء تحليل سيفالو
+          </Link>
+        </div>
+      ) : (
+        <div className="mt-3 space-y-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-gray-800">
+                {ANALYSIS_TYPE_AR[latest.analysisType] ?? latest.analysisType}
+              </p>
+              <p className="text-xs text-gray-500">
+                {formatArabicDate(latest.analysisDate)} · {latest.landmarkCount}/24 نقطة
+              </p>
+            </div>
+            {readiness && <CephReadinessBadge readiness={readiness} variant="compact" />}
+          </div>
+
+          <div className="flex flex-wrap gap-2 text-[11px]">
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium",
+                hasReport ? "bg-emerald-50 text-emerald-700" : "bg-gray-50 text-gray-400",
+              )}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              تقرير PDF: {hasReport ? "متاح" : "غير متاح"}
+            </span>
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium",
+                vtoReady ? "bg-emerald-50 text-emerald-700" : "bg-gray-50 text-gray-400",
+              )}
+            >
+              <Target className="h-3.5 w-3.5" />
+              VTO: {vtoReady ? "جاهز" : "غير جاهز"}
+            </span>
+          </div>
+
+          <Link
+            href={`/ceph/${latest.id}`}
+            className="inline-flex items-center gap-1.5 rounded-md border border-clinic-blue/30 bg-clinic-blue/5 px-3 py-1.5 text-xs font-medium text-clinic-blue transition hover:bg-clinic-blue/10"
+          >
+            فتح التحليل مباشرة
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  OverviewPanel                                                      */
 /* ------------------------------------------------------------------ */
 
@@ -362,6 +473,9 @@ function OverviewPanel({
             {overview?.totalStages ?? 0} مراحل مكتملة
           </p>
         </div>
+
+        {/* Cephalometric status — latest analysis readiness at a glance */}
+        <CephCaseStatusCard caseId={caseId} onViewAll={() => setActiveTab("ceph")} />
 
         {/* Finance card */}
         <div className="rounded-lg border border-gray-200 bg-white p-5">
@@ -2007,6 +2121,15 @@ function CephPanel({ caseId }: { caseId: string }) {
                   {latest.landmarkCount}/24 نقطة
                 </span>
               </div>
+
+              {latestDetail && (
+                <div className="mt-3">
+                  <CephReadinessBadge
+                    readiness={cephReadinessFromAnalysis(latestDetail, false)}
+                    variant="bar"
+                  />
+                </div>
+              )}
 
               <div className="mt-4 grid grid-cols-3 gap-2">
                 {keyMeasurements.length > 0 ? keyMeasurements.map((measurement) => (

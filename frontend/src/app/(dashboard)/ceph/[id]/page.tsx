@@ -12,6 +12,8 @@ import { ANALYSIS_GROUPS, ANALYSIS_TYPE_AR } from "@/types/ceph";
 import { buildMeasurementList, applyNormOverrides, type ApiNorm } from "@/lib/cephMath";
 import { CephCanvas, LANDMARK_DEFS, LANDMARK_ORDER, SIMULATION_SCENARIOS } from "@/components/ceph/CephCanvas";
 import { AnalysisReport } from "@/components/ceph/AnalysisReport";
+import { CephReadinessBadge } from "@/components/ceph/CephReadinessBadge";
+import { cephReadinessFromAnalysis } from "@/lib/cephReadiness";
 import api from "@/lib/api";
 import { resolveImageUrl } from "@/hooks/useClinicBranding";
 import { downloadPdfFromApi, printPdfFromApi } from "@/lib/pdfDownload";
@@ -116,8 +118,22 @@ export default function CephAnalysisPage() {
   const placedCount = landmarks.length;
   const totalCount  = LANDMARK_ORDER.length;
 
+  // Readiness of the SAVED record (image/calibration/points/measurements) plus
+  // the live unsaved-edits flag — the same gate the PDF/VTO buttons enforce.
+  const readiness = useMemo(
+    () => analysis ? cephReadinessFromAnalysis(analysis, isDirty) : null,
+    [analysis, isDirty],
+  );
+
   const handleLandmarksChange = useCallback((lm: CephLandmark[]) => {
     setLandmarks(lm);
+    setIsDirty(true);
+  }, []);
+
+  // Calibration edits (ruler apply or manual px/mm input) are unsaved changes
+  // too: the report/VTO read the saved record, so dirty them until "حفظ وحساب".
+  const handleCalibrationChange = useCallback((value: number | null) => {
+    setPixelsPerMm(value);
     setIsDirty(true);
   }, []);
 
@@ -208,6 +224,10 @@ export default function CephAnalysisPage() {
       });
       setAnalysis(res.data);
       setDiagnosis(res.data.diagnosis ?? null);
+      // Re-sync calibration from the persisted record so the readiness badge
+      // and gates reflect exactly what was saved (no false "unsaved" drift).
+      const savedPpm = res.data.pixelsPerMm;
+      setPixelsPerMm(savedPpm && savedPpm > 0 ? savedPpm : null);
       setIsDirty(false);
       setSaveStatus('saved');
       setRightTab('report');
@@ -399,6 +419,13 @@ export default function CephAnalysisPage() {
           })}
         </div>
       </div>
+
+      {/* Saved-data readiness — is the report/VTO producible from saved data? */}
+      {readiness && (
+        <div className="flex-shrink-0 px-1 pt-2">
+          <CephReadinessBadge readiness={readiness} variant="bar" />
+        </div>
+      )}
 
       {/* Honest-simulation banners */}
       {simNotice && (
@@ -593,7 +620,7 @@ export default function CephAnalysisPage() {
               simulationScenario={simScenario}
               showMeasurements={showMeasurements}
               measurements={activeReportData}
-              onCalibrate={setPixelsPerMm}
+              onCalibrate={handleCalibrationChange}
               imageAdjustments={{ brightness, contrast, inverted }}
               onImageDimensions={handleImageDimensions}
             />
@@ -613,7 +640,7 @@ export default function CephAnalysisPage() {
                 value={pixelsPerMm ?? ''}
                 min={0}
                 step={0.01}
-                onChange={e => setPixelsPerMm(e.target.value ? +e.target.value : null)}
+                onChange={e => handleCalibrationChange(e.target.value ? +e.target.value : null)}
                 placeholder="px/mm"
                 className="w-16 rounded border border-white/15 bg-white/10 px-1.5 py-0.5 text-[10px] text-white focus:outline-none focus:ring-1 focus:ring-blue-400"
                 dir="ltr"

@@ -13,6 +13,12 @@ public class CephAnalysisListDto
     public int LandmarkCount { get; set; }
     public bool HasMeasurements { get; set; }
     public string? Notes { get; set; }
+    /// <summary>
+    /// Creation timestamp — the deterministic tiebreaker the presentation deck
+    /// generator uses (AnalysisDate DESC, then CreatedAt DESC) to pick the
+    /// "latest" analysis. Exposed so the UI selects the same record.
+    /// </summary>
+    public DateTime CreatedAt { get; set; }
 }
 
 public class CephLandmarkDto

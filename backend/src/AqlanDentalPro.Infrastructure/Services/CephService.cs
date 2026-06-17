@@ -21,7 +21,11 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
             .Where(a => orthoCaseId == null || a.OrthoCaseId == orthoCaseId)
             .Where(a => accessiblePatientIds == null ||
                         accessiblePatientIds.Contains(a.OrthoCase.PatientId))
+            // Same ordering the deck generator uses to pick the "latest" analysis
+            // (OrthoCasePresentationService): AnalysisDate DESC, then CreatedAt DESC.
+            // Without the CreatedAt tiebreak, same-day analyses ordered arbitrarily.
             .OrderByDescending(a => a.AnalysisDate)
+            .ThenByDescending(a => a.CreatedAt)
             .Select(a => new CephAnalysisListDto
             {
                 Id              = a.Id,
@@ -34,7 +38,8 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
                 AiAssisted      = a.AiAssisted,
                 LandmarkCount   = a.Landmarks.Count(l => l.IsActive),
                 HasMeasurements = a.Measurements.Any(m => m.IsActive),
-                Notes           = a.Notes
+                Notes           = a.Notes,
+                CreatedAt       = a.CreatedAt
             })
             .ToListAsync();
     }

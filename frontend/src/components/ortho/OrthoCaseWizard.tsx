@@ -34,14 +34,18 @@ import {
   User,
   Wrench,
   CalendarClock,
+  ExternalLink,
 } from "lucide-react";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { resolveImageUrl } from "@/hooks/useClinicBranding";
-import { useOrthoOverview, useOrthoPhotos } from "@/hooks/useOrtho";
+import { useOrthoOverview, useOrthoPhotos, useCaseCephAnalyses, useCaseCephAnalysis } from "@/hooks/useOrtho";
 import { orthoService, type OrthoPresentationDefinition } from "@/services/orthoService";
 import { toast } from "@/stores/toastStore";
 import type { OrthoPhoto } from "@/types/ortho";
+import { CephReadinessBadge } from "@/components/ceph/CephReadinessBadge";
+import { cephReadinessFromAnalysis } from "@/lib/cephReadiness";
+import { pickLatestCeph } from "@/lib/cephSelection";
 import { OrthoCaseDraftAiButton } from "./OrthoCaseDraftAiButton";
 import { OrthoImagePreparationDialog } from "./OrthoImagePreparationDialog";
 
@@ -103,6 +107,17 @@ export function OrthoCaseWizard({ caseId, patientId, onNavigate }: { caseId: str
   const defQ = useQuery({ queryKey: ["ortho-presentation-definition", caseId], enabled: !!caseId, retry: false, queryFn: async () => (await orthoService.getCasePresentationDefinition(caseId)).data });
   const overview = (overviewQ.data ?? {}) as Record<string, unknown>;
   const photos = photosQ.data ?? [];
+  // Cephalometric state & quality. Select the SAME analysis the deck generator
+  // renders (analysisDate DESC, then createdAt DESC) so wizard readiness matches
+  // the generated deck, then read its readiness via the shared gate.
+  const cephQ = useCaseCephAnalyses(caseId);
+  const latestCeph = pickLatestCeph(cephQ.data);
+  const cephDetailQ = useCaseCephAnalysis(latestCeph?.id);
+  const cephReadiness = cephDetailQ.data ? cephReadinessFromAnalysis(cephDetailQ.data, false) : null;
+  // Image-preparation quality of the photos that will actually appear in the deck.
+  const selectedPhotos = photos.filter((photo) => photo.isSelectedForReport);
+  const preparedSelected = selectedPhotos.filter((photo) => photo.isPreparedForReport);
+  const photosNeedPrep = selectedPhotos.length > 0 && preparedSelected.length < selectedPhotos.length;
   const hasDataByType = useMemo(() => {
     const map: Record<string, boolean> = {};
     (defQ.data as OrthoPresentationDefinition | undefined)?.slides.forEach((slide) => { map[slide.type] = slide.hasData; });
@@ -118,6 +133,11 @@ export function OrthoCaseWizard({ caseId, patientId, onNavigate }: { caseId: str
       const filled = step.photoSlots.filter((photoSlot) => photosFor(photoSlot)).length;
       if (filled === 0) return "missing";
       return filled === step.photoSlots.length ? "complete" : "partial";
+    }
+    // Ceph measurements: reflect the real analysis readiness, not just slide data.
+    if (step.key === "cephmeas") {
+      if (!latestCeph) return "missing";
+      return cephReadiness && cephReadiness.ready ? "complete" : "partial";
     }
     return (step.slideTypes ?? []).some((type) => hasDataByType[type]) ? "complete" : "missing";
   };
@@ -156,8 +176,9 @@ export function OrthoCaseWizard({ caseId, patientId, onNavigate }: { caseId: str
         {isOpen && <div className="border-t border-gray-100 bg-gray-50/50 p-3"><StepGuidance step={step} status={status} />
           {step.kind === "patient" && <div className="mt-3"><Link href={patientId ? `/patients/${patientId}` : "#"} className="inline-flex items-center gap-1.5 rounded-lg bg-clinic-blue px-3 py-1.5 text-xs font-medium text-white"><Pencil className="h-3.5 w-3.5" />فتح ملف المريض</Link></div>}
           {step.kind === "data" && step.tab && <div className="mt-3 space-y-3">{step.draftKind && <ClinicalDraftPanel caseId={caseId} step={step} />}<div className="flex flex-wrap items-center gap-2"><button type="button" onClick={() => onNavigate(step.tab!)} className="inline-flex items-center gap-1.5 rounded-lg bg-clinic-blue px-3 py-1.5 text-xs font-medium text-white"><Pencil className="h-3.5 w-3.5" />فتح شاشة الإدخال</button>{step.draftKind && <span className="inline-flex items-center gap-1 rounded-lg border border-dashed border-clinic-blue/40 bg-white px-2.5 py-1.5 text-[11px] text-gray-600"><Sparkles className="h-3.5 w-3.5 text-clinic-blue" />مسودة فقط ولا تعتمد تلقائيًا</span>}</div></div>}
+          {step.key === "cephmeas" && <div className="mt-3 space-y-2">{!latestCeph ? <p className="text-[11px] text-amber-700">لا يوجد تحليل سيفالومتري محسوب لهذه الحالة — أنشئ تحليلًا واحفظ نقاطه من تبويب السيفالو.</p> : <>{cephReadiness && <CephReadinessBadge readiness={cephReadiness} variant="bar" />}<Link href={`/ceph/${latestCeph.id}`} className="inline-flex items-center gap-1.5 rounded-lg border border-clinic-blue/30 bg-clinic-blue/5 px-3 py-1.5 text-[11px] font-medium text-clinic-blue hover:bg-clinic-blue/10"><ExternalLink className="h-3.5 w-3.5" />فتح تحليل السيفالو</Link></>}</div>}
           {step.kind === "photos" && step.photoSlots && <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{step.photoSlots.map((photoSlot) => <PhotoSlotCard key={photoSlot.key} caseId={caseId} slot={photoSlot} photo={photosFor(photoSlot) ?? null} disabled={busy} onChanged={refresh} onPrepare={(photo) => setPrepPhoto(photo)} />)}</div>}
-          {step.kind === "generate" && <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => generate(false)} disabled={busy || !canGenerateFinal} className="inline-flex items-center gap-1.5 rounded-lg bg-clinic-blue px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50">{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Presentation className="h-3.5 w-3.5" />}إنشاء عرض نهائي</button><button type="button" onClick={() => generate(true)} disabled={busy} className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs">مسودة تعليمية</button></div>}
+          {step.kind === "generate" && <div className="mt-3 space-y-3">{((latestCeph && cephReadiness && !cephReadiness.ready) || photosNeedPrep) ? <div className="space-y-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2"><p className="flex items-center gap-1.5 text-xs font-semibold text-amber-800"><AlertCircle className="h-3.5 w-3.5" />فحص الجودة قبل التوليد</p>{latestCeph && cephReadiness && !cephReadiness.ready && <p className="text-[11px] text-amber-700">تحليل السيفالو غير مكتمل ({cephReadiness.reason}) — قد تظهر شريحة القياسات ناقصة. <Link href={`/ceph/${latestCeph.id}`} className="font-medium text-clinic-blue hover:underline">فتح التحليل لإكماله</Link></p>}{photosNeedPrep && <p className="text-[11px] text-amber-700">بعض الصور المختارة غير مُجهّزة للعرض ({preparedSelected.length}/{selectedPhotos.length}) — جهّزها من خطوات الصور لتظهر دون قص أو تشويه.</p>}</div> : (selectedPhotos.length > 0 && latestCeph) ? <p className="flex items-center gap-1.5 text-[11px] text-green-700"><CheckCircle2 className="h-3.5 w-3.5" />السيفالو جاهز والصور المختارة مُجهّزة للعرض.</p> : null}<div className="flex flex-wrap gap-2"><button type="button" onClick={() => generate(false)} disabled={busy || !canGenerateFinal} className="inline-flex items-center gap-1.5 rounded-lg bg-clinic-blue px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50">{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Presentation className="h-3.5 w-3.5" />}إنشاء عرض نهائي</button><button type="button" onClick={() => generate(true)} disabled={busy} className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs">مسودة تعليمية</button></div></div>}
         </div>}
       </li>;
     })}</ol>

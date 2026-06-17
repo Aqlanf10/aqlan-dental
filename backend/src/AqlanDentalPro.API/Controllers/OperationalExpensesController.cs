@@ -35,13 +35,32 @@ public sealed class RejectExpenseRequest
 [ApiController]
 [Route("api/expenses")]
 [Authorize(Policy = "ReportsAccess")] // Admin + Accountant only
-public class OperationalExpensesController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution) : ControllerBase
+public class OperationalExpensesController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution, IPdfService pdfService) : ControllerBase
 {
     /// <summary>
     /// Approval threshold in YER: expenses above this amount require managerial approval.
     /// Can be made configurable via Settings table in future.
     /// </summary>
     private const decimal ApprovalThreshold = 50_000m;
+
+    /// <summary>سند صرف (quarter-A4) PDF for an operational expense.</summary>
+    [HttpGet("{id:guid}/voucher/pdf")]
+    public async Task<IActionResult> DownloadDisbursementVoucher(Guid id)
+    {
+        var exists = await db.OperationalExpenses.AnyAsync(e => e.Id == id && e.IsActive);
+        if (!exists)
+            return NotFound(new { message = "المصروف غير موجود" });
+
+        try
+        {
+            var pdf = await pdfService.GenerateExpenseDisbursementVoucherAsync(id);
+            return File(pdf, "application/pdf", $"disbursement-voucher-{id}.pdf");
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateExpenseRequest req)

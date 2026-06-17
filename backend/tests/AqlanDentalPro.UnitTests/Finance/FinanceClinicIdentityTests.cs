@@ -99,4 +99,32 @@ public class FinanceClinicIdentityTests
         bytes.Should().NotBeNullOrEmpty();
         bytes!.Length.Should().BeGreaterThan(3000);
     }
+
+    [Fact]
+    public async Task DisbursementVoucher_RendersQuarterA4WithSettingsIdentity_WithoutThrowing()
+    {
+        PdfService.EnsureFontsRegistered();
+        await using var db = CreateDb();
+        db.Settings.Add(new Setting { Key = "clinic.name", Value = "مركز الاختبار" });
+        await db.SaveChangesAsync();
+        var identity = await FinanceClinicIdentity.ResolveAsync(db);
+
+        var model = new DisbursementVoucherModel
+        {
+            VoucherNumber = "EXP-20260610-001",
+            Date = new DateOnly(2026, 6, 10),
+            CategoryLabel = "أتعاب مختبر",
+            PayeeName = "مختبر الإتقان",
+            Amount = 25000m,
+            Description = "تركيبات تقويم",
+            PaymentMethod = "cash",
+        };
+
+        byte[]? bytes = null;
+        var ex = Record.Exception(() => { bytes = new DisbursementVoucherDocument(model, identity).GeneratePdf(); });
+
+        ex.Should().BeNull("the disbursement voucher (سند صرف) must render with a Settings-driven identity");
+        bytes.Should().NotBeNullOrEmpty();
+        bytes!.Length.Should().BeGreaterThan(3000);
+    }
 }

@@ -19,4 +19,10 @@ public interface IPdfService
     /// Returns PDF bytes.
     /// </summary>
     Task<byte[]> GenerateInvoicePdfAsync(Guid invoiceId);
+
+    /// <summary>
+    /// Generates a quarter-A4 disbursement voucher (سند صرف) PDF for an
+    /// operational expense. Returns PDF bytes.
+    /// </summary>
+    Task<byte[]> GenerateExpenseDisbursementVoucherAsync(Guid expenseId);
 }

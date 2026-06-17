@@ -35,7 +35,7 @@ public sealed class RejectExpenseRequest
 [ApiController]
 [Route("api/expenses")]
 [Authorize(Policy = "ReportsAccess")] // Admin + Accountant only
-public class OperationalExpensesController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution, IPdfService pdfService) : ControllerBase
+public class OperationalExpensesController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution) : ControllerBase
 {
     /// <summary>
     /// Approval threshold in YER: expenses above this amount require managerial approval.
@@ -45,7 +45,7 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
 
     /// <summary>سند صرف (quarter-A4) PDF for an operational expense.</summary>
     [HttpGet("{id:guid}/voucher/pdf")]
-    public async Task<IActionResult> DownloadDisbursementVoucher(Guid id)
+    public async Task<IActionResult> DownloadDisbursementVoucher(Guid id, [FromServices] IPdfService pdfService)
     {
         var exists = await db.OperationalExpenses.AnyAsync(e => e.Id == id && e.IsActive);
         if (!exists)

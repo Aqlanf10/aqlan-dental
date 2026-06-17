@@ -1083,7 +1083,10 @@ public partial class FinanceV3Controller(
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { error = ex.Message, inner = ex.InnerException?.Message });
+            // Never leak exception internals to the client — log server-side,
+            // return a generic Arabic message (project security rule).
+            logger.LogError(ex, "Finance diagnostic (schema inspect) failed");
+            return StatusCode(500, new { message = "تعذّر تنفيذ التشخيص حاليًا" });
         }
     }
 
@@ -1259,7 +1262,10 @@ public partial class FinanceV3Controller(
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { error = ex.Message, inner = ex.InnerException?.Message, stack = ex.StackTrace?.Substring(0, Math.Min(500, ex.StackTrace?.Length ?? 0)) });
+            // Never leak exception internals (message/inner/stack) to the client —
+            // log server-side, return a generic Arabic message (project security rule).
+            logger.LogError(ex, "Finance diagnostic (cashflow hotfix) failed");
+            return StatusCode(500, new { message = "تعذّر تطبيق الإصلاح حاليًا" });
         }
     }
 }

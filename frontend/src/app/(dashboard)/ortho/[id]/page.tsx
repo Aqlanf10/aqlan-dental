@@ -256,7 +256,10 @@ function CephCaseStatusCard({
   const hasReport = detail
     ? (detail.measurements?.length ?? 0) > 0
     : Boolean(latest?.hasMeasurements);
-  const vtoReady = (detail?.landmarks?.length ?? latest?.landmarkCount ?? 0) > 0;
+  // VTO requires the full saved set (image + calibration + 24 points +
+  // measurements, no unsaved edits) — the same unified readiness gate, not just
+  // "any landmark placed".
+  const vtoReady = readiness?.ready ?? false;
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-5">

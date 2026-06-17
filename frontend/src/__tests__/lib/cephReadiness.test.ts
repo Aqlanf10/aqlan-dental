@@ -67,18 +67,40 @@ describe("computeCephReadiness", () => {
 });
 
 describe("cephReadinessFromAnalysis", () => {
-  const base = {
-    xrayFileUrl: "/uploads/x.jpg",
-    pixelsPerMm: 12.5,
-    landmarks: [{ key: "S" }],
-    measurements: [{ id: "m1" }],
-  } as unknown as Pick<
-    CephAnalysis,
-    "xrayFileUrl" | "pixelsPerMm" | "landmarks" | "measurements"
-  >;
+  // A fully-placed landmark set (24) — the report/VTO requirement.
+  const landmarks = (count: number) =>
+    Array.from({ length: count }, (_, i) => ({ key: `L${i}` }));
 
-  it("maps a fully-saved analysis to ready", () => {
-    expect(cephReadinessFromAnalysis(base, false).ready).toBe(true);
+  const withLandmarks = (count: number) =>
+    ({
+      xrayFileUrl: "/uploads/x.jpg",
+      pixelsPerMm: 12.5,
+      landmarks: landmarks(count),
+      measurements: [{ id: "m1" }],
+    }) as unknown as Pick<
+      CephAnalysis,
+      "xrayFileUrl" | "pixelsPerMm" | "landmarks" | "measurements"
+    >;
+
+  const base = withLandmarks(24);
+
+  it("is ready with 24 landmarks + calibration + measurements + image, not dirty", () => {
+    const r = cephReadinessFromAnalysis(base, false);
+    expect(r.ready).toBe(true);
+    expect(r.items.find((i) => i.key === "hasPoints")?.ok).toBe(true);
+  });
+
+  it("is NOT ready with a single landmark", () => {
+    const r = cephReadinessFromAnalysis(withLandmarks(1), false);
+    expect(r.ready).toBe(false);
+    expect(r.items.find((i) => i.key === "hasPoints")?.ok).toBe(false);
+  });
+
+  it("is NOT ready at 23 landmarks (just below the full set)", () => {
+    const r = cephReadinessFromAnalysis(withLandmarks(23), false);
+    expect(r.ready).toBe(false);
+    expect(r.items.find((i) => i.key === "hasPoints")?.ok).toBe(false);
+    expect(r.reason).toContain("النقاط");
   });
 
   it("treats null calibration as not-saved", () => {

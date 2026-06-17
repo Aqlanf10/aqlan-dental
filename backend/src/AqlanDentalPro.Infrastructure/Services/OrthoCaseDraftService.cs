@@ -180,15 +180,20 @@ public sealed class OrthoCaseDraftService(
 
         var latestCeph = await db.CephAnalyses.AsNoTracking()
             .Include(c => c.Measurements)
+            .Include(c => c.Diagnosis)
             .Where(c => c.OrthoCaseId == caseId && c.IsActive)
+            // Same "latest" rule as the presentation deck generator
+            // (OrthoCasePresentationService): AnalysisDate DESC, then CreatedAt
+            // DESC — so the draft reasons over the same cephalometric analysis
+            // the case presentation will render.
             .OrderByDescending(c => c.AnalysisDate)
-            .ThenByDescending(c => c.UpdatedAt)
+            .ThenByDescending(c => c.CreatedAt)
             .FirstOrDefaultAsync(ct);
         if (latestCeph is null) summary.MissingData.Add("cephalometric analysis missing");
         else
         {
             summary.EvidenceUsed.Add("ceph");
-            summary.Ceph = $"analysisType:{latestCeph.AnalysisType}; measurements:{latestCeph.Measurements.Count(m => m.IsActive)}";
+            summary.Ceph = BuildCephEvidence(latestCeph, summary);
         }
 
         var model = await db.ModelAnalyses.AsNoTracking()
@@ -216,8 +221,49 @@ public sealed class OrthoCaseDraftService(
         return summary;
     }
 
+    // Rich cephalometric evidence: the analysis type, the ceph diagnosis
+    // interpretation, and the actual measurement values (name:value unit) — so a
+    // diagnosis/strategy draft is genuinely grounded in the cephalometric
+    // findings instead of just knowing how many measurements exist.
+    private static string BuildCephEvidence(Domain.Entities.CephAnalysis ceph, CaseSummary summary)
+    {
+        var parts = new List<string> { $"analysisType:{ceph.AnalysisType}" };
+
+        var dx = ceph.Diagnosis;
+        if (dx is not null)
+        {
+            var dxJoined = string.Join(", ", new[]
+            {
+                Pair("skeletal", dx.SkeletalClass), Pair("vertical", dx.VerticalPattern),
+                Pair("incisors", dx.IncisorInclination), Pair("softTissue", dx.SoftTissueSummary),
+                Pair("final", dx.FinalDiagnosis)
+            }.Where(v => v is not null));
+            if (!string.IsNullOrWhiteSpace(dxJoined)) parts.Add("cephDiagnosis{" + dxJoined + "}");
+            if (!dx.DoctorApproved) summary.Warnings.Add("ceph diagnosis is not approved yet");
+        }
+
+        var measurements = ceph.Measurements
+            .Where(m => m.IsActive && m.MeasurementValue.HasValue)
+            .OrderBy(m => m.MeasurementName)
+            .Take(16)
+            .Select(m =>
+            {
+                var cls = !string.IsNullOrWhiteSpace(m.Classification) &&
+                          !string.Equals(m.Classification, "normal", StringComparison.OrdinalIgnoreCase)
+                    ? $"({m.Classification})" : string.Empty;
+                return $"{m.MeasurementName}:{m.MeasurementValue!.Value}{m.Unit}{cls}";
+            })
+            .ToList();
+        if (measurements.Count > 0) parts.Add("measurements[" + string.Join(", ", measurements) + "]");
+        else summary.Warnings.Add("cephalometric measurements not computed");
+
+        return string.Join("; ", parts);
+    }
+
     private static string BuildSystemPrompt(string section) =>
         "You are an orthodontic clinical assistant. Produce a concise structured draft for the requested section only. " +
+        "Ground skeletal, dental, and soft-tissue conclusions in the provided cephalometric measurements, ceph diagnosis, and model analysis; " +
+        "cite the specific values you used and never fabricate numbers. " +
         "Do not invent missing data. Mention missing evidence when relevant. Do not include patient identifiers. " +
         "This is a draft that requires specialist review. Section: " + section;
 

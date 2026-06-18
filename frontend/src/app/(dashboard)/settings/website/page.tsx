@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
+import { upload } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface WebsiteSettings {
@@ -171,22 +172,13 @@ function ImageUploadCard({
     // Upload
     setUploading(true);
     try {
-      const token = localStorage.getItem("access_token") ?? "";
+      // FE-05: Use the api.upload helper instead of fetch() so the JWT is injected
+      // automatically and the 401 refresh interceptor works (previously this used
+      // a manual Authorization header that broke when the token expired).
       const formData = new FormData();
       formData.append("file", file);
 
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/uploads`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ message: "تعذّر رفع الصورة" }));
-        throw new Error(errData.message || "تعذّر رفع الصورة");
-      }
-
-      const data = await res.json();
+      const data = await upload<{ url: string }>("/api/uploads", formData);
       onChange(fieldKey, data.url);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "تعذّر رفع الصورة";

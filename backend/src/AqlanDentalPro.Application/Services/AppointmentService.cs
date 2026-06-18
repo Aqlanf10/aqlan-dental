@@ -32,9 +32,6 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         var start = TimeOnly.Parse(req.StartTime);
         var end = start.AddMinutes(req.DurationMinutes);
 
-        if (await repo.HasConflictAsync(req.DoctorId, date, start, end))
-            return (null, "يوجد تعارض في المواعيد مع هذا الطبيب في هذا الوقت");
-
         var appointment = new Appointment
         {
             PatientId = req.PatientId,
@@ -53,8 +50,10 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
             OrthoCaseId = req.OrthoCaseId
         };
 
-        await repo.AddAsync(appointment);
-        await repo.SaveChangesAsync();
+        // C-15: atomic conflict-check + insert (transaction + per-doctor advisory
+        // lock) to prevent the double-booking race between check and save.
+        if (!await repo.TryCreateWithConflictGuardAsync(appointment))
+            return (null, "يوجد تعارض في المواعيد مع هذا الطبيب في هذا الوقت");
 
         // M1 FIX: Use IServiceScopeFactory for proper DI in fire-and-forget
         var dto = ToDto(appointment);

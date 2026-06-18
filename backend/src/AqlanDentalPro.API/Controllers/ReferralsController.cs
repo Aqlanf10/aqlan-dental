@@ -1,4 +1,7 @@
+using AqlanDentalPro.API.Authorization;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
@@ -42,8 +45,26 @@ public sealed class CreateReferralRequestValidator : AbstractValidator<CreateRef
 [ApiController]
 [Route("api/referrals")]
 [Authorize(Policy = "StaffOnly")]
-public class ReferralsController(AppDbContext db) : ControllerBase
+[ServiceFilter(typeof(PatientAccessFilter))]
+public class ReferralsController(
+    AppDbContext db,
+    ICurrentUserService currentUser,
+    IPatientAccessService patientAccess,
+    IAuditService audit) : ControllerBase
 {
+    // CLIN-01: Per-patient access check for actions where patientId is in body or inferred.
+    private async Task<IActionResult?> DenyIfDoctorCannotAccess(Guid patientId)
+    {
+        if (!patientAccess.IsDoctor) return null;
+        if (!await patientAccess.CanAccessPatientAsync(patientId))
+        {
+            await audit.LogAsync(AuditAction.View, "Patient", patientId,
+                newData: new { status = "denied", resource = "Referral", role = currentUser.Role?.ToString(), userId = currentUser.UserId });
+            return StatusCode(403, new { message = "غير مصرح لك بعرض بيانات هذا المريض" });
+        }
+        return null;
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] string? status,
@@ -99,6 +120,10 @@ public class ReferralsController(AppDbContext db) : ControllerBase
 
         if (referral is null) return NotFound(new { message = "الإحالة غير موجودة" });
 
+        // CLIN-01: per-patient check after loading the entity.
+        var denied = await DenyIfDoctorCannotAccess(referral.PatientId);
+        if (denied is not null) return denied;
+
         return Ok(new
         {
             referral.Id,
@@ -121,6 +146,10 @@ public class ReferralsController(AppDbContext db) : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateReferralRequest req)
     {
+        // CLIN-01: per-patient check before creating.
+        var denied = await DenyIfDoctorCannotAccess(req.PatientId);
+        if (denied is not null) return denied;
+
         var referral = new InternalReferral
         {
             PatientId    = req.PatientId,
@@ -143,6 +172,11 @@ public class ReferralsController(AppDbContext db) : ControllerBase
     {
         var referral = await db.InternalReferrals.FindAsync(id);
         if (referral is null) return NotFound(new { message = "الإحالة غير موجودة" });
+
+        // CLIN-01: per-patient check.
+        var denied = await DenyIfDoctorCannotAccess(referral.PatientId);
+        if (denied is not null) return denied;
+
         if (referral.Status != "pending")
             return BadRequest(new { message = "يمكن قبول الإحالات المعلّقة فقط" });
 
@@ -158,6 +192,11 @@ public class ReferralsController(AppDbContext db) : ControllerBase
     {
         var referral = await db.InternalReferrals.FindAsync(id);
         if (referral is null) return NotFound(new { message = "الإحالة غير موجودة" });
+
+        // CLIN-01: per-patient check.
+        var denied = await DenyIfDoctorCannotAccess(referral.PatientId);
+        if (denied is not null) return denied;
+
         if (referral.Status != "accepted")
             return BadRequest(new { message = "يمكن إكمال الإحالات المقبولة فقط" });
 
@@ -172,6 +211,10 @@ public class ReferralsController(AppDbContext db) : ControllerBase
     {
         var referral = await db.InternalReferrals.FindAsync(id);
         if (referral is null) return NotFound(new { message = "الإحالة غير موجودة" });
+
+        // CLIN-01: per-patient check before deleting.
+        var denied = await DenyIfDoctorCannotAccess(referral.PatientId);
+        if (denied is not null) return denied;
 
         referral.IsActive = false;
         await db.SaveChangesAsync();

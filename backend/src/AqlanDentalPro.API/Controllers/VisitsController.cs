@@ -1,3 +1,4 @@
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -57,8 +58,26 @@ public sealed class UpdateVisitRequest
 [ApiController]
 [Route("api/visits")]
 [Authorize(Policy = "StaffOnly")]
-public class VisitsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
+[ServiceFilter(typeof(PatientAccessFilter))]
+public class VisitsController(
+    AppDbContext db,
+    ICurrentUserService currentUser,
+    IPatientAccessService patientAccess,
+    IAuditService audit) : ControllerBase
 {
+    // CLIN-01: Per-patient access check for actions where patientId is in body or inferred.
+    private async Task<IActionResult?> DenyIfDoctorCannotAccess(Guid patientId)
+    {
+        if (!patientAccess.IsDoctor) return null;
+        if (!await patientAccess.CanAccessPatientAsync(patientId))
+        {
+            await audit.LogAsync(AuditAction.View, "Patient", patientId,
+                newData: new { status = "denied", resource = "Visit", role = currentUser.Role?.ToString(), userId = currentUser.UserId });
+            return StatusCode(403, new { message = "غير مصرح لك بعرض بيانات هذا المريض" });
+        }
+        return null;
+    }
+
     // ─── GET /api/visits?patientId={patientId} ────────────────────────────────
     [HttpGet]
     public async Task<IActionResult> GetVisits([FromQuery] Guid? patientId, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
@@ -124,6 +143,13 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetVisit(Guid id)
     {
+        // CLIN-01: load patientId first for the per-patient access check before the projection.
+        var patientId = await db.Visits.Where(v => v.Id == id).Select(v => v.PatientId).FirstOrDefaultAsync();
+        if (patientId == Guid.Empty)
+            return NotFound(new { message = "الزيارة غير موجودة" });
+        var denied = await DenyIfDoctorCannotAccess(patientId);
+        if (denied is not null) return denied;
+
         var visit = await db.Visits
             .Include(v => v.Doctor)
             .Include(v => v.Appointment)
@@ -178,6 +204,10 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
     {
         if (req.PatientId == Guid.Empty)
             return BadRequest(new { message = "معرّف المريض مطلوب" });
+
+        // CLIN-01: per-patient check before creating.
+        var denied = await DenyIfDoctorCannotAccess(req.PatientId);
+        if (denied is not null) return denied;
 
         var patientExists = await db.Patients.AnyAsync(p => p.Id == req.PatientId);
         if (!patientExists)
@@ -255,6 +285,10 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
 
         if (!visit.IsActive)
             return BadRequest(new { message = "لا يمكن تعديل زيارة محذوفة" });
+
+        // CLIN-01: per-patient check before updating.
+        var denied = await DenyIfDoctorCannotAccess(visit.PatientId);
+        if (denied is not null) return denied;
 
         if (req.VisitDate != null)
         {
@@ -334,6 +368,10 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
 
         if (!visit.IsActive)
             return BadRequest(new { message = "الزيارة محذوفة بالفعل" });
+
+        // CLIN-01: per-patient check before deleting.
+        var denied = await DenyIfDoctorCannotAccess(visit.PatientId);
+        if (denied is not null) return denied;
 
         visit.IsActive = false;
         visit.DeletedAt = DateTime.UtcNow;

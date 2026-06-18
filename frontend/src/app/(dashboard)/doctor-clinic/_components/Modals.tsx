@@ -1267,8 +1267,11 @@ export function ImagesRadiographsPanel({
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Lab Order Panel — Placeholder with TODO
-   TODO: Connect to lab order API when backend is ready
+   Lab Order Panel — creates a real lab order via /api/lab-orders (createLabOrderMutation
+   in doctor-clinic/page.tsx). FE-14: the previous 'TODO: Connect to lab order API when
+   backend is ready' comment and the 'سيتم حفظ طلب المختبر كملاحظة سريرية' info note
+   were STALE and misleading — the backend IS ready and the mutation DOES create a real
+   lab order. Fixed the messaging.
    ═══════════════════════════════════════════════════════════════════════════ */
 export interface LabOrderPanelData {
   labWorkType: string;
@@ -1359,13 +1362,15 @@ export function LabOrderPanel({
           rows={3} placeholder="تعليمات تفصيلية للمختبر..." className={inputCls()} />
       </div>
 
-      {/* TODO: Connect to lab order API when backend is ready */}
+      {/* FE-14: The lab order IS created via /api/lab-orders (createLabOrderMutation in
+          doctor-clinic/page.tsx). The previous misleading 'سيتم حفظ كملاحظة سريرية'
+          message was removed — this is a real lab order, not a clinical note. */}
 
       {/* Info note */}
       <div className="p-2.5 rounded-lg flex items-center gap-2" style={{ background: "#ecfeff" }}>
         <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: "#0891b2" }} />
         <span className="text-[11px] font-medium" style={{ color: "#155e75" }}>
-          سيتم حفظ طلب المختبر كملاحظة سريرية — سيتم ربطه بنظام المختبر لاحقاً
+          سيتم إنشاء طلب مختبر فعلي وربطه بالزيارة الحالية، وستظهر تعليمات المختبر في ملاحظات الزيارة
         </span>
       </div>
 

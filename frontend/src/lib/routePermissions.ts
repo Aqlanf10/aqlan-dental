@@ -56,17 +56,27 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { path: '/appointments', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   { path: '/clinic-queue', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   { path: '/patient-journey', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
+
+  // FE-02: Previously missing — booking-requests fell through to default-allow. Admin + Reception
+  // confirm public booking requests (the public /home/book flow creates them).
+  { path: '/booking-requests', allowedRoles: ['Admin', 'Reception'] },
 ];
 
 export function isRouteAllowed(pathname: string, userRole: string | null): boolean {
   if (!userRole) return false;
-  
+
   // Admin has access to everything
   if (userRole === 'Admin') return true;
-  
+
   // Find matching permission for this route
   const matched = ROUTE_PERMISSIONS.find(p => pathname.startsWith(p.path));
-  if (!matched) return true; // Default allow if no specific rule
-  
+  // FE-02 / SEC-17 FIX: Default DENY if no specific rule matches. Previously this returned
+  // true (default-allow), which let any authenticated user reach admin-only screens like
+  // /commissions, /booking-requests, /settings/audit, /settings/backup, /surgery/[id]/edit,
+  // /ortho/new, /ceph/new, /referrals/new. The backend [Authorize(Policy=...)] still rejected
+  // API calls, so no data leaked — but the UX was broken (flash of page chrome + 403 fetches).
+  // Now unmatched routes are denied; every dashboard route MUST have an explicit entry above.
+  if (!matched) return false;
+
   return matched.allowedRoles.includes(userRole);
 }

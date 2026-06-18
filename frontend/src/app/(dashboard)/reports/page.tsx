@@ -12,7 +12,7 @@ import {
   Activity, PieChart as PieChartIcon, Scissors, ClipboardList,
   Pill, Heart, Filter, Building2, UserCheck, Clock,
 } from "lucide-react";
-import api from "@/lib/api";
+import api, { downloadBlob } from "@/lib/api";
 import { formatYemeniRiyal, localDateString } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -1343,7 +1343,9 @@ export default function ReportsPage() {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const token = localStorage.getItem("access_token") ?? "";
+      // FE-16: Use the downloadBlob helper instead of fetch() so the JWT is injected
+      // automatically and the 401 refresh interceptor works (previously this used a
+      // manual Authorization header that silently failed when the token expired).
       const exportEndpoints: Record<ReportKey, string> = {
         "center-summary": "/api/reports/export/center-summary",
         "appointment-analytics": "/api/reports/export/appointment-analytics",
@@ -1360,12 +1362,7 @@ export default function ReportsPage() {
         "patient-retention": "/api/reports/export/patient-retention",
         "booking-funnel": "/api/reports/export/booking-funnel",
       };
-      const url = `${process.env.NEXT_PUBLIC_API_URL ?? ""}${exportEndpoints[activeReport]}?from=${from}&to=${to}`;
-      const response = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!response.ok) throw new Error("Export failed");
-      const blob = await response.blob();
+      const blob = await downloadBlob(exportEndpoints[activeReport], { from, to });
       const blobUrl = URL.createObjectURL(blob);
       downloadCsv(blobUrl, `${activeReport}_${today}.csv`);
       URL.revokeObjectURL(blobUrl);

@@ -102,3 +102,33 @@ api.interceptors.response.use(
 );
 
 export default api;
+
+// ─── FE-05 / FE-16: Helpers for upload (multipart) and download (blob) ─────────
+// These replace the direct fetch() calls that bypassed the axios refresh-token interceptor,
+// causing silent failures on CSV export and image upload when the access token expired.
+
+/**
+ * Upload a file via multipart/form-data. Uses the axios `api` instance so the request
+ * interceptor injects the JWT and the response interceptor handles 401 refresh.
+ * The Content-Type header is NOT set — axios sets it automatically with the correct
+ * multipart boundary when given a FormData body.
+ */
+export async function upload<T = unknown>(url: string, formData: FormData): Promise<T> {
+  const res = await api.post<T>(url, formData, {
+    headers: { "Content-Type": undefined }, // let axios set multipart boundary
+  });
+  return res.data;
+}
+
+/**
+ * Download a binary blob (e.g., CSV export, PDF receipt). Uses the axios `api` instance
+ * so the JWT is injected and 401 refresh works. Returns a Blob that the caller can
+ * turn into a download URL or open in a new tab.
+ */
+export async function downloadBlob(url: string, params?: Record<string, string | number | undefined>): Promise<Blob> {
+  const res = await api.get<Blob>(url, {
+    responseType: "blob",
+    params,
+  });
+  return res.data;
+}

@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useAuthStore } from "@/stores/authStore";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import {
   useUsers,
   usePatientPortalAccounts,
@@ -70,19 +71,7 @@ const ALL_ROLES = ["Admin","Orthodontist","GeneralDentist","OralSurgeon","Recept
 
 const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue";
 
-function getApiErrorMessage(error: unknown, fallback: string) {
-  const response = error as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } };
-  const message = response.response?.data?.message;
-  if (message) return message;
-
-  const errors = response.response?.data?.errors;
-  if (errors) {
-    const firstError = Object.values(errors).flat()[0];
-    if (firstError) return firstError;
-  }
-
-  return fallback;
-}
+// FE-11: getApiErrorMessage removed — use extractErrorMessage from @/lib/errors.
 
 // ─── Clinic Info Tab ──────────────────────────────────────────────────────────
 function ClinicTab() {
@@ -731,7 +720,7 @@ function UsersTab() {
                 setShowCreateDialog(false);
                 showToast("تم إنشاء المستخدم بنجاح");
               },
-              onError: (err) => showToast(getApiErrorMessage(err, "حدث خطأ أثناء إنشاء المستخدم"), "error"),
+              onError: (err) => showToast(extractErrorMessage(err, "حدث خطأ أثناء إنشاء المستخدم"), "error"),
             });
           }}
           saving={createUser.isPending}
@@ -749,7 +738,7 @@ function UsersTab() {
                 setEditingUser(null);
                 showToast("تم تحديث المستخدم بنجاح");
               },
-              onError: (err) => showToast(getApiErrorMessage(err, "حدث خطأ أثناء التحديث"), "error"),
+              onError: (err) => showToast(extractErrorMessage(err, "حدث خطأ أثناء التحديث"), "error"),
             });
           }}
           saving={editUser.isPending}
@@ -1222,7 +1211,7 @@ function RolesTab() {
           setTimeout(() => setToast(null), 3000);
         },
         onError: (err) => {
-          setToast({ message: getApiErrorMessage(err, "حدث خطأ أثناء الحفظ"), type: "error" });
+          setToast({ message: extractErrorMessage(err, "حدث خطأ أثناء الحفظ"), type: "error" });
           setTimeout(() => setToast(null), 3000);
         },
         onSettled: () => setSaving(false),
@@ -1762,7 +1751,7 @@ function AiTab() {
   useEffect(() => {
     api.get<AiSettingsDto>("/api/ai-settings")
       .then((r) => setSettings(r.data))
-      .catch((err) => setError(getApiErrorMessage(err, "تعذر تحميل إعدادات الذكاء الاصطناعي")))
+      .catch((err) => setError(extractErrorMessage(err, "تعذر تحميل إعدادات الذكاء الاصطناعي")))
       .finally(() => setLoading(false));
   }, []);
 
@@ -1789,7 +1778,7 @@ function AiTab() {
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
-      setError(getApiErrorMessage(err, "حدث خطأ أثناء حفظ إعدادات الذكاء الاصطناعي"));
+      setError(extractErrorMessage(err, "حدث خطأ أثناء حفظ إعدادات الذكاء الاصطناعي"));
     } finally {
       setSaving(false);
     }
@@ -1802,7 +1791,7 @@ function AiTab() {
       const { data } = await api.post<{ ok: boolean; message: string }>("/api/ai-settings/test-connection");
       setTestResult(data);
     } catch (err) {
-      setTestResult({ ok: false, message: getApiErrorMessage(err, "تعذر إجراء التحقق المحلي") });
+      setTestResult({ ok: false, message: extractErrorMessage(err, "تعذر إجراء التحقق المحلي") });
     } finally {
       setTesting(false);
     }

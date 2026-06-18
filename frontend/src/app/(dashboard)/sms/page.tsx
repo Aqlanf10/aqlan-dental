@@ -8,6 +8,7 @@ import {
   Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { extractErrorMessage } from "@/lib/errors";
 import api from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 
@@ -124,19 +125,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 const inputCls =
   "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue transition";
 
-function getApiErrorMessage(error: unknown, fallback: string) {
-  const response = error as {
-    response?: { data?: { message?: string; errors?: Record<string, string[]> } };
-  };
-  const message = response.response?.data?.message;
-  if (message) return message;
-  const errors = response.response?.data?.errors;
-  if (errors) {
-    const firstError = Object.values(errors).flat()[0];
-    if (firstError) return firstError;
-  }
-  return fallback;
-}
+// FE-11: getApiErrorMessage removed — use extractErrorMessage from @/lib/errors.
 
 function formatRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -483,7 +472,7 @@ function MessagesTab() {
       toast.success("تم إعادة إرسال الرسالة بنجاح");
       fetchMessages();
     } catch (err) {
-      toast.error(getApiErrorMessage(err, "فشل إعادة إرسال الرسالة"));
+      toast.error(extractErrorMessage(err, "فشل إعادة إرسال الرسالة"));
     } finally {
       setRetryingId(null);
     }
@@ -726,7 +715,7 @@ function TemplatesTab() {
       setEditContent("");
       toast.success("تم تحديث القالب بنجاح");
     } catch (err) {
-      toast.error(getApiErrorMessage(err, "فشل تحديث القالب"));
+      toast.error(extractErrorMessage(err, "فشل تحديث القالب"));
     } finally {
       setSaving(false);
     }
@@ -987,7 +976,7 @@ function SettingsTab() {
       toast.success("تم حفظ الإعدادات بنجاح");
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
-      toast.error(getApiErrorMessage(err, "فشل حفظ الإعدادات"));
+      toast.error(extractErrorMessage(err, "فشل حفظ الإعدادات"));
     } finally {
       setSaving(false);
     }
@@ -1007,7 +996,7 @@ function SettingsTab() {
         toast.error(data.message || "فشل الاتصال");
       }
     } catch (err) {
-      const msg = getApiErrorMessage(err, "فشل اختبار الاتصال");
+      const msg = extractErrorMessage(err, "فشل اختبار الاتصال");
       setTestResult({ connected: false, message: msg });
       toast.error(msg);
     } finally {
@@ -1440,7 +1429,7 @@ function QuickSendModal({ onClose }: QuickSendModalProps) {
       toast.success(`تم إرسال الرسالة إلى ${selectedPatient.name}`);
       onClose();
     } catch (err) {
-      toast.error(getApiErrorMessage(err, "فشل إرسال الرسالة"));
+      toast.error(extractErrorMessage(err, "فشل إرسال الرسالة"));
     } finally {
       setSending(false);
     }

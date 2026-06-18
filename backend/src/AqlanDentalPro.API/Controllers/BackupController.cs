@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using AqlanDentalPro.API.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -150,19 +151,45 @@ public class BackupController(AppDbContext db, IWebHostEnvironment env) : Contro
         {
             var backupData = await ExportAllDataAsync();
             var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(backupData, JsonOptions);
-            var sizeBytes = jsonBytes.Length;
+
+            // SEC-08: Encrypt the backup before writing to disk. Backups contain full PHI
+            // (patient names, phones, DOBs, salaries). Plaintext on disk = any filesystem
+            // exposure leaks everything. Encryption uses AES-GCM with a key from
+            // BACKUP_ENCRYPTION_KEY env var. In Development without a key, falls back to
+            // plaintext with a warning; in Production, missing key throws.
+            byte[] fileBytes;
+            bool isEncrypted;
+            try
+            {
+                var key = BackupEncryption.LoadKeyFromEnvironment();
+                fileBytes = BackupEncryption.Encrypt(jsonBytes, key);
+                isEncrypted = true;
+            }
+            catch (InvalidOperationException) when (!env.IsProduction())
+            {
+                // Dev fallback: no encryption key set — write plaintext for convenience.
+                fileBytes = jsonBytes;
+                isEncrypted = false;
+            }
+
+            var sizeBytes = fileBytes.Length;
 
             // Save backup file to disk
             var backupDir = Path.Combine(env.ContentRootPath, "backups");
             Directory.CreateDirectory(backupDir);
-            var fileName = $"backup_db_{DateTime.UtcNow:yyyyMMdd_HHmmss}.json";
+            var fileName = isEncrypted
+                ? $"backup_db_{DateTime.UtcNow:yyyyMMdd_HHmmss}.enc"
+                : $"backup_db_{DateTime.UtcNow:yyyyMMdd_HHmmss}.json";
             var filePath = Path.Combine(backupDir, fileName);
-            await System.IO.File.WriteAllBytesAsync(filePath, jsonBytes);
+            await System.IO.File.WriteAllBytesAsync(filePath, fileBytes);
 
             record.Status = BackupStatus.Completed;
             record.CompletedAt = DateTime.UtcNow;
             record.SizeBytes = sizeBytes;
             record.FilePath = fileName;
+            // Record encryption status in ErrorMessage field (repurposed) to avoid a migration.
+            // Format: "encrypted" or "plaintext-dev".
+            record.ErrorMessage = isEncrypted ? "encrypted" : "plaintext-dev";
 
             await db.SaveChangesAsync();
 
@@ -209,10 +236,36 @@ public class BackupController(AppDbContext db, IWebHostEnvironment env) : Contro
             return NotFound(new { message = "ملف النسخة الاحتياطية غير موجود على الخادم" });
 
         var fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
-        var contentType = "application/json";
-        var downloadName = record.FilePath;
 
-        return File(fileBytes, contentType, downloadName);
+        // SEC-08: Decrypt the backup before returning it to the admin. The on-disk format is
+        // encrypted (.enc files) or plaintext-dev (.json files created in Dev without a key).
+        byte[] downloadBytes;
+        var isEncrypted = record.FilePath.EndsWith(".enc", StringComparison.OrdinalIgnoreCase)
+                          || record.ErrorMessage == "encrypted";
+        if (isEncrypted)
+        {
+            try
+            {
+                var key = BackupEncryption.LoadKeyFromEnvironment();
+                downloadBytes = BackupEncryption.Decrypt(fileBytes, key);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "فشل فك تشفير النسخة الاحتياطية — تحقق من BACKUP_ENCRYPTION_KEY", error = ex.Message });
+            }
+        }
+        else
+        {
+            // Plaintext (Dev fallback) — return as-is.
+            downloadBytes = fileBytes;
+        }
+
+        var contentType = "application/json";
+        // Return a .json download name regardless of on-disk extension so the admin gets a
+        // readable file.
+        var downloadName = Path.GetFileNameWithoutExtension(record.FilePath) + ".json";
+
+        return File(downloadBytes, contentType, downloadName);
     }
 
     /// <summary>

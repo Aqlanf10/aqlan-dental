@@ -1,3 +1,4 @@
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -15,6 +16,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/patients/{patientId:guid}/treatment-plan")]
 [Authorize(Policy = "StaffOnly")]
+[ServiceFilter(typeof(PatientAccessFilter))]
 public class TreatmentPlanController(AppDbContext db) : ControllerBase
 {
     // ─── 1. GET — List all active steps ────────────────────────────────────

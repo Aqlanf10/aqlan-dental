@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Stethoscope } from "lucide-react";
 import type { GeneralTreatment, CreateGeneralTreatmentRequest } from "@/types/dental";
 import api from "@/lib/api";
+import { useDoctors } from "@/hooks/useDoctors";
 import { cn, formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
 
 interface Doctor { id: string; name: string; color?: string; }
@@ -37,7 +38,8 @@ interface Props {
 
 export function TreatmentHistory({ patientId }: Props) {
   const [treatments, setTreatments] = useState<GeneralTreatment[]>([]);
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  // FE-13: useDoctors() replaces the doctors half of the Promise.all.
+  const { data: doctors = [] } = useDoctors();
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -47,14 +49,9 @@ export function TreatmentHistory({ patientId }: Props) {
   });
 
   useEffect(() => {
-    Promise.all([
-      api.get<GeneralTreatment[]>(`/api/general-treatments/${patientId}`),
-      api.get<Doctor[]>("/api/doctors"),
-    ])
-      .then(([tr, dr]) => {
-        setTreatments(tr.data);
-        setDoctors(dr.data);
-      })
+    // FE-13: Only fetch treatments now — doctors come from useDoctors().
+    api.get<GeneralTreatment[]>(`/api/general-treatments/${patientId}`)
+      .then((tr) => setTreatments(tr.data))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [patientId]);

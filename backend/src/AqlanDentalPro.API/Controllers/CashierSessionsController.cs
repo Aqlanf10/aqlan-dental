@@ -21,6 +21,20 @@ public sealed class CloseSessionRequest
     public decimal ActualClosingCard { get; init; } // نقاط البيع الفعلية
     public decimal ActualClosingBank { get; init; } // التحويل البنكي الفعلي
     public string? Notes { get; init; }
+
+    // FIN-03: When |ShortageOrSurplus| exceeds the threshold, a manager (Admin/Accountant)
+    // must set this to true to approve the close. The controller verifies the caller's role.
+    public bool ManagerOverrideApproved { get; init; }
+}
+
+// FIN-03: Threshold above which a manager must explicitly approve the closing balance.
+// Shortages/surpluses within this amount are accepted as normal drawer variance; above it,
+// the close is rejected with 400 until a manager co-signs (ManagerOverrideApproved=true).
+// Tunable via Settings:CashierClosingApprovalThreshold; defaults to 5000 SAR.
+public static class CashierClosingApprovalConfig
+{
+    public const decimal DefaultThreshold = 5000m;
+    public const string SettingsKey = "CashierClosingApprovalThreshold";
 }
 
 [ApiController]
@@ -246,6 +260,42 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 expectedTotal = session.ExpectedClosingCash + session.ExpectedClosingCard + session.ExpectedClosingBank;
                 actualTotal = req.ActualClosingCash + req.ActualClosingCard + req.ActualClosingBank;
                 session.ShortageOrSurplus = actualTotal - expectedTotal;
+            }
+
+            // FIN-03: Manager co-sign requirement for large shortages/surpluses.
+            // If |ShortageOrSurplus| exceeds the threshold, the close is rejected UNLESS:
+            //   1. req.ManagerOverrideApproved == true, AND
+            //   2. The current user is Admin or Accountant (the cashier cannot self-approve).
+            // This prevents a cashier from hiding a large cash shortage by submitting
+            // ActualClosingCash = ExpectedClosingCash.
+            var threshold = CashierClosingApprovalConfig.DefaultThreshold;
+            var settingsThreshold = await db.Settings
+                .Where(s => s.Key == CashierClosingApprovalConfig.SettingsKey)
+                .Select(s => s.Value)
+                .FirstOrDefaultAsync();
+            if (decimal.TryParse(settingsThreshold, out var configured) && configured > 0)
+                threshold = configured;
+
+            var variance = Math.Abs(session.ShortageOrSurplus ?? 0);
+            if (variance > threshold)
+            {
+                var isManager = currentUser.IsAdmin || currentUser.Role == UserRole.Accountant;
+                if (!req.ManagerOverrideApproved || !isManager)
+                {
+                    return BadRequest(new
+                    {
+                        message = $"الفرق بين الرصيد الفعلي والمتوقع ({session.ShortageOrSurplus:N0} ر.ي) يتجاوز الحد المسموح ({threshold:N0} ر.ي). " +
+                                  "يلزم موافقة المدير (Admin/Accountant) مع تفعيل ManagerOverrideApproved=true لإتمام الإقفال.",
+                        shortageOrSurplus = session.ShortageOrSurplus,
+                        threshold,
+                        requiresManagerApproval = true
+                    });
+                }
+
+                // Manager approved — record in audit log.
+                logger.LogWarning(
+                    "FIN-03: Cashier session {SessionId} closed with manager override. Variance={Variance}, Threshold={Threshold}, ApprovedBy={UserId} ({Role})",
+                    session.Id, variance, threshold, currentUser.UserId, currentUser.Role);
             }
 
             await db.SaveChangesAsync();

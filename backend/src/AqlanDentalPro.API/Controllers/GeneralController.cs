@@ -1,5 +1,8 @@
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.DTOs.General;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,8 +11,26 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api")]
 [Authorize(Policy = "GeneralAccess")]
-public class GeneralController(GeneralService service) : ControllerBase
+[ServiceFilter(typeof(PatientAccessFilter))]
+public class GeneralController(
+    GeneralService service,
+    IPatientAccessService patientAccess,
+    IAuditService audit,
+    ICurrentUserService currentUser) : ControllerBase
 {
+    // CLIN-01: Per-patient access check for POST actions where patientId is in the body.
+    private async Task<IActionResult?> DenyIfDoctorCannotAccess(Guid patientId)
+    {
+        if (!patientAccess.IsDoctor) return null;
+        if (!await patientAccess.CanAccessPatientAsync(patientId))
+        {
+            await audit.LogAsync(AuditAction.View, "Patient", patientId,
+                newData: new { status = "denied", resource = "GeneralTreatment", role = currentUser.Role?.ToString(), userId = currentUser.UserId });
+            return StatusCode(403, new { message = "غير مصرح لك بعرض بيانات هذا المريض" });
+        }
+        return null;
+    }
+
     [HttpGet("dental-chart/{patientId:guid}")]
     public async Task<IActionResult> GetChart(Guid patientId)
     {
@@ -34,6 +55,10 @@ public class GeneralController(GeneralService service) : ControllerBase
     [HttpPost("general-treatments")]
     public async Task<IActionResult> CreateTreatment([FromBody] CreateGeneralTreatmentRequest req)
     {
+        // CLIN-01: per-patient check before creating (patientId is in the body).
+        var denied = await DenyIfDoctorCannotAccess(req.PatientId);
+        if (denied is not null) return denied;
+
         var result = await service.CreateTreatmentAsync(req);
         return Ok(result);
     }
@@ -50,6 +75,10 @@ public class GeneralController(GeneralService service) : ControllerBase
     [HttpPost("general/perio")]
     public async Task<IActionResult> CreatePerioRecord([FromBody] CreatePerioRecordRequest req)
     {
+        // CLIN-01: per-patient check before creating (patientId is in the body).
+        var denied = await DenyIfDoctorCannotAccess(req.PatientId);
+        if (denied is not null) return denied;
+
         var result = await service.CreatePerioRecordAsync(req);
         return Ok(result);
     }
@@ -66,6 +95,10 @@ public class GeneralController(GeneralService service) : ControllerBase
     [HttpPost("general/treatment-plans")]
     public async Task<IActionResult> CreateTreatmentPlanItem([FromBody] CreateTreatmentPlanItemRequest req)
     {
+        // CLIN-01: per-patient check before creating (patientId is in the body).
+        var denied = await DenyIfDoctorCannotAccess(req.PatientId);
+        if (denied is not null) return denied;
+
         var result = await service.CreateTreatmentPlanItemAsync(req);
         return Ok(result);
     }

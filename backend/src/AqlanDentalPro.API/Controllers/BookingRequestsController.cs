@@ -47,14 +47,15 @@ public class BookingRequestsController(IBookingRequestService service, ICurrentU
     [Honeypot]
     public async Task<IActionResult> Create([FromBody] CreateBookingRequestDto dto)
     {
-        // reCAPTCHA validation
-        if (!string.IsNullOrWhiteSpace(dto.RecaptchaToken))
+        // SEC-06: Always call ValidateTokenAsync. The service handles dev mode
+        // (no Recaptcha:SecretKey configured → allows) and rejects empty/invalid
+        // tokens when reCAPTCHA IS configured. Previously the outer guard skipped
+        // validation entirely when the token field was omitted, letting bots bypass
+        // reCAPTCHA and submit unlimited booking requests.
+        var (recaptchaValid, _, recaptchaError) = await recaptcha.ValidateTokenAsync(dto.RecaptchaToken);
+        if (!recaptchaValid)
         {
-            var (isValid, score, errorMessage) = await recaptcha.ValidateTokenAsync(dto.RecaptchaToken);
-            if (!isValid)
-            {
-                return BadRequest(new { message = errorMessage ?? "فشل التحقق الأمني" });
-            }
+            return BadRequest(new { message = recaptchaError ?? "فشل التحقق الأمني" });
         }
 
         if (!ModelState.IsValid)

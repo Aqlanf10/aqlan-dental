@@ -40,14 +40,15 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
     [EnableRateLimiting("PortalPasswordResetPolicy")] // SEC-04 FIX: Stricter limit on forgot-password
     public async Task<IActionResult> ForgotPassword([FromBody] PatientForgotPasswordRequest req)
     {
-        // reCAPTCHA validation
-        if (!string.IsNullOrWhiteSpace(req.RecaptchaToken))
+        // SEC-06: Always call ValidateTokenAsync. The service handles dev mode
+        // (no Recaptcha:SecretKey configured → allows) and rejects empty/invalid
+        // tokens when reCAPTCHA IS configured. Previously the outer guard skipped
+        // validation entirely when the token field was omitted, letting bots trigger
+        // unlimited paid WhatsApp OTP messages via forgot-password.
+        var (recaptchaValid, _, recaptchaError) = await recaptcha.ValidateTokenAsync(req.RecaptchaToken);
+        if (!recaptchaValid)
         {
-            var (isValid, score, errorMessage) = await recaptcha.ValidateTokenAsync(req.RecaptchaToken);
-            if (!isValid)
-            {
-                return BadRequest(new { message = errorMessage ?? "فشل التحقق الأمني" });
-            }
+            return BadRequest(new { message = recaptchaError ?? "فشل التحقق الأمني" });
         }
 
         try

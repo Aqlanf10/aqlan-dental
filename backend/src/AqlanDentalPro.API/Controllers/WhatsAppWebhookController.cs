@@ -158,8 +158,15 @@ public class WhatsAppWebhookController(
     {
         var appSecret = config["WhatsApp:AppSecret"];
 
-        // If no app secret is configured (e.g., demo/dev mode), skip validation
-        if (string.IsNullOrEmpty(appSecret)) return true;
+        // SEC-07: Fail closed when AppSecret is not configured. Previously this returned
+        // true (accepting any request without HMAC verification), allowing forged webhook
+        // status callbacks. In production, WhatsApp:AppSecret must be set; in dev, set a
+        // test secret or the webhook will reject all requests.
+        if (string.IsNullOrEmpty(appSecret))
+        {
+            logger.LogWarning("WhatsApp:AppSecret not configured — webhook request REJECTED (fail-closed). Set WhatsApp:AppSecret to accept webhook callbacks.");
+            return false;
+        }
 
         if (!Request.Headers.TryGetValue("X-Hub-Signature-256", out var sigHeader))
             return false;

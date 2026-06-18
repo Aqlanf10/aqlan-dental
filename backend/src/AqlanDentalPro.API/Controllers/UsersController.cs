@@ -211,9 +211,9 @@ public class UsersController(
         return Ok(accounts);
     }
 
-    /// <summary>قائمة المستخدمين للرسائل — متاحة لجميع أدوار الطاقم (لا بوابة المرضى) مع تصفية حسب الصلاحيات</summary>
+    /// <summary>قائمة المستخدمين للرسائل — تخضع لسياسة AdminOnly على مستوى المتحكم (الصلاحيات تُجمَع)</summary>
     [HttpGet("contacts")]
-    [Authorize(Policy = "StaffOnly")]
+    [Authorize]
     public async Task<IActionResult> GetContacts([FromServices] MessagingService messagingService)
     {
         // N+1 FIX: Single query with LeftJoin instead of 3 correlated subqueries per user

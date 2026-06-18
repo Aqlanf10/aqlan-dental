@@ -23,6 +23,46 @@ public class AppointmentRepository(AppDbContext context)
             (excludeId == null || a.Id != excludeId));
     }
 
+    public async Task<bool> TryCreateWithConflictGuardAsync(Appointment appointment)
+    {
+        // Non-relational providers (InMemory tests) have no advisory lock — fall
+        // back to a plain check + insert. Logic is identical; only the cross-
+        // process race protection (which needs PostgreSQL) is unavailable.
+        if (!Context.Database.IsRelational())
+        {
+            if (await HasConflictAsync(appointment.DoctorId, appointment.AppointmentDate, appointment.StartTime, appointment.EndTime))
+                return false;
+            await DbSet.AddAsync(appointment);
+            await Context.SaveChangesAsync();
+            return true;
+        }
+
+        await using var tx = await Context.Database.BeginTransactionAsync();
+        try
+        {
+            // Advisory lock scoped to the doctor serializes concurrent bookings for
+            // the same doctor, making the conflict-check + insert atomic (C-15).
+            var lockKey = (int)(appointment.DoctorId.GetHashCode() % 100000);
+            await Context.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            if (await HasConflictAsync(appointment.DoctorId, appointment.AppointmentDate, appointment.StartTime, appointment.EndTime))
+            {
+                await tx.RollbackAsync();
+                return false;
+            }
+
+            await DbSet.AddAsync(appointment);
+            await Context.SaveChangesAsync();
+            await tx.CommitAsync();
+            return true;
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
     public async Task<IEnumerable<Appointment>> GetTodayAsync(Guid? branchId, Guid? doctorId)
     {
         var today = DateOnly.FromDateTime(DateTime.Today);

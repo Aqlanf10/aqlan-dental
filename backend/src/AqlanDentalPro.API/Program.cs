@@ -131,6 +131,65 @@ else
     }
 }
 
+// SEC-03 FIX: In Production, gate /uploads/* behind authentication. This middleware MUST run
+// BEFORE UseStaticFiles (below) because UseStaticFiles short-circuits the pipeline and serves
+// the file directly. Without this guard, anyone with a URL can read clinical photos, X-rays,
+// and patient documents (PHI exposure). The guard validates the JWT from:
+//   1. Authorization: Bearer <token> header (API clients)
+//   2. aqlan_access_token cookie (set by the frontend authStore — lets <img src> work without
+//      manual headers)
+//   3. ?token=<token> query param (fallback for special cases)
+// In Development, the guard is skipped so local <img src="/uploads/..."> works without auth.
+if (app.Environment.IsProduction())
+{
+    app.Use(async (context, next) =>
+    {
+        if (context.Request.Path.StartsWithSegments("/uploads"))
+        {
+            var authService = context.RequestServices.GetService<Microsoft.AspNetCore.Authentication.IAuthenticationService>();
+            if (authService is null)
+            {
+                context.Response.StatusCode = 500;
+                await context.Response.WriteAsync("Auth service unavailable");
+                return;
+            }
+
+            // SEC-03: If a Bearer token is present in the Authorization header OR in the
+            // aqlan_access_token cookie, inject it into the Authorization header so the JWT
+            // bearer handler can authenticate. This lets <img src="/uploads/..."> work because
+            // browsers send cookies automatically on same-origin requests.
+            if (string.IsNullOrEmpty(context.Request.Headers.Authorization.ToString()))
+            {
+                var cookieToken = context.Request.Cookies["aqlan_access_token"];
+                if (!string.IsNullOrEmpty(cookieToken))
+                    context.Request.Headers.Authorization = $"Bearer {cookieToken}";
+                else
+                {
+                    var queryToken = context.Request.Query["token"].ToString();
+                    if (!string.IsNullOrEmpty(queryToken))
+                        context.Request.Headers.Authorization = $"Bearer {queryToken}";
+                }
+            }
+
+            if (string.IsNullOrEmpty(context.Request.Headers.Authorization.ToString()))
+            {
+                context.Response.StatusCode = 401;
+                await context.Response.WriteAsync("Unauthorized");
+                return;
+            }
+
+            var authResult = await authService.AuthenticateAsync(context, Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme);
+            if (!authResult.Succeeded)
+            {
+                context.Response.StatusCode = 401;
+                await context.Response.WriteAsync("Unauthorized");
+                return;
+            }
+        }
+        await next();
+    });
+}
+
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(uploadsPath),

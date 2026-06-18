@@ -5,11 +5,23 @@ import type { UserDto, LoginRequest } from "@/types/auth";
 import api from "@/lib/api";
 
 /** Helper: set/clear auth cookie for middleware */
-function setAuthCookie(authenticated: boolean) {
+function setAuthCookie(authenticated: boolean, token?: string | null) {
   if (typeof document === "undefined") return;
+  // SEC-03: aqlan_auth_status is the sentinel cookie for Next.js middleware routing (existing).
   document.cookie = `aqlan_auth_status=${
     authenticated ? "authenticated" : ""
   }; path=/; max-age=${authenticated ? 60 * 60 * 24 * 7 : 0}; SameSite=Strict`;
+
+  // SEC-03: aqlan_access_token carries the real JWT so the backend /uploads/* auth middleware
+  // (Program.cs) can validate it for <img src="/uploads/..."> requests. Browsers send cookies
+  // automatically on same-origin requests, so images render without manual headers. Cleared on
+  // logout. Note: this is NOT HttpOnly because the frontend still reads access_token from
+  // localStorage for axios — the cookie is a SECONDARY copy for image requests only.
+  if (authenticated && token) {
+    document.cookie = `aqlan_access_token=${token}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Strict`;
+  } else {
+    document.cookie = `aqlan_access_token=; path=/; max-age=0; SameSite=Strict`;
+  }
 }
 
 interface AuthState {
@@ -42,7 +54,7 @@ export const useAuthStore = create<AuthState>()(
             credentials
           );
           localStorage.setItem("access_token", data.accessToken);
-          setAuthCookie(true);
+          setAuthCookie(true, data.accessToken);
 
           // Fetch user permissions after login
           try {
@@ -78,7 +90,7 @@ export const useAuthStore = create<AuthState>()(
       fetchMe: async () => {
         try {
           const { data } = await api.get<UserDto>("/api/auth/me");
-          setAuthCookie(true);
+          setAuthCookie(true, localStorage.getItem("access_token"));
 
           // Fetch user permissions
           try {
@@ -102,6 +114,9 @@ export const useAuthStore = create<AuthState>()(
         // Store the original user and token for restoration
         localStorage.setItem("aqlan_original_token", localStorage.getItem("access_token") ?? "");
         localStorage.setItem("access_token", accessToken);
+        // SEC-03: sync the access-token cookie so /uploads/* requests authenticate as the
+        // impersonated user.
+        setAuthCookie(true, accessToken);
         set({
           originalUser: currentUser,
           isImpersonating: true,
@@ -116,6 +131,8 @@ export const useAuthStore = create<AuthState>()(
           localStorage.setItem("access_token", originalToken);
           localStorage.removeItem("aqlan_original_token");
         }
+        // SEC-03: sync the access-token cookie back to the original user.
+        setAuthCookie(true, originalToken);
         const { originalUser } = get();
         if (originalUser) {
           set({
@@ -145,7 +162,7 @@ export const useAuthStore = create<AuthState>()(
       onRehydrateStorage: () => (state) => {
         // Sync cookie on rehydration
         if (state?.isAuthenticated) {
-          setAuthCookie(true);
+          setAuthCookie(true, localStorage.getItem("access_token"));
         }
       },
     }

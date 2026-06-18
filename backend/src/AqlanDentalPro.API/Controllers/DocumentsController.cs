@@ -1,5 +1,7 @@
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -36,8 +38,25 @@ public sealed class UpdateDocumentRequest
 [ApiController]
 [Route("api/documents")]
 [Authorize(Policy = "StaffOnly")]
-public class DocumentsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
+[ServiceFilter(typeof(PatientAccessFilter))]
+public class DocumentsController(
+    AppDbContext db,
+    ICurrentUserService currentUser,
+    IPatientAccessService patientAccess,
+    IAuditService audit) : ControllerBase
 {
+    // CLIN-01: Per-patient access check for actions where patientId is in body or inferred.
+    private async Task<IActionResult?> DenyIfDoctorCannotAccess(Guid patientId)
+    {
+        if (!patientAccess.IsDoctor) return null;
+        if (!await patientAccess.CanAccessPatientAsync(patientId))
+        {
+            await audit.LogAsync(AuditAction.View, "Patient", patientId,
+                newData: new { status = "denied", resource = "Document", role = currentUser.Role?.ToString(), userId = currentUser.UserId });
+            return StatusCode(403, new { message = "غير مصرح لك بعرض بيانات هذا المريض" });
+        }
+        return null;
+    }
     // ─── GET /api/documents?patientId={patientId} ─────────────────────────────
     [HttpGet]
     public async Task<IActionResult> GetDocuments([FromQuery] Guid? patientId, [FromQuery] string? documentType, [FromQuery] Guid? orthoCaseId, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
@@ -88,6 +107,13 @@ public class DocumentsController(AppDbContext db, ICurrentUserService currentUse
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetDocument(Guid id)
     {
+        // CLIN-01: load patientId first for the access check before the projection.
+        var patientId = await db.Documents.Where(d => d.Id == id).Select(d => d.PatientId).FirstOrDefaultAsync();
+        if (patientId == Guid.Empty)
+            return NotFound(new { message = "المستند غير موجود" });
+        var denied = await DenyIfDoctorCannotAccess(patientId);
+        if (denied is not null) return denied;
+
         var doc = await db.Documents
             .Where(d => d.Id == id)
             .Select(d => new

@@ -1,4 +1,6 @@
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -162,8 +164,27 @@ public sealed class UpdateSurgeryCaseRequestValidator : AbstractValidator<Update
 [ApiController]
 [Route("api/surgery-cases")]
 [Authorize(Policy = "SurgeryAccess")]
-public class SurgeryController(AppDbContext db, ILogger<SurgeryController> logger) : ControllerBase
+[ServiceFilter(typeof(PatientAccessFilter))]
+public class SurgeryController(
+    AppDbContext db,
+    ILogger<SurgeryController> logger,
+    IPatientAccessService patientAccess,
+    IAuditService audit,
+    ICurrentUserService currentUser) : ControllerBase
 {
+    // CLIN-01: Per-patient access check for actions where patientId is in body or inferred.
+    private async Task<IActionResult?> DenyIfDoctorCannotAccess(Guid patientId)
+    {
+        if (!patientAccess.IsDoctor) return null;
+        if (!await patientAccess.CanAccessPatientAsync(patientId))
+        {
+            await audit.LogAsync(AuditAction.View, "Patient", patientId,
+                newData: new { status = "denied", resource = "SurgeryCase", role = currentUser.Role?.ToString(), userId = currentUser.UserId });
+            return StatusCode(403, new { message = "غير مصرح لك بعرض بيانات هذا المريض" });
+        }
+        return null;
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] string? status,
@@ -226,6 +247,10 @@ public class SurgeryController(AppDbContext db, ILogger<SurgeryController> logge
 
         if (surgery is null) return NotFound(new { message = "الحالة الجراحية غير موجودة" });
 
+        // CLIN-01: per-patient check after loading the entity.
+        var denied = await DenyIfDoctorCannotAccess(surgery.PatientId);
+        if (denied is not null) return denied;
+
         return Ok(new
         {
             surgery.Id,
@@ -245,6 +270,10 @@ public class SurgeryController(AppDbContext db, ILogger<SurgeryController> logge
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateSurgeryCaseRequest req)
     {
+        // CLIN-01: per-patient check before creating.
+        var denied = await DenyIfDoctorCannotAccess(req.PatientId);
+        if (denied is not null) return denied;
+
         const int maxRetries = 3;
         for (var attempt = 0; attempt < maxRetries; attempt++)
         {
@@ -302,6 +331,10 @@ public class SurgeryController(AppDbContext db, ILogger<SurgeryController> logge
         var surgery = await db.SurgeryCases.FindAsync(id);
         if (surgery is null) return NotFound(new { message = "الحالة الجراحية غير موجودة" });
 
+        // CLIN-01: per-patient check before updating status.
+        var denied = await DenyIfDoctorCannotAccess(surgery.PatientId);
+        if (denied is not null) return denied;
+
         if (!Enum.TryParse<SurgeryCaseStatus>(req.Status, true, out var surgeryStatus))
             return BadRequest(new { message = "حالة الجراحة غير صالحة" });
 
@@ -322,6 +355,10 @@ public class SurgeryController(AppDbContext db, ILogger<SurgeryController> logge
     {
         var surgery = await db.SurgeryCases.FindAsync(id);
         if (surgery is null) return NotFound(new { message = "الحالة الجراحية غير موجودة" });
+
+        // CLIN-01: per-patient check before deleting.
+        var denied = await DenyIfDoctorCannotAccess(surgery.PatientId);
+        if (denied is not null) return denied;
 
         surgery.IsActive = false;
         surgery.DeletedAt = DateTime.UtcNow;

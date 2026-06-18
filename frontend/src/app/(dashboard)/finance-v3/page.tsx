@@ -74,8 +74,11 @@ function FinanceV3PageInner() {
   const [hasActiveSession, setHasActiveSession] = useState(false);
   const [activeSessionInfo, setActiveSessionInfo] = useState<{ cashierName: string; openedAt: string } | null>(null);
 
-  /* ── Access gate: Admin / Accountant only ── */
-  const isAuthorized = user?.role === "Admin" || user?.role === "Accountant";
+  /* ── Access gate (FE-18): Admin / Accountant / Reception — matches
+     routePermissions + sidebar so Reception no longer hits an AccessDenied
+     dead-end. Admin-only controls remain gated by isAdmin below; the backend
+     policies stay the source of truth for each finance operation. ── */
+  const isAuthorized = user?.role === "Admin" || user?.role === "Accountant" || user?.role === "Reception";
   const isAdmin = user?.role === "Admin";
 
   /* ── Fetch active cashier session status ── */

@@ -1,5 +1,7 @@
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -38,8 +40,26 @@ public sealed class AddRadiographRequest
 [ApiController]
 [Route("api/clinical-photos")]
 [Authorize(Policy = "StaffOnly")]
-public class ClinicalPhotosController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
+[ServiceFilter(typeof(PatientAccessFilter))]
+public class ClinicalPhotosController(
+    AppDbContext db,
+    ICurrentUserService currentUser,
+    IPatientAccessService patientAccess,
+    IAuditService audit) : ControllerBase
 {
+    // CLIN-01: Per-patient access check for actions where patientId is in body or inferred.
+    private async Task<IActionResult?> DenyIfDoctorCannotAccess(Guid patientId)
+    {
+        if (!patientAccess.IsDoctor) return null;
+        if (!await patientAccess.CanAccessPatientAsync(patientId))
+        {
+            await audit.LogAsync(AuditAction.View, "Patient", patientId,
+                newData: new { status = "denied", resource = "ClinicalPhoto", role = currentUser.Role?.ToString(), userId = currentUser.UserId });
+            return StatusCode(403, new { message = "غير مصرح لك بعرض بيانات هذا المريض" });
+        }
+        return null;
+    }
+
     [HttpGet("{patientId:guid}")]
     public async Task<IActionResult> GetPhotos(Guid patientId, [FromQuery] string? category, [FromQuery] string? stage, [FromQuery] Guid? orthoCaseId)
     {
@@ -68,6 +88,10 @@ public class ClinicalPhotosController(AppDbContext db, ICurrentUserService curre
     [HttpPost]
     public async Task<IActionResult> AddPhoto([FromBody] AddPhotoRequest req)
     {
+        // CLIN-01: patientId is in the body — check before creating.
+        var denied = await DenyIfDoctorCannotAccess(req.PatientId);
+        if (denied is not null) return denied;
+
         var photo = new ClinicalPhoto
         {
             PatientId   = req.PatientId,
@@ -95,6 +119,10 @@ public class ClinicalPhotosController(AppDbContext db, ICurrentUserService curre
         if (!photo.IsActive)
             return BadRequest(new { message = "الصورة محذوفة بالفعل" });
 
+        // CLIN-01: per-patient check before deleting.
+        var denied = await DenyIfDoctorCannotAccess(photo.PatientId);
+        if (denied is not null) return denied;
+
         photo.IsActive = false;
         photo.DeletedAt = DateTime.UtcNow;
         photo.DeletedBy = currentUser.UserId;
@@ -106,8 +134,26 @@ public class ClinicalPhotosController(AppDbContext db, ICurrentUserService curre
 [ApiController]
 [Route("api/radiographs")]
 [Authorize(Policy = "StaffOnly")]
-public class RadiographsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
+[ServiceFilter(typeof(PatientAccessFilter))]
+public class RadiographsController(
+    AppDbContext db,
+    ICurrentUserService currentUser,
+    IPatientAccessService patientAccess,
+    IAuditService audit) : ControllerBase
 {
+    // CLIN-01: Per-patient access check for actions where patientId is in body or inferred.
+    private async Task<IActionResult?> DenyIfDoctorCannotAccess(Guid patientId)
+    {
+        if (!patientAccess.IsDoctor) return null;
+        if (!await patientAccess.CanAccessPatientAsync(patientId))
+        {
+            await audit.LogAsync(AuditAction.View, "Patient", patientId,
+                newData: new { status = "denied", resource = "Radiograph", role = currentUser.Role?.ToString(), userId = currentUser.UserId });
+            return StatusCode(403, new { message = "غير مصرح لك بعرض بيانات هذا المريض" });
+        }
+        return null;
+    }
+
     [HttpGet("{patientId:guid}")]
     public async Task<IActionResult> GetRadiographs(Guid patientId, [FromQuery] string? xrayType, [FromQuery] Guid? orthoCaseId)
     {
@@ -140,6 +186,10 @@ public class RadiographsController(AppDbContext db, ICurrentUserService currentU
     [HttpPost]
     public async Task<IActionResult> AddRadiograph([FromBody] AddRadiographRequest req)
     {
+        // CLIN-01: per-patient check before creating.
+        var denied = await DenyIfDoctorCannotAccess(req.PatientId);
+        if (denied is not null) return denied;
+
         // Codex review (PR #357): the case must belong to the SAME patient —
         // existence alone would allow cross-patient links.
         if (req.OrthoCaseId.HasValue &&
@@ -174,6 +224,10 @@ public class RadiographsController(AppDbContext db, ICurrentUserService currentU
 
         if (!xray.IsActive)
             return BadRequest(new { message = "الأشعة محذوفة بالفعل" });
+
+        // CLIN-01: per-patient check before deleting.
+        var denied = await DenyIfDoctorCannotAccess(xray.PatientId);
+        if (denied is not null) return denied;
 
         xray.IsActive = false;
         xray.DeletedAt = DateTime.UtcNow;

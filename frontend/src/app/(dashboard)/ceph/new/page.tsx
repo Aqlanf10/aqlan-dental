@@ -17,6 +17,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 import CephXrayUploader from "@/components/ceph/CephXrayUploader";
 
@@ -44,20 +45,7 @@ const ANALYSIS_LABELS: Record<string, string> = {
   wits: "وتس (Wits)",
 };
 
-/** Extract a real Arabic reason from the server (message OR FluentValidation errors). */
-function getApiErrorMessage(error: unknown, fallback: string): string {
-  const r = error as {
-    response?: { data?: { message?: string; errors?: Record<string, string[]> } };
-  };
-  const message = r.response?.data?.message;
-  if (message) return message;
-  const errors = r.response?.data?.errors;
-  if (errors) {
-    const first = Object.values(errors).flat()[0];
-    if (first) return first;
-  }
-  return fallback;
-}
+/** FE-11: getApiErrorMessage removed — use extractErrorMessage from @/lib/errors. */
 
 const inputCls = (err?: string) =>
   cn(
@@ -156,7 +144,7 @@ function NewCephPageInner() {
       });
       router.push(`/ceph/${res.data.id}`);
     } catch (err: unknown) {
-      setServerError(getApiErrorMessage(err, "حدث خطأ أثناء الإنشاء"));
+      setServerError(extractErrorMessage(err, "حدث خطأ أثناء الإنشاء"));
       setSaving(false);
     }
   };

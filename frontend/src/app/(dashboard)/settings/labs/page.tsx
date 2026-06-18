@@ -6,6 +6,7 @@ import {
   CheckCircle2, AlertTriangle, Loader2,
 } from "lucide-react";
 import Link from "next/link";
+import { extractErrorMessage } from "@/lib/errors";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -41,18 +42,7 @@ const inputCls =
   "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue";
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
-
-function getApiErrorMessage(error: unknown, fallback: string) {
-  const response = error as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } };
-  const message = response.response?.data?.message;
-  if (message) return message;
-  const errors = response.response?.data?.errors;
-  if (errors) {
-    const firstError = Object.values(errors).flat()[0];
-    if (firstError) return firstError;
-  }
-  return fallback;
-}
+// FE-11: getApiErrorMessage removed — use extractErrorMessage from @/lib/errors.
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
@@ -173,7 +163,7 @@ export default function LabsSettingsPage() {
       handleCloseForm();
       load();
     } catch (err) {
-      setFormError(getApiErrorMessage(err, "حدث خطأ أثناء الحفظ"));
+      setFormError(extractErrorMessage(err, "حدث خطأ أثناء الحفظ"));
     } finally {
       setSaving(false);
     }

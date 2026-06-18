@@ -115,20 +115,6 @@ const animationStyles = `
 /* ═══════════════════════════════════════════════════════════════════════════
    Module tabs (top level navigation within daily operations)
    ═══════════════════════════════════════════════════════════════════════════ */
-function getApiErrorMessage(error: unknown, fallback: string): string {
-  if (typeof error === "object" && error !== null && "response" in error) {
-    const response = (error as { response?: { data?: unknown } }).response;
-    const data = response?.data;
-    if (typeof data === "object" && data !== null && "message" in data) {
-      const message = (data as { message?: unknown }).message;
-      if (typeof message === "string" && message.trim()) return message;
-    }
-    if (typeof data === "string" && data.trim()) return data;
-  }
-  if (error instanceof Error && error.message.trim()) return error.message;
-  return fallback;
-}
-
 type ModuleTab = "appointments" | "journey" | "queue" | "rooms" | "checkout" | "booking" | "lab" | "report";
 
 const MODULE_TABS: { key: ModuleTab; label: string; icon: React.ElementType; color: string }[] = [

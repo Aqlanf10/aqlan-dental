@@ -236,6 +236,43 @@ public class UploadsController(
         return Ok(new { message = "تم حذف الملف" });
     }
 
+    // SEC-03: Authenticated file-serving endpoint. The legacy UseStaticFiles(/uploads) in
+    // Program.cs serves files BEFORE UseAuthentication — anyone with a URL can read clinical
+    // photos/X-rays/docs. This endpoint requires StaffOnly auth and serves the same files.
+    // Frontend migration to use this endpoint (with Authorization header via fetch+blob) is
+    // tracked separately; until then, UseStaticFiles is gated behind a Production-only auth
+    // middleware (see Program.cs) so Dev convenience is preserved but Prod is protected.
+    [HttpGet("{fileName}")]
+    public IActionResult Download(string fileName)
+    {
+        // Prevent path traversal (same guard as Delete)
+        if (fileName.Contains('/') || fileName.Contains('\\') || fileName.Contains(".."))
+            return BadRequest(new { message = "اسم الملف غير صالح" });
+
+        var uploadsPath = ResolveUploadsDirectory();
+        var filePath = Path.Combine(uploadsPath, fileName);
+        if (!System.IO.File.Exists(filePath))
+            return NotFound(new { message = "الملف غير موجود" });
+
+        var ext = Path.GetExtension(fileName).ToLower();
+        var contentType = ext switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".webp" => "image/webp",
+            ".pdf" => "application/pdf",
+            ".webm" => "audio/webm",
+            ".ogg" => "audio/ogg",
+            ".mp4" => "audio/mp4",
+            ".m4a" => "audio/mp4",
+            ".mp3" => "audio/mpeg",
+            ".wav" => "audio/wav",
+            _ => "application/octet-stream"
+        };
+
+        return PhysicalFile(filePath, contentType, fileName);
+    }
+
     private static bool IsRedirect(HttpStatusCode statusCode) =>
         statusCode is HttpStatusCode.Moved or
             HttpStatusCode.Redirect or

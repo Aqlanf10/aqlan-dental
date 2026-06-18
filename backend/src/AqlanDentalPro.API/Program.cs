@@ -11,14 +11,37 @@ var builder = WebApplication.CreateBuilder(args);
 if (builder.Environment.IsProduction())
 {
     var prodJwtKey = builder.Configuration["Jwt:SecretKey"] ?? "";
-    if (prodJwtKey.Contains("CHANGE_ME") || prodJwtKey.Length < 32)
+
+    // SEC-14: Reject known-bad JWT secrets that bypassed the original CHANGE_ME + length check.
+    // docker-compose.yml defaults to "dev_secret_key_change_in_production_must_be_long"
+    // (50 chars, no "CHANGE_ME") which passed the old guard and let the app boot with a
+    // publicly-known signing key. .env.example uses lowercase "change_me_at_least_64_chars"
+    // which also bypassed the old case-sensitive check. Comparison is now case-insensitive.
+    var knownBadJwtSecrets = new[]
+    {
+        "CHANGE_ME",                                        // appsettings.json / .env.example placeholder
+        "dev_secret_key_change_in_production_must_be_long", // docker-compose.yml default
+    };
+    var badJwt = knownBadJwtSecrets.Any(b => prodJwtKey.Contains(b, StringComparison.OrdinalIgnoreCase));
+    if (badJwt || prodJwtKey.Length < 32)
         throw new InvalidOperationException(
-            "SEC: مفتاح JWT غير آمن في الإنتاج. يجب ضبط Jwt:SecretKey بقيمة عشوائية لا تقل عن 32 حرفاً.");
+            "SEC: مفتاح JWT غير آمن في الإنتاج. يجب ضبط Jwt:SecretKey بقيمة عشوائية لا تقل عن 32 حرفاً ولا تطابق أي قيمة افتراضية معروفة.");
 
     var connStr = builder.Configuration.GetConnectionString("DefaultConnection") ?? "";
-    if (connStr.Contains("CHANGE_ME"))
+
+    // SEC-14: Reject known-bad DB passwords. docker-compose.yml defaults to
+    // "aqlan_dev_password" and .env.example to "change_me_strong_password" — both
+    // bypassed the old case-sensitive CHANGE_ME check.
+    var knownBadDbPasswords = new[]
+    {
+        "CHANGE_ME",                 // appsettings.json placeholder
+        "aqlan_dev_password",        // docker-compose.yml default
+        "change_me_strong_password", // .env.example placeholder
+    };
+    var badConn = knownBadDbPasswords.Any(b => connStr.Contains(b, StringComparison.OrdinalIgnoreCase));
+    if (badConn)
         throw new InvalidOperationException(
-            "SEC: كلمة مرور قاعدة البيانات لم تُضبط في الإنتاج. يجب ضبط ConnectionStrings:DefaultConnection.");
+            "SEC: كلمة مرور قاعدة البيانات لم تُضبط في الإنتاج. يجب ضبط ConnectionStrings:DefaultConnection بقيمة حقيقية.");
 }
 
 // ── Serilog ──────────────────────────────────────────────────────────────────

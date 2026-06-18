@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Save, AlertTriangle, CalendarDays, Loader2, Clock } from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
+import { useDoctors } from "@/hooks/useDoctors";
 import { cn, localDateString } from "@/lib/utils";
 import type { PatientListItem } from "@/types/patient";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
@@ -73,7 +74,8 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
   const [isConflict, setIsConflict] = useState(false);
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  // FE-13: useDoctors() replaces useState + useEffect + api.get.
+  const { data: doctors = [] } = useDoctors();
   const [services, setServices] = useState<ServiceOption[]>([]);
   const [rooms, setRooms] = useState<RoomOption[]>([]);
 
@@ -109,10 +111,7 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
   const watchedDoctor = useWatch({ control, name: "doctorId" });
   const watchedServiceId = useWatch({ control, name: "serviceId" });
 
-  // Load doctors
-  useEffect(() => {
-    api.get<Doctor[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
-  }, []);
+  // FE-13: Removed useEffect that fetched doctors — useDoctors() handles it.
 
   // Load services (ShowInReception=true)
   useEffect(() => {

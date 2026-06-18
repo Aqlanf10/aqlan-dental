@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Save, Plus, Trash2 } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
 import api from "@/lib/api";
+import { useDoctors } from "@/hooks/useDoctors";
 import { cn } from "@/lib/utils";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
 
@@ -54,7 +55,8 @@ export function PrescriptionForm({ defaultPatientId, defaultPatientName }: Props
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  // FE-13: useDoctors() replaces useState + useEffect + api.get.
+  const { data: doctors = [] } = useDoctors();
 
   const { register, handleSubmit, setValue, control, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -66,9 +68,7 @@ export function PrescriptionForm({ defaultPatientId, defaultPatientName }: Props
 
   const { fields, append, remove } = useFieldArray({ control, name: "drugs" });
 
-  useEffect(() => {
-    api.get<Doctor[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
-  }, []);
+  // FE-13: Removed useEffect that fetched doctors — useDoctors() handles it.
 
   const quickAdd = (drug: typeof COMMON_DRUGS[0]) => {
     append({ ...drug, notes: "" });

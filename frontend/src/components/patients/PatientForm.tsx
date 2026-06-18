@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Save, ChevronDown, AlertTriangle, ExternalLink, X, KeyRound, Copy, Check } from "lucide-react";
 import type { CreatePatientRequest } from "@/types/patient";
 import api from "@/lib/api";
+import { useDoctors } from "@/hooks/useDoctors";
 import { useAuthStore } from "@/stores/authStore";
 import { cn, normalizePhone } from "@/lib/utils";
 
@@ -113,13 +114,9 @@ export function PatientForm({ defaultValues, patientId }: Props) {
   const [forceSave, setForceSave] = useState(false);
   const [portalDialog, setPortalDialog] = useState<{ username: string; temporaryPassword: string; patientId: string } | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [doctors, setDoctors] = useState<DoctorOption[]>([]);
+  // FE-13: useDoctors() replaces useEffect + api.get + useState.
+  const { data: doctors = [] } = useDoctors();
   const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Load doctors list for primary doctor selection
-  useEffect(() => {
-    api.get<DoctorOption[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
-  }, []);
 
   const { register, handleSubmit, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),

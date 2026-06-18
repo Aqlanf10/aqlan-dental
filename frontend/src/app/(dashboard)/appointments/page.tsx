@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { ChevronRight, ChevronLeft, CalendarDays, Plus, LayoutGrid, List, Calendar, Stethoscope, Printer } from "lucide-react";
 import { DaySchedule } from "@/components/appointments/DaySchedule";
@@ -7,9 +7,11 @@ import { WeekCalendar } from "@/components/appointments/WeekCalendar";
 import { MonthCalendar } from "@/components/appointments/MonthCalendar";
 import { UpcomingWidget } from "@/components/appointments/UpcomingWidget";
 import { formatArabicDate, cn } from "@/lib/utils";
-import api from "@/lib/api";
+import { useDoctors } from "@/hooks/useDoctors";
 import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
 
+// FE-13: Removed local Doctor interface + useEffect+useState+api.get pattern.
+// useDoctors() provides the same data with staleTime: 60s (cached across the app).
 interface Doctor { id: string; name: string; color?: string; specialty?: string; }
 
 const MONTHS_AR = [
@@ -30,11 +32,8 @@ export default function AppointmentsPage() {
   const [date, setDate]       = useState(() => toDateStr(new Date()));
   const [view, setView]       = useState<ViewMode>("day");
   const [doctorId, setDoctorId] = useState<string>("");
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
-
-  useEffect(() => {
-    api.get<Doctor[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
-  }, []);
+  // FE-13: useDoctors() replaces useEffect + api.get + useState.
+  const { data: doctors = [] } = useDoctors();
 
   const anchorDate = new Date(date + "T12:00:00");
 

@@ -11,6 +11,7 @@ import {
 import type { PatientListItem, PatientProfile } from "@/types/patient";
 import type { PaginatedResponse } from "@/types/api";
 import api from "@/lib/api";
+import { useDoctors } from "@/hooks/useDoctors";
 import { GENDER_LABELS, formatPhoneForWhatsApp, normalizePhone } from "@/lib/utils";
 import { canViewPatientFinance, isAccountantRole, isAdminRole } from "@/lib/roles";
 import { useAuthStore } from "@/stores/authStore";
@@ -58,7 +59,8 @@ export function PatientTable() {
   const [gender, setGender] = useState("");
   const [doctorId, setDoctorId] = useState("");
   const [status, setStatus] = useState<"active" | "archived" | "all">("active");
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  // FE-13: useDoctors() replaces useState + useEffect + api.get.
+  const { data: doctors = [] } = useDoctors();
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -86,9 +88,7 @@ export function PatientTable() {
     action: "archive" | "restore";
   }>({ open: false, patient: null, action: "archive" });
 
-  useEffect(() => {
-    api.get<Doctor[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
-  }, []);
+  // FE-13: Removed useEffect that fetched doctors — useDoctors() handles it.
 
   // Close row menu on outside click
   useEffect(() => {

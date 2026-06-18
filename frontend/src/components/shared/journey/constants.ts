@@ -111,10 +111,13 @@ export const APPOINTMENT_TYPES = [
 ];
 
 // ─── Severity Styles ──────────────────────────────────────────────────────
-export const SEVERITY_STYLES: Record<string, { bg: string; border: string; text: string }> = {
-  danger:  { bg: "bg-[#fcebeb]", border: "border-[#f09595]/50", text: "text-[#a32d2d]" },
-  warning: { bg: "bg-[#faeeda]", border: "border-[#fac775]/50", text: "text-[#633806]" },
-  info:    { bg: "bg-[#e6f1fb]", border: "border-[#85b7eb]/50", text: "text-[#185fa5]" },
+// FE-10: Added optional `icon` field so patient-journey/[patientId]/page.tsx can use the
+// shared SEVERITY_STYLES instead of a local copy. Cards.tsx (which imports the same const)
+// is unaffected — it only reads bg/border/text.
+export const SEVERITY_STYLES: Record<string, { bg: string; border: string; text: string; icon: string }> = {
+  danger:  { bg: "bg-[#fcebeb]", border: "border-[#f09595]/50", text: "text-[#a32d2d]", icon: "text-[#a32d2d]" },
+  warning: { bg: "bg-[#faeeda]", border: "border-[#fac775]/50", text: "text-[#633806]", icon: "text-[#ba7517]" },
+  info:    { bg: "bg-[#e6f1fb]", border: "border-[#85b7eb]/50", text: "text-[#185fa5]", icon: "text-[#185fa5]" },
 };
 
 // ─── Timeline Dot Colors ──────────────────────────────────────────────────

@@ -211,7 +211,7 @@ public class UsersController(
         return Ok(accounts);
     }
 
-    /// <summary>قائمة المستخدمين للرسائل — متاح لجميع الأدوار مع تصفية حسب الصلاحيات</summary>
+    /// <summary>قائمة المستخدمين للرسائل — تخضع لسياسة AdminOnly على مستوى المتحكم (الصلاحيات تُجمَع)</summary>
     [HttpGet("contacts")]
     [Authorize]
     public async Task<IActionResult> GetContacts([FromServices] MessagingService messagingService)

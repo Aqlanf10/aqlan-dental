@@ -3,25 +3,14 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, FlaskConical } from "lucide-react";
 import api from "@/lib/api";
+import { LAB_STATUS_LABELS as STATUS_LABELS, LAB_STATUS_COLORS as STATUS_COLORS } from "@/lib/labStatus";
 import { toast } from "@/stores/toastStore";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import type { LabOrder, LabOrderStatus } from "@/types/lab";
 import { cn, localDateString } from "@/lib/utils";
 
-const STATUS_LABELS: Record<string, string> = {
-  draft: "مسودة", sent: "تم الإرسال", manufacturing: "قيد الصنع",
-  tryIn: "تجربة", ready: "جاهز", received: "تم الاستلام", delivered: "تم التسليم",
-  returned: "مرتجع", remake: "إعادة صناعة", cancelled: "ملغى",
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  draft: "bg-gray-100 text-gray-500", sent: "bg-blue-100 text-blue-700",
-  manufacturing: "bg-amber-100 text-amber-700", tryIn: "bg-teal-100 text-teal-700", ready: "bg-green-100 text-green-700",
-  received: "bg-indigo-100 text-indigo-700", delivered: "bg-emerald-100 text-emerald-700",
-  returned: "bg-orange-100 text-orange-700", remake: "bg-purple-100 text-purple-700",
-  cancelled: "bg-red-100 text-red-700",
-};
+// FE-08: STATUS_LABELS + STATUS_COLORS now imported from @/lib/labStatus (was re-declared locally).
 
 export default function LabOverduePage() {
   const queryClient = useQueryClient();

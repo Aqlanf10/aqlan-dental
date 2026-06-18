@@ -416,128 +416,148 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateInvoiceRequest req)
     {
-        var invoice = await db.Invoices
-            .Include(i => i.LineItems)
-            .FirstOrDefaultAsync(i => i.Id == id);
-
-        if (invoice == null)
-            return NotFound(new { message = "الفاتورة غير موجودة" });
-        if (!invoice.IsActive)
-            return BadRequest(new { message = "الفاتورة محذوفة" });
-        if (invoice.Status != InvoiceStatus.Draft)
-            return BadRequest(new { message = "يمكن تعديل الفواتير المسودة فقط" });
-
-        var userId = GetCurrentUserId();
-        invoice.UpdatedBy = userId;
-
-        // Update notes if provided
-        if (req.Notes != null)
-            invoice.Notes = req.Notes;
-
-        // Update discount if provided
-        if (req.DiscountAmount.HasValue)
-            invoice.DiscountAmount = req.DiscountAmount.Value;
-
-        // Update tax if provided
-        if (req.TaxAmount.HasValue)
-            invoice.TaxAmount = req.TaxAmount.Value;
-
-        // Replace line items if provided
-        if (req.LineItems != null && req.LineItems.Count > 0)
+        // FIN-04 FIX: Wrap the entire update in a transaction. Previously the method did two
+        // SaveChangesAsync calls (one to persist soft-deleted + new line items, one to persist
+        // recalculated Subtotal/TotalAmount) with no transaction — if the second save threw
+        // (DB connection drop, constraint violation), the invoice was left with new line items
+        // persisted but Subtotal/TotalAmount still reflecting the old items, causing
+        // money-correctness drift in subsequent payment operations.
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
         {
-            // Validate all DoctorIds upfront before any DB writes
-            var doctorIds = req.LineItems.Where(li => li.DoctorId.HasValue).Select(li => li.DoctorId!.Value).Distinct().ToList();
-            if (doctorIds.Count > 0)
-            {
-                var validDoctorIds = (await db.Doctors.Where(d => doctorIds.Contains(d.Id)).Select(d => d.Id).ToListAsync()).ToHashSet();
-                var invalidDoctorId = doctorIds.FirstOrDefault(id => !validDoctorIds.Contains(id));
-                if (invalidDoctorId != default)
-                    return BadRequest(new { message = $"الطبيب المحدد غير موجود (معرّف: {invalidDoctorId})" });
-            }
+            var invoice = await db.Invoices
+                .Include(i => i.LineItems)
+                .FirstOrDefaultAsync(i => i.Id == id);
 
-            // Soft-delete existing line items (preserve audit trail and commission links)
-            foreach (var existingItem in invoice.LineItems.Where(l => l.IsActive))
-            {
-                existingItem.IsActive = false;
-                existingItem.DeletedAt = DateTime.UtcNow;
-                existingItem.DeletedBy = userId;
-            }
+            if (invoice == null)
+                return NotFound(new { message = "الفاتورة غير موجودة" });
+            if (!invoice.IsActive)
+                return BadRequest(new { message = "الفاتورة محذوفة" });
+            if (invoice.Status != InvoiceStatus.Draft)
+                return BadRequest(new { message = "يمكن تعديل الفواتير المسودة فقط" });
 
-            // Add new line items
-            var sortOrder = 0;
-            foreach (var itemReq in req.LineItems)
-            {
-                string serviceNameSnapshot = itemReq.ServiceNameSnapshot ?? "خدمة علاجية";
-                string description = itemReq.Description ?? serviceNameSnapshot;
+            var userId = GetCurrentUserId();
+            invoice.UpdatedBy = userId;
 
-                // If service is provided, look up price and name
-                if (itemReq.ServiceId.HasValue)
+            // Update notes if provided
+            if (req.Notes != null)
+                invoice.Notes = req.Notes;
+
+            // Update discount if provided
+            if (req.DiscountAmount.HasValue)
+                invoice.DiscountAmount = req.DiscountAmount.Value;
+
+            // Update tax if provided
+            if (req.TaxAmount.HasValue)
+                invoice.TaxAmount = req.TaxAmount.Value;
+
+            // Replace line items if provided
+            if (req.LineItems != null && req.LineItems.Count > 0)
+            {
+                // Validate all DoctorIds upfront before any DB writes
+                var doctorIds = req.LineItems.Where(li => li.DoctorId.HasValue).Select(li => li.DoctorId!.Value).Distinct().ToList();
+                if (doctorIds.Count > 0)
                 {
-                    var service = await db.ClinicServices.FindAsync(itemReq.ServiceId.Value);
-                    if (service != null)
-                    {
-                        if (string.IsNullOrWhiteSpace(itemReq.ServiceNameSnapshot))
-                            serviceNameSnapshot = service.ArabicName;
-                    }
+                    var validDoctorIds = (await db.Doctors.Where(d => doctorIds.Contains(d.Id)).Select(d => d.Id).ToListAsync()).ToHashSet();
+                    var invalidDoctorId = doctorIds.FirstOrDefault(id => !validDoctorIds.Contains(id));
+                    if (invalidDoctorId != default)
+                        return BadRequest(new { message = $"الطبيب المحدد غير موجود (معرّف: {invalidDoctorId})" });
                 }
 
-                var quantity = itemReq.Quantity > 0 ? itemReq.Quantity : 1;
-                var unitPrice = itemReq.UnitPrice;
-                var totalPrice = quantity * unitPrice;
-
-                var lineItem = new InvoiceLineItem
+                // Soft-delete existing line items (preserve audit trail and commission links)
+                foreach (var existingItem in invoice.LineItems.Where(l => l.IsActive))
                 {
-                    InvoiceId = invoice.Id,
-                    ServiceId = itemReq.ServiceId,
-                    ServiceNameSnapshot = serviceNameSnapshot,
-                    Description = description,
-                    Quantity = quantity,
-                    UnitPrice = unitPrice,
-                    TotalPrice = totalPrice,
-                    DoctorId = itemReq.DoctorId,
-                    RelatedTreatmentPlanStepId = itemReq.RelatedTreatmentPlanStepId,
-                    RelatedVisitId = itemReq.RelatedVisitId,
-                    SortOrder = sortOrder++
-                };
+                    existingItem.IsActive = false;
+                    existingItem.DeletedAt = DateTime.UtcNow;
+                    existingItem.DeletedBy = userId;
+                }
 
-                db.InvoiceLineItems.Add(lineItem);
+                // Add new line items
+                var sortOrder = 0;
+                foreach (var itemReq in req.LineItems)
+                {
+                    string serviceNameSnapshot = itemReq.ServiceNameSnapshot ?? "خدمة علاجية";
+                    string description = itemReq.Description ?? serviceNameSnapshot;
+
+                    // If service is provided, look up price and name
+                    if (itemReq.ServiceId.HasValue)
+                    {
+                        var service = await db.ClinicServices.FindAsync(itemReq.ServiceId.Value);
+                        if (service != null)
+                        {
+                            if (string.IsNullOrWhiteSpace(itemReq.ServiceNameSnapshot))
+                                serviceNameSnapshot = service.ArabicName;
+                        }
+                    }
+
+                    var quantity = itemReq.Quantity > 0 ? itemReq.Quantity : 1;
+                    var unitPrice = itemReq.UnitPrice;
+                    var totalPrice = quantity * unitPrice;
+
+                    var lineItem = new InvoiceLineItem
+                    {
+                        InvoiceId = invoice.Id,
+                        ServiceId = itemReq.ServiceId,
+                        ServiceNameSnapshot = serviceNameSnapshot,
+                        Description = description,
+                        Quantity = quantity,
+                        UnitPrice = unitPrice,
+                        TotalPrice = totalPrice,
+                        DoctorId = itemReq.DoctorId,
+                        RelatedTreatmentPlanStepId = itemReq.RelatedTreatmentPlanStepId,
+                        RelatedVisitId = itemReq.RelatedVisitId,
+                        SortOrder = sortOrder++
+                    };
+
+                    db.InvoiceLineItems.Add(lineItem);
+                }
             }
+
+            // Persist soft-deleted items and new items before recalculating totals.
+            // Without this, the ChangeTracker can return stale data (soft-deleted items
+            // still visible via identity resolution, new items not yet in DB).
+            await db.SaveChangesAsync();
+
+            // Recalculate totals from the now-consistent database state
+            var allLineItems = await db.InvoiceLineItems
+                .Where(l => l.InvoiceId == invoice.Id && l.IsActive)
+                .ToListAsync();
+            invoice.Subtotal = allLineItems.Sum(l => l.TotalPrice);
+            var discount = invoice.DiscountAmount ?? 0;
+            var tax = invoice.TaxAmount ?? 0;
+            invoice.TotalAmount = invoice.Subtotal - discount + tax;
+
+            await db.SaveChangesAsync();
+
+            await tx.CommitAsync();
+
+            // Auto-fill commission defaults for newly added line items linked to a service.
+            // Outside the transaction by design — failures are non-fatal (logged) and the
+            // invoice itself is already safely committed.
+            foreach (var liId in allLineItems.Where(l => l.ServiceId != null && l.CommissionStatus == CommissionStatus.Pending).Select(l => l.Id))
+            {
+                try { await commissionService.AutoFillFromServiceAsync(liId); }
+                catch (Exception ex) { logger.LogWarning(ex, "Commission auto-fill failed for line item {LineItemId}", liId); }
+            }
+
+            return Ok(new
+            {
+                invoice.Id,
+                invoice.InvoiceNumber,
+                Status = invoice.Status.ToString(),
+                invoice.Subtotal,
+                invoice.DiscountAmount,
+                invoice.TaxAmount,
+                invoice.TotalAmount,
+                message = "تم تحديث الفاتورة بنجاح"
+            });
         }
-
-        // Persist soft-deleted items and new items before recalculating totals.
-        // Without this, the ChangeTracker can return stale data (soft-deleted items
-        // still visible via identity resolution, new items not yet in DB).
-        await db.SaveChangesAsync();
-
-        // Recalculate totals from the now-consistent database state
-        var allLineItems = await db.InvoiceLineItems
-            .Where(l => l.InvoiceId == invoice.Id && l.IsActive)
-            .ToListAsync();
-        invoice.Subtotal = allLineItems.Sum(l => l.TotalPrice);
-        var discount = invoice.DiscountAmount ?? 0;
-        var tax = invoice.TaxAmount ?? 0;
-        invoice.TotalAmount = invoice.Subtotal - discount + tax;
-
-        await db.SaveChangesAsync();
-
-        // Auto-fill commission defaults for newly added line items linked to a service
-        foreach (var liId in allLineItems.Where(l => l.ServiceId != null && l.CommissionStatus == CommissionStatus.Pending).Select(l => l.Id))
+        catch (Exception ex)
         {
-            try { await commissionService.AutoFillFromServiceAsync(liId); }
-            catch (Exception ex) { logger.LogWarning(ex, "Commission auto-fill failed for line item {LineItemId}", liId); }
+            await tx.RollbackAsync();
+            logger.LogError(ex, "Invoice Update failed for invoice {InvoiceId}", id);
+            throw;
         }
-
-        return Ok(new
-        {
-            invoice.Id,
-            invoice.InvoiceNumber,
-            Status = invoice.Status.ToString(),
-            invoice.Subtotal,
-            invoice.DiscountAmount,
-            invoice.TaxAmount,
-            invoice.TotalAmount,
-            message = "تم تحديث الفاتورة بنجاح"
-        });
     }
 
     // ─── 5. PATCH /api/invoices/{id}/issue — Issue draft invoice ──────────

@@ -347,9 +347,8 @@ public static class DbSeeder
             var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
             if (env == "Production")
             {
-                logger.LogWarning(
-                    "MigrateUserPasswordsAsync: ADMIN_DEFAULT_PASSWORD not set in Production. " +
-                    "Skipping re-hash of unsalted users — they must use the forgot-password flow.");
+                // SEC-01: In Production, do NOT reset unsalted users to a known default.
+                // They must use the forgot-password flow or ADMIN_RESET_PASSWORD.
                 return;
             }
             migratePassword = "AqlanDental2024!"; // Dev fallback only

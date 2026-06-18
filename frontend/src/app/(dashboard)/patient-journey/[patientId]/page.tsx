@@ -38,77 +38,23 @@ import type {
 } from "@/types/journey";
 import { Skeleton, CardSkeleton } from "@/components/ui/skeleton";
 import api from "@/lib/api";
+// FE-10: import shared helpers instead of re-declaring locally (was drifted: ar-SA vs ar-YE locale).
+import {
+  fmtRial,
+  fmtDate,
+  fmtTime,
+  getInitials,
+  SEVERITY_STYLES,
+  TIMELINE_DOT_COLORS,
+} from "@/components/shared/journey/constants";
 
 // ─── Panel Keys ─────────────────────────────────────────────────────────────
 
 type PanelKey = "journey" | "visit" | "payment" | "ortho" | "history" | "timeline" | "docs";
 
-// ─── Currency Formatter ─────────────────────────────────────────────────────
-
-function fmtRial(amount: number): string {
-  return amount.toLocaleString("ar-SA") + " ر.ي";
-}
-
-function fmtDate(dateStr: string): string {
-  try {
-    return new Intl.DateTimeFormat("ar-YE", {
-      year: "numeric", month: "long", day: "numeric",
-    }).format(new Date(dateStr));
-  } catch {
-    return dateStr;
-  }
-}
-
-function fmtTime(timeStr: string): string {
-  const [h, m] = timeStr.split(":");
-  const hour = parseInt(h);
-  const period = hour >= 12 ? "م" : "ص";
-  const h12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-  return `${h12}:${m} ${period}`;
-}
-
-function getInitials(name: string): string {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0])
-    .join("");
-}
-
-// ─── Severity Styles ────────────────────────────────────────────────────────
-
-const SEVERITY_STYLES: Record<string, { bg: string; border: string; text: string; icon: string }> = {
-  danger: {
-    bg: "bg-[#fcebeb]",
-    border: "border-[#f09595]/50",
-    text: "text-[#a32d2d]",
-    icon: "text-[#a32d2d]",
-  },
-  warning: {
-    bg: "bg-[#faeeda]",
-    border: "border-[#fac775]/50",
-    text: "text-[#633806]",
-    icon: "text-[#ba7517]",
-  },
-  info: {
-    bg: "bg-[#e6f1fb]",
-    border: "border-[#85b7eb]/50",
-    text: "text-[#185fa5]",
-    icon: "text-[#185fa5]",
-  },
-};
-
-const TIMELINE_DOT_COLORS: Record<string, string> = {
-  appointment: "bg-[#3d7ab5]",
-  visit: "bg-[#3d7ab5]",
-  payment: "bg-[#fac775]",
-  invoice: "bg-[#185fa5]",
-  document: "bg-[#d3d1c7]",
-  ortho: "bg-[#3d7ab5]",
-  message: "bg-[#185fa5]",
-  default: "bg-[#d3d1c7]",
-};
+// FE-10: fmtRial, fmtDate, fmtTime, getInitials, SEVERITY_STYLES, TIMELINE_DOT_COLORS
+// are now imported from @/components/shared/journey/constants (was re-declared locally with
+// drifted ar-SA locale for fmtRial vs ar-YE in the shared version).
 
 // ─── Step Status Determination ─────────────────────────────────────────────
 

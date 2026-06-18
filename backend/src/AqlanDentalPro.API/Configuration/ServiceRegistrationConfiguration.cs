@@ -104,5 +104,8 @@ public static class ServiceRegistrationConfiguration
         });
 
         services.AddHttpContextAccessor();
+
+        // CLIN-01: Register the PatientAccessFilter so controllers can use [ServiceFilter(typeof(PatientAccessFilter))]
+        services.AddScoped<AqlanDentalPro.API.Authorization.PatientAccessFilter>();
     }
 }

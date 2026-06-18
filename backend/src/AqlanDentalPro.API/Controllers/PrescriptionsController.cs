@@ -1,5 +1,7 @@
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
@@ -47,8 +49,27 @@ public sealed class CreatePrescriptionRequestValidator : AbstractValidator<Creat
 [ApiController]
 [Route("api/prescriptions")]
 [Authorize(Policy = "StaffOnly")]
-public class PrescriptionsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
+[ServiceFilter(typeof(PatientAccessFilter))]
+public class PrescriptionsController(
+    AppDbContext db,
+    ICurrentUserService currentUser,
+    IPatientAccessService patientAccess,
+    IAuditService audit) : ControllerBase
 {
+    // CLIN-01: Helper — denies access if the current doctor cannot access the patient.
+    // Mirrors the DenyIfDoctorCannotAccess pattern in PatientsController.
+    private async Task<IActionResult?> DenyIfDoctorCannotAccess(Guid patientId)
+    {
+        if (!patientAccess.IsDoctor) return null;
+        if (!await patientAccess.CanAccessPatientAsync(patientId))
+        {
+            await audit.LogAsync(AuditAction.View, "Patient", patientId,
+                newData: new { status = "denied", resource = "Prescription", role = currentUser.Role?.ToString(), userId = currentUser.UserId });
+            return StatusCode(403, new { message = "غير مصرح لك بعرض بيانات هذا المريض" });
+        }
+        return null;
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] Guid? patientId,
@@ -95,6 +116,11 @@ public class PrescriptionsController(AppDbContext db, ICurrentUserService curren
 
         if (prescription is null) return NotFound(new { message = "الوصفة الطبية غير موجودة" });
 
+        // CLIN-01: Per-patient access check (the PatientAccessFilter cannot infer patientId
+        // from the {id:guid} route, so we check here after loading the entity).
+        var denied = await DenyIfDoctorCannotAccess(prescription.PatientId);
+        if (denied is not null) return denied;
+
         var drugs = JsonSerializer.Deserialize<List<DrugItem>>(
             prescription.Drugs.RootElement.GetRawText()) ?? [];
 
@@ -115,6 +141,11 @@ public class PrescriptionsController(AppDbContext db, ICurrentUserService curren
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreatePrescriptionRequest req)
     {
+        // CLIN-01: Per-patient access check before creating (PatientId comes from the body,
+        // not the route, so the class-level PatientAccessFilter cannot see it).
+        var denied = await DenyIfDoctorCannotAccess(req.PatientId);
+        if (denied is not null) return denied;
+
         var drugsJson = JsonSerializer.SerializeToDocument(req.Drugs);
 
         var prescription = new Prescription
@@ -139,6 +170,10 @@ public class PrescriptionsController(AppDbContext db, ICurrentUserService curren
     {
         var prescription = await db.Prescriptions.FindAsync(id);
         if (prescription is null) return NotFound(new { message = "الوصفة الطبية غير موجودة" });
+
+        // CLIN-01: Per-patient access check before deleting.
+        var denied = await DenyIfDoctorCannotAccess(prescription.PatientId);
+        if (denied is not null) return denied;
 
         prescription.IsActive = false;
         await db.SaveChangesAsync();

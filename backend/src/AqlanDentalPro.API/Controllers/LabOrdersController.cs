@@ -2,6 +2,7 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.API.Services;
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;

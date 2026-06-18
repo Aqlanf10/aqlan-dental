@@ -135,7 +135,6 @@ public class LeaveController(AppDbContext db, ILogger<LeaveController> logger) :
     /// Create leave request
     /// </summary>
     [HttpPost]
-    [Authorize]
     public async Task<IActionResult> Create([FromBody] CreateLeaveRequest req)
     {
         var employee = await db.Employees.FindAsync(req.EmployeeId);

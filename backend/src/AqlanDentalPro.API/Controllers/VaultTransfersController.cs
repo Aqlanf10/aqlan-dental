@@ -118,30 +118,51 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
         var branchId = currentUser.BranchId ?? Guid.Empty;
         var userId = currentUser.UserId ?? Guid.Empty;
 
-        // Verify destination treasury
+        // Verify destination treasury (read-only check; re-verified is not needed inside tx
+        // because we only ADD to its balance on Approve, not here).
         var destTreasury = await db.Treasuries
             .FirstOrDefaultAsync(t => t.Id == req.DestinationTreasuryId && t.BranchId == branchId && t.IsActive);
         if (destTreasury == null)
             return BadRequest(new { message = "الخزنة المستهدفة غير موجودة أو غير تابعة للفرع" });
 
-        Treasury? sourceTreasury = null;
-        if (req.SourceTreasuryId.HasValue)
-        {
-            sourceTreasury = await db.Treasuries
-                .FirstOrDefaultAsync(t => t.Id == req.SourceTreasuryId.Value && t.BranchId == branchId && t.IsActive);
-            if (sourceTreasury == null)
-                return BadRequest(new { message = "الخزنة المصدر غير موجودة أو غير تابعة للفرع" });
-
-            if (sourceTreasury.Balance < req.Amount)
-                return BadRequest(new { message = $"عذراً، رصيد الخزنة المصدر ({sourceTreasury.Balance:N0} ر.ي) أقل من مبلغ التحويل المطلوب ({req.Amount:N0} ر.ي)" });
-        }
-
-        // Generate sequential transfer code TR-yyyyMMdd-NNN
+        // FIN-05 FIX: The source treasury existence + balance check MUST happen inside the
+        // transaction with a row lock. Previously the check was at line 135 BEFORE
+        // BeginTransactionAsync (line 140), and the advisory lock (line 144) was on the
+        // transfer-number sequence — NOT on the source treasury row. Two concurrent transfers
+        // from the same source both passed the balance check, both entered the tx, both
+        // deducted via tracked-entity mutation (no atomic SQL, no FOR UPDATE), and the
+        // treasury balance could go negative.
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
+            // Lock on the transfer-number sequence (existing behavior — preserves order).
             var lockKey = StableLockKeyHelper.VaultTransferNumber;
             await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            // FIN-05: If a source treasury is specified, acquire a row-level lock on it so
+            // two concurrent transfers from the same source serialize. Combined with the
+            // re-check below, this prevents the negative-balance race.
+            Treasury? sourceTreasury = null;
+            if (req.SourceTreasuryId.HasValue)
+            {
+                if (db.Database.IsRelational())
+                {
+                    // FOR UPDATE on the source treasury row (PostgreSQL). On InMemory (tests),
+                    // this is skipped — the advisory lock above provides serialization there.
+                    await db.Database.ExecuteSqlRawAsync(
+                        "SELECT 1 FROM \"Treasuries\" WHERE \"Id\" = {0} FOR UPDATE",
+                        req.SourceTreasuryId.Value);
+                }
+
+                // AUTHORITATIVE RE-CHECK inside the lock: reload the source treasury.
+                sourceTreasury = await db.Treasuries
+                    .FirstOrDefaultAsync(t => t.Id == req.SourceTreasuryId.Value && t.BranchId == branchId && t.IsActive);
+                if (sourceTreasury == null)
+                    return BadRequest(new { message = "الخزنة المصدر غير موجودة أو غير تابعة للفرع" });
+
+                if (sourceTreasury.Balance < req.Amount)
+                    return BadRequest(new { message = $"عذراً، رصيد الخزنة المصدر ({sourceTreasury.Balance:N0} ر.ي) أقل من مبلغ التحويل المطلوب ({req.Amount:N0} ر.ي)" });
+            }
 
             var today = DateTime.UtcNow;
             var datePart = today.ToString("yyyyMMdd");
@@ -182,7 +203,8 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
                 DepositSource = req.DepositSource // Finance V3: Store deposit source classification
             };
 
-            // Deduct the source treasury immediately (lock/block funds)
+            // Deduct the source treasury immediately (lock/block funds).
+            // Safe now: we hold the row lock + re-checked Balance >= Amount inside the lock.
             if (sourceTreasury != null)
             {
                 sourceTreasury.Balance -= req.Amount;

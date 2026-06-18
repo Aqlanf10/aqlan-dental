@@ -25,7 +25,7 @@ public sealed class ApproveLeaveRequest
 
 [ApiController]
 [Route("api/leaves")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class LeaveController(AppDbContext db, ILogger<LeaveController> logger) : ControllerBase
 {
     /// <summary>

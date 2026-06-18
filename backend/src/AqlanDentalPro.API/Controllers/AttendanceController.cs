@@ -30,7 +30,7 @@ public sealed class CheckOutRequest
 
 [ApiController]
 [Route("api/attendance")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class AttendanceController(AppDbContext db, ILogger<AttendanceController> logger) : ControllerBase
 {
     /// <summary>

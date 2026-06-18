@@ -1,3 +1,4 @@
+using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -303,6 +304,13 @@ public class SurgeryController(AppDbContext db, ILogger<SurgeryController> logge
 
         if (!Enum.TryParse<SurgeryCaseStatus>(req.Status, true, out var surgeryStatus))
             return BadRequest(new { message = "حالة الجراحة غير صالحة" });
+
+        // CLIN-03: Validate the transition before applying. Previously any status could
+        // jump to any other (e.g., Completed → Scheduled, Cancelled → InProgress), corrupting
+        // the audit trail and leaving postop reports attached to a "scheduled" case.
+        var transitionError = SurgeryCaseStatusTransitions.GetValidationError(surgery.Status, surgeryStatus);
+        if (transitionError is not null)
+            return BadRequest(new { message = transitionError });
 
         surgery.Status = surgeryStatus;
         await db.SaveChangesAsync();

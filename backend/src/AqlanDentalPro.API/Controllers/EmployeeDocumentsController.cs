@@ -19,7 +19,7 @@ public sealed class UploadEmployeeDocumentRequest
 
 [ApiController]
 [Route("api/employee-documents")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class EmployeeDocumentsController(AppDbContext db) : ControllerBase
 {
     /// <summary>

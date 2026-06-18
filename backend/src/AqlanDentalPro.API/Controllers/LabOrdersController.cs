@@ -2,6 +2,7 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.API.Services;
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
@@ -124,8 +125,28 @@ public sealed class UpdateLabOrderRequestValidator : AbstractValidator<UpdateLab
 [ApiController]
 [Route("api/lab-orders")]
 [Authorize(Policy = "StaffOnly")]
-public class LabOrdersController(AppDbContext db, ICurrentUserService currentUser, IServiceScopeFactory scopeFactory, ILogger<LabOrdersController> logger) : ControllerBase
+[ServiceFilter(typeof(PatientAccessFilter))]
+public class LabOrdersController(
+    AppDbContext db,
+    ICurrentUserService currentUser,
+    IServiceScopeFactory scopeFactory,
+    ILogger<LabOrdersController> logger,
+    IPatientAccessService patientAccess,
+    IAuditService audit) : ControllerBase
 {
+    // CLIN-01: Per-patient access check for actions where patientId is in body or inferred.
+    private async Task<IActionResult?> DenyIfDoctorCannotAccess(Guid patientId)
+    {
+        if (!patientAccess.IsDoctor) return null;
+        if (!await patientAccess.CanAccessPatientAsync(patientId))
+        {
+            await audit.LogAsync(AuditAction.View, "Patient", patientId,
+                newData: new { status = "denied", resource = "LabOrder", role = currentUser.Role?.ToString(), userId = currentUser.UserId });
+            return StatusCode(403, new { message = "غير مصرح لك بعرض بيانات هذا المريض" });
+        }
+        return null;
+    }
+
     private static readonly HashSet<string> ValidStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
         "draft", "sent", "manufacturing", "tryIn", "ready", "received", "delivered", "returned", "remake", "cancelled"
@@ -481,6 +502,10 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
 
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
 
+        // CLIN-01: per-patient check after loading the entity.
+        var denied = await DenyIfDoctorCannotAccess(order.PatientId);
+        if (denied is not null) return denied;
+
         return Ok(new
         {
             order.Id,
@@ -531,6 +556,10 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     public async Task<IActionResult> Create([FromBody] CreateLabOrderRequest req)
     {
         if (!await CanAsync("create")) return Forbid();
+
+        // CLIN-01: per-patient check before creating.
+        var denied = await DenyIfDoctorCannotAccess(req.PatientId);
+        if (denied is not null) return denied;
 
         // CON-02 FIX: Use advisory lock + unique constraint retry to prevent race condition
         // on order number generation. Strategy: advisory lock serializes generation within
@@ -1003,6 +1032,11 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
 
         var order = await db.LabOrders.FindAsync(id);
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
+
+        // CLIN-01: per-patient check before marking delivered.
+        var denied = await DenyIfDoctorCannotAccess(order.PatientId);
+        if (denied is not null) return denied;
+
         if (order.Status != "received")
             return BadRequest(new { message = "لا يمكن التسليم للحالة الحالية — يجب أن تكون مستلمة أولاً" });
 
@@ -1027,6 +1061,11 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
 
         var order = await db.LabOrders.FindAsync(id);
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
+
+        // CLIN-01: per-patient check before cancelling.
+        var denied = await DenyIfDoctorCannotAccess(order.PatientId);
+        if (denied is not null) return denied;
+
         if (order.Status == "delivered" || order.Status == "cancelled")
             return BadRequest(new { message = "لا يمكن إلغاء طلب مسلم أو ملغي" });
 

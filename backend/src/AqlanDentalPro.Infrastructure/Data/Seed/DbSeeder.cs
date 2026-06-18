@@ -114,14 +114,30 @@ public static class DbSeeder
                 return;
             }
 
-            var defaultPassword = "AqlanDental2024!";
+            // SEC-01 FIX: Use ADMIN_RESET_PASSWORD / ADMIN_DEFAULT_PASSWORD env var. In Production,
+            // refuse to reset to a known default. Dev fallback keeps the legacy default for convenience.
+            var rescuePassword = Environment.GetEnvironmentVariable("ADMIN_RESET_PASSWORD")
+                              ?? Environment.GetEnvironmentVariable("ADMIN_DEFAULT_PASSWORD");
+            if (string.IsNullOrWhiteSpace(rescuePassword))
+            {
+                var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+                if (env == "Production")
+                {
+                    logger.LogError(
+                        "HOTFIX: ADMIN_RESET_PASSWORD / ADMIN_DEFAULT_PASSWORD not set in Production. " +
+                        "Refusing to reset admin password to a known default. Set one of these env vars to perform the rescue reset.");
+                    return;
+                }
+                rescuePassword = "AqlanDental2024!"; // Dev fallback only
+            }
             var salt = GenerateSalt();
-            var hash = HashPassword(defaultPassword, salt);
+            var hash = HashPassword(rescuePassword, salt);
 
             admin.PasswordHash = hash;
             admin.PasswordSalt = salt;
             admin.IsActive = true;
-            admin.MustChangePassword = false;
+            // SEC-01 FIX: Force password change on next login after rescue reset.
+            admin.MustChangePassword = true;
             admin.UpdatedAt = DateTime.UtcNow;
 
             // Write sentinel so this never runs again
@@ -260,11 +276,21 @@ public static class DbSeeder
             (id: new Guid("20000000-0000-0000-0000-000000000008"), username: "accountant1", role: UserRole.Accountant,     name: "المحاسب",              specialty: (string?)null,             color: "#6B7280", initials: "مح"),
         };
 
-        // SEC-03 FIX: Seed password for initial user accounts only.
-        // This is used ONLY when the database is empty (first seed — SeedUsersAndDoctorsAsync).
-        // In production, users MUST change this password on first login.
-        // For existing deployments, use ADMIN_RESET_PASSWORD env var to force a reset.
-        var defaultPassword = "AqlanDental2024!";
+        // SEC-01 FIX: Seed password comes from ADMIN_DEFAULT_PASSWORD env var. In Production,
+        // throw if unset so fresh deployments don't boot with a publicly-known default. In Development,
+        // fall back to the legacy default for convenience.
+        var seedPassword = Environment.GetEnvironmentVariable("ADMIN_DEFAULT_PASSWORD");
+        if (string.IsNullOrWhiteSpace(seedPassword))
+        {
+            var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+            if (env == "Production")
+            {
+                throw new InvalidOperationException(
+                    "SEC: ADMIN_DEFAULT_PASSWORD not set in Production. Refusing to seed users with a publicly-known default password. Set ADMIN_DEFAULT_PASSWORD env var before first deployment.");
+            }
+            seedPassword = "AqlanDental2024!"; // Dev fallback only
+        }
+        var defaultPassword = seedPassword;
 
         foreach (var (id, username, role, name, specialty, color, initials) in usersData)
         {
@@ -279,7 +305,9 @@ public static class DbSeeder
                 PasswordHash = hash,
                 PasswordSalt = salt,
                 Role = role,
-                BranchId = branchId
+                BranchId = branchId,
+                // SEC-01 FIX: Force password change on first login for ALL seeded users.
+                MustChangePassword = true
             };
             await context.Users.AddAsync(user);
 
@@ -311,10 +339,22 @@ public static class DbSeeder
 
         if (users.Count == 0) return;
 
-        // SEC-03 NOTE: This re-hashes users who still have unsalted (Phase 1) passwords.
-        // Since we can't know their original passwords, we reset to the seed default.
-        // These users should use ADMIN_RESET_PASSWORD or the forgot-password flow.
-        var defaultPassword = "AqlanDental2024!";
+        // SEC-01 FIX: Use ADMIN_DEFAULT_PASSWORD env var (or dev fallback). These users will be
+        // forced to change password on next login via MustChangePassword=true below.
+        var migratePassword = Environment.GetEnvironmentVariable("ADMIN_DEFAULT_PASSWORD");
+        if (string.IsNullOrWhiteSpace(migratePassword))
+        {
+            var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+            if (env == "Production")
+            {
+                logger.LogWarning(
+                    "MigrateUserPasswordsAsync: ADMIN_DEFAULT_PASSWORD not set in Production. " +
+                    "Skipping re-hash of unsalted users — they must use the forgot-password flow.");
+                return;
+            }
+            migratePassword = "AqlanDental2024!"; // Dev fallback only
+        }
+        var defaultPassword = migratePassword;
 
         foreach (var user in users)
         {
@@ -322,6 +362,8 @@ public static class DbSeeder
             var hash = HashPassword(defaultPassword, salt);
             user.PasswordSalt = salt;
             user.PasswordHash = hash;
+            // SEC-01 FIX: Force password change on next login for migrated users.
+            user.MustChangePassword = true;
         }
 
         await context.SaveChangesAsync();

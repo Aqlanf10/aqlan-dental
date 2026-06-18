@@ -156,104 +156,129 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     {
         var userId = currentUser.UserId ?? Guid.Empty;
 
-        var session = await db.CashierSessions
-            .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
-
-        if (session == null)
-            return BadRequest(new { message = "لا يوجد صندوق مفتوح حالياً لإقفاله." });
-
-        // Use CashFlowTransactions as the reconciled source for session financial movement.
-        // This replaces the old Payment-based calculation which did NOT subtract
-        // refunds, operational expenses, or other outflows — causing drawer overstatement.
-        var sessionTransactions = await db.CashFlowTransactions
-            .Where(t => t.CashierSessionId == session.Id && t.IsActive)
-            .ToListAsync();
-
-        var cashInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount);
-        var cashOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount);
-        var cardInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && IsCardMethod(t.PaymentMethod)).Sum(t => t.Amount);
-        var cardOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && IsCardMethod(t.PaymentMethod)).Sum(t => t.Amount);
-        var bankInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && IsBankMethod(t.PaymentMethod)).Sum(t => t.Amount);
-        var bankOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && IsBankMethod(t.PaymentMethod)).Sum(t => t.Amount);
-
-        session.ExpectedClosingCash = session.OpeningBalance + cashInflows - cashOutflows;
-        session.ExpectedClosingCard = cardInflows - cardOutflows;
-        session.ExpectedClosingBank = bankInflows - bankOutflows;
-
-        session.ActualClosingCash = req.ActualClosingCash;
-        session.ActualClosingCard = req.ActualClosingCard;
-        session.ActualClosingBank = req.ActualClosingBank;
-
-        var expectedTotal = session.ExpectedClosingCash + session.ExpectedClosingCard + session.ExpectedClosingBank;
-        var actualTotal = req.ActualClosingCash + req.ActualClosingCard + req.ActualClosingBank;
-        session.ShortageOrSurplus = actualTotal - expectedTotal;
-
-        session.ClosingTime = DateTime.UtcNow;
-        session.Status = SessionStatus.Closed; // Locked!
-        session.Notes = req.Notes?.Trim();
-
-        // Backwards-compatibility pass: link any unlinked cashflow transactions
-        // created during the session window that were not linked at creation time.
-        // (New transactions should already be linked at creation time, but older
-        // data or race conditions may leave some unlinked.)
-        var unlinkedTransactions = await db.CashFlowTransactions
-            .Where(t => t.CashierSessionId == null
-                     && t.PerformedBy == userId
-                     && t.CreatedAt >= session.OpeningTime
-                     && t.IsActive)
-            .ToListAsync();
-
-        foreach (var t in unlinkedTransactions)
+        // FIN-01 FIX: Wrap close in a transaction + advisory lock + re-check, mirroring OpenSession.
+        // Previously the method loaded the session with Status==Open, mutated in memory, and called
+        // SaveChangesAsync once with no transaction/lock. Two concurrent close requests both passed
+        // the Open check and both saved — the second won, corrupting reconciliation.
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
         {
-            t.CashierSessionId = session.Id;
-            // Phase 0B: Log warning for heuristically-linked transactions.
-            // This linking is based on PerformedBy + CreatedAt matching, which is
-            // imprecise — transactions created by another user on behalf of this
-            // cashier, or system-generated transactions, may be missed or incorrectly linked.
-            logger.LogWarning("Phase 0B: Heuristically linking unlinked CashFlowTransaction {TxId} to session {SessionId}. " +
-                "This transaction was not linked at creation time — investigate if this occurs frequently.",
-                t.Id, session.Id);
-        }
+            // Acquire a deterministic transaction-scoped lock scoped to the cashier identity
+            // (same key as OpenSession) so close + open cannot race on the same cashier.
+            if (db.Database.IsRelational())
+            {
+                var cashierLockKey = StableLockKeyHelper.StableGuidToLong(userId);
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", cashierLockKey);
+            }
 
-        if (unlinkedTransactions.Count > 0)
-        {
-            sessionTransactions = await db.CashFlowTransactions
+            // AUTHORITATIVE RE-CHECK inside the lock: reload the open session for this cashier.
+            // A concurrent close that won the race will have set Status=Closed, so this returns null.
+            var session = await db.CashierSessions
+                .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
+
+            if (session == null)
+                return BadRequest(new { message = "لا يوجد صندوق مفتوح حالياً لإقفاله." });
+
+            // Use CashFlowTransactions as the reconciled source for session financial movement.
+            // This replaces the old Payment-based calculation which did NOT subtract
+            // refunds, operational expenses, or other outflows — causing drawer overstatement.
+            var sessionTransactions = await db.CashFlowTransactions
                 .Where(t => t.CashierSessionId == session.Id && t.IsActive)
                 .ToListAsync();
 
-            var expected = CalculateExpectedAmounts(session.OpeningBalance, sessionTransactions);
-            session.ExpectedClosingCash = expected.Cash;
-            session.ExpectedClosingCard = expected.Card;
-            session.ExpectedClosingBank = expected.Bank;
+            var cashInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount);
+            var cashOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount);
+            var cardInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && IsCardMethod(t.PaymentMethod)).Sum(t => t.Amount);
+            var cardOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && IsCardMethod(t.PaymentMethod)).Sum(t => t.Amount);
+            var bankInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && IsBankMethod(t.PaymentMethod)).Sum(t => t.Amount);
+            var bankOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && IsBankMethod(t.PaymentMethod)).Sum(t => t.Amount);
 
-            expectedTotal = session.ExpectedClosingCash + session.ExpectedClosingCard + session.ExpectedClosingBank;
-            actualTotal = req.ActualClosingCash + req.ActualClosingCard + req.ActualClosingBank;
+            session.ExpectedClosingCash = session.OpeningBalance + cashInflows - cashOutflows;
+            session.ExpectedClosingCard = cardInflows - cardOutflows;
+            session.ExpectedClosingBank = bankInflows - bankOutflows;
+
+            session.ActualClosingCash = req.ActualClosingCash;
+            session.ActualClosingCard = req.ActualClosingCard;
+            session.ActualClosingBank = req.ActualClosingBank;
+
+            var expectedTotal = session.ExpectedClosingCash + session.ExpectedClosingCard + session.ExpectedClosingBank;
+            var actualTotal = req.ActualClosingCash + req.ActualClosingCard + req.ActualClosingBank;
             session.ShortageOrSurplus = actualTotal - expectedTotal;
+
+            session.ClosingTime = DateTime.UtcNow;
+            session.Status = SessionStatus.Closed; // Locked!
+            session.Notes = req.Notes?.Trim();
+
+            // Backwards-compatibility pass: link any unlinked cashflow transactions
+            // created during the session window that were not linked at creation time.
+            // (New transactions should already be linked at creation time, but older
+            // data or race conditions may leave some unlinked.)
+            var unlinkedTransactions = await db.CashFlowTransactions
+                .Where(t => t.CashierSessionId == null
+                         && t.PerformedBy == userId
+                         && t.CreatedAt >= session.OpeningTime
+                         && t.IsActive)
+                .ToListAsync();
+
+            foreach (var t in unlinkedTransactions)
+            {
+                t.CashierSessionId = session.Id;
+                // Phase 0B: Log warning for heuristically-linked transactions.
+                // This linking is based on PerformedBy + CreatedAt matching, which is
+                // imprecise — transactions created by another user on behalf of this
+                // cashier, or system-generated transactions, may be missed or incorrectly linked.
+                logger.LogWarning("Phase 0B: Heuristically linking unlinked CashFlowTransaction {TxId} to session {SessionId}. " +
+                    "This transaction was not linked at creation time — investigate if this occurs frequently.",
+                    t.Id, session.Id);
+            }
+
+            if (unlinkedTransactions.Count > 0)
+            {
+                sessionTransactions = await db.CashFlowTransactions
+                    .Where(t => t.CashierSessionId == session.Id && t.IsActive)
+                    .ToListAsync();
+
+                var expected = CalculateExpectedAmounts(session.OpeningBalance, sessionTransactions);
+                session.ExpectedClosingCash = expected.Cash;
+                session.ExpectedClosingCard = expected.Card;
+                session.ExpectedClosingBank = expected.Bank;
+
+                expectedTotal = session.ExpectedClosingCash + session.ExpectedClosingCard + session.ExpectedClosingBank;
+                actualTotal = req.ActualClosingCash + req.ActualClosingCard + req.ActualClosingBank;
+                session.ShortageOrSurplus = actualTotal - expectedTotal;
+            }
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            // H3: Audit logging for session close (outside tx — non-fatal if it fails)
+            await audit.LogAsync(AuditAction.Update, "CashierSession", session.Id,
+                details: $"Session closed, surplus/shortage: {session.ShortageOrSurplus}");
+
+            return Ok(new
+            {
+                session.Id,
+                session.SessionNumber,
+                session.OpeningTime,
+                session.ClosingTime,
+                session.OpeningBalance,
+                session.ExpectedClosingCash,
+                session.ActualClosingCash,
+                session.ExpectedClosingCard,
+                session.ActualClosingCard,
+                session.ExpectedClosingBank,
+                session.ActualClosingBank,
+                session.ShortageOrSurplus,
+                Status = session.Status.ToString(),
+                message = "تم إقفال صندوق الاستقبال وترحيل المبالغ وتأمين القيود بنجاح"
+            });
         }
-
-        await db.SaveChangesAsync();
-
-        // H3: Audit logging for session close
-        await audit.LogAsync(AuditAction.Update, "CashierSession", session.Id,
-            details: $"Session closed, surplus/shortage: {session.ShortageOrSurplus}");
-
-        return Ok(new
+        catch (Exception ex)
         {
-            session.Id,
-            session.SessionNumber,
-            session.OpeningTime,
-            session.ClosingTime,
-            session.OpeningBalance,
-            session.ExpectedClosingCash,
-            session.ActualClosingCash,
-            session.ExpectedClosingCard,
-            session.ActualClosingCard,
-            session.ExpectedClosingBank,
-            session.ActualClosingBank,
-            session.ShortageOrSurplus,
-            Status = session.Status.ToString(),
-            message = "تم إقفال صندوق الاستقبال وترحيل المبالغ وتأمين القيود بنجاح"
-        });
+            await tx.RollbackAsync();
+            logger.LogError(ex, "CloseSession failed for cashier {UserId}", userId);
+            throw;
+        }
     }
 
     private static (decimal Cash, decimal Card, decimal Bank) CalculateExpectedAmounts(
@@ -598,33 +623,59 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     [Authorize(Policy = "ReportsAccess")] // Admin + Accountant only
     public async Task<IActionResult> ReconcileSession(Guid id, [FromBody] string? notes)
     {
-        var session = await db.CashierSessions.FindAsync(id);
-        if (session == null || !session.IsActive)
-            return NotFound(new { message = "الوردية غير موجودة" });
-
-        if (session.Status != SessionStatus.Closed)
-            return BadRequest(new { message = "يمكن مطابقة الورديات المغلقة فقط" });
-
-        session.Status = SessionStatus.Reconciled;
-        if (!string.IsNullOrWhiteSpace(notes))
+        // FIN-02 FIX: Wrap reconcile in a transaction + lock + re-check. Previously the method
+        // only checked Status != Closed before mutating to Reconciled — two concurrent reconcile
+        // calls both saw Closed and both set Reconciled.
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
         {
-            session.Notes = string.IsNullOrWhiteSpace(session.Notes)
-                ? $"[مطابقة] {notes}"
-                : $"{session.Notes}\n[مطابقة] {notes}";
+            // Lock on the session id so two concurrent reconcile calls serialize.
+            if (db.Database.IsRelational())
+            {
+                var sessionLockKey = StableLockKeyHelper.StableGuidToLong(id);
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", sessionLockKey);
+            }
+
+            var session = await db.CashierSessions.FindAsync(id);
+            if (session == null || !session.IsActive)
+                return NotFound(new { message = "الوردية غير موجودة" });
+
+            // AUTHORITATIVE RE-CHECK inside the lock: a concurrent reconcile that won the race
+            // will have set Status=Reconciled.
+            if (session.Status == SessionStatus.Reconciled)
+                return BadRequest(new { message = "تمت مطابقة هذه الوردية بالفعل" });
+
+            if (session.Status != SessionStatus.Closed)
+                return BadRequest(new { message = "يمكن مطابقة الورديات المغلقة فقط" });
+
+            session.Status = SessionStatus.Reconciled;
+            if (!string.IsNullOrWhiteSpace(notes))
+            {
+                session.Notes = string.IsNullOrWhiteSpace(session.Notes)
+                    ? $"[مطابقة] {notes}"
+                    : $"{session.Notes}\n[مطابقة] {notes}";
+            }
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            // H3: Audit logging for session reconciliation (outside tx — non-fatal if it fails)
+            await audit.LogAsync(AuditAction.Update, "CashierSession", id,
+                details: "Session reconciled");
+
+            return Ok(new
+            {
+                session.Id,
+                session.SessionNumber,
+                Status = session.Status.ToString(),
+                message = "تمت المطابقة والاعتماد المحاسبي للوردية اليومية بنجاح"
+            });
         }
-
-        await db.SaveChangesAsync();
-
-        // H3: Audit logging for session reconciliation
-        await audit.LogAsync(AuditAction.Update, "CashierSession", id,
-            details: "Session reconciled");
-
-        return Ok(new
+        catch (Exception ex)
         {
-            session.Id,
-            session.SessionNumber,
-            Status = session.Status.ToString(),
-            message = "تمت المطابقة والاعتماد المحاسبي للوردية اليومية بنجاح"
-        });
+            await tx.RollbackAsync();
+            logger.LogError(ex, "ReconcileSession failed for session {SessionId}", id);
+            throw;
+        }
     }
 }

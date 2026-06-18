@@ -416,6 +416,22 @@ public static class DbSeeder
                 ["Reception"] = (true, true, false, false, false, false),
                 ["Accountant"]= (true, true, true, false, true,  false),
             },
+            // Granular finance capabilities — let the owner grant/revoke finance
+            // features from Settings (RolePermission). Reception is seeded ONLY for
+            // cashier-safe keys (collect payments / print receipts / cashier session)
+            // and is intentionally ABSENT from reports/treasuries/expenses/
+            // commissions/patient_balance/account_statement/dashboard so those stay
+            // protected unless explicitly granted. (view,create,edit,delete,export,approve)
+            ["finance.dashboard"]         = new() { ["Admin"] = (true, true, true, true, true, true),  ["Accountant"] = (true, false, false, false, true, false) },
+            ["finance.payments"]          = new() { ["Admin"] = (true, true, true, true, true, true),  ["Accountant"] = (true, true, true, false, true, false), ["Reception"] = (true, true, false, false, false, false) },
+            ["finance.receipts"]          = new() { ["Admin"] = (true, true, true, true, true, true),  ["Accountant"] = (true, true, false, false, true, false), ["Reception"] = (true, true, false, false, false, false) },
+            ["finance.cashier_session"]   = new() { ["Admin"] = (true, true, true, true, true, true),  ["Accountant"] = (true, true, true, false, false, true), ["Reception"] = (true, true, false, false, false, false) },
+            ["finance.patient_balance"]   = new() { ["Admin"] = (true, false, false, false, true, false), ["Accountant"] = (true, false, false, false, true, false) },
+            ["finance.account_statement"] = new() { ["Admin"] = (true, false, false, false, true, false), ["Accountant"] = (true, false, false, false, true, false) },
+            ["finance.reports"]           = new() { ["Admin"] = (true, false, false, false, true, false), ["Accountant"] = (true, false, false, false, true, false) },
+            ["finance.treasuries"]        = new() { ["Admin"] = (true, true, true, true, true, true),  ["Accountant"] = (true, true, true, false, false, false) },
+            ["finance.expenses"]          = new() { ["Admin"] = (true, true, true, true, true, true),  ["Accountant"] = (true, true, true, false, false, true) },
+            ["finance.commissions"]       = new() { ["Admin"] = (true, true, true, true, false, true),  ["Accountant"] = (true, true, true, false, false, true) },
             ["reports"] = new()
             {
                 ["Admin"]     = (true, false, false, false, true, false),

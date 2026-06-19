@@ -535,8 +535,23 @@ public class CommissionService(
             BaseRule:                  item.CommissionBaseRule));
 
         item.NetCommissionableAmount = result.NetCommissionableAmount;
-        item.DoctorCommissionAmount  = result.DoctorCommissionAmount;
-        item.CenterShareAmount       = result.CenterShareAmount;
+
+        // FIN-09 FIX: When the service uses OnPaymentCollection recognition mode,
+        // do NOT overwrite DoctorCommissionAmount with the full amount. TriggerOnPaymentCommissionsAsync
+        // sets a proportional DoctorCommissionAmount based on collected payments; overwriting it here
+        // (from Recalculate/Approve/AutoFill) would reset the doctor's commission to the full accrual
+        // amount, effectively paying commission on uncollected revenue.
+        if (item.Service?.CommissionRecognitionMode != CommissionRecognitionMode.OnPaymentCollection)
+        {
+            item.DoctorCommissionAmount  = result.DoctorCommissionAmount;
+            item.CenterShareAmount       = result.CenterShareAmount;
+        }
+        else
+        {
+            // Keep the proportional DoctorCommissionAmount (set by TriggerOnPaymentCommissionsAsync).
+            // Recalculate CenterShare based on the proportional doctor amount.
+            item.CenterShareAmount = result.NetCommissionableAmount - item.DoctorCommissionAmount;
+        }
 
         if (item.CommissionStatus == CommissionStatus.Pending && item.DoctorCommissionPercentage > 0)
             item.CommissionStatus = CommissionStatus.Calculated;

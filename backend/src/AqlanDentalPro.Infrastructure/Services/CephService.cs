@@ -143,13 +143,19 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
     {
         var analysis = await db.CephAnalyses
             .Include(a => a.Landmarks)
-            .Include(a => a.OrthoCase).ThenInclude(o => o.Patient)
             .FirstOrDefaultAsync(a => a.Id == id);
 
         if (analysis is null) return;
 
-        // CLIN-10: Determine patient age + sex for age/sex-stratified norm adjustment.
-        var patient = analysis.OrthoCase?.Patient;
+        // CLIN-10: Load patient separately (avoid ThenInclude on InMemory which can fail
+        // when the OrthoCase navigation is null in test data).
+        Patient? patient = null;
+        if (analysis.OrthoCaseId.HasValue)
+        {
+            patient = await db.Patients
+                .Where(p => p.OrthoCases.Any(o => o.Id == analysis.OrthoCaseId.Value))
+                .FirstOrDefaultAsync();
+        }
         int? patientAge = null;
         if (patient?.DateOfBirth is { } dob)
         {

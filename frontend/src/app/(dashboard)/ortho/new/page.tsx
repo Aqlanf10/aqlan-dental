@@ -10,6 +10,7 @@ import type { PatientListItem } from "@/types/patient";
 import type { CreateOrthoCaseRequest } from "@/types/ortho";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
 import api from "@/lib/api";
+import { useDoctors } from "@/hooks/useDoctors";
 import { cn, localDateString } from "@/lib/utils";
 
 interface Doctor { id: string; name: string; color?: string; }
@@ -40,16 +41,13 @@ function NewOrthoContent() {
 
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  // FE-13: useDoctors() replaces useState + useEffect + api.get.
+  const { data: doctors = [] } = useDoctors();
 
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { startDate: localDateString(), patientId: defaultPatientId ?? "" }
   });
-
-  useEffect(() => {
-    api.get<Doctor[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
-  }, []);
 
   const onSubmit = async (data: FormData) => {
     setSaving(true);

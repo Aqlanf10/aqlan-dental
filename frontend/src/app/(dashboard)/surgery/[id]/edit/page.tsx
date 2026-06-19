@@ -7,6 +7,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Save, ArrowRight, Scissors, User } from "lucide-react";
 import api from "@/lib/api";
+import { useDoctors } from "@/hooks/useDoctors";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { SURGERY_TYPES } from "@/types/surgery";
@@ -49,7 +50,8 @@ function EditSurgeryForm() {
   const [notFound, setNotFound] = useState(false);
   const [serverError, setServerError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  // FE-13: useDoctors() replaces the doctors half of the Promise.all.
+  const { data: doctors = [] } = useDoctors();
 
   const {
     register,
@@ -60,16 +62,12 @@ function EditSurgeryForm() {
     resolver: zodResolver(schema),
   });
 
-  // ── Fetch existing case & doctors ──────────────────────────────────────────
+  // ── Fetch existing case (doctors come from useDoctors()) ────────────────
   useEffect(() => {
-    Promise.all([
-      api.get<SurgeryCase>(`/api/surgery-cases/${id}`),
-      api.get<Doctor[]>("/api/doctors"),
-    ])
-      .then(([caseRes, doctorsRes]) => {
+    api.get<SurgeryCase>(`/api/surgery-cases/${id}`)
+      .then((caseRes) => {
         const sc = caseRes.data;
         setSurgeryCase(sc);
-        setDoctors(doctorsRes.data);
 
         // Pre-populate form
         reset({

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
+import { useDoctors } from "@/hooks/useDoctors";
 import {
   RefreshCw,
   Loader2,
@@ -105,7 +106,8 @@ export default function ClinicQueuePage() {
   const router = useRouter();
   const [items, setItems] = useState<ClinicQueueItem[]>([]);
   const [rooms, setRooms] = useState<DbRoom[]>([]);
-  const [doctors, setDoctors] = useState<DoctorOption[]>([]);
+  // FE-13: useDoctors() replaces useState + fetch.
+  const { data: doctors = [] } = useDoctors();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -174,15 +176,6 @@ export default function ClinicQueuePage() {
     }
   }, []);
 
-  const fetchDoctors = useCallback(async () => {
-    try {
-      const { data } = await api.get<DoctorOption[]>("/api/doctors");
-      setDoctors(data ?? []);
-    } catch {
-      setDoctors([]);
-    }
-  }, []);
-
   const fetchEstimatedWait = useCallback(async () => {
     try {
       const { data } = await api.get<EstimatedWait>("/api/clinic-queue/estimated-wait");
@@ -195,11 +188,10 @@ export default function ClinicQueuePage() {
   useEffect(() => {
     fetchQueue();
     fetchRooms();
-    fetchDoctors();
     fetchEstimatedWait();
     const interval = setInterval(fetchQueue, 15_000);
     return () => clearInterval(interval);
-  }, [fetchQueue, fetchRooms, fetchDoctors, fetchEstimatedWait]);
+  }, [fetchQueue, fetchRooms, fetchEstimatedWait]);
 
   // Re-fetch when doctor filter changes
   useEffect(() => {

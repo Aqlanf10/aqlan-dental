@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import api from "@/lib/api";
+import { useState } from "react";
+import { useDoctors } from "@/hooks/useDoctors";
 import {
   ChevronRight, ChevronLeft, CalendarDays, List, Calendar,
   LayoutGrid,
@@ -27,11 +27,8 @@ export default function AppointmentsView() {
   const [date, setDate] = useState(() => toDateStr(new Date()));
   const [view, setView] = useState<ViewMode>("day");
   const [doctorId, setDoctorId] = useState<string>("");
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
-
-  useEffect(() => {
-    api.get<Doctor[]>("/api/doctors").then(r => setDoctors(r.data)).catch(() => {});
-  }, []);
+  // FE-13: useDoctors() replaces useState + fetch.
+  const { data: doctors = [] } = useDoctors();
 
   const anchorDate = new Date(date + "T12:00:00");
   const shift = (days: number) => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() + days); setDate(toDateStr(d)); };

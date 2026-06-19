@@ -1666,6 +1666,26 @@ public class PatientJourneyController(
                 queueItem.CancelledAt = now;
                 queueItem.UpdatedAt = now;
             }
+
+            // CLIN-06 FIX: Transition the appointment to Cancelled so it doesn't stay InProgress
+            // forever (clogging the doctor's calendar + recall worklists). The queue item was cancelled
+            // above but the appointment itself was never touched. AppointmentStatusTransitions allows
+            // InProgress → Cancelled; other non-terminal statuses (Arrived, Waiting, Called, InRoom) also
+            // allow → Cancelled. Terminal states (Completed, Cancelled, NoShow) are left as-is.
+            if (visit.Appointment != null)
+            {
+                var appt = visit.Appointment;
+                if (appt.Status != AppointmentStatus.Completed
+                    && appt.Status != AppointmentStatus.Cancelled
+                    && appt.Status != AppointmentStatus.NoShow)
+                {
+                    if (AppointmentStatusTransitions.IsValidTransition(appt.Status, AppointmentStatus.Cancelled))
+                    {
+                        appt.Status = AppointmentStatus.Cancelled;
+                        appt.UpdatedAt = now;
+                    }
+                }
+            }
         }
 
         db.AuditLogs.Add(new AuditLog

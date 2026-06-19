@@ -500,9 +500,13 @@ public class CommissionService(
         if (item.LabOrderId.HasValue)
         {
             var labOrder = await db.LabOrders.FindAsync(item.LabOrderId.Value);
-            if (labOrder != null && labOrder.Cost.HasValue)
+            // CLIN-08 FIX: Prefer TotalCost (includes items + remake) over Cost (snapshot that may be stale).
+            // Previously read only Cost, which LabOrdersController.Update never re-syncs — so a lab order
+            // whose TotalCost grew via remakes would still report the old Cost to commission calculations,
+            // inflating the doctor's commission (lab cost is a deduction from NetCommissionableAmount).
+            if (labOrder != null)
             {
-                item.LabCost = labOrder.Cost.Value;
+                item.LabCost = labOrder.TotalCost ?? labOrder.Cost ?? 0;
             }
         }
 
@@ -670,23 +674,20 @@ public class CommissionService(
 
     private async Task LogAuditAsync(Guid entityId, string action, Guid userId, string details)
     {
-        try
+        // FIN-14 FIX: Removed the try/catch that swallowed audit-log failures. For financial mutations
+        // (commission approve/unlock/payment), audit failures should propagate and roll back the caller's
+        // transaction — not be silently logged as a warning. A missing audit entry for a commission
+        // approval is a compliance gap that enables plausible deniability.
+        var auditAction = action.Contains("Approve") ? AuditAction.Approve : AuditAction.Update;
+        db.AuditLogs.Add(new AuditLog
         {
-            var auditAction = action.Contains("Approve") ? AuditAction.Approve : AuditAction.Update;
-            db.AuditLogs.Add(new AuditLog
-            {
-                Resource   = $"InvoiceLineItem.Commission",
-                ResourceId = entityId,
-                Action     = auditAction,
-                UserId     = userId,
-                NewData    = System.Text.Json.JsonSerializer.SerializeToDocument(new { action, details }),
-            });
-            await db.SaveChangesAsync();
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Audit log failed for {Action} on {EntityId}", action, entityId);
-        }
+            Resource   = $"InvoiceLineItem.Commission",
+            ResourceId = entityId,
+            Action     = auditAction,
+            UserId     = userId,
+            NewData    = System.Text.Json.JsonSerializer.SerializeToDocument(new { action, details }),
+        });
+        await db.SaveChangesAsync();
     }
 
     // StableGuidToLong moved to StableLockKeyHelper — shared across all finance services.

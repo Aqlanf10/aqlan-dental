@@ -150,10 +150,10 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         // CLIN-10: Load patient separately (avoid ThenInclude on InMemory which can fail
         // when the OrthoCase navigation is null in test data).
         Patient? patient = null;
-        if (analysis.OrthoCaseId.HasValue)
+        if (analysis.OrthoCaseId != Guid.Empty)
         {
             var orthoCase = await db.OrthoCases
-                .FirstOrDefaultAsync(o => o.Id == analysis.OrthoCaseId.Value);
+                .FirstOrDefaultAsync(o => o.Id == analysis.OrthoCaseId);
             if (orthoCase != null)
             {
                 patient = await db.Patients

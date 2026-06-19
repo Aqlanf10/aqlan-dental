@@ -149,6 +149,26 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
             invoice.Subtotal = allLineItems.Sum(l => l.TotalPrice);
             var discount = req.DiscountAmount ?? 0;
             var tax = req.TaxAmount ?? 0;
+
+            // FIN-11 FIX: Discount approval threshold. Discounts above 10% of subtotal require
+            // Admin role (mirrors the OperationalExpenses approval pattern). Prevents a
+            // receptionist from applying a 99% discount to a friend's invoice.
+            const decimal discountApprovalThreshold = 0.10m;
+            if (discount > 0 && invoice.Subtotal > 0)
+            {
+                var discountRatio = discount / invoice.Subtotal;
+                if (discountRatio > discountApprovalThreshold && !currentUser.IsAdmin)
+                {
+                    return BadRequest(new
+                    {
+                        message = $"الخصم ({discountRatio:P0}) يتجاوز الحد المسموح ({discountApprovalThreshold:P0}). يتطلب موافقة المدير.",
+                        discountRatio,
+                        threshold = discountApprovalThreshold,
+                        requiresAdminApproval = true
+                    });
+                }
+            }
+
             invoice.DiscountAmount = discount;
             invoice.TaxAmount = tax;
             invoice.TotalAmount = invoice.Subtotal - discount + tax;
@@ -445,7 +465,26 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
 
             // Update discount if provided
             if (req.DiscountAmount.HasValue)
-                invoice.DiscountAmount = req.DiscountAmount.Value;
+            {
+                // FIN-11 FIX: Same discount approval threshold as Create — >10% requires Admin.
+                var newDiscount = req.DiscountAmount.Value;
+                var currentSubtotal = invoice.Subtotal;
+                if (newDiscount > 0 && currentSubtotal > 0)
+                {
+                    var discountRatio = newDiscount / currentSubtotal;
+                    if (discountRatio > 0.10m && !currentUser.IsAdmin)
+                    {
+                        return BadRequest(new
+                        {
+                            message = $"الخصم ({discountRatio:P0}) يتجاوز الحد المسموح (10%). يتطلب موافقة المدير.",
+                            discountRatio,
+                            threshold = 0.10m,
+                            requiresAdminApproval = true
+                        });
+                    }
+                }
+                invoice.DiscountAmount = newDiscount;
+            }
 
             // Update tax if provided
             if (req.TaxAmount.HasValue)

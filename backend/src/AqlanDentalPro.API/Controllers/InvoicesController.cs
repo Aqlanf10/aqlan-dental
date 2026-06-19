@@ -531,6 +531,11 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
 
             await tx.CommitAsync();
 
+            // FIN-20 FIX: Audit-log the invoice update (was missing — Create/Issue/Cancel all had audit
+            // entries but Update did not, allowing silent draft alterations before issuance).
+            await audit.LogAsync(AuditAction.Update, "Invoice", id,
+                details: $"Draft updated: {allLineItems.Count} line items, subtotal={invoice.Subtotal}, total={invoice.TotalAmount}");
+
             // Auto-fill commission defaults for newly added line items linked to a service.
             // Outside the transaction by design — failures are non-fatal (logged) and the
             // invoice itself is already safely committed.

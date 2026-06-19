@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { Clock, Save, Loader2, CheckCircle, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import api from "@/lib/api";
+import { useDoctors } from "@/hooks/useDoctors";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -384,16 +385,13 @@ const SPECIALTY_LABELS: Record<string, string> = {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SchedulePage() {
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api.get("/api/doctors")
-      .then(({ data }) => setDoctors(data))
-      .catch(() => setError("تعذّر تحميل قائمة الأطباء"))
-      .finally(() => setLoading(false));
-  }, []);
+  // FE-13: useDoctors() replaces useState + fetch.
+  const { data, isLoading: loading, isError } = useDoctors();
+  // Local Doctor interface requires `specialty: string`; the hook's DoctorDto
+  // types it as optional. The /api/doctors endpoint always returns a specialty
+  // string, so we cast to satisfy the local type without changing it.
+  const doctors = (data ?? []) as unknown as Doctor[];
+  const error = isError ? "تعذّر تحميل قائمة الأطباء" : null;
 
   return (
     <div className="space-y-6" dir="rtl">

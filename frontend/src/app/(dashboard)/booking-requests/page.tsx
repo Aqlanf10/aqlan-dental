@@ -3,10 +3,10 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
+import { useDoctors } from "@/hooks/useDoctors";
 import { normalizePhone } from "@/lib/utils";
 import type { CreatePatientRequest, PatientProfile } from "@/types/patient";
 import type { PaginatedResponse } from "@/types/api";
-import type { DoctorDto } from "@/hooks/useDoctors";
 import {
   Clock, CheckCircle2, XCircle, Eye, Loader2, RefreshCw,
   Phone, Mail, Calendar, MessageSquare, Filter, Globe, CalendarPlus,
@@ -423,7 +423,8 @@ interface ConvertModalProps {
 }
 
 function ConvertModal({ item, onClose, onConverted }: ConvertModalProps) {
-  const [doctors, setDoctors] = useState<DoctorDto[]>([]);
+  // FE-13: useDoctors() replaces useState + fetch.
+  const { data: doctors = [] } = useDoctors();
   const [doctorId, setDoctorId] = useState(item.doctorId ?? "");
   const [date, setDate] = useState(item.preferredDate ?? "");
   const [startTime, setStartTime] = useState(() => {
@@ -433,10 +434,6 @@ function ConvertModal({ item, onClose, onConverted }: ConvertModalProps) {
   const [duration, setDuration] = useState(30);
   const [converting, setConverting] = useState(false);
   const [err, setErr] = useState("");
-
-  useEffect(() => {
-    api.get<DoctorDto[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
-  }, []);
 
   async function handleConvert() {
     if (!doctorId) { setErr("اختر الطبيب"); return; }

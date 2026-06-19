@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import api from "@/lib/api";
+import { useDoctors } from "@/hooks/useDoctors";
 import {
   RefreshCw, Loader2, UserPlus, Stethoscope,
   MapPin, Clock, XCircle, PhoneCall,
@@ -138,7 +139,8 @@ interface ClinicQueueViewProps {
 export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSidePanel }: ClinicQueueViewProps) {
   const [items, setItems] = useState<ClinicQueueItem[]>([]);
   const [rooms, setRooms] = useState<DbRoom[]>([]);
-  const [doctors, setDoctors] = useState<DoctorOption[]>([]);
+  // FE-13: useDoctors() replaces useState + fetch.
+  const { data: doctors = [] } = useDoctors();
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [doctorFilter, setDoctorFilter] = useState("");
@@ -191,12 +193,11 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
     } catch { /* ignore */ }
   }, [doctorFilter]);
 
-  // ── Initial load + rooms/doctors ──
+  // ── Initial load + rooms ──
   useEffect(() => {
     fetchQueue();
     fetchAnalytics();
     api.get<DbRoom[]>("/api/clinic-queue/rooms").then(r => setRooms(r.data)).catch(() => {});
-    api.get<DoctorOption[]>("/api/doctors").then(r => setDoctors(r.data ?? [])).catch(() => {});
   }, [fetchQueue, fetchAnalytics]);
 
   // ── SignalR real-time connection ──

@@ -6,6 +6,7 @@ import {
   Download, RefreshCw 
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { useDoctors } from "@/hooks/useDoctors";
 import { localDateString } from "@/lib/utils";
 import {
   tokens, KpiCard, SectionHeader, LoadingSkeleton, EmptyState,
@@ -32,10 +33,11 @@ interface DoctorDto {
 }
 
 export function CommissionsTab() {
-  const [doctors, setDoctors] = useState<DoctorDto[]>([]);
+  // FE-13: useDoctors() replaces useState + fetch.
+  const { data: allDoctors = [], isLoading: doctorsLoading } = useDoctors();
+  const doctors = allDoctors.filter((d) => d.isActive !== false);
   const [data, setData] = useState<DoctorCommissionSummary[]>([]);
   const [loading, setLoading] = useState(false);
-  const [doctorsLoading, setDoctorsLoading] = useState(false);
 
   // Filters state
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>("");
@@ -46,19 +48,6 @@ export function CommissionsTab() {
   const [endDate, setEndDate] = useState<string>(() => {
     return localDateString();
   });
-
-  // Fetch doctors list for dropdown
-  const fetchDoctors = useCallback(async () => {
-    setDoctorsLoading(true);
-    try {
-      const res = await api.get<DoctorDto[]>("/api/doctors");
-      setDoctors(res.data?.filter(d => d.isActive !== false) ?? []);
-    } catch (err) {
-      console.error("Failed to fetch doctors list", err);
-    } finally {
-      setDoctorsLoading(false);
-    }
-  }, []);
 
   // Fetch aggregated commissions data
   const fetchCommissions = useCallback(async () => {
@@ -82,9 +71,8 @@ export function CommissionsTab() {
   }, [selectedDoctorId, startDate, endDate]);
 
   useEffect(() => {
-    fetchDoctors();
     fetchCommissions();
-  }, [fetchDoctors, fetchCommissions]);
+  }, [fetchCommissions]);
 
   const handleApplyFilters = (e: React.FormEvent) => {
     e.preventDefault();

@@ -1,6 +1,7 @@
 using AqlanDentalPro.Application.DTOs.Ceph;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
@@ -142,9 +143,21 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
     {
         var analysis = await db.CephAnalyses
             .Include(a => a.Landmarks)
+            .Include(a => a.OrthoCase).ThenInclude(o => o.Patient)
             .FirstOrDefaultAsync(a => a.Id == id);
 
         if (analysis is null) return;
+
+        // CLIN-10: Determine patient age + sex for age/sex-stratified norm adjustment.
+        var patient = analysis.OrthoCase?.Patient;
+        int? patientAge = null;
+        if (patient?.DateOfBirth is { } dob)
+        {
+            var today = DateTime.Today;
+            patientAge = today.Year - dob.Year;
+            if (dob.Date > today.AddYears(-patientAge.Value)) patientAge--;
+        }
+        var isFemale = patient?.Gender == Gender.Female;
 
         var lm = analysis.Landmarks
             .Where(l => l.IsActive)
@@ -179,12 +192,29 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         void Add(string name, string group, double value, double normal, double sd, string unit)
         {
             decimal? min = null, max = null;
+            // CLIN-10: Apply age/sex adjustments to the FALLBACK norms (before DB lookup).
+            if (patientAge.HasValue && patientAge <= 12)
+            {
+                if (name == "ANB") normal += 1.0;
+                if (name == "FMA" || name == "MP-SN") normal += 2.0;
+            }
+            if (isFemale)
+            {
+                if (name == "SNA" || name == "SNB") normal -= 1.0;
+                if (name == "Wits") normal -= 1.0;
+            }
             if (dbNorms.TryGetValue((name, group), out var norm))
             {
                 normal = (double)norm.NormalValue;
                 sd     = (double)norm.StdDeviation;
                 min    = norm.MinNormal;
                 max    = norm.MaxNormal;
+            }
+            else
+            {
+                // No DB norm — use the age/sex-adjusted fallback with ±2SD range.
+                min = (decimal)(normal - 2 * sd);
+                max = (decimal)(normal + 2 * sd);
             }
             results.Add((name, group, R1(value), normal, sd, unit, min, max));
         }

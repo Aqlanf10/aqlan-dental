@@ -266,6 +266,37 @@ public class VisitsController(
             return StatusCode(500, new { message = "فشل حفظ الزيارة — يرجى المحاولة مرة أخرى" });
         }
 
+        // CLIN-04 FIX: Link the visit to its ClinicQueueItem so the journey/daily-ops screens
+        // can see it. Previously POST /api/visits created a Visit but never set queueItem.VisitId,
+        // so the patient disappeared from the "Now Serving" panel and the journey's VisitStatus
+        // stayed null. Mirrors the pattern in PatientJourneyController.StartVisit.
+        if (req.AppointmentId.HasValue)
+        {
+            var queueItem = await db.ClinicQueueItems
+                .Where(q => q.AppointmentId == req.AppointmentId.Value
+                    && q.IsActive
+                    && q.Status != ClinicQueueStatus.Completed
+                    && q.Status != ClinicQueueStatus.Cancelled
+                    && q.Status != ClinicQueueStatus.NoShow)
+                .OrderByDescending(q => q.UpdatedAt)
+                .FirstOrDefaultAsync();
+
+            if (queueItem != null && !queueItem.VisitId.HasValue)
+            {
+                queueItem.VisitId = visit.Id;
+                if (queueItem.Status == ClinicQueueStatus.Waiting
+                    || queueItem.Status == ClinicQueueStatus.Called
+                    || queueItem.Status == ClinicQueueStatus.InRoom)
+                {
+                    queueItem.Status = ClinicQueueStatus.InProgress;
+                    queueItem.StartedAt = DateTime.UtcNow;
+                }
+                queueItem.UpdatedAt = DateTime.UtcNow;
+                try { await db.SaveChangesAsync(); }
+                catch { /* non-fatal — visit is already saved; queue can be linked later */ }
+            }
+        }
+
         await db.Entry(visit).Reference(v => v.Doctor).LoadAsync();
 
         return Ok(new

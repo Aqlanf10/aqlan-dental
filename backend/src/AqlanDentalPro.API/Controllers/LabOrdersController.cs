@@ -1040,6 +1040,19 @@ public class LabOrdersController(
         if (order.Status != "received")
             return BadRequest(new { message = "لا يمكن التسليم للحالة الحالية — يجب أن تكون مستلمة أولاً" });
 
+        // CLIN-09 FIX: Require a linked visit before marking delivered. Without this, reception
+        // could mark a lab order "delivered" as a pure status flag with no clinical record —
+        // the patient's chart shows the appliance was delivered but the visit, treatment, and
+        // invoice are missing, leading to revenue leakage and incomplete clinical history.
+        if (!order.VisitId.HasValue)
+        {
+            return BadRequest(new
+            {
+                message = "لا يمكن تسليم طلب المختبر بدون زيارة مرتبطة. يجب ربط الطلب بزيارة المريض أولاً.",
+                requiresVisitLink = true
+            });
+        }
+
         var oldStatus = order.Status;
         order.Status = "delivered";
         order.DeliveredDate = DateOnly.FromDateTime(DateTime.Today);

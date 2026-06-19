@@ -52,7 +52,7 @@ type NavEntry = (NavItem & { kind?: "leaf" }) | (NavGroup & { section?: string }
 const NAV: NavEntry[] = [
   // ── رئيسي ────────────────────────────────────────────────────────────────
   { href: "/",               label: "لوحة التحكم",     icon: LayoutDashboard, roles: ["Admin"],                                                             section: "رئيسي" },
-  { href: "/daily-operations", label: "التشغيل اليومي", icon: ClipboardList, roles: ["Admin", "Reception"], permission: PERMISSION_KEYS.DAILY_OPERATIONS_VIEW, badge: "⭐" },
+  { href: "/daily-operations", label: "التشغيل اليومي", icon: ClipboardList, roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.DAILY_OPERATIONS_VIEW, badge: "⭐" },
   { href: "/patients",       label: "المرضى",           icon: Users,           roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.PATIENTS_VIEW },
 
   // ── العيادة ───────────────────────────────────────────────────────────────
@@ -70,13 +70,13 @@ const NAV: NavEntry[] = [
   { href: "/surgery",        label: "الجراحة",          icon: Scissors,        roles: ["Admin","OralSurgeon"] },
 
   // ── التواصل ───────────────────────────────────────────────────────────────
-  { href: "/referrals",      label: "الإحالات",         icon: ArrowLeftRight,  roles: ["Admin", "Reception"],                                         section: "التواصل" },
-  { href: "/messages",       label: "الرسائل",          icon: MessageCircle,   roles: ["Admin", "Reception"] },
-  { href: "/whatsapp",       label: "واتساب",           icon: MessageSquare,   roles: ["Admin", "Reception"] },
+  { href: "/referrals",      label: "الإحالات",         icon: ArrowLeftRight,  roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"],                                         section: "التواصل" },
+  { href: "/messages",       label: "الرسائل",          icon: MessageCircle,   roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"] },
+  { href: "/whatsapp",       label: "واتساب",           icon: MessageSquare,   roles: ["Admin"] },
   { href: "/sms",            label: "رسائل SMS",        icon: Smartphone,      roles: ["Admin", "Reception"] },
 
   // ── المالية ───────────────────────────────────────────────────────────────
-  { href: "/finance-v3",  label: "المالية",  icon: Wallet,  roles: ["Admin","Accountant"],  section: "المالية" },
+  { href: "/finance-v3",  label: "المالية",  icon: Wallet,  roles: ["Admin","Accountant","Reception"],  section: "المالية" },
   { href: "/finance-v3?tab=commissions", label: "عمولات الأطباء", icon: Banknote, roles: ["Admin","Accountant"] },
   {
     kind: "group",

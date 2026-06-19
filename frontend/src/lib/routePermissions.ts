@@ -14,7 +14,8 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { path: '/patients', allowedRoles: ['Admin', 'Reception', 'Accountant', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   
   // Clinical pages - doctors only
-  { path: '/schedule', allowedRoles: ['Admin', 'Reception'] },
+  // FE-03: Aligned with sidebar — doctors need to view their own schedules
+  { path: '/schedule', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   { path: '/doctor-clinic', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   { path: '/ortho', allowedRoles: ['Admin', 'Orthodontist'] },
   { path: '/ceph', allowedRoles: ['Admin', 'Orthodontist'] },
@@ -47,7 +48,8 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
 
   // Additional sidebar routes
   { path: '/prescriptions', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
-  { path: '/lab', allowedRoles: ['Admin', 'Orthodontist'] },
+  // FE-03: Aligned with sidebar — all clinical staff use lab orders
+  { path: '/lab', allowedRoles: ['Admin', 'Reception', 'Orthodontist', 'GeneralDentist', 'OralSurgeon', 'Assistant', 'BranchManager'] },
   { path: '/doctors', allowedRoles: ['Admin'] },
   { path: '/hr', allowedRoles: ['Admin'] },
   // More specific path first: isRouteAllowed matches with startsWith, so

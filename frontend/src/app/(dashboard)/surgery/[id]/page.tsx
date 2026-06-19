@@ -17,6 +17,7 @@ import type {
 } from "@/types/surgery";
 import { SURGERY_STATUS_LABELS, SURGERY_STATUS_COLORS, REFERRAL_STATUS_LABELS } from "@/types/surgery";
 import api from "@/lib/api";
+import { useDoctors } from "@/hooks/useDoctors";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 
@@ -106,7 +107,8 @@ export default function SurgeryDetailPage() {
   const [surgeryCase, setSurgeryCase] = useState<SurgeryCase | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("info");
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  // FE-13: useDoctors() replaces the doctors fetch in the Promise.all.
+  const { data: doctors = [] } = useDoctors();
 
   // ── Preop state ─────────────────────────────────────────────────────────────
   const [preop, setPreop] = useState<UpsertPreopRequest>({ consentSigned: false, checklist: {}, requiredTests: [] });
@@ -147,16 +149,15 @@ export default function SurgeryDetailPage() {
   }, [id]);
 
   useEffect(() => {
+    // FE-13: doctors come from useDoctors() — only fetch the 4 surgery-case resources.
     Promise.all([
       api.get<SurgeryCase>(`/api/surgery-cases/${id}`),
-      api.get<Doctor[]>("/api/doctors"),
       api.get<PreopReport | null>(`/api/surgery-cases/${id}/preop`),
       api.get<OperativeReport | null>(`/api/surgery-cases/${id}/operative`),
       api.get<PostopRecord | null>(`/api/surgery-cases/${id}/postop`),
     ])
-      .then(([caseRes, doctorsRes, preopRes, operativeRes, postopRes]) => {
+      .then(([caseRes, preopRes, operativeRes, postopRes]) => {
         setSurgeryCase(caseRes.data);
-        setDoctors(doctorsRes.data);
         if (preopRes.data) {
           const { id: _preopId, ...rest } = preopRes.data;
           void _preopId;

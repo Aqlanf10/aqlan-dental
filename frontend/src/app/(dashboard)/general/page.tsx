@@ -5,6 +5,7 @@ import { Stethoscope, UserPlus, Plus, X, Save } from "lucide-react";
 import type { GeneralTreatment } from "@/types/dental";
 import type { PatientListItem } from "@/types/patient";
 import api from "@/lib/api";
+import { useDoctors } from "@/hooks/useDoctors";
 import { cn, formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
 import { EnhancedDentalChart } from "@/components/dental/EnhancedDentalChart";
@@ -30,7 +31,8 @@ const inputCls = (err?: boolean) => cn(
 export default function GeneralPage() {
   const [treatments, setTreatments] = useState<GeneralTreatment[]>([]);
   const [loading,    setLoading]    = useState(true);
-  const [doctors,    setDoctors]    = useState<Doctor[]>([]);
+  // FE-13: useDoctors() replaces useState + useEffect + api.get.
+  const { data: doctors = [] } = useDoctors();
 
   // Tab navigation
   const [activeTab, setActiveTab] = useState<"treatments" | "chart" | "perio" | "plan">("treatments");
@@ -67,7 +69,6 @@ export default function GeneralPage() {
 
   useEffect(() => {
     fetchTreatments();
-    api.get<Doctor[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
   }, []);
 
   const resetForm = () => {

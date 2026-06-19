@@ -8,6 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Save, ArrowRight } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
 import api from "@/lib/api";
+import { useDoctors } from "@/hooks/useDoctors";
 import { cn } from "@/lib/utils";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
 
@@ -32,15 +33,12 @@ export default function NewReferralPage() {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  // FE-13: useDoctors() replaces useState + useEffect + api.get.
+  const { data: doctors = [] } = useDoctors();
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { priority: "normal" }
   });
-
-  useEffect(() => {
-    api.get<Doctor[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
-  }, []);
 
   const onSubmit = async (data: FormData) => {
     setSaving(true);

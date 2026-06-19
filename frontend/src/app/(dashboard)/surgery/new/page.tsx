@@ -9,6 +9,7 @@ import { Save, Search, ArrowRight } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
 import { SURGERY_TYPES } from "@/types/surgery";
 import api from "@/lib/api";
+import { useDoctors } from "@/hooks/useDoctors";
 import { cn } from "@/lib/utils";
 
 interface Doctor { id: string; name: string; color?: string; }
@@ -33,7 +34,8 @@ function NewSurgeryForm() {
   const prePatientName = searchParams.get("patientName");
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  // FE-13: useDoctors() replaces useState + useEffect + api.get.
+  const { data: doctors = [] } = useDoctors();
   const [patientSearch, setPatientSearch] = useState("");
   const [patientResults, setPatientResults] = useState<PatientListItem[]>([]);
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
@@ -41,10 +43,6 @@ function NewSurgeryForm() {
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
   });
-
-  useEffect(() => {
-    api.get<Doctor[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
-  }, []);
 
   useEffect(() => {
     if (prePatientId) setValue("patientId", prePatientId);

@@ -152,9 +152,13 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         Patient? patient = null;
         if (analysis.OrthoCaseId.HasValue)
         {
-            patient = await db.Patients
-                .Where(p => p.OrthoCases.Any(o => o.Id == analysis.OrthoCaseId.Value))
-                .FirstOrDefaultAsync();
+            var orthoCase = await db.OrthoCases
+                .FirstOrDefaultAsync(o => o.Id == analysis.OrthoCaseId.Value);
+            if (orthoCase != null)
+            {
+                patient = await db.Patients
+                    .FirstOrDefaultAsync(p => p.Id == orthoCase.PatientId);
+            }
         }
         int? patientAge = null;
         if (patient?.DateOfBirth is { } dob)

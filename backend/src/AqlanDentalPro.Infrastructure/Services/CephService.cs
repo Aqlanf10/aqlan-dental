@@ -155,7 +155,7 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         {
             var today = DateTime.Today;
             patientAge = today.Year - dob.Year;
-            if (dob.Date > today.AddYears(-patientAge.Value)) patientAge--;
+            if (dob > DateOnly.FromDateTime(today.AddYears(-patientAge.Value))) patientAge--;
         }
         var isFemale = patient?.Gender == Gender.Female;
 

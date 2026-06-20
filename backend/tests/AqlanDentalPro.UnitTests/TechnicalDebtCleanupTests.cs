@@ -296,7 +296,7 @@ public class TechnicalDebtCleanupTests
         var result = await controller.GetAll();
 
         // Assert
-        result.Should().BeOfType<ForbidResult>("non-admin without branch must be forbidden from listing treasuries");
+        result.Should().BeOfType<ObjectResult>("non-admin without branch must be forbidden from listing treasuries").Which.StatusCode.Should().Be(403);
     }
 
     [Fact]
@@ -314,7 +314,7 @@ public class TechnicalDebtCleanupTests
         var result = await controller.GetAll();
 
         // Assert
-        result.Should().BeOfType<ForbidResult>("non-admin with Guid.Empty branch must be forbidden");
+        result.Should().BeOfType<ObjectResult>("non-admin with Guid.Empty branch must be forbidden").Which.StatusCode.Should().Be(403);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -337,7 +337,7 @@ public class TechnicalDebtCleanupTests
         var result = await controller.GetAll(page: 1, pageSize: 20);
 
         // Assert
-        result.Should().BeOfType<ForbidResult>("non-admin without branch must be forbidden from listing cashier sessions");
+        result.Should().BeOfType<ObjectResult>("non-admin without branch must be forbidden from listing cashier sessions").Which.StatusCode.Should().Be(403);
     }
 
     [Fact]
@@ -356,7 +356,7 @@ public class TechnicalDebtCleanupTests
         var result = await controller.GetAll(page: 1, pageSize: 20);
 
         // Assert
-        result.Should().BeOfType<ForbidResult>("non-admin with Guid.Empty branch must be forbidden from listing cashier sessions");
+        result.Should().BeOfType<ObjectResult>("non-admin with Guid.Empty branch must be forbidden from listing cashier sessions").Which.StatusCode.Should().Be(403);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

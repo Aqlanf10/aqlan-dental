@@ -525,7 +525,7 @@ export default function DoctorClinicPage() {
    Render — Vertical Sidebar + Workspace Layout
    ═══════════════════════════════════════════════════════════════════════════ */
   return (
-    <div className="h-screen flex flex-col overflow-hidden bg-[#f5f5f5]" dir="rtl">
+    <div className="h-screen flex flex-col overflow-hidden bg-[#f5f5f5]">
 
       {/* ═══════════════════════════════════════════════════════════════
           COMMAND BAR — White, clean, Microsoft-style

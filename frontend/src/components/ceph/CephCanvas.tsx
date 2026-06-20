@@ -703,7 +703,7 @@ export function CephCanvas({
 
       {/* ── Calibration panel ── */}
       {calMode && (
-        <div className="absolute top-12 left-3 z-10 w-60 bg-black/80 backdrop-blur-sm rounded-lg p-2.5 space-y-2" dir="rtl">
+        <div className="absolute top-12 left-3 z-10 w-60 bg-black/80 backdrop-blur-sm rounded-lg p-2.5 space-y-2">
           <p className="text-[10px] font-semibold text-amber-300">
             وضع المعايرة: انقر نقطتين على مسطرة صورة الأشعة
           </p>

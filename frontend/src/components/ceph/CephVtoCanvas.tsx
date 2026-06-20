@@ -55,7 +55,7 @@ export function CephVtoCanvas({ original, predicted }: Props) {
   }, [original, predicted]);
 
   return (
-    <div dir="rtl">
+    <div>
       <div className="flex items-center gap-4 mb-2 text-xs">
         <span className="flex items-center gap-1.5">
           <span className="inline-block w-3 h-0.5 rounded-full" style={{ backgroundColor: ORIGINAL_COLOR }} />

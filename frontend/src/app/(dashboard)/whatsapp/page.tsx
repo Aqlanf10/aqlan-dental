@@ -210,7 +210,7 @@ function TemplatesSection() {
                   onChange={(e) => setEditContent(e.target.value)}
                   rows={5}
                   className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:outline-none resize-none font-mono"
-                  dir="rtl"
+                 
                 />
                 <div className="flex gap-2 justify-end">
                   <button onClick={() => setEditingId(null)}
@@ -220,7 +220,7 @@ function TemplatesSection() {
                 </div>
               </div>
             ) : (
-              <pre className="text-xs text-gray-600 bg-gray-50 rounded-lg p-3 whitespace-pre-wrap font-sans" dir="rtl">
+              <pre className="text-xs text-gray-600 bg-gray-50 rounded-lg p-3 whitespace-pre-wrap font-sans">
                 {t.contentTemplate}
               </pre>
             )}

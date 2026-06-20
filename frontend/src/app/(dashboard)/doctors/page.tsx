@@ -417,7 +417,7 @@ export default function DoctorsPage() {
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6" dir="rtl">
+    <div className="space-y-6">
       {/* ── Toast ── */}
       {toast && (
         <div
@@ -1027,7 +1027,7 @@ function DoctorCard({
 
         {/* License Number */}
         {doctor.licenseNumber && (
-          <div className="flex items-center gap-2 text-gray-500 text-xs" dir="rtl">
+          <div className="flex items-center gap-2 text-gray-500 text-xs">
             <BadgeCheck className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" />
             <span>ترخيص: </span>
             <span dir="ltr" className="text-gray-600">{doctor.licenseNumber}</span>

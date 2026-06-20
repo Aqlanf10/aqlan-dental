@@ -1418,7 +1418,7 @@ export default function ReportsPage() {
   };
 
   return (
-    <div className="max-w-7xl" dir="rtl">
+    <div className="max-w-7xl">
       {/* Header */}
       <div className="mb-5">
         <h1 className="text-2xl font-extrabold text-gray-900">التقارير</h1>

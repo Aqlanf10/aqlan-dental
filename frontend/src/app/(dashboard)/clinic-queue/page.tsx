@@ -286,7 +286,7 @@ export default function ClinicQueuePage() {
 
   /* ── Render ──────────────────────────────────────────────────────────────── */
   return (
-    <div dir="rtl" className="p-4 md:p-6 space-y-6 page-content">
+    <div className="p-4 md:p-6 space-y-6 page-content">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>

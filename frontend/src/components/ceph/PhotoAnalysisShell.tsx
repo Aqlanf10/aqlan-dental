@@ -142,7 +142,7 @@ function ShellInner({ viewType, title, icon, uploadLabel, renderAnalyzer }: Prop
   };
 
   return (
-    <div className="space-y-5 max-w-5xl" dir="rtl">
+    <div className="space-y-5 max-w-5xl">
       <div className="no-print flex items-center gap-2 text-sm text-gray-500">
         <Link href={returnHref} className="hover:text-clinic-blue transition">
           {orthoCaseId ? "حالة التقويم" : "السيفالومتري"}

@@ -58,7 +58,7 @@ export default function CephAnalysisQualityPage() {
   if (!analysis) return <div className="py-20 text-center text-gray-400">التحليل غير موجود</div>;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5" dir="rtl">
+    <div className="mx-auto max-w-5xl space-y-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-extrabold text-gray-900"><ShieldAlert className="h-6 w-6 text-clinic-blue" />فحص جودة تحليل السيفالو</h1>

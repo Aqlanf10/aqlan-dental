@@ -148,7 +148,7 @@ export function OrthoBeforeAfterCompare({ caseId }: { caseId: string }) {
   }
 
   return (
-    <div className="space-y-4" dir="rtl">
+    <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-semibold text-gray-900">مقارنة قبل/بعد</h2>
         <button

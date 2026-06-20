@@ -79,7 +79,7 @@ export default function VisitPrintPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen" dir="rtl">
+      <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-[#3d7ab5] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
           <p className="text-sm text-[#64748b]">جاري تحميل التقرير...</p>
@@ -90,7 +90,7 @@ export default function VisitPrintPage() {
 
   if (!patient || !visit) {
     return (
-      <div className="flex items-center justify-center min-h-screen" dir="rtl">
+      <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <p className="text-lg font-bold text-red-500 mb-2">{!patient ? "المريض غير موجود" : "الزيارة غير موجودة"}</p>
           <button onClick={() => window.history.back()} className="text-sm text-[#3d7ab5] hover:underline">رجوع</button>

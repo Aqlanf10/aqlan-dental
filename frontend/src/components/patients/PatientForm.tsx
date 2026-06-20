@@ -253,7 +253,7 @@ export function PatientForm({ defaultValues, patientId }: Props) {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6" dir="rtl">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
       {serverError && (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3.5 text-sm font-semibold animate-pulse">
           {serverError}
@@ -440,7 +440,7 @@ export function PatientForm({ defaultValues, patientId }: Props) {
       {/* Portal Account Credentials Popup - single rendering on creation */}
       {portalDialog && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden" dir="rtl">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
             <div className="px-6 py-4 bg-[#0d2137] flex items-center gap-2">
               <KeyRound className="w-5 h-5 text-[#f5922e] animate-bounce" />
               <h3 className="text-white font-bold text-sm">تم إنشاء حساب بوابة المريض تلقائياً</h3>

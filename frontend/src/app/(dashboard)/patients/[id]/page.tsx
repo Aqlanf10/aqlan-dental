@@ -500,7 +500,7 @@ export default function PatientProfilePage() {
   // ─── Loading / Error States ─────────────────────────────────────────────
 
   if (loading) return (
-    <div className="h-full flex flex-col animate-pulse bg-slate-50" dir="rtl">
+    <div className="h-full flex flex-col animate-pulse bg-slate-50">
       <div className="h-1 bg-gradient-to-l from-sky-500 via-blue-600 to-indigo-600" />
       <div className="h-[100px] bg-white border-b border-slate-200 flex items-center gap-4 px-6">
         <div className="w-14 h-14 rounded-2xl bg-slate-200 flex-shrink-0" />
@@ -519,7 +519,7 @@ export default function PatientProfilePage() {
   );
 
   if (error || !patient) return (
-    <div className="h-full flex items-center justify-center" dir="rtl">
+    <div className="h-full flex items-center justify-center">
       <div className="text-center space-y-3">
         <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto">
           <AlertTriangle className="w-8 h-8 text-red-400" />
@@ -537,7 +537,7 @@ export default function PatientProfilePage() {
   // ─── Render ──────────────────────────────────────────────────────────────
 
   return (
-    <div className="h-full flex flex-col bg-slate-50 overflow-hidden" dir="rtl">
+    <div className="h-full flex flex-col bg-slate-50 overflow-hidden">
 
       {/* ══════════════════════════════════════════════════════
           LAYER 1 — Patient Banner

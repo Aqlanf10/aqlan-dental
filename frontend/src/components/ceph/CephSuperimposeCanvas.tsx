@@ -83,14 +83,14 @@ export function CephSuperimposeCanvas({
 
   if (!result.ok) {
     return (
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700" dir="rtl">
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
         يتطلب التراكب وجود معلمي قاعدة الجمجمة (S و N) في كلا التحليلين. ضع المعلمين ثم احفظ ليظهر التراكب.
       </div>
     );
   }
 
   return (
-    <div dir="rtl">
+    <div>
       <div className="flex items-center gap-4 mb-2 text-xs">
         <span className="flex items-center gap-1.5">
           <span className="inline-block w-3 h-0.5 rounded-full" style={{ backgroundColor: BASE_COLOR }} />

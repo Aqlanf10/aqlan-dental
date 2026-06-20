@@ -29,7 +29,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="ar" dir="rtl" className={tajawal.variable}>
+    <html dir="rtl" lang="ar" className={tajawal.variable}>
       <body className="font-sans antialiased">
         <RecaptchaProvider>
           <Providers>{children}</Providers>

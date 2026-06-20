@@ -163,7 +163,7 @@ export default function EditEmployeePage() {
   }
 
   return (
-    <div className="space-y-6" dir="rtl">
+    <div className="space-y-6">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-2 text-sm text-gray-500">
         <Link href="/employees" className="hover:text-gray-700 transition">

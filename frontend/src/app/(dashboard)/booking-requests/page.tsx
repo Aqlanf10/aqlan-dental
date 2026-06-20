@@ -479,7 +479,7 @@ function ConvertModal({ item, onClose, onConverted }: ConvertModalProps) {
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()} dir="rtl">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         <div className="p-5 border-b border-gray-100 flex items-center justify-between">
           <div>
             <h3 className="font-bold text-gray-900">تحويل إلى موعد</h3>
@@ -752,7 +752,7 @@ export default function BookingRequestsPage() {
   ).length;
 
   return (
-    <div dir="rtl" className="p-4 md:p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

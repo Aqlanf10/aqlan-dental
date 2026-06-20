@@ -101,7 +101,7 @@ export function AttentionAlerts() {
 
   if (isLoading) {
     return (
-      <div className="flex flex-wrap gap-3 animate-pulse" dir="rtl">
+      <div className="flex flex-wrap gap-3 animate-pulse">
         {[0, 1, 2].map((i) => (
           <div
             key={i}
@@ -127,7 +127,7 @@ export function AttentionAlerts() {
           border: "1px solid #22c55e30",
           color: "#16a34a",
         }}
-        dir="rtl"
+       
       >
         <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
         لا توجد تنبيهات — كل شيء تحت السيطرة ✅
@@ -136,7 +136,7 @@ export function AttentionAlerts() {
   }
 
   return (
-    <section dir="rtl" aria-label="يحتاج انتباهك">
+    <section aria-label="يحتاج انتباهك">
       <div className="mb-2 flex items-center gap-2">
         <AlertTriangle className="h-4 w-4" style={{ color: "#f5922e" }} />
         <h2 className="text-sm font-extrabold" style={{ color: "#0d2137" }}>

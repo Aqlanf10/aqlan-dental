@@ -258,7 +258,7 @@ export function OrthoImagePreparationDialog({
   return (
     <div
       className="fixed inset-0 z-[80] flex items-center justify-center bg-black/55 p-3"
-      dir="rtl"
+     
       role="dialog"
       aria-modal="true"
       aria-label="تجهيز صورة التقويم"

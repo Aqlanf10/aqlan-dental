@@ -113,7 +113,7 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
   }
 
   return (
-    <div className="space-y-5" dir="rtl">
+    <div className="space-y-5">
       {/* Account Status Card */}
       <div
         className="rounded-xl overflow-hidden bg-white border border-[#e8f0f9] shadow-sm"
@@ -289,7 +289,7 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div
             className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden"
-            dir="rtl"
+           
           >
             {/* Header */}
             <div className="px-6 py-4 bg-[#0d2137]">

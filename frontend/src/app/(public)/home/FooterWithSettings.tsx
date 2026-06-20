@@ -47,7 +47,7 @@ export function FooterWithSettings() {
   const resolvedLogo = resolveImageUrl(s.logoUrl);
 
   return (
-    <footer id="contact" dir="rtl" style={{ backgroundColor: "#0F172A" }} className="text-slate-400">
+    <footer id="contact" style={{ backgroundColor: "#0F172A" }} className="text-slate-400">
       <div className="max-w-7xl mx-auto px-6 pt-16 pb-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-12 border-b border-white/5">
 
         {/* Col 1 — Brand */}

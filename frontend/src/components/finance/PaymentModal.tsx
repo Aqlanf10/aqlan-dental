@@ -338,7 +338,7 @@ export function PaymentModal({
         </div>
 
         {/* Body */}
-        <form onSubmit={onSubmit} className="p-5 space-y-3" dir="rtl">
+        <form onSubmit={onSubmit} className="p-5 space-y-3">
           {/* Cashier session warning */}
           {!hasOpenSession && (
             <div

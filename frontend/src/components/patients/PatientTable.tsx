@@ -205,7 +205,7 @@ export function PatientTable() {
   };
 
   return (
-    <div className="space-y-5" dir="rtl">
+    <div className="space-y-5">
       {/* Microsoft-Style Top Command Bar */}
       <div className="bg-white rounded-xl border border-[#e8f0f9] p-4 space-y-3 shadow-sm">
         {/* Row 1: Search & Primary Actions */}
@@ -478,7 +478,7 @@ export function PatientTable() {
                             {rowMenuId === p.id && (
                               <div
                                 className="absolute left-0 top-8 z-30 bg-white rounded-xl py-1 min-w-44 text-sm"
-                                dir="rtl"
+                               
                                 style={{ boxShadow: "0 8px 30px rgba(0,0,0,0.12)", border: "1px solid #e8f0f9" }}
                               >
                                 <button

@@ -57,7 +57,7 @@ export function PrintLayout({ title, subtitle, children, branding: brandingProp,
   };
 
   return (
-    <div className="print-page" dir="rtl" style={{ minHeight: "100vh", background: "#fff", padding: "20px" }}>
+    <div className="print-page" style={{ minHeight: "100vh", background: "#fff", padding: "20px" }}>
       {/* ═══ Control buttons (hidden in print) ═══ */}
       <div className="no-print flex items-center gap-3 mb-6 print:hidden">
         <button

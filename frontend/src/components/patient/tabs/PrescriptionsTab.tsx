@@ -74,7 +74,7 @@ export function PrescriptionsTab({ patientId }: PrescriptionsTabProps) {
   }
 
   return (
-    <div className="space-y-3" dir="rtl">
+    <div className="space-y-3">
       {prescriptions.map((rx) => (
         <div key={rx.id} className="p-3 bg-white border border-[#e8f0f9] rounded-lg hover:border-[#3d7ab5] hover:shadow-sm transition">
           <div className="flex items-center justify-between gap-2 flex-wrap mb-2">

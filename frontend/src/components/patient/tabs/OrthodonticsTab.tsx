@@ -118,7 +118,7 @@ export function OrthodonticsTab({ patientId }: OrthodonticsTabProps) {
   }
 
   return (
-    <div className="space-y-4" dir="rtl">
+    <div className="space-y-4">
       {cases.map((c) => {
         const ov = overviews[c.id];
         const isActive = c.status === "active";

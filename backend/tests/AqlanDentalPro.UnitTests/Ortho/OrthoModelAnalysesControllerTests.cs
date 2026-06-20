@@ -40,7 +40,7 @@ public class OrthoModelAnalysesControllerTests : IDisposable
 
         var result = await CreateController().List(seeded.CaseId);
 
-        result.Should().BeOfType<ForbidResult>();
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(403)();
     }
 
     [Fact]
@@ -83,7 +83,7 @@ public class OrthoModelAnalysesControllerTests : IDisposable
 
         var result = await CreateController().Approve(seeded.CaseId, analysis.Id);
 
-        result.Should().BeOfType<ForbidResult>();
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(403)();
         analysis.ApprovedAt.Should().BeNull();
         analysis.ApprovedBy.Should().BeNull();
     }

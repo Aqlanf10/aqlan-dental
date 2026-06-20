@@ -170,7 +170,7 @@ public class OrthoPresentationPolishTests
 
         var result = await BuildController(db, canAccess: false).DeletePhoto(caseId, photoId);
 
-        result.Should().BeOfType<ForbidResult>();
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(403)();
         (await db.OrthoClinicalPhotos.CountAsync()).Should().Be(1); // not deleted
     }
 

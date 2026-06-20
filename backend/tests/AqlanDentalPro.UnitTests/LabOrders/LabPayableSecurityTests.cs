@@ -358,7 +358,7 @@ public class LabPayableSecurityTests
         var result = await controller.RecordPayment(payableId, request);
 
         // Assert
-        result.Should().BeOfType<ForbidResult>();
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(403)();
     }
 
     // 10. Verify no migrations or schema changes (ensured by tests not running any Db migration steps)

@@ -148,7 +148,7 @@ public class OrthoImagePreparationTests : IDisposable
 
         var result = await controller.SaveImagePreparation(caseId, photoId, new SaveOrthoImagePreparationRequest(), _renderer);
 
-        result.Should().BeOfType<ForbidResult>();
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(403)();
         (await _db.OrthoImagePreparations.CountAsync()).Should().Be(0);
     }
 

@@ -27,13 +27,10 @@ public class PatientConfiguration : IEntityTypeConfiguration<Patient>
         // Full-text search index on patient name + number
         builder.HasIndex(p => new { p.BranchId, p.IsActive });
 
-        // Unique filtered index on normalized phone (non-null, non-empty)
-        builder.HasIndex(p => p.NormalizedPhone)
-            .IsUnique()
-            .HasFilter("\"NormalizedPhone\" IS NOT NULL AND \"NormalizedPhone\" != ''");
-        builder.HasIndex(p => p.NormalizedWhatsApp)
-            .IsUnique()
-            .HasFilter("\"NormalizedWhatsApp\" IS NOT NULL AND \"NormalizedWhatsApp\" != ''");
+        // DB-07 FIX: Removed duplicate NormalizedPhone/NormalizedWhatsApp indexes.
+        // Lines 16-17 above already create these exact unique filtered indexes.
+        // The duplicate declaration at lines 31-36 was creating a second identical index
+        // in the migration, wasting space and slowing writes.
 
         builder.HasOne(p => p.PrimaryDoctor)
             .WithMany(d => d.PrimaryPatients)

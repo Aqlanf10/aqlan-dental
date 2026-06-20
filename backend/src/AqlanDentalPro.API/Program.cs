@@ -214,3 +214,10 @@ app.MapControllers();
 app.MapHub<MessagingHub>("/hubs/messaging");
 
 app.Run();
+
+// TEST-18: Expose Program as a public partial class so that
+// WebApplicationFactory<Program> in the IntegrationTests project can reference it.
+// Top-level statements generate an internal Program by default, which is
+// inaccessible from a separate assembly. This declaration merges with the
+// synthesized Program class without changing runtime behavior.
+public partial class Program { }

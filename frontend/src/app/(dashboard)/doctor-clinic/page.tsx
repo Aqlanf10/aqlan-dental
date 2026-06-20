@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import Link from "next/link";
 import {
   Stethoscope, ClipboardCheck, ListChecks, GitBranch,
   Image, Pill, FlaskConical, CalendarClock, Send, RefreshCw,
   CheckCircle,
   Loader2, FileText,
-  Route, Save, X,
+  Route, Save, X, ExternalLink,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
@@ -549,6 +550,24 @@ export default function DoctorClinicPage() {
 
           {/* Command bar actions */}
           <div className="flex items-center gap-1.5">
+            {/* FE-06: Open canonical patient profile in a new tab.
+                Replaces the duplicated inline patient-detail UI — the doctor
+                queue list and clinical workflow panels stay; this link gives
+                one-click access to the full /patients/[id] profile (with
+                ?focus=journey so the journey-relevant tab is activated). */}
+            {selectedPatient && (
+              <Link
+                href={`/patients/${selectedPatient.patientId}?focus=journey`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#1e3a8a] hover:bg-[#eff6ff] transition-colors"
+                title="فتح ملف المريض الكامل (رحلة المريض)"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span className="hidden lg:inline">ملف المريض</span>
+              </Link>
+            )}
+
             {/* Refresh */}
             <button onClick={() => refetch()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#444] hover:bg-[#f0f0f0] transition-colors" title="تحديث (Ctrl+R)">
               <RefreshCw className="w-3.5 h-3.5" />

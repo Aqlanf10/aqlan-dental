@@ -110,7 +110,7 @@ public class ClinicalPhotosController(
             Stage       = req.Stage,
             Notes       = req.Notes,
             UploadedBy  = currentUser.UserId,
-            PhotoDate   = req.PhotoDate != null ? DateOnly.Parse(req.PhotoDate) : DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()),
+            PhotoDate   = req.PhotoDate != null ? DateOnly.Parse(req.PhotoDate) : ClinicTimeProvider.ClinicToday(),
         };
         db.ClinicalPhotos.Add(photo);
         await db.SaveChangesAsync();
@@ -215,7 +215,7 @@ public class RadiographsController(
             Notes       = req.Notes,
             DoctorId    = req.DoctorId,
             UploadedBy  = currentUser.UserId,
-            XrayDate    = req.XrayDate != null ? DateOnly.Parse(req.XrayDate) : DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()),
+            XrayDate    = req.XrayDate != null ? DateOnly.Parse(req.XrayDate) : ClinicTimeProvider.ClinicToday(),
             OrthoCaseId = req.OrthoCaseId,
         };
         db.Radiographs.Add(xray);

@@ -106,7 +106,7 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
         if (from.HasValue) query = query.Where(o => o.CreatedAt >= from.Value);
         if (to.HasValue) query = query.Where(o => o.CreatedAt <= to.Value);
 
-        var today = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
+        var today = ClinicTimeProvider.ClinicToday();
 
         // Get raw data grouped by lab for in-memory KPI calculations
         var labGroups = await query
@@ -202,7 +202,7 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
     {
         if (!await CanViewReportsAsync()) return Forbid();
 
-        var today = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
+        var today = ClinicTimeProvider.ClinicToday();
         var thirtyDaysAgo = DateTime.UtcNow.AddDays(-30);
 
         // Overall counts

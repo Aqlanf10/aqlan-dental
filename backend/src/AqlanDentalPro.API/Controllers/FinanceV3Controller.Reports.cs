@@ -20,7 +20,7 @@ public partial class FinanceV3Controller
             return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
-        var today = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
+        var today = ClinicTimeProvider.ClinicToday();
         var monthStart = new DateOnly(today.Year, today.Month, 1);
         var todayDate = today.ToDateTime(TimeOnly.MinValue);
         var monthStartDate = monthStart.ToDateTime(TimeOnly.MinValue);
@@ -238,7 +238,7 @@ public partial class FinanceV3Controller
                 return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
             var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
-        var today = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
+        var today = ClinicTimeProvider.ClinicToday();
         var monthStart = new DateOnly(today.Year, today.Month, 1);
 
         // ── Accrual-based KPIs (from JournalLine — canonical source of truth) ──
@@ -678,7 +678,7 @@ public partial class FinanceV3Controller
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
-        var targetDate = DateOnly.TryParse(date, out var d) ? d : DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
+        var targetDate = DateOnly.TryParse(date, out var d) ? d : ClinicTimeProvider.ClinicToday();
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
 
         // ── Read from JournalLine (Treasury account type) — canonical source of truth ──
@@ -797,7 +797,7 @@ public partial class FinanceV3Controller
             return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
-        var today = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
+        var today = ClinicTimeProvider.ClinicToday();
         var from = DateOnly.TryParse(fromDate, out var f) ? f : new DateOnly(today.Year, today.Month, 1);
         var to = DateOnly.TryParse(toDate, out var t) ? t : today;
 
@@ -1416,7 +1416,7 @@ public partial class FinanceV3Controller
             return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
-        var cutoff = DateOnly.TryParse(asOfDate, out var d) ? d : DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
+        var cutoff = DateOnly.TryParse(asOfDate, out var d) ? d : ClinicTimeProvider.ClinicToday();
 
         var linesQuery = db.JournalLines
             .Where(l => l.JournalEntry.IsPosted && l.JournalEntry.EntryDate <= cutoff)
@@ -1708,7 +1708,7 @@ public partial class FinanceV3Controller
 
         var total = await query.CountAsync();
 
-        var today = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
+        var today = ClinicTimeProvider.ClinicToday();
 
         var contractsRaw = await query
             .OrderByDescending(c => c.CreatedAt)

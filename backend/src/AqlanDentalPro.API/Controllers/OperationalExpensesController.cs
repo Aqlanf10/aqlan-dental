@@ -74,7 +74,7 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
         if (req.Amount <= 0)
             return BadRequest(new { message = "يجب أن يكون مبلغ المصروف أكبر من الصفر" });
 
-        var date = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
+        var date = ClinicTimeProvider.ClinicToday();
         if (!string.IsNullOrWhiteSpace(req.ExpenseDate) && DateOnly.TryParse(req.ExpenseDate, out var parsedDate))
             date = parsedDate;
 
@@ -643,7 +643,7 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
                 Category = FinancialCategory.Reversal,
                 Amount = expense.Amount,
                 PaymentMethod = expense.PaymentMethod,
-                TransactionDate = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()),
+                TransactionDate = ClinicTimeProvider.ClinicToday(),
                 ReferenceId = expense.Id,
                 ReferenceNumber = expense.ExpenseNumber,
                 Description = $"عكس قيد مصروف تشغيلي: {expense.Title}",

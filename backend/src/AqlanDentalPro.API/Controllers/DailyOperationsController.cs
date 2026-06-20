@@ -30,7 +30,7 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
         try
         {
             var reportDate = string.IsNullOrEmpty(date)
-                ? DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday())
+                ? ClinicTimeProvider.ClinicToday()
                 : DateOnly.Parse(date);
 
             var todayStart = DateTime.SpecifyKind(reportDate.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);

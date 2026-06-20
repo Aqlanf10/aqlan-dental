@@ -50,7 +50,7 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
         if (supplier == null)
             return BadRequest(new { message = "المورد المحدد غير موجود" });
 
-        var billDate = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
+        var billDate = ClinicTimeProvider.ClinicToday();
         if (!string.IsNullOrWhiteSpace(req.BillDate) && DateOnly.TryParse(req.BillDate, out var parsedBill))
             billDate = parsedBill;
 
@@ -171,7 +171,7 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
         if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<BillStatus>(status, true, out var statusFilter))
             query = query.Where(b => b.Status == statusFilter);
 
-        var today = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
+        var today = ClinicTimeProvider.ClinicToday();
         if (overdue == true)
             query = query.Where(b => b.DueDate.HasValue && b.DueDate.Value < today && b.Status != BillStatus.FullyPaid);
 
@@ -333,7 +333,7 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
         if (billSnapshot.Status == BillStatus.Cancelled)
             return BadRequest(new { message = "هذه الفاتورة ملغاة" });
 
-        var paymentDate = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
+        var paymentDate = ClinicTimeProvider.ClinicToday();
         if (!string.IsNullOrWhiteSpace(req.PaymentDate) && DateOnly.TryParse(req.PaymentDate, out var parsedDate))
             paymentDate = parsedDate;
 

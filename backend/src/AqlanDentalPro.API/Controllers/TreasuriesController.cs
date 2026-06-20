@@ -93,7 +93,7 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
                 Category = FinancialCategory.InternalTransfer,
                 Amount = req.OpeningBalance,
                 PaymentMethod = type == TreasuryType.Bank ? "bank" : "cash",
-                TransactionDate = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()),
+                TransactionDate = ClinicTimeProvider.ClinicToday(),
                 ReferenceId = treasury.Id,
                 ReferenceNumber = "OP-BAL",
                 Description = $"رصيد افتتاحي لبداية تشغيل {treasury.Name}",

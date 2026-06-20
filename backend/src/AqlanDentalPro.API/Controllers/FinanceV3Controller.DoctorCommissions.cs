@@ -44,7 +44,7 @@ public partial class FinanceV3Controller
         if (string.IsNullOrEmpty(from))
         {
             // Default to start of current month
-            var today = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
+            var today = ClinicTimeProvider.ClinicToday();
             fromDate = new DateOnly(today.Year, today.Month, 1);
         }
         else if (!DateOnly.TryParse(from, out fromDate))
@@ -54,7 +54,7 @@ public partial class FinanceV3Controller
 
         if (string.IsNullOrEmpty(to))
         {
-            toDate = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
+            toDate = ClinicTimeProvider.ClinicToday();
         }
         else if (!DateOnly.TryParse(to, out toDate))
         {
@@ -202,7 +202,7 @@ public partial class FinanceV3Controller
 
         if (string.IsNullOrEmpty(from))
         {
-            var today = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
+            var today = ClinicTimeProvider.ClinicToday();
             fromDate = new DateOnly(today.Year, today.Month, 1);
         }
         else if (!DateOnly.TryParse(from, out fromDate))
@@ -212,7 +212,7 @@ public partial class FinanceV3Controller
 
         if (string.IsNullOrEmpty(to))
         {
-            toDate = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
+            toDate = ClinicTimeProvider.ClinicToday();
         }
         else if (!DateOnly.TryParse(to, out toDate))
         {

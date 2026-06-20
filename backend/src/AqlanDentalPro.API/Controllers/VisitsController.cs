@@ -237,8 +237,8 @@ public class VisitsController(
             PatientId = req.PatientId,
             AppointmentId = req.AppointmentId,
             VisitDate = !string.IsNullOrWhiteSpace(req.VisitDate)
-                ? DateOnly.TryParse(req.VisitDate, out var vd) ? vd : DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday())
-                : DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()),
+                ? DateOnly.TryParse(req.VisitDate, out var vd) ? vd : ClinicTimeProvider.ClinicToday()
+                : ClinicTimeProvider.ClinicToday(),
             VisitType = req.VisitType,
             Specialty = specialty,
             DoctorId = req.DoctorId,

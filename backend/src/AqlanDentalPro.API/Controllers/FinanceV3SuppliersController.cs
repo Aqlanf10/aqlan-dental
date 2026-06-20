@@ -218,7 +218,7 @@ public class FinanceV3SuppliersController(
             TotalAmount = req.TotalAmount,
             PaidAmount = 0,
             Status = BillStatus.Unpaid,
-            BillDate = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()),
+            BillDate = ClinicTimeProvider.ClinicToday(),
             DueDate = !string.IsNullOrWhiteSpace(req.DueDate) && DateOnly.TryParse(req.DueDate, out var dd) ? dd : (DateOnly?)null,
             LabOrderId = req.LabOrderId,
             BranchId = branchId,

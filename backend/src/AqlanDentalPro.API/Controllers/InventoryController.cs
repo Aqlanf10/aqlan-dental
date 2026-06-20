@@ -342,7 +342,7 @@ public class InventoryController(AppDbContext db, ILogger<InventoryController> l
         if (days < 1) days = 30;
 
         var cutoffDate = ClinicTimeProvider.ClinicToday().AddDays(days);
-        var today = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
+        var today = ClinicTimeProvider.ClinicToday();
 
         var items = await db.Inventory
             .Where(i => i.ExpiryDate != null && i.ExpiryDate <= cutoffDate)

@@ -50,9 +50,11 @@ public class LabPayablesController(
             {
                 p.Id,
                 p.LabOrderId,
-                LabName = p.Lab.Name,
-                OrderNumber = p.LabOrder.OrderNumber,
-                PatientName = p.LabOrder.Patient.FirstName + " " + p.LabOrder.Patient.LastName,
+                LabName = p.Lab != null ? p.Lab.Name : "",
+                OrderNumber = p.LabOrder != null ? p.LabOrder.OrderNumber : "",
+                PatientName = p.LabOrder != null && p.LabOrder.Patient != null
+                    ? p.LabOrder.Patient.FirstName + " " + p.LabOrder.Patient.LastName
+                    : "",
                 p.Amount,
                 p.PaidAmount,
                 Balance = p.Amount - p.PaidAmount,
@@ -83,8 +85,8 @@ public class LabPayablesController(
         {
             payable.Id,
             payable.LabOrderId,
-            LabName = payable.Lab.Name,
-            OrderNumber = payable.LabOrder.OrderNumber,
+            LabName = payable.Lab?.Name ?? "",
+            OrderNumber = payable.LabOrder?.OrderNumber ?? "",
             payable.Amount,
             payable.PaidAmount,
             Balance = payable.Amount - payable.PaidAmount,
@@ -229,7 +231,7 @@ public class LabPayablesController(
                 {
                     (JournalAccountType.Payable, payable.LabId, req.Amount, 0m, (string?)$"سداد مستحقات: {payable.Lab?.Name}"),
                     (JournalAccountType.Treasury, treasury.Id, 0m, req.Amount, (string?)$"سداد من: {treasury.Name}")
-                });
+                }, autoSave: false);
             je.IsPosted = true;
             je.PostedAt = DateTime.UtcNow;
 

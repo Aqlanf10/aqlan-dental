@@ -92,7 +92,8 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
                 DestinationTreasuryName = t.DestinationTreasury.Name,
                 t.Amount,
                 t.TransferDate,
-                PerformedBy = t.PerformedByUser.Username,
+                // FIN-18 FIX: Null-safe access — PerformedByUser could be null if user was soft-deleted
+                PerformedBy = t.PerformedByUser != null ? t.PerformedByUser.Username : "",
                 ApprovedBy = t.ApprovedByUser != null ? t.ApprovedByUser.Username : null,
                 t.ApprovalDate,
                 Status = t.Status.ToString(),

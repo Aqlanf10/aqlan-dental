@@ -451,7 +451,7 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
                 {
                     (JournalAccountType.Payable, bill.SupplierId, req.Amount, 0m, (string?)$"سداد مستحقات: {bill.Supplier?.Name}"),
                     (JournalAccountType.Treasury, treasury.Id, 0m, req.Amount, (string?)$"سداد من: {treasury.Name}")
-                });
+                }, autoSave: false);
             je.IsPosted = true;
             je.PostedAt = DateTime.UtcNow;
 

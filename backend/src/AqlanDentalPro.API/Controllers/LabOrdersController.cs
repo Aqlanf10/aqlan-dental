@@ -850,6 +850,16 @@ public class LabOrdersController(
         if (req.RestorationType is not null)
             order.RestorationType = req.RestorationType;
 
+        // CLIN-31 FIX: Recalculate TotalCost and Cost if items exist and LabId changed.
+        // Previously, changing LabId (which could change the price-lookup basis) did NOT
+        // recalculate TotalCost — the order kept the old lab's prices. Now re-sums from items.
+        if (req.LabId.HasValue && order.Items != null && order.Items.Count > 0)
+        {
+            var newTotalCost = order.Items.Where(i => i.IsActive).Sum(i => i.TotalPrice);
+            order.TotalCost = newTotalCost;
+            order.Cost = newTotalCost; // keep Cost in sync with TotalCost (CLIN-08)
+        }
+
         await db.SaveChangesAsync();
 
         // Re-fetch navigation properties that may have changed (Lab)

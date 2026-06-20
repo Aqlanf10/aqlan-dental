@@ -265,7 +265,7 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
                 {
                     (JournalAccountType.OtherReceivable, advance.Id, advance.Amount, 0m, (string?)$"سلفة: {employee.FullName}"),
                     (JournalAccountType.Treasury, treasury.Id, 0m, advance.Amount, (string?)$"سداد من: {treasury.Name}")
-                });
+                }, autoSave: false);
             je.IsPosted = true;
             je.PostedAt = DateTime.UtcNow;
 

@@ -375,7 +375,7 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
                 {
                     (JournalAccountType.Expense, salary.Id, salary.NetSalary, 0m, (string?)$"راتب: {employee.FullName}"),
                     (JournalAccountType.Treasury, treasury.Id, 0m, salary.NetSalary, (string?)$"سداد من: {treasury.Name}")
-                });
+                }, autoSave: false);
             je.IsPosted = true;
             je.PostedAt = DateTime.UtcNow;
 

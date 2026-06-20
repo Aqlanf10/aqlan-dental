@@ -221,12 +221,18 @@ public partial class FinanceV3Controller
         var startDateTime = DateTime.SpecifyKind(fromDate.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
         var endDateTime = DateTime.SpecifyKind(toDate.ToDateTime(TimeOnly.MaxValue), DateTimeKind.Utc);
 
-        // 2. Get all invoices in date range with their payments and line items
+        // 2. Get all invoices with their payments and line items (FIN-10: filter by PAYMENT date, not invoice creation date).
+        // Previously filtered by i.CreatedAt, which attributed collected revenue to the invoice-creation period
+        // instead of the payment-collection period. A payment collected in July for an invoice created in June
+        // appeared in the June report. Now we load invoices whose payments fall in the date range.
         var invoicesQuery = db.Invoices
             .Include(i => i.Patient)
             .Include(i => i.LineItems)
             .Include(i => i.Payments)
-            .Where(i => i.IsActive && i.CreatedAt >= startDateTime && i.CreatedAt <= endDateTime);
+            .Where(i => i.IsActive
+                     && i.Payments.Any(p => p.IsActive
+                                          && p.PaymentDate >= fromDate
+                                          && p.PaymentDate <= toDate));
 
         if (branchId.HasValue)
             invoicesQuery = invoicesQuery.Where(i => i.Patient.BranchId == branchId.Value);
@@ -237,10 +243,14 @@ public partial class FinanceV3Controller
 
         // Explicitly filter inactive line items and payments in-memory
         // (ensures correct behavior across all database providers including InMemory)
+        // FIN-10: Also filter payments to only those within the date range (the invoice query
+        // loads all payments for matching invoices, but we should only aggregate the in-range ones).
         foreach (var inv in invoices)
         {
             inv.LineItems = inv.LineItems.Where(l => l.IsActive).ToList();
-            inv.Payments = inv.Payments.Where(p => p.IsActive).ToList();
+            inv.Payments = inv.Payments.Where(p => p.IsActive
+                                               && p.PaymentDate >= fromDate
+                                               && p.PaymentDate <= toDate).ToList();
         }
 
         // 3. Get doctor commission payments

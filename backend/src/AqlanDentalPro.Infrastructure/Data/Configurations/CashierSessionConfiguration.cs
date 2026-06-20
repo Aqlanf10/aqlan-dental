@@ -27,6 +27,16 @@ public class CashierSessionConfiguration : IEntityTypeConfiguration<CashierSessi
         builder.HasIndex(s => s.BranchId);
         builder.HasIndex(s => s.TreasuryId);
 
+        // DB-03: Partial unique index — only one Open session per cashier at the DB level.
+        // The application-level guard (pg_advisory_xact_lock in OpenSession) is the primary defense,
+        // but this index is the safety net: if the DB is accessed from outside the app (manual SQL,
+        // a second app instance, or InMemory where advisory locks are no-ops), two open sessions
+        // cannot coexist. The filter ensures soft-deleted (IsActive=false) sessions don't conflict.
+        builder.HasIndex(s => s.CashierId)
+            .IsUnique()
+            .HasFilter("\"Status\" = 0 AND \"IsActive\" = true")
+            .HasDatabaseName("IX_CashierSessions_OneOpenPerCashier");
+
         // Treasury FK
         builder.HasOne(s => s.Treasury)
             .WithMany()

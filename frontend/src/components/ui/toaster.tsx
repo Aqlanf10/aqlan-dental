@@ -46,7 +46,7 @@ export function Toaster() {
           </RadixToast.Close>
         </RadixToast.Root>
       ))}
-      <RadixToast.Viewport className="fixed bottom-6 left-6 z-[9999] flex flex-col gap-2" />
+      <RadixToast.Viewport className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-2" />
     </RadixToast.Provider>
   );
 }

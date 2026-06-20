@@ -1017,7 +1017,11 @@ public partial class FinanceV3Controller
         var netPaid = totalPaid + totalRefunds; // refunds are negative
         // Sprint Patient-Finance-Ledger: EntityBalance now includes contract totals
         // so it matches the patient-facing outstanding balance from FinanceService
-        var entityBalance = (totalInvoiced + totalContracted) - netPaid;
+        // FIN-12 FIX: Clamp to 0 (matching FinanceService.GetPatientFinanceSummaryAsync which
+        // uses Math.Max(0, totalCost - totalPaid)). Previously EntityBalance could be negative
+        // (clinic owes patient) while the service returned 0 — causing the portal and the
+        // finance dashboard to show different outstanding balances for the same patient.
+        var entityBalance = Math.Max(0m, (totalInvoiced + totalContracted) - netPaid);
 
         // Contract outstanding
         var contractOutstanding = await db.Contracts

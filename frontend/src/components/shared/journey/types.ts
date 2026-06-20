@@ -73,6 +73,11 @@ export interface TodayJourneyItem {
   orthoLastVisitDate?: string;
   orthoNextAppointmentDate?: string;
   orthoContractRemaining?: number;
+  // CLIN-05: ortho bridge fields mirrored from the linked Visit
+  // (set by OrthoService.AddVisitAsync). Null for non-ortho visits.
+  orthoVisitWireUpper?: string | null;
+  orthoVisitWireLower?: string | null;
+  orthoVisitCurrentStage?: string | null;
   amountDueReference?: number;
   treatmentDone?: string;
   chiefComplaint?: string;

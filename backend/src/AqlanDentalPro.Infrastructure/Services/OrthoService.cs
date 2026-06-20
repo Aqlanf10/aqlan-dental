@@ -189,11 +189,13 @@ public class OrthoService(AppDbContext db, ICurrentUserService currentUser)
             .Where(v => v.OrthoCaseId == caseId)
             .MaxAsync(v => (int?)v.VisitNumber) ?? 0;
 
+        var visitDate = DateOnly.Parse(req.VisitDate);
+
         var visit = new OrthoVisit
         {
             OrthoCaseId = caseId,
             VisitNumber = lastVisit + 1,
-            VisitDate = DateOnly.Parse(req.VisitDate),
+            VisitDate = visitDate,
             VisitType = req.VisitType,
             CurrentStage = req.CurrentStage,
             WireUpper = req.WireUpper,
@@ -210,11 +212,68 @@ public class OrthoService(AppDbContext db, ICurrentUserService currentUser)
 
         db.OrthoVisits.Add(visit);
 
+        // CLIN-05: Unify the parallel visit concepts.
+        // In addition to the OrthoVisit row (read by the ortho case detail page),
+        // create or refresh a linked Visit row (read by daily-operations) so the
+        // orthodontist's daily clinical activity shows up in the daily-operations
+        // screen. Both rows are persisted by the same SaveChangesAsync call below
+        // — if either fails, neither is committed (atomic).
+        //
+        // Idempotent by VisitDate: if a Visit already exists for this OrthoCase
+        // on the same calendar day (e.g. a back-to-back POST or a same-day edit),
+        // we link to it and refresh the mirrored ortho fields instead of inserting
+        // a duplicate.
+        var orthoCase = await db.OrthoCases
+            .Where(c => c.Id == caseId)
+            .Select(c => new { c.PatientId, c.DoctorId, c.BranchId })
+            .FirstOrDefaultAsync();
+
+        if (orthoCase is not null)
+        {
+            var existingLinkedVisit = await db.Visits
+                .Where(v => v.OrthoCaseId == caseId && v.VisitDate == visitDate && v.IsActive)
+                .OrderByDescending(v => v.UpdatedAt)
+                .FirstOrDefaultAsync();
+
+            if (existingLinkedVisit is null)
+            {
+                db.Visits.Add(new Visit
+                {
+                    PatientId = orthoCase.PatientId,
+                    DoctorId = req.DoctorId ?? orthoCase.DoctorId,
+                    VisitDate = visitDate,
+                    VisitType = req.VisitType,
+                    Specialty = Specialty.Orthodontics,
+                    OrthoCaseId = caseId,
+                    ChiefComplaint = req.VisitType,
+                    ClinicalNotes = req.ClinicalNotes,
+                    WireUpper = req.WireUpper,
+                    WireLower = req.WireLower,
+                    CurrentStage = req.CurrentStage,
+                    NextVisitDate = req.NextAppointmentDate != null
+                        ? DateOnly.Parse(req.NextAppointmentDate)
+                        : null,
+                    NextVisitPlan = req.NextAppointmentType,
+                });
+            }
+            else
+            {
+                // Refresh mirrored ortho fields on the existing same-day Visit.
+                existingLinkedVisit.WireUpper = req.WireUpper;
+                existingLinkedVisit.WireLower = req.WireLower;
+                existingLinkedVisit.CurrentStage = req.CurrentStage;
+                if (!string.IsNullOrWhiteSpace(req.ClinicalNotes))
+                    existingLinkedVisit.ClinicalNotes = req.ClinicalNotes;
+                if (!string.IsNullOrWhiteSpace(req.VisitType))
+                    existingLinkedVisit.VisitType = req.VisitType;
+            }
+        }
+
         // Update case current stage
         if (!string.IsNullOrWhiteSpace(req.CurrentStage))
         {
-            var orthoCase = await db.OrthoCases.FindAsync(caseId);
-            if (orthoCase != null) orthoCase.CurrentStage = req.CurrentStage;
+            var orthoCaseForStage = await db.OrthoCases.FindAsync(caseId);
+            if (orthoCaseForStage != null) orthoCaseForStage.CurrentStage = req.CurrentStage;
         }
 
         await db.SaveChangesAsync();

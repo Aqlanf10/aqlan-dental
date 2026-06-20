@@ -93,6 +93,61 @@ function OrthoBadge({ item }: { item: TodayJourneyItem }) {
   );
 }
 
+/* ─── CLIN-05: Today's ortho visit fields chip ───────────────────────────────
+   Shown inline on the desktop row when the linked Visit carries today's ortho
+   clinical data (WireUpper / WireLower / CurrentStage). The full Arabic-label
+   breakdown is in the title tooltip; the chip itself shows a compact summary so
+   the daily-operations screen can see at a glance that the orthodontist did an
+   adjustment today. Subtle, RTL, only rendered when at least one field is set.
+*/
+function OrthoVisitFieldsChip({ item }: { item: TodayJourneyItem }) {
+  const wireUpper = item.orthoVisitWireUpper ?? null;
+  const wireLower = item.orthoVisitWireLower ?? null;
+  const stage = item.orthoVisitCurrentStage ?? null;
+  if (!wireUpper && !wireLower && !stage) return null;
+
+  const tooltipParts: string[] = [];
+  if (wireUpper) tooltipParts.push(`السلك العلوي: ${wireUpper}`);
+  if (wireLower) tooltipParts.push(`السلك السفلي: ${wireLower}`);
+  if (stage) tooltipParts.push(`المرحلة الحالية: ${stage}`);
+
+  // Compact inline summary — first non-empty wire value, fallback to stage.
+  const compact = wireUpper ?? wireLower ?? stage ?? "";
+
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold"
+      style={{ background: "#eef2ff", color: "#4338ca", border: "1px solid #c7d2fe" }}
+      title={tooltipParts.join(" • ")}
+    >
+      <GitBranch className="w-2.5 h-2.5" />
+      <span>{compact}</span>
+    </span>
+  );
+}
+
+/* ─── CLIN-05: Today's ortho visit fields block (mobile expanded) ────────────
+   A subtle labeled block rendered inside the existing expanded ortho section on
+   mobile cards. Shows the three Arabic-labeled fields when any is non-null.
+*/
+function OrthoVisitFieldsBlock({ item }: { item: TodayJourneyItem }) {
+  const wireUpper = item.orthoVisitWireUpper ?? null;
+  const wireLower = item.orthoVisitWireLower ?? null;
+  const stage = item.orthoVisitCurrentStage ?? null;
+  if (!wireUpper && !wireLower && !stage) return null;
+
+  return (
+    <div className="mt-1.5 rounded-lg border border-indigo-100 bg-indigo-50/60 p-1.5 text-[10px] text-indigo-900">
+      <div className="font-bold mb-0.5">إجراءات اليوم التقويمية</div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {wireUpper && <span><strong>السلك العلوي:</strong> {wireUpper}</span>}
+        {wireLower && <span><strong>السلك السفلي:</strong> {wireLower}</span>}
+        {stage && <span><strong>المرحلة الحالية:</strong> {stage}</span>}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Overdue Badge ─────────────────────────────────────────────────────────── */
 function OverdueBadge({ text }: { text: string }) {
   return (
@@ -431,6 +486,7 @@ function AppointmentRow({
           </button>
           {item.visitCount != null && item.visitCount <= 1 && <NewPatientBadge />}
           <OrthoBadge item={item} />
+          <OrthoVisitFieldsChip item={item} />
         </div>
       </td>
       {!isDoctor && (
@@ -612,6 +668,7 @@ function MobileCard({
         </button>
         {item.visitCount != null && item.visitCount <= 1 && <NewPatientBadge />}
         <OrthoBadge item={item} />
+        <OrthoVisitFieldsChip item={item} />
         <span className="text-xs" style={{ color: "#64748b" }}>{item.doctorName}</span>
         <NextActionBadge action={item.nextAction} />
         {(item.appointmentStatus === "InRoom" || item.appointmentStatus === "InProgress") && item.inRoomSince && (
@@ -648,6 +705,7 @@ function MobileCard({
                     <span>المتبقي: {item.orthoContractRemaining.toLocaleString("ar-YE")} ر.ي</span>
                   )}
                 </div>
+                <OrthoVisitFieldsBlock item={item} />
               </div>
             )}
           </div>

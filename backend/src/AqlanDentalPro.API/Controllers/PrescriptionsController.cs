@@ -146,6 +146,19 @@ public class PrescriptionsController(
         var denied = await DenyIfDoctorCannotAccess(req.PatientId);
         if (denied is not null) return denied;
 
+        // CLIN-23: Validate existence of PatientId + VisitId ownership.
+        var patientExists = await db.Patients.AnyAsync(p => p.Id == req.PatientId && p.IsActive);
+        if (!patientExists)
+            return BadRequest(new { message = "المريض غير موجود" });
+
+        if (req.VisitId.HasValue)
+        {
+            var visitBelongsToPatient = await db.Visits
+                .AnyAsync(v => v.Id == req.VisitId.Value && v.PatientId == req.PatientId && v.IsActive);
+            if (!visitBelongsToPatient)
+                return BadRequest(new { message = "الزيارة غير موجودة أو لا تخص هذا المريض" });
+        }
+
         var drugsJson = JsonSerializer.SerializeToDocument(req.Drugs);
 
         var prescription = new Prescription

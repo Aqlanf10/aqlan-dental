@@ -150,6 +150,19 @@ public class ReferralsController(
         var denied = await DenyIfDoctorCannotAccess(req.PatientId);
         if (denied is not null) return denied;
 
+        // CLIN-24: Validate existence of PatientId + FromDoctorId + ToDoctorId.
+        var patientExists = await db.Patients.AnyAsync(p => p.Id == req.PatientId && p.IsActive);
+        if (!patientExists)
+            return BadRequest(new { message = "المريض غير موجود" });
+
+        var fromDoctorExists = await db.Doctors.AnyAsync(d => d.Id == req.FromDoctorId && d.IsActive);
+        if (!fromDoctorExists)
+            return BadRequest(new { message = "الطبيب المُحيل غير موجود" });
+
+        var toDoctorExists = await db.Doctors.AnyAsync(d => d.Id == req.ToDoctorId && d.IsActive);
+        if (!toDoctorExists)
+            return BadRequest(new { message = "الطبيب المستقبِل غير موجود" });
+
         var referral = new InternalReferral
         {
             PatientId    = req.PatientId,
@@ -177,6 +190,17 @@ public class ReferralsController(
         var denied = await DenyIfDoctorCannotAccess(referral.PatientId);
         if (denied is not null) return denied;
 
+        // CLIN-24: Only the ToDoctor (or an Admin) can accept a referral.
+        if (!currentUser.IsAdmin)
+        {
+            var currentDoctorId = await db.Doctors
+                .Where(d => d.UserId == currentUser.UserId)
+                .Select(d => d.Id)
+                .FirstOrDefaultAsync();
+            if (currentDoctorId != referral.ToDoctorId)
+                return Forbid("يمكن للطبيب المستقبِل فقط قبول الإحالة");
+        }
+
         if (referral.Status != "pending")
             return BadRequest(new { message = "يمكن قبول الإحالات المعلّقة فقط" });
 
@@ -196,6 +220,17 @@ public class ReferralsController(
         // CLIN-01: per-patient check.
         var denied = await DenyIfDoctorCannotAccess(referral.PatientId);
         if (denied is not null) return denied;
+
+        // CLIN-24: Only the ToDoctor (or an Admin) can complete a referral.
+        if (!currentUser.IsAdmin)
+        {
+            var currentDoctorId = await db.Doctors
+                .Where(d => d.UserId == currentUser.UserId)
+                .Select(d => d.Id)
+                .FirstOrDefaultAsync();
+            if (currentDoctorId != referral.ToDoctorId)
+                return Forbid("يمكن للطبيب المستقبِل فقط إكمال الإحالة");
+        }
 
         if (referral.Status != "accepted")
             return BadRequest(new { message = "يمكن إكمال الإحالات المقبولة فقط" });

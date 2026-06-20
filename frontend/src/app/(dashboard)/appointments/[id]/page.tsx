@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import api from "@/lib/api";
 import { toast } from "@/stores/toastStore";
+// FE-09: centralized appointment status colors/labels
+import { APPOINTMENT_STATUS_COLORS as STATUS_COLORS, APPOINTMENT_STATUS_LABELS as STATUS_LABELS } from "@/lib/statusStyles";
 
 interface AppointmentDetail {
   id: string;
@@ -31,32 +33,6 @@ interface AppointmentDetail {
   calledAt?: string | null;
   inRoomAt?: string | null;
 }
-
-const STATUS_LABELS: Record<string, string> = {
-  Scheduled: "مجدول",
-  Confirmed: "مؤكد",
-  Arrived: "وصل",
-  Waiting: "في الانتظار",
-  Called: "تم النداء",
-  InRoom: "داخل الغرفة",
-  InProgress: "جاري العلاج",
-  Completed: "مكتمل",
-  Cancelled: "ملغي",
-  NoShow: "لم يحضر",
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  Scheduled: "bg-blue-50 text-blue-700 border-blue-200",
-  Confirmed: "bg-indigo-50 text-indigo-700 border-indigo-200",
-  Arrived: "bg-cyan-50 text-cyan-700 border-cyan-200",
-  Waiting: "bg-amber-50 text-amber-700 border-amber-200",
-  Called: "bg-orange-50 text-orange-700 border-orange-200",
-  InRoom: "bg-purple-50 text-purple-700 border-purple-200",
-  InProgress: "bg-green-50 text-green-700 border-green-200",
-  Completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  Cancelled: "bg-red-50 text-red-600 border-red-200",
-  NoShow: "bg-gray-100 text-gray-500 border-gray-200",
-};
 
 export default function AppointmentDetailPage() {
   const params = useParams();

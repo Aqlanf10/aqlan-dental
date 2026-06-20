@@ -8,6 +8,8 @@ import { cn, APPOINTMENT_STATUS_LABELS, formatTime } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
 import { useAuthStore } from "@/stores/authStore";
+// FE-09: centralized appointment status colors
+import { APPOINTMENT_STATUS_COLORS as STATUS_COLORS } from "@/lib/statusStyles";
 
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 8); // 8:00 – 20:00
 
@@ -22,19 +24,6 @@ const STATUS_TRANSITIONS: Record<string, { value: string; label: string }[]> = {
   Completed:  [],
   Cancelled:  [{ value: "Scheduled",  label: "إعادة جدولة" }],
   NoShow:     [{ value: "Scheduled",  label: "إعادة جدولة" }],
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  Scheduled:  "bg-blue-50 border-blue-200 text-blue-800",
-  Confirmed:  "bg-clinic-blue-50 border-clinic-blue-100 text-clinic-navy-700",
-  Arrived:    "bg-yellow-50 border-yellow-200 text-yellow-800",
-  Waiting:    "bg-amber-50 border-amber-200 text-amber-800",
-  Called:     "bg-cyan-50 border-cyan-200 text-cyan-800",
-  InRoom:     "bg-purple-50 border-purple-200 text-purple-800",
-  InProgress: "bg-purple-50 border-purple-200 text-purple-800",
-  Completed:  "bg-green-50 border-green-200 text-green-800",
-  Cancelled:  "bg-gray-50 border-gray-200 text-gray-500",
-  NoShow:     "bg-red-50 border-red-200 text-red-700",
 };
 
 interface Props {

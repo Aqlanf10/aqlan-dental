@@ -67,7 +67,7 @@ public class PhotoAnalysisReportPdfGenerator(AppDbContext db)
         {
             try
             {
-                var bytes = File.ReadAllBytes(imagePath);
+                var bytes = await File.ReadAllBytesAsync(imagePath);
                 photo = Image.FromBinaryData(bytes);
                 dims = ReadImageDimensions(bytes);
             }

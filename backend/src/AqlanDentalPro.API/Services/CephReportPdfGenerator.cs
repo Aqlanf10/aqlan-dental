@@ -245,7 +245,7 @@ public class CephReportPdfGenerator(AppDbContext db)
         {
             try
             {
-                xrayImage = Image.FromBinaryData(File.ReadAllBytes(imagePath));
+                xrayImage = Image.FromBinaryData(await File.ReadAllBytesAsync(imagePath));
             }
             catch
             {

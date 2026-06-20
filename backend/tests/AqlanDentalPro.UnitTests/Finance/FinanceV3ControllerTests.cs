@@ -280,7 +280,7 @@ public class FinanceV3ControllerTests
         var controller = BuildFinanceV3Controller(db, mock.Object);
         var result = await controller.GetDashboard();
 
-        result.Should().BeOfType<ForbidResult>("non-admin with null BranchId must be forbidden");
+        result.Should().BeOfType<ObjectResult>("non-admin with null BranchId must be forbidden").Which.StatusCode.Should().Be(403);
     }
 
     [Fact]
@@ -297,7 +297,7 @@ public class FinanceV3ControllerTests
         var controller = BuildFinanceV3Controller(db, mock.Object);
         var result = await controller.GetDashboard();
 
-        result.Should().BeOfType<ForbidResult>("non-admin with empty BranchId must be forbidden");
+        result.Should().BeOfType<ObjectResult>("non-admin with empty BranchId must be forbidden").Which.StatusCode.Should().Be(403);
     }
 
     [Fact]

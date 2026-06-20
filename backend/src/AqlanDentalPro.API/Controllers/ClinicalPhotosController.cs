@@ -92,6 +92,12 @@ public class ClinicalPhotosController(
         var denied = await DenyIfDoctorCannotAccess(req.PatientId);
         if (denied is not null) return denied;
 
+        // CLIN-25: If OrthoCaseId is provided, verify it belongs to the same patient
+        // (mirrors RadiographsController.AddRadiograph validation).
+        if (req.OrthoCaseId.HasValue &&
+            !await db.OrthoCases.AnyAsync(c => c.Id == req.OrthoCaseId.Value && c.PatientId == req.PatientId))
+            return BadRequest(new { message = "الحالة التقويمية غير موجودة أو لا تخص هذا المريض" });
+
         var photo = new ClinicalPhoto
         {
             PatientId   = req.PatientId,

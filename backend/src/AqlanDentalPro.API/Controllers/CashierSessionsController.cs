@@ -390,7 +390,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     {
         var branchId = currentUser.BranchId;
         if (!currentUser.IsAdmin && (!branchId.HasValue || branchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         var scopedBranch = currentUser.IsAdmin ? (Guid?)null : branchId;
         var today = DateOnly.FromDateTime(DateTime.Today);
@@ -574,7 +574,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         if (!currentUser.IsAdmin)
         {
             if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
-                return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+                return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
             query = query.Where(s => s.BranchId == currentUser.BranchId.Value);
         }
 

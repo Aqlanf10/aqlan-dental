@@ -22,7 +22,7 @@ public partial class FinanceV3Controller
     {
         // Blocker: Branch isolation guard for non-admin users
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
 
@@ -32,7 +32,7 @@ public partial class FinanceV3Controller
             var doctorExistsInBranch = await db.Doctors.AnyAsync(d => d.Id == doctorId.Value && d.BranchId == branchId.Value);
             if (!doctorExistsInBranch)
             {
-                return Forbid("ليس لديك صلاحية الوصول إلى بيانات طبيب من فرع آخر");
+                return StatusCode(403, new { message = "ليس لديك صلاحية الوصول إلى بيانات طبيب من فرع آخر" });
             }
         }
 
@@ -181,7 +181,7 @@ public partial class FinanceV3Controller
     {
         // Branch isolation guard for non-admin users
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
 
@@ -191,7 +191,7 @@ public partial class FinanceV3Controller
             var doctorExistsInBranch = await db.Doctors.AnyAsync(d => d.Id == doctorId.Value && d.BranchId == branchId.Value);
             if (!doctorExistsInBranch)
             {
-                return Forbid("ليس لديك صلاحية الوصول إلى بيانات طبيب من فرع آخر");
+                return StatusCode(403, new { message = "ليس لديك صلاحية الوصول إلى بيانات طبيب من فرع آخر" });
             }
         }
 

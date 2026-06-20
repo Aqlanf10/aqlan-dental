@@ -426,7 +426,7 @@ public class AuthController(
         {
             await auditService.LogAsync(AuditAction.ImpersonationDenied, "users", userId,
                 details: $"Admin {currentUser.Username} attempted to impersonate another admin {targetUser.Username}");
-            return Forbid("لا يمكن الانتحال بحساب مدير آخر");
+            return StatusCode(403, new { message = "لا يمكن الانتحال بحساب مدير آخر" });
         }
 
         var originalUserId = currentUser.OriginalUserId ?? currentUser.UserId;

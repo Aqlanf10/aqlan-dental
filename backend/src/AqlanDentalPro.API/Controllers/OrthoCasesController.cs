@@ -1077,7 +1077,7 @@ public class OrthoCasesController(
             await db.Doctors.AnyAsync(d => d.Id == orthoCase.DoctorId && d.UserId == approverId && d.IsActive);
 
         if (!isAssignedOrthodontist && !currentUser.IsAdmin)
-            return Forbid("فقط طبيب التقويم المعين أو المسؤول يمكنه اعتماد الخطة.");
+            return StatusCode(403, new { message = "فقط طبيب التقويم المعين أو المسؤول يمكنه اعتماد الخطة." });
 
         // Enforce single-approved-treatment-plan invariant: un-approve other plans for this case
         var otherPlans = await db.TreatmentPlans.Where(p => p.OrthoCaseId == id && p.Id != plan.Id).ToListAsync();
@@ -1133,7 +1133,7 @@ public class OrthoCasesController(
             await db.Doctors.AnyAsync(d => d.Id == orthoCase.DoctorId && d.UserId == approverId && d.IsActive);
 
         if (!isAssignedOrthodontist && !currentUser.IsAdmin)
-            return Forbid("فقط طبيب التقويم المعين أو المسؤول يمكنه اعتماد الخطة.");
+            return StatusCode(403, new { message = "فقط طبيب التقويم المعين أو المسؤول يمكنه اعتماد الخطة." });
 
         // Un-approve other plans for this case
         var otherPlans = await db.TreatmentPlans.Where(p => p.OrthoCaseId == id && p.Id != planId).ToListAsync();
@@ -1528,7 +1528,7 @@ public class OrthoCasesController(
             await db.Doctors.AnyAsync(d => d.Id == orthoCase.DoctorId && d.UserId == approverId && d.IsActive);
 
         if (!isAssignedOrthodontist && !currentUser.IsAdmin)
-            return Forbid("فقط طبيب التقويم المعين أو المسؤول يمكنه اعتماد التشخيص.");
+            return StatusCode(403, new { message = "فقط طبيب التقويم المعين أو المسؤول يمكنه اعتماد التشخيص." });
 
         Guid? approvedByDoctorId = null;
         if (isAssignedOrthodontist) { approvedByDoctorId = orthoCase.DoctorId; }

@@ -16,7 +16,7 @@ public partial class FinanceV3Controller
     private async Task<IActionResult> GetDashboardSchemaTolerantAsync(string? period)
     {
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
         var today = DateOnly.FromDateTime(DateTime.Today);
@@ -234,7 +234,7 @@ public partial class FinanceV3Controller
             // Admin users with no branch (Guid.Empty) bypass the branch filter to view
             // consolidated statistics across all branches (Sprint 1 admin fallback).
             if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-                return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+                return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
             var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
         var today = DateOnly.FromDateTime(DateTime.Today);
@@ -540,7 +540,7 @@ public partial class FinanceV3Controller
     {
         // Blocker 6: Reject non-admin with null/empty BranchId
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         var entry = await db.JournalEntries
             .Where(e => e.Id == id)
@@ -583,7 +583,7 @@ public partial class FinanceV3Controller
 
         // Finance V3: Branch scope enforcement for non-admin users
         if (!currentUser.IsAdmin && currentUser.BranchId.HasValue && entry.BranchId != currentUser.BranchId.Value)
-            return Forbid("ليس لديك صلاحية الوصول إلى قيود فرع آخر");
+            return StatusCode(403, new { message = "ليس لديك صلاحية الوصول إلى قيود فرع آخر" });
 
         return Ok(entry);
     }
@@ -599,7 +599,7 @@ public partial class FinanceV3Controller
     {
         // Blocker 6: Branch isolation guard for non-admin users
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
 
@@ -675,7 +675,7 @@ public partial class FinanceV3Controller
     {
         // Blocker 6: Branch isolation guard for non-admin users
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         var targetDate = DateOnly.TryParse(date, out var d) ? d : DateOnly.FromDateTime(DateTime.Today);
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
@@ -793,7 +793,7 @@ public partial class FinanceV3Controller
     {
         // Blocker 6: Branch isolation guard for non-admin users
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
         var today = DateOnly.FromDateTime(DateTime.Today);
@@ -953,7 +953,7 @@ public partial class FinanceV3Controller
     {
         // Blocker 6: Branch isolation guard for non-admin users
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         var patient = await db.Patients.FindAsync(patientId);
         if (patient == null)
@@ -961,7 +961,7 @@ public partial class FinanceV3Controller
 
         // Blocker 6: Branch filter for non-admin users
         if (!currentUser.IsAdmin && patient.BranchId != currentUser.BranchId)
-            return Forbid("ليس لديك صلاحية الوصول إلى بيانات مريض من فرع آخر");
+            return StatusCode(403, new { message = "ليس لديك صلاحية الوصول إلى بيانات مريض من فرع آخر" });
 
         // ── JournalLine-based balance (canonical, accrual basis) ──
         // PatientReceivable lines: Debit = invoiced (patient owes), Credit = payment settled
@@ -1056,7 +1056,7 @@ public partial class FinanceV3Controller
     {
         // Blocker 6: Branch isolation guard for non-admin users
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
 
@@ -1102,7 +1102,7 @@ public partial class FinanceV3Controller
         // Financial audit trail contains cross-branch sensitive data;
         // non-admin Accountant users should not access other branches' audit records.
         if (!currentUser.IsAdmin)
-            return Forbid("الاطلاع على سجل المراجعة متاح للمسؤول فقط.");
+            return StatusCode(403, new { message = "الاطلاع على سجل المراجعة متاح للمسؤول فقط." });
 
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
@@ -1328,7 +1328,7 @@ public partial class FinanceV3Controller
     {
         // Blocker 6: Branch isolation guard for non-admin users
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
@@ -1408,7 +1408,7 @@ public partial class FinanceV3Controller
     public async Task<IActionResult> GetTrialBalance([FromQuery] string? asOfDate = null)
     {
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
         var cutoff = DateOnly.TryParse(asOfDate, out var d) ? d : DateOnly.FromDateTime(DateTime.Today);
@@ -1466,7 +1466,7 @@ public partial class FinanceV3Controller
     {
         // Blocker 6: Branch isolation guard for non-admin users
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
@@ -1597,7 +1597,7 @@ public partial class FinanceV3Controller
     {
         // Blocker 6: Branch isolation guard for non-admin users
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
@@ -1680,7 +1680,7 @@ public partial class FinanceV3Controller
     {
         // Branch isolation guard
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
@@ -1762,7 +1762,7 @@ public partial class FinanceV3Controller
     {
         // Branch isolation guard
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
@@ -1834,7 +1834,7 @@ public partial class FinanceV3Controller
     {
         // Branch isolation guard
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
@@ -1919,7 +1919,7 @@ public partial class FinanceV3Controller
     {
         // Branch isolation guard
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;

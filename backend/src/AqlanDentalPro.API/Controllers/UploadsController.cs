@@ -223,6 +223,12 @@ public class UploadsController(
     [HttpDelete("{fileName}")]
     public IActionResult Delete(string fileName)
     {
+        // SEC-24 FIX: Restrict delete to Admin only. Previously any staff member could delete
+        // any uploaded file by GUID — a receptionist could delete clinical photos uploaded by
+        // doctors. No ownership check was performed.
+        if (!currentUser.IsAdmin)
+            return StatusCode(403, new { message = "غير مصرح لك بحذف الملفات — يتطلب صلاحية مدير" });
+
         // Prevent path traversal
         if (fileName.Contains('/') || fileName.Contains('\\') || fileName.Contains(".."))
             return BadRequest(new { message = "اسم الملف غير صالح" });

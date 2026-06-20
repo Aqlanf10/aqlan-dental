@@ -40,7 +40,13 @@ public class SettingsController(AppDbContext db, ICurrentUserService currentUser
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
+        // SEC-25 FIX: Filter out sensitive settings (AI keys, SMTP passwords) from the GetAll
+        // response. These are managed through dedicated endpoints (e.g. AiApiKeyVault) that
+        // return masked status, not raw values. Previously GetAll returned everything including
+        // encrypted AI key ciphertext — if any future setting is added without encryption (e.g.
+        // SMTP password), it would be exposed here.
         var settings = await db.Settings
+            .Where(s => !s.Key.StartsWith("ai.secret.") && !s.Key.StartsWith("smtp."))
             .OrderBy(s => s.Category).ThenBy(s => s.Key)
             .Select(s => new { s.Key, s.Value, s.Category })
             .ToListAsync();

@@ -215,7 +215,8 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
             await tx.CommitAsync();
 
             // H3: Audit logging for vault transfer creation
-            await audit.LogAsync(AuditAction.Create, "VaultTransfer", transfer.Id);
+            await audit.LogAsync(AuditAction.Create, "VaultTransfer", transfer.Id,
+                details: $"Created transfer {transfer.TransferNumber}: amount={transfer.Amount:N0}, from={transfer.SourceTreasuryId}, to={transfer.DestinationTreasuryId}, session={transfer.CashierSessionId}");
 
             return Ok(new
             {
@@ -407,7 +408,8 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
         }
 
         // H3: Audit logging for vault transfer approval
-        await audit.LogAsync(AuditAction.Approve, "VaultTransfer", id);
+        await audit.LogAsync(AuditAction.Approve, "VaultTransfer", id,
+            details: $"Approved transfer: amount={transfer.Amount:N0}, status={transfer.Status}, approvedBy={currentUser.UserId}");
 
         return Ok(new
         {

@@ -1,3 +1,4 @@
+using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.Application.DTOs.Ortho;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
@@ -735,7 +736,7 @@ public class OrthoCasesController(
             db.OrthoClinicalExams.Add(existing);
         }
 
-        existing.ExamDate           = req.ExamDate != null ? DateOnly.Parse(req.ExamDate) : DateOnly.FromDateTime(DateTime.Today);
+        existing.ExamDate           = req.ExamDate != null ? DateOnly.Parse(req.ExamDate) : DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
         existing.FacialSymmetry     = req.FacialSymmetry;
         existing.Profile            = req.Profile;
         existing.LipsCompetence     = req.LipsCompetence;
@@ -1624,7 +1625,7 @@ public class OrthoCasesController(
         var visit = new RetentionVisit
         {
             RetentionRecordId = retention.Id,
-            VisitDate         = req.VisitDate != null ? DateOnly.Parse(req.VisitDate) : DateOnly.FromDateTime(DateTime.Today),
+            VisitDate         = req.VisitDate != null ? DateOnly.Parse(req.VisitDate) : DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()),
             Period            = req.Period,
             ToothStability    = req.ToothStability,
             RetainerStatus    = req.RetainerStatus,

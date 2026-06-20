@@ -1,3 +1,4 @@
+using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -17,9 +18,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     public async Task<IActionResult> GetCenterSummary([FromQuery] string? from, [FromQuery] string? to)
     {
         // ERR-01 FIX: Safe date parsing
-        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday().AddDays(-30)), "تاريخ البداية");
         if (fromErr != null) return fromErr;
-        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
         var totalPatients = await db.Patients.CountAsync();
@@ -46,9 +47,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     public async Task<IActionResult> GetDoctorPerformance([FromQuery] string? from, [FromQuery] string? to)
     {
         // ERR-01 FIX: Safe date parsing
-        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday().AddDays(-30)), "تاريخ البداية");
         if (fromErr != null) return fromErr;
-        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
         var doctorIds = await db.Doctors.Where(d => d.IsActive).Select(d => d.Id).ToListAsync();
@@ -100,9 +101,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     public async Task<IActionResult> GetFinancialReport([FromQuery] string? from, [FromQuery] string? to)
     {
         // ERR-01 FIX: Safe date parsing
-        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday().AddDays(-30)), "تاريخ البداية");
         if (fromErr != null) return fromErr;
-        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
         // Fetch raw groups then format DateOnly in memory (EF can't translate DateOnly.ToString)
@@ -169,12 +170,12 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [HttpGet("patient-demographics")]
     public async Task<IActionResult> GetPatientDemographics([FromQuery] string? from, [FromQuery] string? to)
     {
-        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-365)), "تاريخ البداية");
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday().AddDays(-365)), "تاريخ البداية");
         if (fromErr != null) return fromErr;
-        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
 
         // Age distribution
         var patients = await db.Patients
@@ -260,9 +261,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [HttpGet("appointment-analytics")]
     public async Task<IActionResult> GetAppointmentAnalytics([FromQuery] string? from, [FromQuery] string? to)
     {
-        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday().AddDays(-30)), "تاريخ البداية");
         if (fromErr != null) return fromErr;
-        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
         var appointments = await db.Appointments
@@ -341,12 +342,12 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [HttpGet("overdue-contracts")]
     public async Task<IActionResult> GetOverdueContracts([FromQuery] string? from, [FromQuery] string? to)
     {
-        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-90)), "تاريخ البداية");
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday().AddDays(-90)), "تاريخ البداية");
         if (fromErr != null) return fromErr;
-        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
 
         // Active contracts where paid < total
         var contracts = await db.Contracts
@@ -427,9 +428,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [HttpGet("ortho-progress")]
     public async Task<IActionResult> GetOrthoProgress([FromQuery] string? from, [FromQuery] string? to)
     {
-        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-90)), "تاريخ البداية");
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday().AddDays(-90)), "تاريخ البداية");
         if (fromErr != null) return fromErr;
-        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
         // Cases by status
@@ -445,7 +446,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
             .Select(c => new { c.StartDate, c.CreatedAt })
             .ToListAsync();
 
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
         var avgDuration = completedCases.Count > 0
             ? Math.Round(completedCases.Average(c => (today.DayNumber - c.StartDate!.Value.DayNumber)) / 30.0, 1)
             : 0;
@@ -490,9 +491,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [HttpGet("surgery-stats")]
     public async Task<IActionResult> GetSurgeryStats([FromQuery] string? from, [FromQuery] string? to)
     {
-        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-90)), "تاريخ البداية");
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday().AddDays(-90)), "تاريخ البداية");
         if (fromErr != null) return fromErr;
-        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
         // Cases by type
@@ -549,9 +550,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [HttpGet("revenue-comparison")]
     public async Task<IActionResult> GetRevenueComparison([FromQuery] string? from, [FromQuery] string? to)
     {
-        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday().AddDays(-30)), "تاريخ البداية");
         if (fromErr != null) return fromErr;
-        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
         // Current period
@@ -636,9 +637,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [HttpGet("treatment-plan-completion")]
     public async Task<IActionResult> GetTreatmentPlanCompletion([FromQuery] string? from, [FromQuery] string? to)
     {
-        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-90)), "تاريخ البداية");
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday().AddDays(-90)), "تاريخ البداية");
         if (fromErr != null) return fromErr;
-        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
         var steps = await db.PatientTreatmentPlanSteps
@@ -713,12 +714,12 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [HttpGet("lab-orders")]
     public async Task<IActionResult> GetLabOrders([FromQuery] string? from, [FromQuery] string? to)
     {
-        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-90)), "تاريخ البداية");
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday().AddDays(-90)), "تاريخ البداية");
         if (fromErr != null) return fromErr;
-        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
 
         // Orders by status
         var ordersByStatus = await db.LabOrders
@@ -766,9 +767,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [HttpGet("prescription-analytics")]
     public async Task<IActionResult> GetPrescriptionAnalytics([FromQuery] string? from, [FromQuery] string? to)
     {
-        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-90)), "تاريخ البداية");
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday().AddDays(-90)), "تاريخ البداية");
         if (fromErr != null) return fromErr;
-        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
         var prescriptions = await db.Prescriptions
@@ -849,9 +850,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [HttpGet("patient-retention")]
     public async Task<IActionResult> GetPatientRetention([FromQuery] string? from, [FromQuery] string? to)
     {
-        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-90)), "تاريخ البداية");
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday().AddDays(-90)), "تاريخ البداية");
         if (fromErr != null) return fromErr;
-        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
         // New vs returning patients in period
@@ -902,7 +903,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         }
 
         // Churn risk: patients with no visit in 90+ days
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
         var ninetyDaysAgo = today.AddDays(-90);
 
         var recentPatientIds = await db.Appointments
@@ -930,9 +931,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [HttpGet("booking-funnel")]
     public async Task<IActionResult> GetBookingFunnel([FromQuery] string? from, [FromQuery] string? to)
     {
-        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday().AddDays(-30)), "تاريخ البداية");
         if (fromErr != null) return fromErr;
-        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
         var bookings = await db.BookingRequests
@@ -1034,9 +1035,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     public async Task<IActionResult> ExportPayments([FromQuery] string? from, [FromQuery] string? to)
     {
         // ERR-01 FIX: Safe date parsing
-        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday().AddDays(-30)), "تاريخ البداية");
         if (fromErr != null) return fromErr;
-        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
         var payments = await db.Payments
@@ -1075,9 +1076,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     public async Task<IActionResult> ExportAppointments([FromQuery] string? from, [FromQuery] string? to)
     {
         // ERR-01 FIX: Safe date parsing
-        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday().AddDays(-30)), "تاريخ البداية");
         if (fromErr != null) return fromErr;
-        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
         var appts = await db.Appointments
@@ -1143,9 +1144,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [Authorize(Policy = "ReportsAccess")] // Admin + Accountant only
     public async Task<IActionResult> GetProfitLossReport([FromQuery] string? from, [FromQuery] string? to)
     {
-        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday().AddDays(-30)), "تاريخ البداية");
         if (fromErr != null) return fromErr;
-        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
         // Branch isolation: admin sees consolidated, non-admin scoped to their branch
@@ -1344,7 +1345,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [HttpGet("daily-cash-summary")]
     public async Task<IActionResult> GetDailyCashSummary([FromQuery] string? date, [FromQuery] Guid? branchId)
     {
-        var (reportDate, dateErr) = DateParsingHelper.TryParseDateOrDefault(date, DateOnly.FromDateTime(DateTime.Today), "التاريخ");
+        var (reportDate, dateErr) = DateParsingHelper.TryParseDateOrDefault(date, DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()), "التاريخ");
         if (dateErr != null) return dateErr;
 
         // Determine branch scope

@@ -1,3 +1,4 @@
+using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -239,7 +240,7 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
                 Category = FinancialCategory.SalaryAdvance,
                 Amount = advance.Amount,
                 PaymentMethod = paymentMethod,
-                TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                TransactionDate = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()),
                 ReferenceId = advance.Id,
                 ReferenceNumber = $"ADV-{advance.Id.ToString()[..8]}",
                 Description = $"سلفة موظف: {employee.FullName}",
@@ -255,7 +256,7 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
                 documentType: FinancialDocumentType.AdvancePayment,
                 financialDocumentId: advance.Id,
                 description: $"سلفة موظف: {employee.FullName}",
-                entryDate: DateOnly.FromDateTime(DateTime.Today),
+                entryDate: DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()),
                 branchId: branchId,
                 performedBy: userIdGuid,
                 cashierSessionId: activeSession.Id,
@@ -412,7 +413,7 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
                 Category = FinancialCategory.Reversal,
                 Amount = advance.Amount,
                 PaymentMethod = originalCashflow.PaymentMethod ?? "cash",
-                TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                TransactionDate = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday()),
                 ReferenceId = advance.Id,
                 ReferenceNumber = $"REV-ADV-{advance.Id.ToString()[..8]}",
                 Description = $"عكس سلفة موظف: {employee?.FullName ?? "غير معروف"}",

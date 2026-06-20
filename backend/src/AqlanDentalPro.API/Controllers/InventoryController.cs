@@ -1,3 +1,4 @@
+using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using FluentValidation;
@@ -340,8 +341,8 @@ public class InventoryController(AppDbContext db, ILogger<InventoryController> l
     {
         if (days < 1) days = 30;
 
-        var cutoffDate = DateOnly.FromDateTime(DateTime.Today.AddDays(days));
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var cutoffDate = ClinicTimeProvider.ClinicToday().AddDays(days);
+        var today = DateOnly.FromDateTime(ClinicTimeProvider.ClinicToday());
 
         var items = await db.Inventory
             .Where(i => i.ExpiryDate != null && i.ExpiryDate <= cutoffDate)

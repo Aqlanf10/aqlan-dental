@@ -291,9 +291,14 @@ public sealed class OrthoCaseDraftService(
     {
         try
         {
+            // CLIN-32: AnalysisId is semantically a CephAnalysis.Id, but this service writes the
+            // OrthoCase.Id into it (no OrthoCaseId column exists in OrthodonticAiLog — would need
+            // a migration). The Action field distinguishes this from ceph-draft entries (which use
+            // "ceph_draft:*" and write a real CephAnalysis.Id). Any join/query that assumes
+            // AnalysisId → CephAnalysis.Id MUST filter by Action prefix first.
             db.OrthodonticAiLogs.Add(new Domain.Entities.OrthodonticAiLog
             {
-                AnalysisId = caseId,
+                AnalysisId = caseId, // CLIN-32: actually OrthoCase.Id — see comment above
                 UserId = currentUser.UserId,
                 Action = $"ortho_case_clinical_draft:{section}",
                 ModelId = modelId,

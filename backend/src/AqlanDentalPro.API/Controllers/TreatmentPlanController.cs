@@ -1,4 +1,5 @@
 using AqlanDentalPro.API.Authorization;
+using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -48,9 +49,9 @@ public class TreatmentPlanController(AppDbContext db) : ControllerBase
                 s.Title,
                 s.Description,
                 Priority = s.Priority.ToString(),
-                PriorityArabic = GetPriorityArabic(s.Priority),
+                PriorityArabic = TreatmentStepStatusTransitions.GetPriorityArabic(s.Priority),
                 Status = s.Status.ToString(),
-                StatusArabic = GetStatusArabic(s.Status),
+                StatusArabic = TreatmentStepStatusTransitions.GetStatusArabic(s.Status),
                 s.ResponsibleDoctorId,
                 DoctorName = s.ResponsibleDoctor != null ? s.ResponsibleDoctor.Name : null,
                 s.PlannedDate,
@@ -205,8 +206,8 @@ public class TreatmentPlanController(AppDbContext db) : ControllerBase
             return BadRequest(new { message = "خطوة العلاج محذوفة" });
 
         // Validate status transition
-        if (!IsValidStatusTransition(step.Status, req.Status))
-            return BadRequest(new { message = $"لا يمكن تغيير الحالة من {GetStatusArabic(step.Status)} إلى {GetStatusArabic(req.Status)}" });
+        if (!TreatmentStepStatusTransitions.IsValidTransition(step.Status, req.Status))
+            return BadRequest(new { message = TreatmentStepStatusTransitions.GetValidationError(step.Status, req.Status) });
 
         var userId = GetCurrentUserId();
         step.Status = req.Status;
@@ -226,7 +227,7 @@ public class TreatmentPlanController(AppDbContext db) : ControllerBase
         {
             step.Id,
             Status = step.Status.ToString(),
-            StatusArabic = GetStatusArabic(step.Status),
+            StatusArabic = TreatmentStepStatusTransitions.GetStatusArabic(step.Status),
             step.CompletedDate,
             message = "تم تغيير حالة خطوة العلاج بنجاح"
         });
@@ -283,40 +284,10 @@ public class TreatmentPlanController(AppDbContext db) : ControllerBase
         return Ok(new { message = "تم حذف خطوة العلاج بنجاح" });
     }
 
-    // ─── Private helpers ───────────────────────────────────────────────────
+    // CLIN-16: IsValidStatusTransition + GetStatusArabic + GetPriorityArabic extracted to
+    // TreatmentStepStatusTransitions.cs (mirrors AppointmentStatusTransitions pattern).
 
-    private static bool IsValidStatusTransition(TreatmentStepStatus current, TreatmentStepStatus target)
-    {
-        // Planned → any; InProgress → any; Completed → Deferred only; Cancelled → Planned only; Deferred → any
-        return current switch
-        {
-            TreatmentStepStatus.Planned => true,
-            TreatmentStepStatus.InProgress => true,
-            TreatmentStepStatus.Completed => target == TreatmentStepStatus.Deferred,
-            TreatmentStepStatus.Cancelled => target == TreatmentStepStatus.Planned,
-            TreatmentStepStatus.Deferred => true,
-            _ => false
-        };
-    }
 
-    private static string GetStatusArabic(TreatmentStepStatus status) => status switch
-    {
-        TreatmentStepStatus.Planned => "مخطط",
-        TreatmentStepStatus.InProgress => "قيد التنفيذ",
-        TreatmentStepStatus.Completed => "مكتمل",
-        TreatmentStepStatus.Cancelled => "ملغي",
-        TreatmentStepStatus.Deferred => "مؤجل",
-        _ => status.ToString()
-    };
-
-    private static string GetPriorityArabic(TreatmentStepPriority priority) => priority switch
-    {
-        TreatmentStepPriority.Low => "منخفض",
-        TreatmentStepPriority.Normal => "عادي",
-        TreatmentStepPriority.High => "مرتفع",
-        TreatmentStepPriority.Urgent => "عاجل",
-        _ => priority.ToString()
-    };
 
     private static string GetSpecialtyArabic(Specialty specialty) => specialty switch
     {

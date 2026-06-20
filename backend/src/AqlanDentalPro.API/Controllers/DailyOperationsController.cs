@@ -35,6 +35,9 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
             var todayStart = DateTime.SpecifyKind(reportDate.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
             var todayEnd = DateTime.SpecifyKind(reportDate.ToDateTime(TimeOnly.MaxValue), DateTimeKind.Utc);
 
+            // CLIN-21: Partial data warning — set when a sub-query fails so the frontend can show a banner.
+            string? partialDataWarning = null;
+
             // ── Appointments ──────────────────────────────────────────────
             var appointments = await db.Appointments
                 .IgnoreQueryFilters()
@@ -81,6 +84,8 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
             catch (Exception invEx)
             {
                 logger.LogWarning(invEx, "DailyOperations.GetDailyReport: Invoice query failed, using empty list");
+                // CLIN-21 FIX: Flag partial data in the response so the frontend can show a warning.
+                partialDataWarning = "تعذّر تحميل بيانات الفواتير — قد تكون الأرقام المالية غير مكتملة";
             }
 
             // ── Lab orders ───────────────────────────────────────────────
@@ -221,7 +226,9 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
                 }),
                 TomorrowAppointments = await db.Appointments
                     .IgnoreQueryFilters()
-                    .CountAsync(a => a.AppointmentDate == reportDate.AddDays(1) && a.IsActive)
+                    .CountAsync(a => a.AppointmentDate == reportDate.AddDays(1) && a.IsActive),
+                // CLIN-21: Surface partial-data warning to the frontend.
+                PartialDataWarning = partialDataWarning
             };
 
             return Ok(report);

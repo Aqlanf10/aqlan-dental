@@ -1344,8 +1344,12 @@ public class ClinicQueueController(
     }
 
     // ─── Legacy endpoints (backward compatibility) ───────────────────────────
+    // CLIN-19: These legacy endpoints duplicate PatientJourneyController functionality
+    // but lack SignalR push and proper transition validation. They should be removed
+    // once the frontend is confirmed to use PatientJourney.Intake instead.
 
-    /// <summary>Marks appointment as Waiting and sets ArrivedAt. Legacy endpoint.</summary>
+    /// <summary>Marks appointment as Waiting and sets ArrivedAt. Legacy endpoint — use POST /api/patient-journey/{id}/intake instead.</summary>
+    [Obsolete("Use POST /api/patient-journey/{id}/intake instead. This legacy endpoint does not push SignalR updates.")]
     [HttpPost("arrive/{id:guid}")]
     public async Task<IActionResult> MarkArrived(Guid id)
     {

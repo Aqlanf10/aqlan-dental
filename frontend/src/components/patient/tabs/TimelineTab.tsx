@@ -5,6 +5,8 @@ import { Clock, Stethoscope, CreditCard, FolderOpen, Image as ImageIcon, ScanLin
 import api from "@/lib/api";
 import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate, APPOINTMENT_STATUS_LABELS } from "@/lib/utils";
+// FE-09: centralized appointment status colors (includes 'signed' for mixed timeline views)
+import { APPOINTMENT_STATUS_COLORS as STATUS_COLORS } from "@/lib/statusStyles";
 
 interface TimelineEvent {
   type: string;
@@ -14,17 +16,6 @@ interface TimelineEvent {
   description: string;
   status?: string;
 }
-
-const STATUS_COLORS: Record<string, string> = {
-  Scheduled: "bg-[#3d7ab518] text-[#3d7ab5]",
-  Confirmed: "bg-clinic-blue-50 text-clinic-blue",
-  Arrived: "bg-yellow-100 text-yellow-700",
-  InProgress: "bg-purple-100 text-purple-700",
-  Completed: "bg-green-100 text-green-700",
-  Cancelled: "bg-[#f1f5f9] text-[#64748b]",
-  NoShow: "bg-red-100 text-red-700",
-  signed: "bg-green-100 text-green-700",
-};
 
 const TYPE_ICONS: Record<string, typeof Clock> = {
   appointment: Clock,

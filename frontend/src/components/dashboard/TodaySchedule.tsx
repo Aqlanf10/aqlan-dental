@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import type { Appointment } from "@/types/appointment";
 import { formatTime, localDateString } from "@/lib/utils";
+// FE-09: centralized appointment status labels
+import { APPOINTMENT_STATUS_LABELS as STATUS_LABELS } from "@/lib/statusStyles";
 
 /* ZIP-matched status badge colors */
 const STATUS_STYLES: Record<string, { color: string; bg: string }> = {
@@ -16,10 +18,6 @@ const STATUS_STYLES: Record<string, { color: string; bg: string }> = {
   Completed:  { color: "#22c55e",  bg: "#22c55e18" },
   Cancelled:  { color: "#94a3b8",  bg: "#94a3b818" },
   NoShow:     { color: "#ef4444",  bg: "#ef444418" },
-};
-const STATUS_LABELS: Record<string, string> = {
-  Scheduled: "مجدول", Confirmed: "مؤكد", Arrived: "وصل",
-  InProgress: "جاري العلاج", Completed: "مكتمل", Cancelled: "ملغي", NoShow: "غياب",
 };
 
 export function TodaySchedule() {

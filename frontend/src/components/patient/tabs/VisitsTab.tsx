@@ -13,6 +13,8 @@ import { cn, formatArabicDate, localDateString } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { useDoctors } from "@/hooks/useDoctors";
 import { EmptyState } from "./EmptyState";
+// FE-09: centralized appointment status colors/labels
+import { APPOINTMENT_STATUS_COLORS, APPOINTMENT_STATUS_LABELS } from "@/lib/statusStyles";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -117,32 +119,6 @@ const SPECIALTY_COLORS: Record<string, { bg: string; text: string; icon: string 
   Periodontics:  { bg: "bg-pink-50",     text: "text-pink-700",   icon: "text-pink-600" },
   Endodontics:   { bg: "bg-amber-50",    text: "text-amber-700",  icon: "text-amber-600" },
   Prosthodontics:{ bg: "bg-blue-50",     text: "text-blue-700",   icon: "text-blue-600" },
-};
-
-const APPOINTMENT_STATUS_LABELS: Record<string, string> = {
-  Scheduled: "مجدول",
-  Confirmed: "مؤكد",
-  Arrived: "وصل",
-  Waiting: "في الانتظار",
-  Called: "تم النداء",
-  InRoom: "داخل الغرفة",
-  InProgress: "جاري العلاج",
-  Completed: "مكتمل",
-  Cancelled: "ملغي",
-  NoShow: "لم يحضر",
-};
-
-const APPOINTMENT_STATUS_COLORS: Record<string, string> = {
-  Scheduled: "bg-[#3d7ab518] text-[#3d7ab5]",
-  Confirmed: "bg-blue-100 text-blue-700",
-  Arrived: "bg-yellow-100 text-yellow-700",
-  Waiting: "bg-yellow-100 text-yellow-700",
-  Called: "bg-orange-100 text-orange-700",
-  InRoom: "bg-orange-100 text-orange-700",
-  InProgress: "bg-purple-100 text-purple-700",
-  Completed: "bg-green-100 text-green-700",
-  Cancelled: "bg-[#f1f5f9] text-[#64748b]",
-  NoShow: "bg-red-100 text-red-700",
 };
 
 // ─── Filter Types ────────────────────────────────────────────────────────────────

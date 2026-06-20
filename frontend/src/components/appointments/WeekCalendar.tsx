@@ -4,6 +4,8 @@ import Link from "next/link";
 import type { Appointment } from "@/types/appointment";
 import api from "@/lib/api";
 import { cn, formatTime, localDateString } from "@/lib/utils";
+// FE-09: centralized appointment status colors
+import { APPOINTMENT_STATUS_COLORS as STATUS_COLORS } from "@/lib/statusStyles";
 
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 8); // 8:00 – 20:00
 
@@ -29,16 +31,6 @@ function formatShortDate(dateStr: string): string {
   const d = new Date(dateStr);
   return `${d.getDate()}/${d.getMonth() + 1}`;
 }
-
-const STATUS_COLORS: Record<string, string> = {
-  Scheduled:  "bg-blue-100 border-blue-300 text-blue-800",
-  Confirmed:  "bg-clinic-blue-50 border-clinic-blue-100 text-clinic-navy-700",
-  Arrived:    "bg-yellow-100 border-yellow-300 text-yellow-800",
-  InProgress: "bg-purple-100 border-purple-300 text-purple-800",
-  Completed:  "bg-green-100 border-green-300 text-green-800",
-  Cancelled:  "bg-gray-100 border-gray-200 text-gray-400 line-through",
-  NoShow:     "bg-red-100 border-red-300 text-red-700",
-};
 
 interface Props {
   anchor: string; // any date in the target week (yyyy-MM-dd)

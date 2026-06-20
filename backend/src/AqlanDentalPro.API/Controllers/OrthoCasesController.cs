@@ -348,8 +348,12 @@ public class OrthoCasesController(
                 .OrderByDescending(c => c.CreatedAt)
                 .ToListAsync();
 
-            // If multiple ambiguous unlinked contracts exist, do not silently pick the wrong one
-            contract = unlinkedOrthoContracts.Count == 1 ? unlinkedOrthoContracts[0] : null;
+            // CLIN-30: When multiple unlinked legacy ortho contracts exist, pick the NEWEST one
+            // (list is already ordered by CreatedAt descending) instead of silently nulling them all.
+            // NOTE: this remains inherently ambiguous — the selected contract may not actually belong
+            // to this ortho case, but hiding all contracts broke the overview for legacy patients.
+            // Consistent with PatientJourneyController.LoadOrthoJourneySummariesAsync (newest-wins).
+            contract = unlinkedOrthoContracts.FirstOrDefault();
         }
 
         decimal? contractTotal = null;

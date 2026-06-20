@@ -156,7 +156,7 @@ public partial class FinanceV3Controller
             JournalEntryCount = journalEntryCount,
             PostedEntryCount = postedEntryCount,
             ReversalEntryCount = reversalEntryCount,
-            DualWriteCoverage = journalEntryCount > 0 ? $"{(double)postedEntryCount / journalEntryCount * 100:F1}%" : "N/A",
+            DualWriteCoverage = journalEntryCount > 0 ? $"{postedEntryCount * 100m / journalEntryCount:F1}%" : "N/A",
             PendingExpenses = pendingExpenses,
             PendingTransfers = pendingTransfers,
             ActiveContracts = activeContracts,
@@ -409,7 +409,7 @@ public partial class FinanceV3Controller
             PostedEntryCount = postedEntryCount,
             ReversalEntryCount = reversalEntryCount,
             DualWriteCoverage = journalEntryCount > 0
-                ? $"{(double)postedEntryCount / journalEntryCount * 100:F1}%"
+                ? $"{postedEntryCount * 100m / journalEntryCount:F1}%"
                 : "N/A",
 
             // Pending actions
@@ -918,7 +918,7 @@ public partial class FinanceV3Controller
             SupplierPaymentsFormula = "Treasury Credit(SupplierPayment non-reversal) - Treasury Debit(SupplierPayment reversal)",
             TotalCosts = totalCosts,
             CashNetProfit = cashNetProfit,
-            ProfitMargin = netCashCollections > 0 ? (double)(cashNetProfit / netCashCollections * 100) : 0,
+            ProfitMargin = netCashCollections > 0 ? cashNetProfit * 100m / netCashCollections : 0,
 
             // Reversal coverage status — which write paths have actual correction endpoints
             ReversalCoverage = new

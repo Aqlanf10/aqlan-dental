@@ -181,7 +181,7 @@ public class OrthoDailyOperationsIntegrationTests
         var result = await BuildOrthoController(db, canAccess: false)
             .CreateNextAppointment(orthoCase.Id, visit.Id, new CreateOrthoFollowUpAppointmentRequest());
 
-        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(403)();
+        result.Should().BeOfType<ForbidResult>();
         (await db.Appointments.CountAsync(a => a.OrthoCaseId == orthoCase.Id)).Should().Be(0);
     }
 

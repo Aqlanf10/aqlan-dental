@@ -44,7 +44,7 @@ public class CephPatientAccessTests : IDisposable
 
         var result = await _controller.GetById(seeded.AnalysisId);
 
-        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(403)();
+        result.Should().BeOfType<ForbidResult>();
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public class CephPatientAccessTests : IDisposable
             null!,
             new Mock<ILogger<CephController>>().Object);
 
-        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(403)();
+        result.Should().BeOfType<ForbidResult>();
     }
 
     [Fact]

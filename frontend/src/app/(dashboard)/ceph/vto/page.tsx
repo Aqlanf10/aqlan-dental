@@ -1,4 +1,5 @@
 "use client";
+import { printScreen } from "@/lib/printUtils";
 
 import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
@@ -110,7 +111,7 @@ function VtoPageInner() {
           >
             <ShieldCheck className="w-3.5 h-3.5" />فحص الجودة
           </Link>
-          <button onClick={() => window.print()}
+          <button onClick={() => printScreen()}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition">
             <Printer className="w-3.5 h-3.5" />طباعة
           </button>

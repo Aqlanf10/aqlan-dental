@@ -1,4 +1,5 @@
 "use client";
+import { printScreen } from "@/lib/printUtils";
 import { useState } from "react";
 import Link from "next/link";
 import { ChevronRight, ChevronLeft, CalendarDays, Plus, LayoutGrid, List, Calendar, Stethoscope, Printer } from "lucide-react";
@@ -139,7 +140,7 @@ export default function AppointmentsPage() {
           </div>
           {view === "day" && (
             <button
-              onClick={() => window.print()}
+              onClick={() => printScreen()}
               className="no-print flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition"
               title="طباعة جدول اليوم"
             >

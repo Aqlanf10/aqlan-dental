@@ -1,4 +1,5 @@
 "use client";
+import { printScreen } from "@/lib/printUtils";
 
 import { useState, useMemo, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -495,7 +496,7 @@ export default function PatientDailyJourneyHub() {
             تسجيل زيارة جديدة
           </button>
           <button
-            onClick={() => window.print()}
+            onClick={() => printScreen()}
             className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] font-semibold rounded-lg border border-[#d3d1c7] bg-white text-[#1a3a5c] hover:bg-[#f8f9fa] transition"
           >
             <Printer className="w-3.5 h-3.5" />

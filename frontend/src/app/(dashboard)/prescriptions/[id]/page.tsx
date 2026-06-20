@@ -1,4 +1,5 @@
 "use client";
+import { printScreen } from "@/lib/printUtils";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -69,7 +70,7 @@ export default function PrescriptionDetailPage() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => window.print()}
+            onClick={() => printScreen()}
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
           >
             <Printer className="w-4 h-4" />

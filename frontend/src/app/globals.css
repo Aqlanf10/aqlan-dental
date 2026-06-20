@@ -160,3 +160,31 @@
   .animate-slideIn { animation: slideInRTL 0.2s ease-out; }
   .animate-hide    { animation: hide   0.2s ease-in;  }
 }
+
+/* FE-27: Print styles — hide dashboard chrome when printing */
+@media print {
+  /* Hide everything by default when body has 'printing' class */
+  body.printing nav,
+  body.printing aside,
+  body.printing header,
+  body.printing [data-print-hidden] {
+    display: none !important;
+  }
+
+  /* Show print-only elements */
+  .print-only {
+    display: block !important;
+  }
+
+  /* Ensure content fills the page */
+  body.printing main {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+}
+
+/* Hide print-only elements on screen */
+.print-only {
+  display: none;
+}

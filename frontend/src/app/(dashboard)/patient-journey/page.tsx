@@ -1,4 +1,5 @@
 "use client";
+import { printScreen } from "@/lib/printUtils";
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
@@ -1337,7 +1338,7 @@ export default function PatientJourneyPage() {
                   </button>
                   {/* Print */}
                   <button
-                    onClick={() => window.print()}
+                    onClick={() => printScreen()}
                     className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-white text-gray-600 border border-gray-200 hover:bg-gray-50 transition"
                   >
                     <Printer className="w-3 h-3" />

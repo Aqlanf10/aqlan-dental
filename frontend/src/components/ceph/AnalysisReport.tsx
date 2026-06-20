@@ -1,4 +1,5 @@
 "use client";
+import { printScreen } from "@/lib/printUtils";
 import { useState } from "react";
 import { Printer, CheckCircle, AlertTriangle, XCircle, ArrowUp, ArrowDown, Loader2 } from "lucide-react";
 import type { CephMeasurement, CephDiagnosis, CephAiDraftResponse, MeasurementGroup } from "@/types/ceph";
@@ -112,7 +113,7 @@ export function AnalysisReport({
               {totalAbnormal === 0 ? "جميع القياسات ضمن الحدود الطبيعية" :
                `${totalAbnormal} قياس خارج النطاق الطبيعي`}
             </span>
-            <button onClick={() => window.print()}
+            <button onClick={() => printScreen()}
               className="print:hidden flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border border-current hover:opacity-70 transition">
               <Printer className="w-2.5 h-2.5" />طباعة
             </button>

@@ -1,14 +1,23 @@
 "use client";
 
 import { Suspense, useMemo, useState } from "react";
+import { printScreen } from "@/lib/printUtils";
 import Link from "next/link";
+import { printScreen } from "@/lib/printUtils";
 import { useSearchParams } from "next/navigation";
+import { printScreen } from "@/lib/printUtils";
 import { useQuery } from "@tanstack/react-query";
+import { printScreen } from "@/lib/printUtils";
 import { ArrowRight, AlertTriangle, Target, RotateCcw, Printer, ShieldCheck } from "lucide-react";
+import { printScreen } from "@/lib/printUtils";
 import api from "@/lib/api";
+import { printScreen } from "@/lib/printUtils";
 import { applyVtoMovements, approxOverjetMm } from "@/lib/cephMath";
+import { printScreen } from "@/lib/printUtils";
 import { CephVtoCanvas } from "@/components/ceph/CephVtoCanvas";
+import { printScreen } from "@/lib/printUtils";
 import type { CephAnalysis } from "@/types/ceph";
+import { printScreen } from "@/lib/printUtils";
 
 type Pt = { x: number; y: number };
 
@@ -110,7 +119,7 @@ function VtoPageInner() {
           >
             <ShieldCheck className="w-3.5 h-3.5" />فحص الجودة
           </Link>
-          <button onClick={() => window.print()}
+          <button onClick={() => printScreen()}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition">
             <Printer className="w-3.5 h-3.5" />طباعة
           </button>

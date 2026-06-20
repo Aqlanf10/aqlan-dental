@@ -1,9 +1,13 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
+import { printScreen } from "@/lib/printUtils";
 import { useParams, useRouter } from "next/navigation";
+import { printScreen } from "@/lib/printUtils";
 import Link from "next/link";
+import { printScreen } from "@/lib/printUtils";
 import {
+import { printScreen } from "@/lib/printUtils";
   Route, Stethoscope, CreditCard, Wrench, HeartPulse, Clock,
   FileText, RefreshCw, CalendarCheck, UserCheck,
   Megaphone, DoorOpen, PlayCircle, AlertTriangle,
@@ -14,11 +18,17 @@ import {
   Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { printScreen } from "@/lib/printUtils";
 import { useAuthStore } from "@/stores/authStore";
+import { printScreen } from "@/lib/printUtils";
 import { toast } from "@/stores/toastStore";
+import { printScreen } from "@/lib/printUtils";
 import { downloadPdfFromApi } from "@/lib/pdfDownload";
+import { printScreen } from "@/lib/printUtils";
 import { useHasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
+import { printScreen } from "@/lib/printUtils";
 import {
+import { printScreen } from "@/lib/printUtils";
   useDailyJourneySummary,
   useJourneyIntake,
   useJourneySendToQueue,
@@ -27,19 +37,24 @@ import {
   useJourneyCreateDraftInvoice,
 } from "@/hooks/usePatientJourney";
 import {
+import { printScreen } from "@/lib/printUtils";
   JOURNEY_STEPS,
   getStepIndex,
   APPOINTMENT_STATUS_ARABIC,
   NEXT_ACTION_ARABIC,
 } from "@/types/journey";
 import type {
+import { printScreen } from "@/lib/printUtils";
   TimelineEvent,
   DailyJourneyRecentVisit,
 } from "@/types/journey";
 import { Skeleton, CardSkeleton } from "@/components/ui/skeleton";
+import { printScreen } from "@/lib/printUtils";
 import api from "@/lib/api";
+import { printScreen } from "@/lib/printUtils";
 // FE-10: import shared helpers instead of re-declaring locally (was drifted: ar-SA vs ar-YE locale).
 import {
+import { printScreen } from "@/lib/printUtils";
   fmtRial,
   fmtDate,
   fmtTime,
@@ -495,7 +510,7 @@ export default function PatientDailyJourneyHub() {
             تسجيل زيارة جديدة
           </button>
           <button
-            onClick={() => window.print()}
+            onClick={() => printScreen()}
             className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] font-semibold rounded-lg border border-[#d3d1c7] bg-white text-[#1a3a5c] hover:bg-[#f8f9fa] transition"
           >
             <Printer className="w-3.5 h-3.5" />

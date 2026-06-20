@@ -1,9 +1,14 @@
 "use client";
 import { Suspense, useMemo } from "react";
+import { printScreen } from "@/lib/printUtils";
 import Link from "next/link";
+import { printScreen } from "@/lib/printUtils";
 import { useRouter, useSearchParams } from "next/navigation";
+import { printScreen } from "@/lib/printUtils";
 import { useQuery } from "@tanstack/react-query";
+import { printScreen } from "@/lib/printUtils";
 import {
+import { printScreen } from "@/lib/printUtils";
   ArrowLeftRight,
   ArrowRight,
   Printer,
@@ -13,9 +18,13 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import api from "@/lib/api";
+import { printScreen } from "@/lib/printUtils";
 import { cn, formatArabicDate } from "@/lib/utils";
+import { printScreen } from "@/lib/printUtils";
 import type { CephAnalysis, CephCompareResult, CephCompareRow, MeasurementSeverity } from "@/types/ceph";
+import { printScreen } from "@/lib/printUtils";
 import { CephSuperimposeCanvas } from "@/components/ceph/CephSuperimposeCanvas";
+import { printScreen } from "@/lib/printUtils";
 
 // ─── Labels ──────────────────────────────────────────────────────────────────
 
@@ -180,7 +189,7 @@ function ComparePageInner() {
               تبديل
             </button>
             <button
-              onClick={() => window.print()}
+              onClick={() => printScreen()}
               className="no-print flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
             >
               <Printer className="w-3.5 h-3.5" />

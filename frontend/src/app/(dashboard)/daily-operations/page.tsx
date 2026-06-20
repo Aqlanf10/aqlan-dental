@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { printScreen } from "@/lib/printUtils";
 import { useRouter, useSearchParams } from "next/navigation";
+import { printScreen } from "@/lib/printUtils";
 import {
+import { printScreen } from "@/lib/printUtils";
   Calendar, ClipboardList, CreditCard, Clock, CheckCircle,
   Stethoscope, AlertTriangle, Search, RefreshCw,
   Globe,
@@ -13,13 +16,20 @@ import {
   Monitor, MoreHorizontal,
 } from "lucide-react";
 import { useHasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
+import { printScreen } from "@/lib/printUtils";
 import { useAuthStore } from "@/stores/authStore";
+import { printScreen } from "@/lib/printUtils";
 import { toast } from "@/stores/toastStore";
+import { printScreen } from "@/lib/printUtils";
 import { useSignalRClinicQueue } from "@/hooks/useSignalRClinicQueue";
+import { printScreen } from "@/lib/printUtils";
 import api from "@/lib/api";
+import { printScreen } from "@/lib/printUtils";
 import { NewLabOrderModal } from "@/components/lab/NewLabOrderModal";
+import { printScreen } from "@/lib/printUtils";
 
 import {
+import { printScreen } from "@/lib/printUtils";
   NAVY, BLUE, ORANGE,
   TABS,
   fmtDate, getTodayStr, fmtRial,
@@ -30,8 +40,10 @@ import {
   type TodayJourneyItem, type TabKey, type UndoAction,
 } from "./_lib/constants";
 import type { DailyJourneySummary } from "@/types/journey";
+import { printScreen } from "@/lib/printUtils";
 
 import {
+import { printScreen } from "@/lib/printUtils";
   useTodayJourneyItems,
   usePatientSummary,
   useDoctors,
@@ -64,9 +76,13 @@ import {
 } from "./_lib/hooks";
 
 import AppointmentsTable from "./_components/AppointmentsTable";
+import { printScreen } from "@/lib/printUtils";
 import JourneyContextMenu from "./_components/JourneyContextMenu";
+import { printScreen } from "@/lib/printUtils";
 import type { ContextMenuPosition } from "./_components/JourneyContextMenu";
+import { printScreen } from "@/lib/printUtils";
 import {
+import { printScreen } from "@/lib/printUtils";
   QuickPaymentModal,
   CompleteVisitModal,
   BookAppointmentModal,
@@ -83,10 +99,15 @@ import {
 
 // ── Embedded module views ──
 import BookingRequestsView from "./_modules/BookingRequestsView";
+import { printScreen } from "@/lib/printUtils";
 import ClinicQueueView from "./_modules/ClinicQueueView";
+import { printScreen } from "@/lib/printUtils";
 import RoomsView from "./_modules/RoomsView";
+import { printScreen } from "@/lib/printUtils";
 import LabView from "./_modules/LabView";
+import { printScreen } from "@/lib/printUtils";
 import ReportView from "./_modules/ReportView";
+import { printScreen } from "@/lib/printUtils";
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1242,7 +1263,7 @@ export default function DailyOperationsPage() {
                 )}
 
                 {/* Print */}
-                <button onClick={() => { setMoreMenuOpen(false); window.print(); }}
+                <button onClick={() => { setMoreMenuOpen(false); printScreen(); }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-gray-50"
                   style={{ color: "#64748b" }}>
                   <Printer className="w-4 h-4" />

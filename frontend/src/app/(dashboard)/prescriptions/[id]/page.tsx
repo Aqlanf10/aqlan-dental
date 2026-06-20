@@ -1,12 +1,20 @@
 "use client";
 import { useEffect, useState } from "react";
+import { printScreen } from "@/lib/printUtils";
 import { useParams } from "next/navigation";
+import { printScreen } from "@/lib/printUtils";
 import Link from "next/link";
+import { printScreen } from "@/lib/printUtils";
 import { ArrowRight, Printer, Trash2 } from "lucide-react";
+import { printScreen } from "@/lib/printUtils";
 import type { Prescription } from "@/types/prescription";
+import { printScreen } from "@/lib/printUtils";
 import api from "@/lib/api";
+import { printScreen } from "@/lib/printUtils";
 import { PrescriptionPrint } from "@/components/prescriptions/PrescriptionPrint";
+import { printScreen } from "@/lib/printUtils";
 import { formatArabicDate } from "@/lib/utils";
+import { printScreen } from "@/lib/printUtils";
 
 export default function PrescriptionDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -69,7 +77,7 @@ export default function PrescriptionDetailPage() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => window.print()}
+            onClick={() => printScreen()}
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
           >
             <Printer className="w-4 h-4" />

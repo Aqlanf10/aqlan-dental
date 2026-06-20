@@ -1,14 +1,24 @@
 "use client";
 import { useState } from "react";
+import { printScreen } from "@/lib/printUtils";
 import Link from "next/link";
+import { printScreen } from "@/lib/printUtils";
 import { ChevronRight, ChevronLeft, CalendarDays, Plus, LayoutGrid, List, Calendar, Stethoscope, Printer } from "lucide-react";
+import { printScreen } from "@/lib/printUtils";
 import { DaySchedule } from "@/components/appointments/DaySchedule";
+import { printScreen } from "@/lib/printUtils";
 import { WeekCalendar } from "@/components/appointments/WeekCalendar";
+import { printScreen } from "@/lib/printUtils";
 import { MonthCalendar } from "@/components/appointments/MonthCalendar";
+import { printScreen } from "@/lib/printUtils";
 import { UpcomingWidget } from "@/components/appointments/UpcomingWidget";
+import { printScreen } from "@/lib/printUtils";
 import { formatArabicDate, cn } from "@/lib/utils";
+import { printScreen } from "@/lib/printUtils";
 import { useDoctors } from "@/hooks/useDoctors";
+import { printScreen } from "@/lib/printUtils";
 import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
+import { printScreen } from "@/lib/printUtils";
 
 // FE-13: Removed local Doctor interface + useEffect+useState+api.get pattern.
 // useDoctors() provides the same data with staleTime: 60s (cached across the app).
@@ -139,7 +149,7 @@ export default function AppointmentsPage() {
           </div>
           {view === "day" && (
             <button
-              onClick={() => window.print()}
+              onClick={() => printScreen()}
               className="no-print flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition"
               title="طباعة جدول اليوم"
             >

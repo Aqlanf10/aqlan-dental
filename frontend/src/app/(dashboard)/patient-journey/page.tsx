@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { printScreen } from "@/lib/printUtils";
 import Link from "next/link";
+import { printScreen } from "@/lib/printUtils";
 import {
+import { printScreen } from "@/lib/printUtils";
   UserCheck, Clock, DoorOpen, CreditCard, CheckCircle2,
   Stethoscope, CalendarDays, RefreshCw, Users,
   Filter, AlertTriangle, ExternalLink, Megaphone,
@@ -12,13 +15,21 @@ import {
   Route, Upload, Undo2, GitBranch,
 } from "lucide-react";
 import api from "@/lib/api";
+import { printScreen } from "@/lib/printUtils";
 import { cn, localDateString } from "@/lib/utils";
+import { printScreen } from "@/lib/printUtils";
 import { useAuthStore } from "@/stores/authStore";
+import { printScreen } from "@/lib/printUtils";
 import { toast } from "@/stores/toastStore";
+import { printScreen } from "@/lib/printUtils";
 import { downloadPdfFromApi } from "@/lib/pdfDownload";
+import { printScreen } from "@/lib/printUtils";
 import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
+import { printScreen } from "@/lib/printUtils";
 import { useHasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
+import { printScreen } from "@/lib/printUtils";
 import {
+import { printScreen } from "@/lib/printUtils";
   useDailyJourneySummary,
   useJourneyIntake,
   useJourneySendToQueue,
@@ -39,16 +50,20 @@ import {
   useQueueEstimatedWait,
 } from "@/hooks/usePatientJourney";
 import {
+import { printScreen } from "@/lib/printUtils";
   STATUS_LABELS, STATUS_COLORS, ACTION_LABELS, ACTION_COLORS,
   fmtDate, fmtTime, isDoctorRole, isAccountantRole, isReceptionRole,
 } from "./_lib/constants";
 import type { JourneyItem, ServiceOption, RoomOption } from "./_lib/constants";
+import { printScreen } from "@/lib/printUtils";
 import {
+import { printScreen } from "@/lib/printUtils";
   PatientHeaderCard, TodaysAppointmentCard, QueueStatusCard,
   MedicalAlertsCard, JourneyActionsPanel, TodaysVisitCard,
   FinanceSummaryCard, ActiveOrthoCard, RecentVisitsCard, TimelineCard,
 } from "./_components/Cards";
 import {
+import { printScreen } from "@/lib/printUtils";
   ConfirmDialog, RecordPaymentModal, SendSmsModal,
   PrescriptionModal, EditVisitModal, BookAppointmentModal,
   UploadDocumentModal,
@@ -1337,7 +1352,7 @@ export default function PatientJourneyPage() {
                   </button>
                   {/* Print */}
                   <button
-                    onClick={() => window.print()}
+                    onClick={() => printScreen()}
                     className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-white text-gray-600 border border-gray-200 hover:bg-gray-50 transition"
                   >
                     <Printer className="w-3 h-3" />

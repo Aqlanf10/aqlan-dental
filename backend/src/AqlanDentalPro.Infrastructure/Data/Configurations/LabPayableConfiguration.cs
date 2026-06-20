@@ -20,9 +20,13 @@ public class LabPayableConfiguration : IEntityTypeConfiguration<LabPayable>
             .HasForeignKey(p => p.LabOrderId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        // DB-09 FIX: Change Lab→LabPayable cascade to Restrict. Previously, deleting a Lab
+        // would cascade-delete all its LabPayables (financial records) — losing the audit trail
+        // of what was owed/paid. Now deleting a Lab with outstanding payables throws a FK violation,
+        // forcing the user to resolve the payables first (or soft-delete the Lab).
         builder.HasOne(p => p.Lab)
             .WithMany()
             .HasForeignKey(p => p.LabId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

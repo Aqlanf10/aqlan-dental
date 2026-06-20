@@ -20,7 +20,6 @@ namespace AqlanDentalPro.Infrastructure.Services;
 public class PatientJourneyService(
     AppDbContext db,
     IPatientAccessService patientAccessService,
-    ICurrentUserService currentUser,
     IFinanceService financeService,
     ILogger<PatientJourneyService> logger)
 {

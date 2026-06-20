@@ -212,10 +212,10 @@ public class OrthoDailyOperationsIntegrationTests
         var audit = new Mock<IAuditService>();
 
         var journeyService = new PatientJourneyService(
-            db, access, currentUser.Object, finance.Object,
+            db, access, finance.Object,
             NullLogger<PatientJourneyService>.Instance);
         var checkoutService = new CheckoutService(
-            db, commission.Object, currentUser.Object, audit.Object, access,
+            db, commission.Object, currentUser.Object, access,
             NullLogger<CheckoutService>.Instance);
 
         return new PatientJourneyController(journeyService, checkoutService);

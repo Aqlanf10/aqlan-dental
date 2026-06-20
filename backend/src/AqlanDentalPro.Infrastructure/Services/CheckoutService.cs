@@ -24,7 +24,6 @@ public class CheckoutService(
     AppDbContext db,
     ICommissionService commissionService,
     ICurrentUserService currentUser,
-    IAuditService auditService,
     IPatientAccessService patientAccessService,
     ILogger<CheckoutService> logger)
 {

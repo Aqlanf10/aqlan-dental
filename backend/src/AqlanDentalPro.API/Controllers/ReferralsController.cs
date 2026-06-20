@@ -198,7 +198,7 @@ public class ReferralsController(
                 .Select(d => d.Id)
                 .FirstOrDefaultAsync();
             if (currentDoctorId != referral.ToDoctorId)
-                return Forbid("يمكن للطبيب المستقبِل فقط قبول الإحالة");
+                return StatusCode(403, new { message = "يمكن للطبيب المستقبِل فقط قبول الإحالة" });
         }
 
         if (referral.Status != "pending")
@@ -229,7 +229,7 @@ public class ReferralsController(
                 .Select(d => d.Id)
                 .FirstOrDefaultAsync();
             if (currentDoctorId != referral.ToDoctorId)
-                return Forbid("يمكن للطبيب المستقبِل فقط إكمال الإحالة");
+                return StatusCode(403, new { message = "يمكن للطبيب المستقبِل فقط إكمال الإحالة" });
         }
 
         if (referral.Status != "accepted")

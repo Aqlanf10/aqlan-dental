@@ -48,7 +48,7 @@ public class FinanceV3SuppliersController(
     {
         // Branch isolation guard - Admin can see all branches
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 30;

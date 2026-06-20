@@ -222,7 +222,7 @@ public class DoctorCommissionsTests
         );
 
         // Assert
-        result.Should().BeOfType<ForbidResult>();
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(403);
     }
 
     [Fact]
@@ -248,7 +248,7 @@ public class DoctorCommissionsTests
         );
 
         // Assert
-        result.Should().BeOfType<ForbidResult>();
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(403);
     }
 
     // ─── Earned-From-Collections Tests ──────────────────────────────────────

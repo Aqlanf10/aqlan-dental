@@ -55,7 +55,7 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
 
         // Blocker 4: Non-admin users must have a valid branch to view transfers
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         var branchId = currentUser.BranchId ?? Guid.Empty;
         var isAdmin = currentUser.IsAdmin;
@@ -113,7 +113,7 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
 
         // Blocker 4: Non-admin users must have a valid branch to create transfers
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         var branchId = currentUser.BranchId ?? Guid.Empty;
         var userId = currentUser.UserId ?? Guid.Empty;
@@ -255,11 +255,11 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
         if (!currentUser.IsAdmin)
         {
             if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
-                return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+                return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
             var destBranchId = transfer.DestinationTreasury.BranchId;
             if (destBranchId != currentUser.BranchId.Value)
-                return Forbid("ليس لديك صلاحية الموافقة على تحويلات فرع آخر");
+                return StatusCode(403, new { message = "ليس لديك صلاحية الموافقة على تحويلات فرع آخر" });
         }
 
         // Add funds to destination treasury balance
@@ -445,11 +445,11 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
         if (!currentUser.IsAdmin)
         {
             if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
-                return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+                return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
             var destBranchId = transfer.DestinationTreasury.BranchId;
             if (destBranchId != currentUser.BranchId.Value)
-                return Forbid("ليس لديك صلاحية رفض تحويلات فرع آخر");
+                return StatusCode(403, new { message = "ليس لديك صلاحية رفض تحويلات فرع آخر" });
         }
 
         // Restore funds to source treasury balance

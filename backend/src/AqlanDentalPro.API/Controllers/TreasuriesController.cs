@@ -24,7 +24,7 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
     public async Task<IActionResult> GetAll()
     {
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         var isAdmin = currentUser.IsAdmin;
 

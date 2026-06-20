@@ -1,3 +1,4 @@
+using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -456,7 +457,7 @@ public class PurchaseOrdersController(AppDbContext db, ILogger<PurchaseOrdersCon
 
                 var orderNumber = await GenerateOrderNumberAsync(db);
 
-                var (orderDate, dateError) = DateParsingHelper.TryParseDateOrDefault(req.OrderDate, DateOnly.FromDateTime(DateTime.Today), "تاريخ الطلب");
+                var (orderDate, dateError) = DateParsingHelper.TryParseDateOrDefault(req.OrderDate, ClinicTimeProvider.ClinicToday(), "تاريخ الطلب");
                 if (dateError != null) return dateError;
 
                 DateOnly? expectedDate = null;
@@ -564,7 +565,7 @@ public class PurchaseOrdersController(AppDbContext db, ILogger<PurchaseOrdersCon
         if (!supplierExists)
             return BadRequest(new { message = "المورد غير موجود" });
 
-        var (orderDate, dateError) = DateParsingHelper.TryParseDateOrDefault(req.OrderDate, DateOnly.FromDateTime(DateTime.Today), "تاريخ الطلب");
+        var (orderDate, dateError) = DateParsingHelper.TryParseDateOrDefault(req.OrderDate, ClinicTimeProvider.ClinicToday(), "تاريخ الطلب");
         if (dateError != null) return dateError;
 
         DateOnly? expectedDate = null;
@@ -735,7 +736,7 @@ public class PurchaseOrdersController(AppDbContext db, ILogger<PurchaseOrdersCon
         if (allFullyReceived)
         {
             order.Status = PurchaseOrderStatus.Received;
-            order.ReceivedDate = DateOnly.FromDateTime(DateTime.Today);
+            order.ReceivedDate = ClinicTimeProvider.ClinicToday();
         }
         else if (anyReceived)
         {

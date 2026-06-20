@@ -1,3 +1,4 @@
+using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.API.Services;
@@ -309,7 +310,7 @@ public class LabOrdersController(
     {
         if (!await CanAsync("view")) return Forbid();
 
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = ClinicTimeProvider.ClinicToday();
         var orders = await db.LabOrders
             .Include(l => l.Patient)
             .Include(l => l.Doctor)
@@ -388,7 +389,7 @@ public class LabOrdersController(
     {
         if (!await CanAsync("view")) return Forbid();
 
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = ClinicTimeProvider.ClinicToday();
         var orders = await db.LabOrders
             .Include(l => l.Patient)
             .Include(l => l.Doctor)
@@ -610,7 +611,7 @@ public class LabOrdersController(
                     LabName       = selectedLab?.Name ?? req.LabName,
                     LabId         = req.LabId,
                     SentDate      = hasExplicitSentDate
-                        ? DateOnly.TryParse(req.SentDate, out var sentDate) ? sentDate : DateOnly.FromDateTime(DateTime.Today) : null,
+                        ? DateOnly.TryParse(req.SentDate, out var sentDate) ? sentDate : ClinicTimeProvider.ClinicToday() : null,
                     ExpectedDate  = !string.IsNullOrWhiteSpace(req.ExpectedDate)
                         ? DateOnly.TryParse(req.ExpectedDate, out var expectedDate) ? expectedDate : (DateOnly?)null : null,
                     Priority      = req.Priority,
@@ -921,9 +922,9 @@ public class LabOrdersController(
 
         order.Status = nextStatus;
         if (nextStatus == "sent" && order.SentDate is null)
-            order.SentDate = DateOnly.FromDateTime(DateTime.Today);
+            order.SentDate = ClinicTimeProvider.ClinicToday();
         if (nextStatus == "delivered")
-            order.DeliveredDate = DateOnly.FromDateTime(DateTime.Today);
+            order.DeliveredDate = ClinicTimeProvider.ClinicToday();
 
         if (nextStatus == "received" && !string.IsNullOrWhiteSpace(req.ReceivedDate))
         {
@@ -933,7 +934,7 @@ public class LabOrdersController(
         }
         else if (nextStatus == "received" && order.ReceivedDate is null)
         {
-            order.ReceivedDate = DateOnly.FromDateTime(DateTime.Today);
+            order.ReceivedDate = ClinicTimeProvider.ClinicToday();
         }
 
         if (!string.Equals(oldStatus, nextStatus, StringComparison.OrdinalIgnoreCase))
@@ -992,7 +993,7 @@ public class LabOrdersController(
         order.Status = "received";
         order.ReceivedDate = !string.IsNullOrWhiteSpace(req?.ReceivedDate) && DateOnly.TryParse(req.ReceivedDate, out var rd)
             ? rd
-            : DateOnly.FromDateTime(DateTime.Today);
+            : ClinicTimeProvider.ClinicToday();
         db.LabOrderStatusHistories.Add(new LabOrderStatusHistory
         {
             LabOrderId = id, FromStatus = oldStatus, ToStatus = "received",
@@ -1055,7 +1056,7 @@ public class LabOrdersController(
 
         var oldStatus = order.Status;
         order.Status = "delivered";
-        order.DeliveredDate = DateOnly.FromDateTime(DateTime.Today);
+        order.DeliveredDate = ClinicTimeProvider.ClinicToday();
         db.LabOrderStatusHistories.Add(new LabOrderStatusHistory
         {
             LabOrderId = id, FromStatus = oldStatus, ToStatus = "delivered",
@@ -1146,7 +1147,7 @@ public class LabOrdersController(
         order.IsFreeRemake = req.IsFreeRemake;
         order.RemakeCost = req.RemakeCost;
         order.RemakeCount += 1;
-        order.SentDate = DateOnly.FromDateTime(DateTime.Today);
+        order.SentDate = ClinicTimeProvider.ClinicToday();
 
         db.LabOrderStatusHistories.Add(new LabOrderStatusHistory
         {

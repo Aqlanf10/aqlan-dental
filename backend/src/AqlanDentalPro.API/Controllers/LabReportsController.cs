@@ -1,3 +1,4 @@
+using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Infrastructure.Data;
@@ -105,7 +106,7 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
         if (from.HasValue) query = query.Where(o => o.CreatedAt >= from.Value);
         if (to.HasValue) query = query.Where(o => o.CreatedAt <= to.Value);
 
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = ClinicTimeProvider.ClinicToday();
 
         // Get raw data grouped by lab for in-memory KPI calculations
         var labGroups = await query
@@ -201,7 +202,7 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
     {
         if (!await CanViewReportsAsync()) return Forbid();
 
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = ClinicTimeProvider.ClinicToday();
         var thirtyDaysAgo = DateTime.UtcNow.AddDays(-30);
 
         // Overall counts

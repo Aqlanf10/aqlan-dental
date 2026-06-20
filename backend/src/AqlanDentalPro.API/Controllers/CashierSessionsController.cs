@@ -393,7 +393,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
             return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
         var scopedBranch = currentUser.IsAdmin ? (Guid?)null : branchId;
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = ClinicTimeProvider.ClinicToday();
         var monthStart = new DateOnly(today.Year, today.Month, 1);
 
         var paymentsQuery = db.Payments.Where(p => p.IsActive);

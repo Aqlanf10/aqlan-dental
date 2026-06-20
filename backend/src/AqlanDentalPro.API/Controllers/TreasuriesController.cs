@@ -1,3 +1,4 @@
+using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -92,7 +93,7 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
                 Category = FinancialCategory.InternalTransfer,
                 Amount = req.OpeningBalance,
                 PaymentMethod = type == TreasuryType.Bank ? "bank" : "cash",
-                TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                TransactionDate = ClinicTimeProvider.ClinicToday(),
                 ReferenceId = treasury.Id,
                 ReferenceNumber = "OP-BAL",
                 Description = $"رصيد افتتاحي لبداية تشغيل {treasury.Name}",

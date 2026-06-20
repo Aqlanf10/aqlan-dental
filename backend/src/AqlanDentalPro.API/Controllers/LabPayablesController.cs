@@ -1,3 +1,4 @@
+using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
@@ -203,7 +204,7 @@ public class LabPayablesController(
                 Category = FinancialCategory.SupplierPayment,
                 Amount = req.Amount,
                 PaymentMethod = "cash",
-                TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                TransactionDate = ClinicTimeProvider.ClinicToday(),
                 ReferenceId = payable.Id,
                 ReferenceNumber = payable.LabOrder?.OrderNumber,
                 Description = $"سداد مستحقات معمل: {payable.Lab?.Name ?? "معمل"} — طلب رقم {payable.LabOrder?.OrderNumber ?? "غير محدد"}",
@@ -219,7 +220,7 @@ public class LabPayablesController(
                 documentType: FinancialDocumentType.SupplierPayment,
                 financialDocumentId: payable.Id,
                 description: $"سداد مستحقات معمل: {payable.Lab?.Name ?? "معمل"} — طلب رقم {payable.LabOrder?.OrderNumber ?? "غير محدد"}",
-                entryDate: DateOnly.FromDateTime(DateTime.Today),
+                entryDate: ClinicTimeProvider.ClinicToday(),
                 branchId: branchId,
                 performedBy: userId,
                 cashierSessionId: activeSession.Id,

@@ -126,7 +126,7 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         }
         else
         {
-            fromDate = DateOnly.FromDateTime(DateTime.Today);
+            fromDate = ClinicTimeProvider.ClinicToday();
         }
 
         DateOnly toDate;

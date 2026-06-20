@@ -1,3 +1,4 @@
+using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
@@ -236,8 +237,8 @@ public class VisitsController(
             PatientId = req.PatientId,
             AppointmentId = req.AppointmentId,
             VisitDate = !string.IsNullOrWhiteSpace(req.VisitDate)
-                ? DateOnly.TryParse(req.VisitDate, out var vd) ? vd : DateOnly.FromDateTime(DateTime.Today)
-                : DateOnly.FromDateTime(DateTime.Today),
+                ? DateOnly.TryParse(req.VisitDate, out var vd) ? vd : ClinicTimeProvider.ClinicToday()
+                : ClinicTimeProvider.ClinicToday(),
             VisitType = req.VisitType,
             Specialty = specialty,
             DoctorId = req.DoctorId,

@@ -1,3 +1,4 @@
+using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -349,7 +350,7 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
                 Category = FinancialCategory.SalaryPayment,
                 Amount = salary.NetSalary,
                 PaymentMethod = paymentMethod,
-                TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                TransactionDate = ClinicTimeProvider.ClinicToday(),
                 ReferenceId = salary.Id,
                 ReferenceNumber = $"SAL-{salary.Year}{salary.Month:D2}",
                 Description = $"صرف راتب الموظف: {employee.FullName} لشهر {salary.Month}/{salary.Year}",
@@ -365,7 +366,7 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
                 documentType: FinancialDocumentType.SalaryPayment,
                 financialDocumentId: salary.Id,
                 description: $"صرف راتب: {employee.FullName} — {salary.Month}/{salary.Year}",
-                entryDate: DateOnly.FromDateTime(DateTime.Today),
+                entryDate: ClinicTimeProvider.ClinicToday(),
                 branchId: branchId,
                 performedBy: paidByUid == Guid.Empty ? Guid.Empty : paidByUid,
                 cashierSessionId: activeSession?.Id,
@@ -540,7 +541,7 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
                 Category = FinancialCategory.Reversal,
                 Amount = salary.NetSalary,
                 PaymentMethod = originalCashflow.PaymentMethod ?? "cash",
-                TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                TransactionDate = ClinicTimeProvider.ClinicToday(),
                 ReferenceId = salary.Id,
                 ReferenceNumber = $"REV-SAL-{salary.Year}{salary.Month:D2}",
                 Description = $"عكس صرف راتب: {employee?.FullName ?? "غير معروف"} — {salary.Month}/{salary.Year}",

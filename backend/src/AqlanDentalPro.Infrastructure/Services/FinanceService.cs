@@ -78,7 +78,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             DownPayment = req.DownPayment,
             InstallmentsCount = req.InstallmentsCount,
             InstallmentAmount = req.InstallmentAmount,
-            StartDate = req.StartDate != null ? DateOnly.Parse(req.StartDate) : DateOnly.FromDateTime(DateTime.Today),
+            StartDate = req.StartDate != null ? DateOnly.Parse(req.StartDate) : ClinicTimeProvider.ClinicToday(),
             DiscountAmount = req.DiscountAmount,
             DiscountReason = req.DiscountReason,
             Status = ContractStatus.Active,
@@ -116,7 +116,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
     public async Task<List<OverdueContractDto>> GetOverdueContractsAsync()
     {
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = ClinicTimeProvider.ClinicToday();
 
         var contracts = await db.Contracts
             .Include(c => c.Patient)
@@ -267,7 +267,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 ContractId = req.ContractId,
                 InvoiceId = req.InvoiceId,
                 Amount = req.Amount,
-                PaymentDate = DateOnly.FromDateTime(DateTime.Today),
+                PaymentDate = ClinicTimeProvider.ClinicToday(),
                 PaymentMethod = storedPaymentMethod,
                 ServiceDescription = req.ServiceDescription,
                 Specialty = req.Specialty,
@@ -449,7 +449,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                             Category = FinancialCategory.Reversal,
                             Amount = linkedCashflow.Amount,
                             PaymentMethod = linkedCashflow.PaymentMethod,
-                            TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                            TransactionDate = ClinicTimeProvider.ClinicToday(),
                             ReferenceId = payment.Id,
                             ReferenceNumber = linkedCashflow.ReferenceNumber,
                             Description = $"قيد عكسي لإلغاء عقد - {linkedCashflow.Description}",
@@ -590,7 +590,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     public async Task<FinanceSummaryDto> GetSummaryAsync()
     {
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = ClinicTimeProvider.ClinicToday();
         var monthStart = new DateOnly(today.Year, today.Month, 1);
 
         var todayQuery = db.Payments.Where(p => p.PaymentDate == today && p.IsActive);
@@ -758,7 +758,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 Category = FinancialCategory.Reversal,
                 Amount = linkedCashflow.Amount,
                 PaymentMethod = linkedCashflow.PaymentMethod,
-                TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                TransactionDate = ClinicTimeProvider.ClinicToday(),
                 ReferenceId = payment.Id,
                 ReferenceNumber = linkedCashflow.ReferenceNumber,
                 Description = $"قيد عكسي لحذف دفعة - {linkedCashflow.Description}",
@@ -855,7 +855,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             ContractId         = payment.ContractId,
             InvoiceId          = payment.InvoiceId,
             Amount             = -refundAmount,
-            PaymentDate        = DateOnly.FromDateTime(DateTime.Today),
+            PaymentDate        = ClinicTimeProvider.ClinicToday(),
             PaymentMethod      = payment.PaymentMethod,
             ServiceDescription = isPartialRefund
                 ? $"استرداد جزئي ({refundAmount:N0}): {payment.ServiceDescription ?? payment.ReceiptNumber}"
@@ -975,7 +975,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             .SumAsync(p => (decimal?)p.Amount) ?? 0m;
         var outstanding    = Math.Max(0m, totalCost - totalPaid);
 
-        var today          = DateOnly.FromDateTime(DateTime.Today);
+        var today          = ClinicTimeProvider.ClinicToday();
         var overdueAmount  = 0m;
         foreach (var c in contracts.Where(c => c.Status == ContractStatus.Active && c.InstallmentAmount > 0 && c.StartDate != null))
         {
@@ -1070,7 +1070,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             SupplierBillId = bill.Id,
             Amount = request.Amount,
             PaymentMethod = request.PaymentMethod,
-            PaymentDate = DateOnly.FromDateTime(DateTime.Today),
+            PaymentDate = ClinicTimeProvider.ClinicToday(),
             ReferenceNumber = request.ReferenceNumber,
             Notes = request.Notes,
             PaidBy = currentUserId
@@ -1086,7 +1086,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             Category = FinancialCategory.SupplierPayment,
             Amount = request.Amount,
             PaymentMethod = request.PaymentMethod,
-            TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+            TransactionDate = ClinicTimeProvider.ClinicToday(),
             ReferenceId = billPayment.Id,
             ReferenceNumber = bill.BillNumber,
             Description = $"سداد فاتورة مورد {bill.Supplier?.Name ?? "غير معروف"} - {bill.BillNumber}",
@@ -1131,7 +1131,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 documentType: FinancialDocumentType.SupplierPayment,
                 financialDocumentId: billPayment.Id,
                 description: $"سداد فاتورة مورد {bill.Supplier?.Name ?? ""} - {bill.BillNumber}",
-                entryDate: DateOnly.FromDateTime(DateTime.Today),
+                entryDate: ClinicTimeProvider.ClinicToday(),
                 branchId: currentUser.BranchId.Value,
                 performedBy: currentUserId,
                 cashierSessionId: activeSession.Id,
@@ -1189,7 +1189,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             PatientId = creditNote.PatientId,
             InvoiceId = creditNote.InvoiceId,
             Amount = -creditNote.Amount,
-            PaymentDate = DateOnly.FromDateTime(DateTime.Today),
+            PaymentDate = ClinicTimeProvider.ClinicToday(),
             PaymentMethod = request.PaymentMethod,
             ServiceDescription = $"استرداد إشعار دائن - فاتورة {creditNote.Invoice?.InvoiceNumber ?? ""}",
             BranchId = currentUser.BranchId,
@@ -1213,7 +1213,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             Category = FinancialCategory.Refund,
             Amount = creditNote.Amount,
             PaymentMethod = request.PaymentMethod,
-            TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+            TransactionDate = ClinicTimeProvider.ClinicToday(),
             ReferenceId = refund.Id,
             ReferenceNumber = receiptNumber,
             Description = $"استرداد إشعار دائن - مريض {creditNote.Patient?.FirstName ?? ""} - سند {receiptNumber}",
@@ -1255,7 +1255,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 documentType: FinancialDocumentType.CreditNoteRefund,
                 financialDocumentId: creditNote.Id,
                 description: $"استرداد إشعار دائن - فاتورة {creditNote.Invoice?.InvoiceNumber ?? ""}",
-                entryDate: DateOnly.FromDateTime(DateTime.Today),
+                entryDate: ClinicTimeProvider.ClinicToday(),
                 branchId: currentUser.BranchId.Value,
                 performedBy: currentUserId,
                 cashierSessionId: activeSession.Id,

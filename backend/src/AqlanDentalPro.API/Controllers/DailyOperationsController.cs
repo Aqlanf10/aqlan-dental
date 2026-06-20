@@ -1,3 +1,4 @@
+using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -29,7 +30,7 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
         try
         {
             var reportDate = string.IsNullOrEmpty(date)
-                ? DateOnly.FromDateTime(DateTime.Today)
+                ? ClinicTimeProvider.ClinicToday()
                 : DateOnly.Parse(date);
 
             var todayStart = DateTime.SpecifyKind(reportDate.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);

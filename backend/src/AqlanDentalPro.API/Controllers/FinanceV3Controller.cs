@@ -301,7 +301,7 @@ public partial class FinanceV3Controller(
         if (req.Amount <= 0)
             return BadRequest(new { message = "يجب أن يكون مبلغ المصروف أكبر من الصفر" });
 
-        var date = DateOnly.FromDateTime(DateTime.Today);
+        var date = ClinicTimeProvider.ClinicToday();
         if (!string.IsNullOrWhiteSpace(req.ExpenseDate) && DateOnly.TryParse(req.ExpenseDate, out var parsedDate))
             date = parsedDate;
 
@@ -729,7 +729,7 @@ public partial class FinanceV3Controller(
                         TransactionNumber = $"TX-{DateTime.UtcNow:yyyyMMdd}-OUT-REV-{Guid.NewGuid().ToString()[..8]}",
                         Type = TransactionType.Inflow, Category = FinancialCategory.Reversal,
                         Amount = reloaded.Amount, PaymentMethod = reloaded.PaymentMethod,
-                        TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                        TransactionDate = ClinicTimeProvider.ClinicToday(),
                         ReferenceId = reloaded.Id, ReferenceNumber = reloaded.ExpenseNumber,
                         Description = $"عكس قيد مصروف تشغيلي: {reloaded.Title}",
                         PerformedBy = userId, BranchId = reloaded.BranchId,
@@ -781,7 +781,7 @@ public partial class FinanceV3Controller(
         var supplier = await db.Suppliers.FirstOrDefaultAsync(s => s.Id == req.SupplierId && s.IsActive);
         if (supplier == null) return BadRequest(new { message = "المورد المحدد غير موجود" });
 
-        var billDate = DateOnly.FromDateTime(DateTime.Today);
+        var billDate = ClinicTimeProvider.ClinicToday();
         if (!string.IsNullOrWhiteSpace(req.BillDate) && DateOnly.TryParse(req.BillDate, out var parsedBill)) billDate = parsedBill;
         DateOnly? dueDate = null;
         if (!string.IsNullOrWhiteSpace(req.DueDate) && DateOnly.TryParse(req.DueDate, out var parsedDue)) dueDate = parsedDue;
@@ -851,7 +851,7 @@ public partial class FinanceV3Controller(
         if (billSnapshot.Status == BillStatus.FullyPaid) return BadRequest(new { message = "هذه الفاتورة مدفوعة بالكامل بالفعل" });
         if (billSnapshot.Status == BillStatus.Cancelled) return BadRequest(new { message = "هذه الفاتورة ملغاة" });
 
-        var paymentDate = DateOnly.FromDateTime(DateTime.Today);
+        var paymentDate = ClinicTimeProvider.ClinicToday();
         if (!string.IsNullOrWhiteSpace(req.PaymentDate) && DateOnly.TryParse(req.PaymentDate, out var parsedDate)) paymentDate = parsedDate;
 
         var userId = currentUser.UserId ?? Guid.Empty;

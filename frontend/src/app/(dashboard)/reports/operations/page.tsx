@@ -121,7 +121,7 @@ function HeadlineCard({
 function HourTooltip({ active, payload, label }: { active?: boolean; payload?: { value: number }[]; label?: number }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 text-xs" dir="rtl">
+    <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 text-xs">
       <p className="text-gray-500 mb-1">{typeof label === "number" ? formatHourArabic(label) : label}</p>
       <p className="font-bold text-clinic-blue">{payload[0].value} مريض</p>
     </div>
@@ -181,7 +181,7 @@ export default function OperationsReportPage() {
     .sort((a, b) => a.hour - b.hour);
 
   return (
-    <div className="max-w-7xl space-y-4" dir="rtl">
+    <div className="max-w-7xl space-y-4">
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>

@@ -395,7 +395,7 @@ export default function SurgeryDetailPage() {
 
   if (loading) {
     return (
-      <div className="space-y-4 max-w-4xl animate-pulse" dir="rtl">
+      <div className="space-y-4 max-w-4xl animate-pulse">
         <div className="h-5 w-48 bg-gray-100 rounded" />
         <div className="h-32 bg-gray-100 rounded-xl" />
         <div className="h-10 bg-gray-100 rounded-xl" />
@@ -406,7 +406,7 @@ export default function SurgeryDetailPage() {
 
   if (!surgeryCase) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 text-gray-400" dir="rtl">
+      <div className="flex flex-col items-center justify-center py-24 text-gray-400">
         <AlertCircle className="w-12 h-12 mb-3 opacity-40" />
         <p className="text-sm">لم يتم العثور على الحالة الجراحية</p>
         <Link href="/surgery" className="mt-4 text-sm text-[#3d7ab5] hover:underline">
@@ -421,7 +421,7 @@ export default function SurgeryDetailPage() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-5 max-w-4xl" dir="rtl">
+    <div className="space-y-5 max-w-4xl">
       {/* ── Breadcrumb ──────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
         <Link href="/surgery" className="hover:text-[#3d7ab5] transition">

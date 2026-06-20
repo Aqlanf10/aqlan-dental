@@ -115,7 +115,7 @@ function EditSurgeryForm() {
   // ── Loading skeleton ──────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="space-y-4 max-w-3xl animate-pulse" dir="rtl">
+      <div className="space-y-4 max-w-3xl animate-pulse">
         <div className="h-5 w-48 bg-gray-100 rounded" />
         <div className="h-8 w-64 bg-gray-100 rounded" />
         <div className="h-48 bg-gray-100 rounded-xl" />
@@ -127,7 +127,7 @@ function EditSurgeryForm() {
   // ── Not found ─────────────────────────────────────────────────────────────
   if (notFound || !surgeryCase) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 text-gray-400" dir="rtl">
+      <div className="flex flex-col items-center justify-center py-24 text-gray-400">
         <Scissors className="w-12 h-12 mb-3 opacity-40" />
         <p className="text-sm">لم يتم العثور على الحالة الجراحية</p>
         <Link href="/surgery" className="mt-4 text-sm text-clinic-blue hover:underline">
@@ -139,7 +139,7 @@ function EditSurgeryForm() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-5 max-w-3xl" dir="rtl">
+    <div className="space-y-5 max-w-3xl">
       {/* ── Breadcrumb ──────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
         <Link href="/surgery" className="hover:text-clinic-blue transition">

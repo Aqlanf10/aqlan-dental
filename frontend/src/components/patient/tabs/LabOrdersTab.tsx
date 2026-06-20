@@ -135,7 +135,7 @@ export function LabOrdersTab({ patientId }: LabOrdersTabProps) {
   }
 
   return (
-    <div className="space-y-2" dir="rtl">
+    <div className="space-y-2">
       {orders.map((order) => (
         <div key={order.id} className="p-3 bg-white border border-[#e8f0f9] rounded-lg hover:border-[#3d7ab5] hover:shadow-sm transition">
           {/* Row 1: Appliance type + lab name + status badge */}

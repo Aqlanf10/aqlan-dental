@@ -129,7 +129,7 @@ export function OverviewTab({ patientId, summary, patient, canViewFinance = fals
 
   if (loading) {
     return (
-      <div className="space-y-4 animate-pulse" dir="rtl">
+      <div className="space-y-4 animate-pulse">
         <div className="h-20 bg-[#f1f5f9] rounded-xl" />
         <div className="grid grid-cols-2 gap-3">
           <div className="h-28 bg-[#f1f5f9] rounded-xl" />
@@ -143,7 +143,7 @@ export function OverviewTab({ patientId, summary, patient, canViewFinance = fals
 
   if (error) {
     return (
-      <div className="text-center py-12" dir="rtl">
+      <div className="text-center py-12">
         <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
         <p className="text-sm text-red-500">{error}</p>
         <button
@@ -161,7 +161,7 @@ export function OverviewTab({ patientId, summary, patient, canViewFinance = fals
   const activeOrthoCase = orthoCases.find((c) => c.status?.toLowerCase() === "active") ?? null;
 
   return (
-    <div className="space-y-5" dir="rtl">
+    <div className="space-y-5">
 
       {/* ════════════════════ Quick Actions ════════════════════ */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">

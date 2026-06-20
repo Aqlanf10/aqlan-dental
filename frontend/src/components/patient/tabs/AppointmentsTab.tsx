@@ -58,7 +58,7 @@ export function AppointmentsTab({ patientId, patientName }: AppointmentsTabProps
   });
 
   return (
-    <div className="space-y-4" dir="rtl">
+    <div className="space-y-4">
       {/* Filter */}
       <div className="flex flex-wrap items-end gap-3">
         <div>

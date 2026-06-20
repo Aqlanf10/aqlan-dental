@@ -33,7 +33,7 @@ export function EmptyState({
   actionVariant = "primary",
 }: EmptyStateProps) {
   return (
-    <div className="text-center py-12" dir="rtl">
+    <div className="text-center py-12">
       <Icon className="w-12 h-12 text-[#dce8f5] mx-auto mb-3" />
       <h3 className="text-sm font-medium text-[#94a3b8]">{title}</h3>
       {description && (

@@ -326,7 +326,7 @@ export default function JourneyContextMenu({
       ref={menuRef}
       style={{ position: "fixed", top: y, left: x, zIndex: 9999, minWidth: menuWidth }}
       className="bg-white rounded-2xl shadow-2xl border py-1 text-sm animate-fade-in-up"
-      dir="rtl"
+     
     >
       {/* Header — Patient info */}
       <div className="px-3 py-2.5 border-b" style={{ borderColor: "#f1f5f9" }}>

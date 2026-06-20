@@ -82,7 +82,7 @@ export function MedicalHistoryTab({ patientId, initialData }: MedicalHistoryTabP
 
   if (editing) {
     return (
-      <div className="space-y-4" dir="rtl">
+      <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-[#0d2137] flex items-center gap-2">
             <FileText className="w-4 h-4 text-clinic-blue" />
@@ -143,7 +143,7 @@ export function MedicalHistoryTab({ patientId, initialData }: MedicalHistoryTabP
 
   if (fetchError) {
     return (
-      <div className="p-4 text-center" dir="rtl">
+      <div className="p-4 text-center">
         <p className="text-sm text-red-600 mb-2">فشل في تحميل البيانات</p>
         <button onClick={() => setRetryKey((k) => k + 1)} className="text-xs text-blue-600 underline">إعادة المحاولة</button>
       </div>
@@ -152,7 +152,7 @@ export function MedicalHistoryTab({ patientId, initialData }: MedicalHistoryTabP
 
   if (!data) {
     return (
-      <div className="text-center py-12" dir="rtl">
+      <div className="text-center py-12">
         <FileText className="w-10 h-10 mx-auto mb-2 text-[#cbd5e1]" />
         <p className="text-sm text-[#94a3b8] mb-3">لا يوجد تاريخ طبي مسجّل</p>
         <button onClick={startEdit} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 mx-auto">
@@ -164,7 +164,7 @@ export function MedicalHistoryTab({ patientId, initialData }: MedicalHistoryTabP
   }
 
   return (
-    <div className="space-y-3" dir="rtl">
+    <div className="space-y-3">
       <div className="flex justify-end">
         <button onClick={startEdit} className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-[#e8f0f9] rounded-lg hover:bg-[#f7fafd] text-[#64748b]">
           <Pencil className="w-3.5 h-3.5" />

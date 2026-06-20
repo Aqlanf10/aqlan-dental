@@ -25,7 +25,7 @@ export function PrescriptionPrint({
         }
       `}</style>
 
-      <div id="prescription-print-root" className="bg-white font-sans" dir="rtl">
+      <div id="prescription-print-root" className="bg-white font-sans">
         {/* Header */}
         <div className="border-b-2 border-gray-800 pb-4 mb-5 flex items-start justify-between">
           <div>

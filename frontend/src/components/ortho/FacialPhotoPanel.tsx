@@ -51,7 +51,7 @@ export function FacialPhotoPanel({ caseId }: { caseId: string }) {
   );
 
   return (
-    <div className="space-y-5" dir="rtl">
+    <div className="space-y-5">
       <div className="grid gap-4 md:grid-cols-2">
         {/* Profile */}
         <div className="rounded-lg border border-gray-200 p-4">

@@ -54,7 +54,7 @@ export function PublicNavbar() {
 
   return (
     <header className="fixed w-full z-50 bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-sm">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between" dir="rtl">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
         {/* Logo */}
         <Link href="/home" className="flex items-center gap-3 flex-shrink-0">
           {resolvedLogo ? (
@@ -165,7 +165,7 @@ export function PublicNavbar() {
           />
           <div
             className="lg:hidden fixed top-20 right-0 left-0 z-50 bg-white border-t border-slate-100 shadow-2xl max-h-[calc(100vh-5rem)] overflow-y-auto"
-            dir="rtl"
+           
           >
             <nav className="max-w-7xl mx-auto px-6 py-4 flex flex-col gap-1">
               {navLinks.map((link) => (

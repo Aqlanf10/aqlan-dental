@@ -205,7 +205,7 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
   const typeCount = new Set(activeXrays.map(x => x.xrayType).filter(Boolean)).size;
 
   return (
-    <div className="space-y-4" dir="rtl">
+    <div className="space-y-4">
       {/* Stats row */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <div className="rounded-xl px-3 py-2.5 flex items-center gap-2.5 bg-purple-50">
@@ -400,7 +400,7 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
             className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="p-6 space-y-4" dir="rtl">
+            <div className="p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-bold text-[#0d2137]">إضافة أشعة سنية</h3>
                 <button onClick={() => setShowAddModal(false)} className="text-[#94a3b8] hover:text-[#0d2137]">

@@ -49,7 +49,7 @@ export function GeneralDentistryTab({ patientId }: GeneralDentistryTabProps) {
   }, [patientId, retryKey]);
 
   return (
-    <div className="space-y-6" dir="rtl">
+    <div className="space-y-6">
       <DentalChart patientId={patientId} />
 
       <div className="border-t border-[#e8f0f9] pt-6">

@@ -89,7 +89,7 @@ export function AnalysisReport({
   );
 
   return (
-    <div className="flex flex-col h-full" dir="rtl">
+    <div className="flex flex-col h-full">
       {/* Print header */}
       <div className="hidden print:block text-center border-b-2 pb-3 mb-4">
         <h2 className="text-lg font-bold">مركز د. عقلان الكامل لطب وتقويم الأسنان</h2>

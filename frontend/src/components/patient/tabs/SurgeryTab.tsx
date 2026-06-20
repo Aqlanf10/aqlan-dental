@@ -29,7 +29,7 @@ export function SurgeryTab({ patientId }: SurgeryTabProps) {
   /* ── Loading skeleton ──────────────────────────────────────────────────── */
   if (loading) {
     return (
-      <div className="space-y-3" dir="rtl">
+      <div className="space-y-3">
         {/* header skeleton */}
         <div className="flex items-center justify-between">
           <div className="h-5 w-40 bg-[#f1f5f9] rounded-md animate-pulse" />
@@ -72,7 +72,7 @@ export function SurgeryTab({ patientId }: SurgeryTabProps) {
 
   /* ── Cases list ────────────────────────────────────────────────────────── */
   return (
-    <div dir="rtl">
+    <div>
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-[#0d2137]">

@@ -6,7 +6,7 @@
 
 export default function PortalError({ reset }: { error: Error; reset: () => void }) {
   return (
-    <div dir="rtl" className="min-h-[60vh] flex items-center justify-center p-4">
+    <div className="min-h-[60vh] flex items-center justify-center p-4">
       <div className="max-w-md text-center">
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
           <svg className="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">

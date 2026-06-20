@@ -101,7 +101,7 @@ export default function PublicHomePage() {
   const heroImgUrl = resolveImg(get("heroImageUrl"));
 
   return (
-    <div dir="rtl">
+    <div>
       {/* ═══════════════════════════════════════ HERO ══════════════════════════════════════ */}
       <section className="relative text-white overflow-hidden" style={{ backgroundColor: "#0F172A" }}>
         {/* Hero image overlay (if uploaded) */}

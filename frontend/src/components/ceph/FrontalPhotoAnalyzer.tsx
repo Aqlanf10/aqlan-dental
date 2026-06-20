@@ -60,7 +60,7 @@ export function FrontalPhotoAnalyzer({ imageUrl, initialPoints, onChange }: Prop
   };
 
   return (
-    <div className="grid lg:grid-cols-3 gap-4" dir="rtl">
+    <div className="grid lg:grid-cols-3 gap-4">
       {/* Image + points */}
       <div className="lg:col-span-2 bg-slate-900 rounded-xl border border-gray-200 overflow-hidden">
         {dim ? (

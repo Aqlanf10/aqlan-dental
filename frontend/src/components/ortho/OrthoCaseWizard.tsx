@@ -161,7 +161,7 @@ export function OrthoCaseWizard({ caseId, patientId, onNavigate }: { caseId: str
     } catch { toast.error("تعذر إنشاء العرض"); } finally { setBusy(false); }
   };
 
-  return <div className="space-y-4" dir="rtl">
+  return <div className="space-y-4">
     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div><h3 className="flex items-center gap-2 text-base font-bold text-clinic-navy"><Presentation className="h-5 w-5 text-clinic-blue" />معالج عرض الحالة</h3><p className="mt-1 max-w-3xl text-xs leading-6 text-gray-500">تسلسل منظم لإدخال بيانات الحالة والصور والتحاليل والمسودات السريرية.</p></div>

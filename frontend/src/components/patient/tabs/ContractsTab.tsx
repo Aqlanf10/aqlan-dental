@@ -61,7 +61,7 @@ export function ContractsTab({ patientId }: ContractsTabProps) {
 
   if (loading) {
     return (
-      <div className="space-y-3 animate-pulse" dir="rtl">
+      <div className="space-y-3 animate-pulse">
         {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="h-20 bg-[#f1f5f9] rounded-xl" />
         ))}
@@ -71,7 +71,7 @@ export function ContractsTab({ patientId }: ContractsTabProps) {
 
   if (error) {
     return (
-      <div className="text-center py-12" dir="rtl">
+      <div className="text-center py-12">
         <AlertCircle className="w-10 h-10 mx-auto mb-2 text-red-300" />
         <p className="text-sm text-red-500">{error}</p>
         <button onClick={fetchContracts} className="mt-2 text-xs text-[#3d7ab5] hover:underline">إعادة المحاولة</button>
@@ -92,7 +92,7 @@ export function ContractsTab({ patientId }: ContractsTabProps) {
   }
 
   return (
-    <div className="space-y-4" dir="rtl">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-bold text-[#0d2137]">العقود</h3>

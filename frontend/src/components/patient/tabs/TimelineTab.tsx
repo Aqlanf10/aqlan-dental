@@ -116,7 +116,7 @@ export function TimelineTab({ patientId }: TimelineTabProps) {
     : events.filter((ev) => ev.type === filterType);
 
   return (
-    <div dir="rtl">
+    <div>
       {/* Filter Bar */}
       <div className="flex flex-wrap gap-2 mb-4">
         {FILTER_OPTIONS.map((opt) => (

@@ -302,7 +302,7 @@ export default function MessagesPage() {
   const errorDetail = convError ? getErrorDetail(convError) : null;
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col" dir="rtl">
+    <div className="h-[calc(100vh-4rem)] flex flex-col">
       {/* Top accent gradient bar */}
       <div className="h-1 bg-gradient-to-l from-[#3d7ab5] via-[#3d7ab5] to-[#0d2137] rounded-t-2xl flex-shrink-0" />
 

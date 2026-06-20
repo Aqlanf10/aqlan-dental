@@ -11,7 +11,7 @@ const checks = [
 
 export default function CephQualityPage() {
   return (
-    <div className="mx-auto max-w-5xl space-y-5" dir="rtl">
+    <div className="mx-auto max-w-5xl space-y-5">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-extrabold text-gray-900"><ShieldCheck className="h-6 w-6 text-clinic-blue" />فحص جودة السيفالو قبل الاعتماد</h1>

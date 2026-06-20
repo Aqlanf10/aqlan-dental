@@ -526,7 +526,7 @@ export default function ClinicDisplayPage() {
   }, [contextMenu.visible]);
 
   return (
-    <div dir="rtl" className="min-h-screen bg-[#0F172A] text-white flex flex-col" style={{ fontFamily: "'Segoe UI', Tahoma, Arial, sans-serif" }}>
+    <div className="min-h-screen bg-[#0F172A] text-white flex flex-col" style={{ fontFamily: "'Segoe UI', Tahoma, Arial, sans-serif" }}>
       {/* ── Header ─────────────────────────────────────────────── */}
       <header className="flex items-center justify-between px-8 md:px-16 py-6 border-b border-white/10 bg-[#0c1322]">
         <div className="flex items-center gap-5">

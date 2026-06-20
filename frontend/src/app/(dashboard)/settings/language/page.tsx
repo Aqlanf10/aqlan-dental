@@ -74,7 +74,7 @@ export default function LanguageSettingsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl p-4" dir="rtl">
+    <div className="mx-auto max-w-3xl p-4">
       <div className="mb-5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-sky-50">

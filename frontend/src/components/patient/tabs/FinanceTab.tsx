@@ -62,7 +62,7 @@ export function FinanceTab({ patientId, refreshKey }: FinanceTabProps) {
   const { totalContracted, totalDiscounts, totalPaid, totalRemaining, activeContracts, completedContracts, contracts, recentPayments } = statement;
 
   return (
-    <div className="space-y-6" dir="rtl">
+    <div className="space-y-6">
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="rounded-xl px-4 py-3 bg-[#eef4fb]">

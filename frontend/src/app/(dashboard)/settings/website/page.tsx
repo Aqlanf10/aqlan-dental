@@ -368,7 +368,7 @@ export default function WebsiteSettingsPage() {
   }
 
   return (
-    <div className="space-y-5 max-w-5xl" dir="rtl">
+    <div className="space-y-5 max-w-5xl">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>

@@ -232,7 +232,7 @@ export default function PortalMessagesPage() {
   );
 
   return (
-    <div className="px-3 pb-24 pt-4" dir="rtl">
+    <div className="px-3 pb-24 pt-4">
       {/* Page Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
@@ -1065,7 +1065,7 @@ function StartConversationDialog({
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
       <div
         className="bg-white rounded-2xl w-full max-w-md shadow-2xl animate-in fade-in zoom-in-95 duration-200"
-        dir="rtl"
+       
       >
         {/* Header */}
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">

@@ -107,7 +107,7 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
 
   const messages = conversation?.messages ?? [];
   return (
-    <div className="flex flex-col h-full" dir="rtl">
+    <div className="flex flex-col h-full">
       {conversation && (
         <div className="flex items-center justify-between pb-3 mb-3 border-b border-gray-100">
           <div className="flex items-center gap-2">

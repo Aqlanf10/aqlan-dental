@@ -114,7 +114,7 @@ export function CasePresentationPanel({ caseId }: { caseId: string }) {
   const loading = overviewQ.isLoading || checklistQ.isLoading || photosQ.isLoading;
 
   return (
-    <div className="space-y-5" dir="rtl">
+    <div className="space-y-5">
       <div className="flex items-center gap-2">
         <Presentation className="h-5 w-5 text-clinic-blue" />
         <h3 className="text-sm font-bold text-clinic-navy">عرض الحالة والتقارير</h3>

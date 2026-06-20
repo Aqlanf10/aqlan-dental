@@ -44,7 +44,7 @@ export function CephReadinessBadge({
 
   return (
     <div
-      dir="rtl"
+     
       role="status"
       className={cn(
         "flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border px-3 py-2 text-xs",

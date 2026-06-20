@@ -106,7 +106,7 @@ export function ReferralsTab({ patientId }: ReferralsTabProps) {
   }
 
   return (
-    <div className="space-y-2" dir="rtl">
+    <div className="space-y-2">
       {referrals.map((ref) => {
         const dateStr = ref.referralDate ?? ref.createdAt ?? "";
         const fromDoctor = ref.referringDoctor ?? ref.fromDoctorName ?? "";

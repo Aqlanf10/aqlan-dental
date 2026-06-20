@@ -436,7 +436,7 @@ export default function BookPage() {
   if (success) {
     return (
       <div
-        dir="rtl"
+       
         className="min-h-[70vh] flex items-center justify-center px-4 py-20 bg-[#F8FAFC]"
       >
         <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8 sm:p-10 text-center border border-slate-100">
@@ -1094,7 +1094,7 @@ export default function BookPage() {
 
   // ── Main render ──
   return (
-    <div dir="rtl" className="min-h-screen bg-[#F8FAFC]">
+    <div className="min-h-screen bg-[#F8FAFC]">
       {/* Page Header */}
       <div
         className="relative text-white py-14 overflow-hidden"

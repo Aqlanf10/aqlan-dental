@@ -20,7 +20,7 @@ interface BasicInfoTabProps {
 
 export function BasicInfoTab({ patient, orthoCases, surgeryCases }: BasicInfoTabProps) {
   return (
-    <div className="space-y-4" dir="rtl">
+    <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {[
           ["الاسم الكامل", `${patient.firstName} ${patient.middleName ?? ""} ${patient.lastName}`.trim()],

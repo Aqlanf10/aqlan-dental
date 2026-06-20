@@ -271,7 +271,7 @@ export default function BranchesPage() {
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6" dir="rtl">
+    <div className="space-y-6">
       {/* ── Toast ── */}
       {toast && (
         <div
@@ -706,7 +706,7 @@ function BranchCard({
         {branch.phone && (
           <div className="flex items-center gap-2 text-gray-500 text-xs" dir="ltr">
             <Phone className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" />
-            <span className="text-right" dir="rtl">{branch.phone}</span>
+            <span className="text-right">{branch.phone}</span>
           </div>
         )}
       </div>

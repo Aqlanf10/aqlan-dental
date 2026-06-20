@@ -188,7 +188,7 @@ export function PatientContextMenu({
       ref={menuRef}
       style={{ position: "fixed", top: y, left: x, zIndex: 9999, minWidth: menuWidth }}
       className="bg-white rounded-xl shadow-2xl border border-[#e8f0f9] py-1 text-sm"
-      dir="rtl"
+     
     >
       {/* Header */}
       <div className="px-3 py-2 border-b border-gray-100">
@@ -216,7 +216,7 @@ export function PatientContextMenu({
             {item.isSubmenu && printSubOpen && (
               <div
                 className="absolute right-full top-0 mr-0.5 bg-white rounded-xl shadow-2xl border border-[#e8f0f9] py-1 min-w-48 z-10"
-                dir="rtl"
+               
               >
                 <button
                   onClick={(e) => { e.stopPropagation(); router.push(`/patients/${patient.id}/print/summary`); onClose(); }}

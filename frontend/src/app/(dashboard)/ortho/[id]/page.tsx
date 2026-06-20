@@ -3289,7 +3289,7 @@ export default function OrthoCaseDetailPage() {
   }
 
   return (
-    <div className="max-w-7xl space-y-5" dir="rtl">
+    <div className="max-w-7xl space-y-5">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
         <Link

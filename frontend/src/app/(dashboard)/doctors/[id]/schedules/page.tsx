@@ -538,7 +538,7 @@ export default function DoctorSchedulesPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-24 gap-3 text-gray-400" dir="rtl">
+      <div className="flex items-center justify-center py-24 gap-3 text-gray-400">
         <Loader2 className="w-6 h-6 animate-spin" />
         <span>جارٍ تحميل بيانات الطبيب وجدول الدوام...</span>
       </div>
@@ -547,7 +547,7 @@ export default function DoctorSchedulesPage() {
 
   if (doctorError) {
     return (
-      <div className="flex items-center justify-center py-24" dir="rtl">
+      <div className="flex items-center justify-center py-24">
         <div className="text-center">
           <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
           <p className="text-gray-600 font-medium mb-2">
@@ -565,7 +565,7 @@ export default function DoctorSchedulesPage() {
   }
 
   return (
-    <div className="space-y-6" dir="rtl">
+    <div className="space-y-6">
       {/* ── Header ── */}
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">

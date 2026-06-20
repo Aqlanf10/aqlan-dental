@@ -843,7 +843,7 @@ function TemplatesTab() {
                           ? "border-red-300 bg-red-50/30"
                           : "border-gray-300 bg-white"
                       )}
-                      dir="rtl"
+                     
                     />
                     <div className="flex items-center justify-between">
                       <span
@@ -1563,7 +1563,7 @@ function QuickSendModal({ onClose }: QuickSendModalProps) {
               "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue resize-none",
               message.length > 160 && "border-amber-300"
             )}
-            dir="rtl"
+           
             placeholder="اكتب رسالتك هنا..."
           />
           <div className="flex items-center justify-between mt-1">

@@ -63,6 +63,11 @@ public static class ServiceRegistrationConfiguration
         services.AddScoped<AqlanDentalPro.Application.Interfaces.Services.ICommissionService, AqlanDentalPro.Infrastructure.Services.CommissionService>();
         services.AddScoped<AqlanDentalPro.Application.Interfaces.Services.IPatientAccessService, AqlanDentalPro.Infrastructure.Services.PatientAccessService>();
         services.AddScoped<ILoginAttemptService, LoginAttemptService>();
+
+        // CLIN-22: Patient-journey read/write services extracted from PatientJourneyController.
+        // Concrete classes (no interface) — matches existing DashboardService / OrthoService pattern.
+        services.AddScoped<PatientJourneyService>();
+        services.AddScoped<CheckoutService>();
         services.AddHttpClient(); // Register IHttpClientFactory for PatientPortalService
         services.AddHttpClient("RemoteClinicalImage", client =>
         {

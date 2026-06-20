@@ -1,8 +1,10 @@
 using AqlanDentalPro.API.Controllers;
+using AqlanDentalPro.Application.DTOs.Journey;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -183,7 +185,7 @@ public class PatientJourneyFinancialRulesTests
 
     private static async Task<object> GetSingleJourneyItem(AppDbContext db, DateOnly date)
     {
-        var logger = new CapturingLogger<PatientJourneyController>();
+        var logger = new CapturingLogger<PatientJourneyService>();
         var controller = BuildController(db, logger);
         var result = await controller.GetToday(date.ToString("yyyy-MM-dd"), status: null, doctorId: null, serviceId: null, roomId: null);
         if (result is not OkObjectResult ok)
@@ -194,19 +196,32 @@ public class PatientJourneyFinancialRulesTests
         return list.Should().ContainSingle().Subject;
     }
 
-    private static PatientJourneyController BuildController(AppDbContext db, ILogger<PatientJourneyController>? logger = null)
+    private static PatientJourneyController BuildController(AppDbContext db, ILogger<PatientJourneyService>? journeyLogger = null)
     {
         var access = new Mock<IPatientAccessService>();
         access.SetupGet(x => x.IsDoctor).Returns(false);
         access.SetupGet(x => x.HasFullAccess).Returns(true);
+        access.SetupGet(x => x.IsReception).Returns(false);
         access.Setup(x => x.GetAccessiblePatientIdsAsync()).ReturnsAsync((HashSet<Guid>?)null);
 
-        return new PatientJourneyController(
-            db,
-            logger ?? NullLogger<PatientJourneyController>.Instance,
-            new Mock<ICommissionService>().Object,
-            new Mock<IFinanceService>().Object,
-            access.Object);
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.SetupGet(x => x.UserId).Returns((Guid?)null);
+        currentUser.SetupGet(x => x.IsAdmin).Returns(true);
+
+        var commission = new Mock<ICommissionService>();
+        var finance = new Mock<IFinanceService>();
+        var audit = new Mock<IAuditService>();
+
+        // CLIN-22: controller is now a thin delegate over PatientJourneyService + CheckoutService.
+        // Real service instances + InMemory db preserve the original end-to-end test semantics.
+        var journeyService = new PatientJourneyService(
+            db, access.Object, finance.Object,
+            journeyLogger ?? NullLogger<PatientJourneyService>.Instance);
+        var checkoutService = new CheckoutService(
+            db, commission.Object, currentUser.Object, access.Object,
+            NullLogger<CheckoutService>.Instance);
+
+        return new PatientJourneyController(journeyService, checkoutService);
     }
 
     private static (Patient Patient, Appointment Appointment, ClinicService Service) SeedAppointment(

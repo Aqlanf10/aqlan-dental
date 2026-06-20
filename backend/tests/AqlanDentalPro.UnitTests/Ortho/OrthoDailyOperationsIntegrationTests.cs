@@ -198,13 +198,28 @@ public class OrthoDailyOperationsIntegrationTests
 
     private static PatientJourneyController BuildJourneyController(
         AppDbContext db,
-        IPatientAccessService access) =>
-        new(
-            db,
-            NullLogger<PatientJourneyController>.Instance,
-            new Mock<ICommissionService>().Object,
-            new Mock<IFinanceService>().Object,
-            access);
+        IPatientAccessService access)
+    {
+        // CLIN-22: PatientJourneyController now delegates to PatientJourneyService +
+        // CheckoutService. Build real service instances against the InMemory db so
+        // the GetToday aggregate path executes end-to-end.
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.SetupGet(x => x.UserId).Returns((Guid?)null);
+        currentUser.SetupGet(x => x.IsAdmin).Returns(true);
+
+        var commission = new Mock<ICommissionService>();
+        var finance = new Mock<IFinanceService>();
+        var audit = new Mock<IAuditService>();
+
+        var journeyService = new PatientJourneyService(
+            db, access, finance.Object,
+            NullLogger<PatientJourneyService>.Instance);
+        var checkoutService = new CheckoutService(
+            db, commission.Object, currentUser.Object, access,
+            NullLogger<CheckoutService>.Instance);
+
+        return new PatientJourneyController(journeyService, checkoutService);
+    }
 
     private static OrthoCasesController BuildOrthoController(AppDbContext db, bool canAccess)
     {

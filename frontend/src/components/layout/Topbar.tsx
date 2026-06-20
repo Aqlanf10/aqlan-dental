@@ -4,13 +4,15 @@ import { useAuthStore } from "@/stores/authStore";
 import { useRouter } from "next/navigation";
 import type { UserDto } from "@/types/auth";
 import api from "@/lib/api";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, memo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useUnreadCount } from "@/hooks/useMessaging";
 import { financeV3CollectionsUrl, financeV3ContractsUrl } from "@/lib/financeRoutes";
 
 /* ─── Live Clock — matches ZIP ─────────────────────────────────────────────── */
-function LiveClock() {
+// FE-31: Wrapped in React.memo so the parent Topbar does not re-render every second
+// when the clock's internal `now` state updates (the clock has no props anyway).
+const LiveClock = memo(function LiveClock() {
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -36,7 +38,7 @@ function LiveClock() {
       <div className="text-[10px] font-semibold" style={{ color: "#94a3b8" }}>{dayName} · {dateStr}</div>
     </div>
   );
-}
+});
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface SearchResult {

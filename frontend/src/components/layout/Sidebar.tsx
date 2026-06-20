@@ -21,6 +21,13 @@ import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
 import type { UserDto } from "@/types/auth";
 
 /* ─── Brand colors ──────────────────────────────────────────────────────────── */
+// FE-34 (technical debt): These hex constants are hardcoded for inline `style` props used
+// throughout this Sidebar (gradients, hover backgrounds, active states). The rest of the app
+// uses Tailwind utility classes / CSS variables. They should eventually be replaced with
+// Tailwind design tokens (e.g. a `brand` color registered in the Tailwind config) so the
+// sidebar respects theming (light/dark) and stays consistent with the rest of the UI.
+// Leaving the values as-is in this PR — a full inline-style → Tailwind migration is too large
+// to bundle here and would conflict with the ongoing layout work.
 const BRAND_PRIMARY       = "#1a3a5c";
 const BRAND_PRIMARY_LIGHT = "#244b73";
 const BRAND_ORANGE        = "#f5922e";

@@ -1000,6 +1000,7 @@ public class OrthoCasesController(
     }
 
     [HttpPut("{id:guid}/treatment-plan")]
+    [Obsolete("Use CreateTreatmentPlan (POST {id}/treatment-plans) or UpdateTreatmentPlan (PUT {id}/treatment-plans/{planId}) instead. This legacy single-plan endpoint is superseded by labeled multi-plan support.")]
     public async Task<IActionResult> UpsertTreatmentPlan(Guid id, [FromBody] UpsertTreatmentPlanRequest req)
     {
         var orthoCase = await db.OrthoCases.FindAsync(id);
@@ -1063,6 +1064,7 @@ public class OrthoCasesController(
     }
 
     [HttpPatch("{id:guid}/treatment-plan/approve")]
+    [Obsolete("Use ApproveSpecificTreatmentPlan (PATCH {id}/treatment-plans/{planId}/approve) instead. This legacy endpoint approves the latest plan without specifying which.")]
     public async Task<IActionResult> ApproveTreatmentPlan(Guid id)
     {
         var orthoCase = await db.OrthoCases.FindAsync(id);

@@ -1235,6 +1235,7 @@ public class ClinicQueueController(
     /// <summary>Returns available room names for the room selector. Queries from DB.</summary>
     [HttpGet("rooms")]
     [AllowAnonymous]
+    [Obsolete("Use GetRoomsFromDb instead. This hardcoded endpoint returns static defaults.")]
     public async Task<IActionResult> GetRooms()
     {
         var rooms = await db.ClinicRooms

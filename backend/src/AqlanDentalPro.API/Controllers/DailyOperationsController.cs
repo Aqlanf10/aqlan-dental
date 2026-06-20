@@ -136,6 +136,8 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
 
             // Terminal AppointmentStatus values that mean "left without completing"
             // (not Cancelled-before-arrival, not NoShow, not Completed)
+            // CLIN-19: Intentionally empty — the enum has no LeftWithoutCompletion status yet.
+            // The count always returns 0 from the appointment side. Visit.CheckoutStatus is the source of truth.
             var leftWithoutCompletionAppointmentStatuses = new HashSet<AppointmentStatus>
             {
                 // AppointmentStatus.LeftWithoutCompletion,  // uncomment when added

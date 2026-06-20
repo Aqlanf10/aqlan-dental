@@ -101,30 +101,49 @@ public partial class FinanceV3Controller
 
     private async Task<decimal> CalculateContractOutstandingAsync(Guid? branchId)
     {
+        // FIN-13 FIX: Rewrite as server-side aggregation instead of loading all contracts + payments
+        // into memory and summing with LINQ-to-Objects. The old code fetched N contracts with their
+        // M payments each (Cartesian product) and iterated in memory.
         var query = db.Contracts
-            .Include(c => c.Payments)
-            .Where(c => c.Status == ContractStatus.Active);
+            .Where(c => c.Status == ContractStatus.Active && c.IsActive);
 
         if (branchId.HasValue)
             query = query.Where(c => c.Patient.BranchId == branchId.Value);
 
-        var contracts = await query.ToListAsync();
-        // Sprint 1: Nullable-safe aggregation — use decimal? sum with ?? 0m fallback
-        // to prevent overflow or null issues on empty payment collections
-        return contracts.Sum(c => c.TotalAmount - c.DiscountAmount - (c.Payments?.Where(p => p.IsActive).Sum(p => (decimal?)p.Amount) ?? 0m));
+        // Server-side: sum(TotalAmount - Discount) - sum(active payments)
+        var contractTotals = await query
+            .GroupBy(c => 1) // single group to get aggregates
+            .Select(g => new
+            {
+                TotalGross = g.Sum(c => c.TotalAmount),
+                TotalDiscount = g.Sum(c => c.DiscountAmount),
+                TotalPaid = g.SelectMany(c => c.Payments).Where(p => p.IsActive).Sum(p => p.Amount)
+            })
+            .FirstOrDefaultAsync();
+
+        if (contractTotals == null) return 0m;
+        return contractTotals.TotalGross - contractTotals.TotalDiscount - contractTotals.TotalPaid;
     }
 
     private async Task<decimal> CalculateInvoiceOutstandingAsync(Guid? branchId)
     {
+        // FIN-13 FIX: Same optimization — server-side aggregation instead of in-memory.
         var query = db.Invoices
-            .Include(i => i.Payments)
             .Where(i => i.Status == InvoiceStatus.Issued && i.IsActive);
 
         if (branchId.HasValue)
             query = query.Where(i => i.Patient.BranchId == branchId.Value);
 
-        var invoices = await query.ToListAsync();
-        // Sprint 1: Nullable-safe aggregation
-        return invoices.Sum(i => i.TotalAmount - (i.Payments?.Where(p => p.IsActive).Sum(p => (decimal?)p.Amount) ?? 0m));
+        var invoiceTotals = await query
+            .GroupBy(i => 1)
+            .Select(g => new
+            {
+                TotalInvoiced = g.Sum(i => i.TotalAmount),
+                TotalPaid = g.SelectMany(i => i.Payments).Where(p => p.IsActive).Sum(p => p.Amount)
+            })
+            .FirstOrDefaultAsync();
+
+        if (invoiceTotals == null) return 0m;
+        return invoiceTotals.TotalInvoiced - invoiceTotals.TotalPaid;
     }
 }

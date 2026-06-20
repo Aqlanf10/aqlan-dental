@@ -1,23 +1,15 @@
 "use client";
+import { printScreen } from "@/lib/printUtils";
 
 import { Suspense, useMemo, useState } from "react";
-import { printScreen } from "@/lib/printUtils";
 import Link from "next/link";
-import { printScreen } from "@/lib/printUtils";
 import { useSearchParams } from "next/navigation";
-import { printScreen } from "@/lib/printUtils";
 import { useQuery } from "@tanstack/react-query";
-import { printScreen } from "@/lib/printUtils";
 import { ArrowRight, AlertTriangle, Target, RotateCcw, Printer, ShieldCheck } from "lucide-react";
-import { printScreen } from "@/lib/printUtils";
 import api from "@/lib/api";
-import { printScreen } from "@/lib/printUtils";
 import { applyVtoMovements, approxOverjetMm } from "@/lib/cephMath";
-import { printScreen } from "@/lib/printUtils";
 import { CephVtoCanvas } from "@/components/ceph/CephVtoCanvas";
-import { printScreen } from "@/lib/printUtils";
 import type { CephAnalysis } from "@/types/ceph";
-import { printScreen } from "@/lib/printUtils";
 
 type Pt = { x: number; y: number };
 

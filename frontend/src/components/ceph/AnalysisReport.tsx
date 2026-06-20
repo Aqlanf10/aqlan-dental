@@ -1,14 +1,10 @@
 "use client";
+import { printScreen } from "@/lib/printUtils";
 import { useState } from "react";
-import { printScreen } from "@/lib/printUtils";
 import { Printer, CheckCircle, AlertTriangle, XCircle, ArrowUp, ArrowDown, Loader2 } from "lucide-react";
-import { printScreen } from "@/lib/printUtils";
 import type { CephMeasurement, CephDiagnosis, CephAiDraftResponse, MeasurementGroup } from "@/types/ceph";
-import { printScreen } from "@/lib/printUtils";
 import api from "@/lib/api";
-import { printScreen } from "@/lib/printUtils";
 import { cn } from "@/lib/utils";
-import { printScreen } from "@/lib/printUtils";
 
 interface Props {
   measurements: CephMeasurement[];

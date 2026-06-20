@@ -1,24 +1,15 @@
 "use client";
+import { printScreen } from "@/lib/printUtils";
 import { useState } from "react";
-import { printScreen } from "@/lib/printUtils";
 import Link from "next/link";
-import { printScreen } from "@/lib/printUtils";
 import { ChevronRight, ChevronLeft, CalendarDays, Plus, LayoutGrid, List, Calendar, Stethoscope, Printer } from "lucide-react";
-import { printScreen } from "@/lib/printUtils";
 import { DaySchedule } from "@/components/appointments/DaySchedule";
-import { printScreen } from "@/lib/printUtils";
 import { WeekCalendar } from "@/components/appointments/WeekCalendar";
-import { printScreen } from "@/lib/printUtils";
 import { MonthCalendar } from "@/components/appointments/MonthCalendar";
-import { printScreen } from "@/lib/printUtils";
 import { UpcomingWidget } from "@/components/appointments/UpcomingWidget";
-import { printScreen } from "@/lib/printUtils";
 import { formatArabicDate, cn } from "@/lib/utils";
-import { printScreen } from "@/lib/printUtils";
 import { useDoctors } from "@/hooks/useDoctors";
-import { printScreen } from "@/lib/printUtils";
 import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
-import { printScreen } from "@/lib/printUtils";
 
 // FE-13: Removed local Doctor interface + useEffect+useState+api.get pattern.
 // useDoctors() provides the same data with staleTime: 60s (cached across the app).

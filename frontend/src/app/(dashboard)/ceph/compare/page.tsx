@@ -1,14 +1,10 @@
 "use client";
+import { printScreen } from "@/lib/printUtils";
 import { Suspense, useMemo } from "react";
-import { printScreen } from "@/lib/printUtils";
 import Link from "next/link";
-import { printScreen } from "@/lib/printUtils";
 import { useRouter, useSearchParams } from "next/navigation";
-import { printScreen } from "@/lib/printUtils";
 import { useQuery } from "@tanstack/react-query";
-import { printScreen } from "@/lib/printUtils";
 import {
-import { printScreen } from "@/lib/printUtils";
   ArrowLeftRight,
   ArrowRight,
   Printer,
@@ -18,13 +14,9 @@ import { printScreen } from "@/lib/printUtils";
   AlertTriangle,
 } from "lucide-react";
 import api from "@/lib/api";
-import { printScreen } from "@/lib/printUtils";
 import { cn, formatArabicDate } from "@/lib/utils";
-import { printScreen } from "@/lib/printUtils";
 import type { CephAnalysis, CephCompareResult, CephCompareRow, MeasurementSeverity } from "@/types/ceph";
-import { printScreen } from "@/lib/printUtils";
 import { CephSuperimposeCanvas } from "@/components/ceph/CephSuperimposeCanvas";
-import { printScreen } from "@/lib/printUtils";
 
 // ─── Labels ──────────────────────────────────────────────────────────────────
 

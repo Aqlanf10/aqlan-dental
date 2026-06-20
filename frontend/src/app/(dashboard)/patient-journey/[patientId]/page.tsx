@@ -1,13 +1,10 @@
 "use client";
+import { printScreen } from "@/lib/printUtils";
 
 import { useState, useMemo, useCallback } from "react";
-import { printScreen } from "@/lib/printUtils";
 import { useParams, useRouter } from "next/navigation";
-import { printScreen } from "@/lib/printUtils";
 import Link from "next/link";
-import { printScreen } from "@/lib/printUtils";
 import {
-import { printScreen } from "@/lib/printUtils";
   Route, Stethoscope, CreditCard, Wrench, HeartPulse, Clock,
   FileText, RefreshCw, CalendarCheck, UserCheck,
   Megaphone, DoorOpen, PlayCircle, AlertTriangle,
@@ -18,17 +15,11 @@ import { printScreen } from "@/lib/printUtils";
   Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { printScreen } from "@/lib/printUtils";
 import { useAuthStore } from "@/stores/authStore";
-import { printScreen } from "@/lib/printUtils";
 import { toast } from "@/stores/toastStore";
-import { printScreen } from "@/lib/printUtils";
 import { downloadPdfFromApi } from "@/lib/pdfDownload";
-import { printScreen } from "@/lib/printUtils";
 import { useHasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
-import { printScreen } from "@/lib/printUtils";
 import {
-import { printScreen } from "@/lib/printUtils";
   useDailyJourneySummary,
   useJourneyIntake,
   useJourneySendToQueue,
@@ -37,24 +28,19 @@ import { printScreen } from "@/lib/printUtils";
   useJourneyCreateDraftInvoice,
 } from "@/hooks/usePatientJourney";
 import {
-import { printScreen } from "@/lib/printUtils";
   JOURNEY_STEPS,
   getStepIndex,
   APPOINTMENT_STATUS_ARABIC,
   NEXT_ACTION_ARABIC,
 } from "@/types/journey";
 import type {
-import { printScreen } from "@/lib/printUtils";
   TimelineEvent,
   DailyJourneyRecentVisit,
 } from "@/types/journey";
 import { Skeleton, CardSkeleton } from "@/components/ui/skeleton";
-import { printScreen } from "@/lib/printUtils";
 import api from "@/lib/api";
-import { printScreen } from "@/lib/printUtils";
 // FE-10: import shared helpers instead of re-declaring locally (was drifted: ar-SA vs ar-YE locale).
 import {
-import { printScreen } from "@/lib/printUtils";
   fmtRial,
   fmtDate,
   fmtTime,

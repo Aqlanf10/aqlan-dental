@@ -36,11 +36,16 @@ public static class CommissionCalculator
     public static Result Calculate(Input i)
     {
         // 1. Determine the commission base
+        // FIN-23: AfterDiscount and AfterDiscountAndCosts produce the same commissionBase
+        // (TotalPrice - LineDiscount). The difference is in step 2 where AfterDiscountAndCosts
+        // also deducts direct costs. The naming is misleading but the logic is correct.
+        // Added this comment to prevent a future developer from "fixing" the duplicate case
+        // by merging them — the cost deduction in step 2 depends on the distinction.
         var commissionBase = i.BaseRule switch
         {
             CommissionBaseRule.GrossAmount           => i.TotalPrice,
             CommissionBaseRule.AfterDiscount         => i.TotalPrice - i.LineDiscountAmount,
-            CommissionBaseRule.AfterDiscountAndCosts => i.TotalPrice - i.LineDiscountAmount,
+            CommissionBaseRule.AfterDiscountAndCosts => i.TotalPrice - i.LineDiscountAmount, // costs deducted in step 2
             _                                        => i.TotalPrice - i.LineDiscountAmount,
         };
         commissionBase = Math.Max(0, commissionBase);

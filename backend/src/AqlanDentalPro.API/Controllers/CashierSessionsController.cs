@@ -458,6 +458,11 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     }
 
     [HttpGet("active")]
+    // FIN-24: This legacy endpoint returns CashFlowTransaction-based expected amounts (cashflowExpected)
+    // while the V3 endpoint (FinanceV3Controller.CashierSessions.GetActiveCashierSessionV3) returns
+    // JournalLine-based expected amounts. During the dual-write migration these can drift.
+    // TODO: Once the CashFlowTransaction dual-write is removed, delete this endpoint and route
+    // Reception through V3 with an appropriate policy (or add Reception to ReportsAccess).
     [Obsolete("Use GET /api/finance-v3/cashier-sessions/active instead where ReportsAccess is allowed. This legacy endpoint remains fully active and returns canonical session data to preserve Reception access under FinanceAccess policy.")]
     public async Task<IActionResult> GetActiveSession()
     {

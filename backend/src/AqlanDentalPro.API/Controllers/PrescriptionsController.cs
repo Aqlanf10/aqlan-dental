@@ -161,10 +161,23 @@ public class PrescriptionsController(
 
         var drugsJson = JsonSerializer.SerializeToDocument(req.Drugs);
 
+        // CLIN-23: Prescription.DoctorId references Doctors.Id, NOT Users.Id — when the
+        // client omits doctorId, resolve the Doctor row of the current user (via
+        // Doctors.UserId) instead of writing the UserId (which would violate the FK).
+        // Mirrors the pattern established in LabOrdersController.Create.
+        Guid? resolvedDoctorId = req.DoctorId;
+        if (!resolvedDoctorId.HasValue && currentUser.UserId.HasValue)
+        {
+            resolvedDoctorId = await db.Doctors
+                .Where(d => d.UserId == currentUser.UserId.Value && d.IsActive)
+                .Select(d => (Guid?)d.Id)
+                .FirstOrDefaultAsync();
+        }
+
         var prescription = new Prescription
         {
             PatientId = req.PatientId,
-            DoctorId  = req.DoctorId ?? currentUser.UserId,
+            DoctorId  = resolvedDoctorId,
             VisitId   = req.VisitId,
             Diagnosis = req.Diagnosis,
             Drugs     = drugsJson,

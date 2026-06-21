@@ -26,5 +26,11 @@ public class VisitConfiguration : IEntityTypeConfiguration<Visit>
             .WithMany()
             .HasForeignKey(v => v.OrthoCaseId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        // CLIN-05: ortho bridge fields mirrored from OrthoVisit onto the linked Visit
+        // so daily-operations can display them without joining through OrthoVisits.
+        builder.Property(v => v.WireUpper).HasColumnType("text").IsRequired(false);
+        builder.Property(v => v.WireLower).HasColumnType("text").IsRequired(false);
+        builder.Property(v => v.CurrentStage).HasColumnType("text").IsRequired(false);
     }
 }

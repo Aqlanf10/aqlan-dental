@@ -258,6 +258,11 @@ public class PatientJourneyService(
                     OrthoLastVisitDate = orthoSummary?.LastVisitDate?.ToString("yyyy-MM-dd"),
                     OrthoNextAppointmentDate = orthoSummary?.NextAppointmentDate?.ToString("yyyy-MM-dd"),
                     OrthoContractRemaining = orthoSummary?.ContractRemaining,
+                    // CLIN-05: ortho bridge fields mirrored from the linked Visit
+                    // (set by OrthoService.AddVisitAsync). Null for non-ortho visits.
+                    OrthoVisitWireUpper = visit?.WireUpper,
+                    OrthoVisitWireLower = visit?.WireLower,
+                    OrthoVisitCurrentStage = visit?.CurrentStage,
                     InRoomSince = inRoomSince,
                     NextAction = nextAction
                 };
@@ -368,6 +373,10 @@ public class PatientJourneyService(
                         OrthoLastVisitDate = orthoSummary?.LastVisitDate?.ToString("yyyy-MM-dd"),
                         OrthoNextAppointmentDate = orthoSummary?.NextAppointmentDate?.ToString("yyyy-MM-dd"),
                         OrthoContractRemaining = orthoSummary?.ContractRemaining,
+                        // CLIN-05: ortho bridge fields mirrored from the linked Visit.
+                        OrthoVisitWireUpper = visit?.WireUpper,
+                        OrthoVisitWireLower = visit?.WireLower,
+                        OrthoVisitCurrentStage = visit?.CurrentStage,
                         InRoomSince = q.InRoomAt ?? q.StartedAt,
                         NextAction = nextAction
                     });
@@ -506,7 +515,11 @@ public class PatientJourneyService(
                     v.CheckoutStatus,
                     v.ReadyForCheckoutAt,
                     v.AmountDueReference,
-                    v.AppointmentId
+                    v.AppointmentId,
+                    // CLIN-05: ortho bridge fields mirrored from OrthoVisit
+                    v.WireUpper,
+                    v.WireLower,
+                    v.CurrentStage
                 })
                 .FirstOrDefaultAsync();
 
@@ -778,7 +791,11 @@ public class PatientJourneyService(
                     todayVisit.Cost,
                     todayVisit.NextVisitDate,
                     todayVisit.CheckoutStatus,
-                    todayVisit.AppointmentId
+                    todayVisit.AppointmentId,
+                    // CLIN-05: ortho bridge fields
+                    todayVisit.WireUpper,
+                    todayVisit.WireLower,
+                    todayVisit.CurrentStage
                 } : null;
             }
             else if (isReception)

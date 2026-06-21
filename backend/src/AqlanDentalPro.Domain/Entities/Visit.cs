@@ -33,6 +33,17 @@ public class Visit : BaseEntity
     /// <summary>Optional orthodontic case associated with this clinical visit.</summary>
     public Guid? OrthoCaseId { get; set; }
 
+    // ── Ortho bridge fields (CLIN-05) ──────────────────────────────────────
+    /// <summary>Mirrored from OrthoVisit.WireUpper when this Visit bridges an ortho visit
+    /// (e.g. "0.018 NiTi"). Null for non-ortho visits. Surfaces in daily-operations.</summary>
+    public string? WireUpper { get; set; }
+    /// <summary>Mirrored from OrthoVisit.WireLower when this Visit bridges an ortho visit.</summary>
+    public string? WireLower { get; set; }
+    /// <summary>Mirrored from OrthoVisit.CurrentStage when this Visit bridges an ortho visit
+    /// (e.g. "Alignment", "Space closing"). May differ from OrthoCase.CurrentStage if the
+    /// case stage was advanced after this visit was recorded.</summary>
+    public string? CurrentStage { get; set; }
+
     public Patient Patient { get; set; } = null!;
     public Appointment? Appointment { get; set; }
     public Doctor? Doctor { get; set; }

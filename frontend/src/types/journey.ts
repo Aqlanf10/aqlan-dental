@@ -79,6 +79,11 @@ export interface DailyJourneyVisit {
   readyForCheckoutAt?: string;
   amountDueReference?: number;
   appointmentId?: string;
+  // CLIN-05: ortho bridge fields mirrored from OrthoVisit onto the linked Visit
+  // by OrthoService.AddVisitAsync. Present only when the visit bridges an ortho visit.
+  wireUpper?: string | null;
+  wireLower?: string | null;
+  currentStage?: string | null;
 }
 
 /**

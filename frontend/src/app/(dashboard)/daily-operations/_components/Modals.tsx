@@ -1186,6 +1186,33 @@ export function PatientSidePanel({
             </div>
           )}
 
+          {/* CLIN-05: Today's ortho visit fields — shown when the linked Visit
+              carries today's ortho clinical data (wire info / current stage). */}
+          {(item.orthoVisitWireUpper || item.orthoVisitWireLower || item.orthoVisitCurrentStage) && (
+            <div>
+              <h4 className="text-xs font-bold mb-2 flex items-center gap-1.5" style={{ color: NAVY }}>
+                <Stethoscope className="w-3.5 h-3.5" /> إجراءات اليوم التقويمية
+              </h4>
+              <div className="p-3 rounded-lg space-y-1" style={{ background: "#eef2ff", border: "1px solid #c7d2fe" }}>
+                {item.orthoVisitWireUpper && (
+                  <div className="text-xs" style={{ color: "#4338ca" }}>
+                    <strong>السلك العلوي:</strong> {item.orthoVisitWireUpper}
+                  </div>
+                )}
+                {item.orthoVisitWireLower && (
+                  <div className="text-xs" style={{ color: "#4338ca" }}>
+                    <strong>السلك السفلي:</strong> {item.orthoVisitWireLower}
+                  </div>
+                )}
+                {item.orthoVisitCurrentStage && (
+                  <div className="text-xs" style={{ color: "#4338ca" }}>
+                    <strong>المرحلة الحالية:</strong> {item.orthoVisitCurrentStage}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Queue Wait Time */}
           {waitTime && waitTime.estimatedMinutes > 0 && (
             <div>

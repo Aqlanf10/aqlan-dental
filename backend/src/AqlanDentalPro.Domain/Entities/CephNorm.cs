@@ -41,4 +41,29 @@ public class CephNorm : BaseEntity
     public string? InterpretationAbove { get; set; }
 
     public int SortOrder { get; set; }
+
+    /// <summary>
+    /// CLIN-10 — Lower bound (inclusive) of the patient-age band this norm
+    /// applies to, in whole years. Null = no lower bound (matches any age
+    /// from 0 up to <see cref="AgeMax"/>). Used together with
+    /// <see cref="AgeMax"/> and <see cref="Sex"/> to stratify norms by
+    /// patient age and gender so a 10-year-old is never compared against an
+    /// adult norm. A row with all three null is "un-stratified" and acts as
+    /// a backward-compatible fallback for any patient.
+    /// </summary>
+    public int? AgeMin { get; set; }
+
+    /// <summary>
+    /// CLIN-10 — Upper bound (inclusive) of the patient-age band this norm
+    /// applies to, in whole years. Null = no upper bound (matches any age
+    /// from <see cref="AgeMin"/> upward).
+    /// </summary>
+    public int? AgeMax { get; set; }
+
+    /// <summary>
+    /// CLIN-10 — Sex this norm applies to: "M" or "F". Null = applies to
+    /// both sexes. When a patient's sex is known, the lookup prefers a
+    /// sex-specific row over a sex-null row for the same age band.
+    /// </summary>
+    public string? Sex { get; set; }
 }

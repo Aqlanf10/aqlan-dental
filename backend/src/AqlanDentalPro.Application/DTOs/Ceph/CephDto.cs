@@ -198,6 +198,18 @@ public class CephNormDto
     public string? InterpretationNormal { get; set; }
     public string? InterpretationAbove { get; set; }
     public int SortOrder { get; set; }
+
+    /// <summary>CLIN-10 — lower bound (inclusive) of the patient-age band, in
+    /// whole years. Null = no lower bound.</summary>
+    public int? AgeMin { get; set; }
+
+    /// <summary>CLIN-10 — upper bound (inclusive) of the patient-age band, in
+    /// whole years. Null = no upper bound.</summary>
+    public int? AgeMax { get; set; }
+
+    /// <summary>CLIN-10 — "M" or "F" for sex-specific norms, null for both
+    /// sexes.</summary>
+    public string? Sex { get; set; }
 }
 
 public class UpdateCephNormRequest
@@ -209,4 +221,58 @@ public class UpdateCephNormRequest
     public string? InterpretationBelow { get; set; }
     public string? InterpretationNormal { get; set; }
     public string? InterpretationAbove { get; set; }
+
+    /// <summary>CLIN-10 — lower bound (inclusive) of the patient-age band. Null
+    /// = no lower bound (the row applies to any age from 0 up to AgeMax, or to
+    /// any age if AgeMax is also null).</summary>
+    public int? AgeMin { get; set; }
+
+    /// <summary>CLIN-10 — upper bound (inclusive) of the patient-age band. Null
+    /// = no upper bound.</summary>
+    public int? AgeMax { get; set; }
+
+    /// <summary>CLIN-10 — "M" or "F" for a sex-specific norm, null for both
+    /// sexes. When non-null, the lookup prefers this row over a sex-null row
+    /// for the same age band on a matching-sex patient.</summary>
+    public string? Sex { get; set; }
+}
+
+/// <summary>
+/// CLIN-10 — payload for POST /api/ceph-norms. Creates a new configurable norm
+/// row. Admin-only. The clinic owner (an orthodontist) uses this to add
+/// population-specific norms for an age/sex stratum not covered by the factory
+/// defaults.
+/// </summary>
+public class CreateCephNormRequest
+{
+    public string MeasurementName { get; set; } = string.Empty;
+    public string? NameAr { get; set; }
+    public string AnalysisGroup { get; set; } = string.Empty;
+    public decimal NormalValue { get; set; }
+    public decimal StdDeviation { get; set; }
+    public decimal? MinNormal { get; set; }
+    public decimal? MaxNormal { get; set; }
+    public string Unit { get; set; } = "°";
+    public string? Category { get; set; }
+    public string? InterpretationBelow { get; set; }
+    public string? InterpretationNormal { get; set; }
+    public string? InterpretationAbove { get; set; }
+    public int SortOrder { get; set; }
+    public int? AgeMin { get; set; }
+    public int? AgeMax { get; set; }
+    public string? Sex { get; set; }
+}
+
+/// <summary>
+/// CLIN-10 — query parameters for GET /api/ceph-norms/best. Returns the
+/// best-matching norm for a patient's age/sex using the same priority tiers
+/// as CephService.FindBestCephNorm (sex-specific+age-matched &gt; sex-null+age-
+/// matched &gt; un-stratified fallback).
+/// </summary>
+public class CephNormBestMatchRequest
+{
+    public string MeasurementName { get; set; } = string.Empty;
+    public string AnalysisGroup { get; set; } = string.Empty;
+    public int? Age { get; set; }
+    public string? Sex { get; set; }
 }

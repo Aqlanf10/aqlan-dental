@@ -3,6 +3,7 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -163,10 +164,23 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         int? patientAge = null;
         if (patient?.DateOfBirth is { } dob)
         {
-            var today = DateTime.Today;
+            // CLIN-10: ClinicTimeProvider.ClinicToday respects the configured
+            // clinic timezone (Asia/Aden, UTC+3) — DateTime.Today on Railway
+            // (UTC) was returning the wrong calendar day for evening clinics.
+            var today = ClinicTimeProvider.ClinicToday();
             patientAge = today.Year - dob.Year;
-            if (dob > DateOnly.FromDateTime(today.AddYears(-patientAge.Value))) patientAge--;
+            if (dob > today.AddYears(-patientAge.Value)) patientAge--;
         }
+        // CLIN-10: map Patient.Gender enum → "M"/"F"/null string for the
+        // stratified norm lookup. Sex-specific DB norms (Sex="M" or "F") win
+        // over sex-null norms for the same age band when the patient sex is
+        // known; sex-null norms are the fallback for unknown-sex patients.
+        var patientSex = patient?.Gender switch
+        {
+            Gender.Male   => "M",
+            Gender.Female => "F",
+            _             => null,
+        };
         var isFemale = patient?.Gender == Gender.Female;
 
         var lm = analysis.Landmarks
@@ -194,9 +208,11 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         // Load configurable norms once per call. The hardcoded values passed to
         // Add(...) below remain as FALLBACK when a norm row is missing — the
         // computation must never break because of missing configuration.
-        var dbNorms = (await db.CephNorms.ToListAsync())
-            .GroupBy(n => (n.MeasurementName, n.AnalysisGroup))
-            .ToDictionary(g => g.Key, g => g.First());
+        // CLIN-10: keep the full list (multiple stratified rows may exist per
+        // measurement/group now) and pick the best match per Add() call via
+        // FindBestCephNorm — sex-specific+age-matched > sex-null+age-matched >
+        // un-stratified fallback > null (caller uses hardcoded default).
+        var dbNorms = await db.CephNorms.ToListAsync();
 
         var results = new List<(string name, string group, double value, double normal, double sd, string unit, decimal? min, decimal? max)>();
         void Add(string name, string group, double value, double normal, double sd, string unit)
@@ -213,7 +229,12 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
                 if (name == "SNA" || name == "SNB") normal -= 1.0;
                 if (name == "Wits") normal -= 1.0;
             }
-            if (dbNorms.TryGetValue((name, group), out var norm))
+            // CLIN-10: best-match lookup by patient age + sex. Returns null
+            // when no stratified row matches the patient's age band AND no
+            // un-stratified fallback exists — in that case the age/sex-adjusted
+            // hardcoded fallback above is used (±2SD range).
+            var norm = FindBestCephNorm(dbNorms, name, group, patientAge, patientSex);
+            if (norm is not null)
             {
                 normal = (double)norm.NormalValue;
                 sd     = (double)norm.StdDeviation;
@@ -792,14 +813,39 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
                 (c, p) => (p.FirstName + " " + p.LastName).Trim())
             .FirstOrDefaultAsync();
 
+        // CLIN-10: load the patient (DOB + gender) for stratified norm lookup.
+        // Both analyses belong to the same ortho case (verified above) so a
+        // single patient lookup is sufficient. Age is computed via
+        // ClinicTimeProvider.ClinicToday (Asia/Aden) so Railway's UTC clock
+        // doesn't drift the calendar day.
+        var patient = await db.OrthoCases
+            .Where(c => c.Id == baseA.OrthoCaseId)
+            .Join(db.Patients, c => c.PatientId, p => p.Id, (c, p) => p)
+            .FirstOrDefaultAsync();
+        int? patientAge = null;
+        if (patient?.DateOfBirth is { } dob)
+        {
+            var today = ClinicTimeProvider.ClinicToday();
+            patientAge = today.Year - dob.Year;
+            if (dob > today.AddYears(-patientAge.Value)) patientAge--;
+        }
+        var patientSex = patient?.Gender switch
+        {
+            Gender.Male   => "M",
+            Gender.Female => "F",
+            _             => null,
+        };
+
         var measurements = await db.CephMeasurements
             .Where(m => (m.AnalysisId == baseId || m.AnalysisId == targetId) && m.IsActive)
             .ToListAsync();
 
-        var norms = await db.CephNorms.Where(n => n.IsActive).ToListAsync();
-        var normByName = norms
-            .GroupBy(n => n.MeasurementName)
-            .ToDictionary(g => g.Key, g => g.First());
+        // CLIN-10: keep the full norm list (multiple stratified rows per
+        // measurement/group now) and pick the best match per row via
+        // FindBestCephNorm. The measurement-name → analysis-group mapping uses
+        // GetMeasurementGroup (the canonical fallback the rest of the engine
+        // uses for norm grouping).
+        var norms = await db.CephNorms.ToListAsync();
 
         var baseMap = measurements.Where(m => m.AnalysisId == baseId)
             .GroupBy(m => m.MeasurementName).ToDictionary(g => g.Key, g => g.First());
@@ -811,7 +857,7 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
             {
                 baseMap.TryGetValue(name, out var b);
                 targetMap.TryGetValue(name, out var t);
-                var norm = normByName.GetValueOrDefault(name);
+                var norm = FindBestCephNorm(norms, name, GetMeasurementGroup(name), patientAge, patientSex);
                 var normal = norm?.NormalValue ?? b?.NormalValue ?? t?.NormalValue;
 
                 bool? improved = null;
@@ -1065,6 +1111,106 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
             return Math.Abs(sdNorm) <= 2.0 ? "mild" : "severe";
         }
         return ClassifyDeviation(sdNorm);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  CLIN-10 — STRATIFIED NORM LOOKUP
+    // ──────────────────────────────────────────────────────────────────────────
+    /// <summary>
+    /// Picks the best-matching <see cref="CephNorm"/> row for a given
+    /// measurement, analysis group, and patient age/sex. Match priority
+    /// (highest first):
+    /// <list type="number">
+    ///   <item><b>Sex-specific + age-matched</b> — Sex equals patientSex (non-null)
+    ///     AND AgeMin/AgeMax form a band containing patientAge.</item>
+    ///   <item><b>Sex-null + age-matched</b> — Sex is null AND AgeMin/AgeMax form
+    ///     a band containing patientAge. Used when patientSex is null OR when no
+    ///     sex-specific row exists for the matched band.</item>
+    ///   <item><b>Un-stratified fallback</b> — AgeMin, AgeMax, and Sex all null.
+    ///     Applies to any patient. Backward-compatible with pre-CLIN-10 rows.</item>
+    ///   <item><b>null</b> — caller uses the hardcoded built-in default. This is
+    ///     the patient-safety escape hatch: a child norm is NEVER returned for an
+    ///     adult and vice versa.</item>
+    /// </list>
+    /// Patient-safety invariant: a banded row (AgeMin or AgeMax set) NEVER
+    /// matches a patient outside its band. A 30-year-old cannot match a 6–12
+    /// child row even when it's the only row present — <c>null</c> is returned
+    /// and the caller falls back to the hardcoded default rather than a
+    /// wrong-age norm.
+    /// </summary>
+    /// <param name="norms">All norm rows for the call site (caller pre-filters
+    /// soft-deleted via the global query filter; this method does not re-filter
+    /// by IsActive).</param>
+    /// <param name="measurementName">Canonical measurement key (e.g. "SNA").</param>
+    /// <param name="analysisGroup">Analysis group (e.g. "steiner").</param>
+    /// <param name="patientAge">Patient age in whole years, or null when DOB
+    /// missing. When null, banded rows are skipped (can't safely match without
+    /// the age) and only the un-stratified fallback is considered.</param>
+    /// <param name="patientSex">"M" or "F", or null when sex unknown. When null,
+    /// sex-specific rows are skipped and sex-null rows win.</param>
+    /// <returns>Best-matching norm, or null when no row safely applies.</returns>
+    public static CephNorm? FindBestCephNorm(
+        IEnumerable<CephNorm> norms,
+        string measurementName,
+        string analysisGroup,
+        int? patientAge,
+        string? patientSex)
+    {
+        if (string.IsNullOrEmpty(measurementName) || string.IsNullOrEmpty(analysisGroup))
+            return null;
+
+        // Filter to rows for this measurement + group once. Order doesn't
+        // matter here — the priority tiers below pick the winner deterministically.
+        var candidates = norms
+            .Where(n => n.MeasurementName == measurementName && n.AnalysisGroup == analysisGroup)
+            .ToList();
+        if (candidates.Count == 0) return null;
+
+        // Tier 1 + 2: age-matched rows. A row qualifies as "age-matched" when
+        // it has a SPECIFIC age band (AgeMin or AgeMax set) AND the patient
+        // age falls inside [AgeMin, AgeMax] (inclusive bounds, null = open).
+        // Patient-safety: when patientAge is null, NO banded row qualifies —
+        // we can't safely match without knowing the patient's age.
+        List<CephNorm> ageMatched = new();
+        if (patientAge.HasValue)
+        {
+            int age = patientAge.Value;
+            foreach (var n in candidates)
+            {
+                bool hasBand = n.AgeMin.HasValue || n.AgeMax.HasValue;
+                if (!hasBand) continue;
+                bool lowerOk = !n.AgeMin.HasValue || n.AgeMin.Value <= age;
+                bool upperOk = !n.AgeMax.HasValue || n.AgeMax.Value >= age;
+                if (lowerOk && upperOk) ageMatched.Add(n);
+            }
+        }
+
+        // Tier 1: sex-specific age-matched. Wins only when patientSex is known.
+        if (patientSex is not null)
+        {
+            var sexSpecific = ageMatched.FirstOrDefault(n => n.Sex == patientSex);
+            if (sexSpecific is not null) return sexSpecific;
+        }
+
+        // Tier 2: sex-null age-matched. The default age-band row for the
+        // matched band (applies to both sexes when no sex-specific row exists,
+        // or always when patientSex is null).
+        var sexNullAgeMatched = ageMatched.FirstOrDefault(n => n.Sex is null);
+        if (sexNullAgeMatched is not null) return sexNullAgeMatched;
+
+        // Tier 3: un-stratified fallback — AgeMin, AgeMax, Sex all null. This
+        // is the pre-CLIN-10 row shape; applies to any patient. Returned when
+        // no stratified row matches (e.g. measurement has only an un-stratified
+        // row, or patient is outside every banded row).
+        var unstratified = candidates.FirstOrDefault(n =>
+            !n.AgeMin.HasValue && !n.AgeMax.HasValue && n.Sex is null);
+        if (unstratified is not null) return unstratified;
+
+        // Tier 4: no safe match — caller uses the hardcoded built-in default.
+        // Patient-safety escape hatch: we would rather return null (and let the
+        // caller use the age/sex-adjusted hardcoded fallback) than return a
+        // wrong-age or wrong-sex norm.
+        return null;
     }
 
     // ──────────────────────────────────────────────────────────────────────────

@@ -13,6 +13,12 @@ public static class DbSeeder
 {
     public static async Task SeedAsync(AppDbContext context, ILogger logger)
     {
+        // SEC-11: warn (don't crash) if the admin/staff seed password from env
+        // does not meet the centralized PasswordPolicy. The seed still proceeds
+        // (the password is hashed and stored) so we don't lock the admin out of
+        // a fresh deploy — but operators get a loud log line to fix the env var.
+        LogAdminDefaultPasswordPolicyWarning(logger);
+
         // ── Critical admin operations: always run first, independently of migration status ──
         // These must succeed even if MigrateAsync fails, otherwise the admin can be locked out
         // with no email and no way to recover.
@@ -972,5 +978,39 @@ public static class DbSeeder
             Iterations = 3
         };
         return Convert.ToBase64String(argon2.GetBytes(32));
+    }
+
+    /// <summary>
+    /// SEC-11: Logs a warning (never crashes) if the admin/staff seed password
+    /// from ADMIN_DEFAULT_PASSWORD / ADMIN_RESET_PASSWORD does not satisfy the
+    /// centralized PasswordPolicy. The seed still proceeds so we don't lock the
+    /// admin out of a fresh deploy — operators see the warning and tighten the
+    /// env var. Skipped silently when neither env var is set (dev-fallback path
+    /// uses "AqlanDental2024!" which already meets policy).
+    /// </summary>
+    private static void LogAdminDefaultPasswordPolicyWarning(ILogger logger)
+    {
+        try
+        {
+            var password = Environment.GetEnvironmentVariable("ADMIN_RESET_PASSWORD")
+                        ?? Environment.GetEnvironmentVariable("ADMIN_DEFAULT_PASSWORD");
+            if (string.IsNullOrWhiteSpace(password))
+                return; // dev-fallback ("AqlanDental2024!") is used and meets policy.
+
+            var (valid, arabicError) = AqlanDentalPro.Application.Common.PasswordPolicy.Validate(password);
+            if (!valid)
+            {
+                logger.LogWarning(
+                    "SEC-11: ADMIN_DEFAULT_PASSWORD / ADMIN_RESET_PASSWORD does not meet the password policy " +
+                    "({Error}). Seeding proceeds anyway to avoid lockout, but you MUST set a compliant env var " +
+                    "and have the admin change their password on first login.",
+                    arabicError);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Never let the policy check itself break seeding.
+            logger.LogWarning(ex, "SEC-11: failed to validate ADMIN_DEFAULT_PASSWORD against policy, continuing.");
+        }
     }
 }

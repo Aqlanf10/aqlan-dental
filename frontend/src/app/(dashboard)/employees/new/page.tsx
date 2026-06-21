@@ -53,8 +53,16 @@ function validate(data: CreateEmployeeRequest): FormErrors {
     errors.username = "اسم المستخدم يجب أن يحتوي على أحرف لاتينية وأرقام وشرطة سفلية فقط";
   }
 
+  // SEC-11: client-side mirror of the centralized PasswordPolicy.
+  // The backend is the source of truth — this is UX only.
   if (!data.password || data.password.length < 8) {
     errors.password = "كلمة المرور يجب أن تكون 8 أحرف على الأقل";
+  } else if (!/[A-Z]/.test(data.password)) {
+    errors.password = "كلمة المرور يجب أن تحتوي على حرف كبير واحد على الأقل";
+  } else if (!/[a-z]/.test(data.password)) {
+    errors.password = "كلمة المرور يجب أن تحتوي على حرف صغير واحد على الأقل";
+  } else if (!/[0-9]/.test(data.password)) {
+    errors.password = "كلمة المرور يجب أن تحتوي على رقم واحد على الأقل";
   }
 
   if (!data.role) {
@@ -234,8 +242,9 @@ export default function NewEmployeePage() {
                   {errors.password && (
                     <p className="text-red-500 text-xs mt-1">{errors.password}</p>
                   )}
+                  {/* SEC-11: password complexity hint (UX only — backend enforces) */}
                   <p className="text-gray-400 text-xs mt-1">
-                    كلمة المرور الافتراضية: Aqlan@2024
+                    8+ أحرف، يحتوي على رقم وحرف كبير
                   </p>
                 </div>
 

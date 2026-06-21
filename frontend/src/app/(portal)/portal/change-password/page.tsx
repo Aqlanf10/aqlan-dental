@@ -27,8 +27,22 @@ export default function ChangePasswordPage() {
       setError("أدخل كلمة المرور الحالية");
       return;
     }
-    if (!newPassword || newPassword.length < 4) {
-      setError("كلمة المرور الجديدة يجب أن تكون 4 أحرف على الأقل");
+    // SEC-11: client-side mirror of PasswordPolicy (8+ chars, digit, upper, lower).
+    // The backend is the source of truth — this is UX only.
+    if (!newPassword || newPassword.length < 8) {
+      setError("كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل");
+      return;
+    }
+    if (!/[A-Z]/.test(newPassword)) {
+      setError("كلمة المرور يجب أن تحتوي على حرف كبير واحد على الأقل");
+      return;
+    }
+    if (!/[a-z]/.test(newPassword)) {
+      setError("كلمة المرور يجب أن تحتوي على حرف صغير واحد على الأقل");
+      return;
+    }
+    if (!/[0-9]/.test(newPassword)) {
+      setError("كلمة المرور يجب أن تحتوي على رقم واحد على الأقل");
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -131,7 +145,7 @@ export default function ChangePasswordPage() {
                   type={showNewPassword ? "text" : "password"}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="4 أحرف على الأقل"
+                  placeholder="8 أحرف على الأقل"
                   dir="ltr"
                   className={cn(
                     "w-full px-4 py-3 rounded-lg border bg-white text-[#0d2137] text-left",
@@ -147,6 +161,10 @@ export default function ChangePasswordPage() {
                   {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              {/* SEC-11: password complexity hint (UX only — backend enforces) */}
+              <p className="mt-1 text-xs text-[#94a3b8]">
+                8+ أحرف، يحتوي على رقم وحرف كبير
+              </p>
             </div>
 
             <div>

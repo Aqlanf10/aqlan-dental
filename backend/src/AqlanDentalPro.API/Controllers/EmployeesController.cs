@@ -1,3 +1,4 @@
+using AqlanDentalPro.Application.Common;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -202,8 +203,13 @@ public class EmployeesController(AppDbContext db, ILogger<EmployeesController> l
         // Create User account
         // SEC-02 FIX: Generate secure random temporary password instead of hardcoded default
         string tempPassword;
-        if (!string.IsNullOrWhiteSpace(req.Password) && req.Password.Length >= 8)
+        if (!string.IsNullOrWhiteSpace(req.Password))
         {
+            // SEC-11: validate admin-supplied password against the centralized policy.
+            // (Auto-generated passwords use GenerateSecureTemporaryPassword which always meets policy.)
+            var (valid, policyError) = PasswordPolicy.Validate(req.Password);
+            if (!valid)
+                return BadRequest(new { message = policyError });
             tempPassword = req.Password;
         }
         else

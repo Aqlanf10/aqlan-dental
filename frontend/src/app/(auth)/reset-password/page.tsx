@@ -48,6 +48,9 @@ function ResetPasswordContent() {
     e.preventDefault();
     setError("");
 
+    // SEC-11: client-side mirror of the centralized PasswordPolicy.
+    // The backend is the source of truth — this is UX only. Special
+    // characters are NOT required (user-friendly for Arabic patients).
     if (!newPassword || newPassword.length < 8) {
       setError("كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل");
       return;
@@ -62,10 +65,6 @@ function ResetPasswordContent() {
     }
     if (!/[0-9]/.test(newPassword)) {
       setError("كلمة المرور يجب أن تحتوي على رقم واحد على الأقل");
-      return;
-    }
-    if (!/[^A-Za-z0-9]/.test(newPassword)) {
-      setError("كلمة المرور يجب أن تحتوي على رمز خاص واحد على الأقل (مثل !@#$%)");
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -201,7 +200,7 @@ function ResetPasswordContent() {
             </div>
             <h2 className="text-xl font-bold text-white">إعادة تعيين كلمة المرور</h2>
             <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.55)" }}>
-              أدخل كلمة المرور الجديدة (8 أحرف على الأقل، حرف كبير + صغير + رقم + رمز خاص)
+              أدخل كلمة المرور الجديدة (8 أحرف على الأقل، حرف كبير + صغير + رقم)
             </p>
           </div>
 
@@ -256,7 +255,7 @@ function ResetPasswordContent() {
                     type={showNewPassword ? "text" : "password"}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="8 أحرف على الأقل - حرف كبير + صغير + رقم + رمز"
+                    placeholder="8 أحرف على الأقل - حرف كبير + صغير + رقم"
                     dir="ltr"
                     className="w-full py-2.5 px-3.5 rounded-[10px] text-white text-sm outline-none transition-colors text-left"
                     style={inputStyle(!!error)}

@@ -5,12 +5,13 @@ import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Save, Search, ArrowRight } from "lucide-react";
+import { Save, ArrowRight } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
 import { SURGERY_TYPES } from "@/types/surgery";
 import api from "@/lib/api";
 import { useDoctors } from "@/hooks/useDoctors";
 import { cn } from "@/lib/utils";
+import { PatientCombobox } from "@/components/shared/PatientCombobox";
 
 interface Doctor { id: string; name: string; color?: string; }
 
@@ -36,9 +37,6 @@ function NewSurgeryForm() {
   const [serverError, setServerError] = useState("");
   // FE-13: useDoctors() replaces useState + useEffect + api.get.
   const { data: doctors = [] } = useDoctors();
-  const [patientSearch, setPatientSearch] = useState("");
-  const [patientResults, setPatientResults] = useState<PatientListItem[]>([]);
-  const [showPatientDropdown, setShowPatientDropdown] = useState(false);
 
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -46,24 +44,7 @@ function NewSurgeryForm() {
 
   useEffect(() => {
     if (prePatientId) setValue("patientId", prePatientId);
-    if (prePatientName) setPatientSearch(prePatientName);
-  }, [prePatientId, prePatientName, setValue]);
-
-  useEffect(() => {
-    if (patientSearch.length < 2) { setPatientResults([]); return; }
-    const t = setTimeout(() => {
-      api.get<import("@/types/api").PaginatedResponse<PatientListItem>>(`/api/patients?search=${encodeURIComponent(patientSearch)}&pageSize=8`)
-        .then((r) => setPatientResults(r.data.data))
-        .catch(() => {});
-    }, 300);
-    return () => clearTimeout(t);
-  }, [patientSearch]);
-
-  const selectPatient = (p: PatientListItem) => {
-    setValue("patientId", p.id);
-    setPatientSearch(`${p.fullName} (${p.patientNumber})`);
-    setShowPatientDropdown(false);
-  };
+  }, [prePatientId, setValue]);
 
   const onSubmit = async (data: FormData) => {
     setSaving(true);
@@ -101,30 +82,11 @@ function NewSurgeryForm() {
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-1.5">المريض <span className="text-red-500">*</span></label>
-            <div className="relative">
-              <Search className="absolute right-3 top-2.5 w-4 h-4 text-gray-400" />
-              <input
-                value={patientSearch}
-                onChange={(e) => { setPatientSearch(e.target.value); setShowPatientDropdown(true); }}
-                onFocus={() => patientSearch.length >= 2 && setShowPatientDropdown(true)}
-                onBlur={() => setTimeout(() => setShowPatientDropdown(false), 150)}
-                placeholder="ابحث بالاسم أو الرقم..."
-                className={cn(inputCls(errors.patientId?.message), "pe-9")}
-                autoComplete="off"
-              />
-              {showPatientDropdown && patientResults.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white rounded-lg border border-gray-200 shadow-lg max-h-48 overflow-y-auto">
-                  {patientResults.map((p) => (
-                    <button key={p.id} type="button" onMouseDown={() => selectPatient(p)}
-                      className="w-full text-start px-3 py-2.5 text-sm hover:bg-gray-50 flex items-center justify-between"
-                    >
-                      <span className="font-medium">{p.fullName}</span>
-                      <span className="text-xs text-gray-400 font-mono">{p.patientNumber}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <PatientCombobox
+              defaultDisplayValue={prePatientName ?? ""}
+              onSelect={(p: PatientListItem) => setValue("patientId", p.id)}
+              error={errors.patientId?.message}
+            />
             <input type="hidden" {...register("patientId")} />
             {errors.patientId && <p className="mt-1 text-xs text-red-600">{errors.patientId.message}</p>}
           </div>

@@ -20,6 +20,7 @@ import type { PaymentListItem, RegisterPaymentRequest } from "./types";
 import { PAYMENT_METHODS } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, tokens, inputStyle, labelStyle, btnPrimary, btnGhost } from "./FinanceSharedUI";
 import { formatYER, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
+import { PatientCombobox } from "@/components/shared/PatientCombobox";
 
 /* ── Inline types for API responses ──────────────────────────────────────────── */
 interface PatientInvoice {
@@ -67,8 +68,6 @@ export function CollectionsTab() {
   const { data: activeCashierSession } = useActiveCashierSession();
 
   // Register payment form state
-  const [patientSearch, setPatientSearch] = useState("");
-  const [patientOptions, setPatientOptions] = useState<{ id: string; fullName: string; patientNumber: string }[]>([]);
   const [selectedPatient, setSelectedPatient] = useState("");
   const [invoiceOptions, setInvoiceOptions] = useState<{ id: string; invoiceNumber: string; balance: number }[]>([]);
   const [contractOptions, setContractOptions] = useState<{ id: string; contractNumber: string; outstandingAmount: number }[]>([]);
@@ -83,15 +82,6 @@ export function CollectionsTab() {
   }, []);
 
   useEffect(() => { fetchPayments(); }, [fetchPayments]);
-
-  // Patient search
-  const searchPatients = useCallback(async (q: string) => {
-    if (q.length < 2) { setPatientOptions([]); return; }
-    try {
-      const { data } = await api.get<{ data: { id: string; fullName: string; patientNumber: string }[] }>("/api/patients", { params: { search: q, pageSize: 10 } });
-      setPatientOptions(data.data ?? data as unknown as { id: string; fullName: string; patientNumber: string }[] ?? []);
-    } catch { /* ignore */ }
-  }, []);
 
   const onPatientSelect = async (patientId: string) => {
     setSelectedPatient(patientId);
@@ -199,7 +189,7 @@ export function CollectionsTab() {
   };
 
   const resetForm = () => {
-    setPatientSearch(""); setSelectedPatient(""); setPatientOptions([]);
+    setSelectedPatient("");
     setInvoiceOptions([]); setContractOptions([]);
     setSelectedInvoice(""); setSelectedContract("");
     setPayAmount(""); setPayMethod("cash"); setPayNotes("");
@@ -299,21 +289,7 @@ export function CollectionsTab() {
           {/* Patient search */}
           <div>
             <label style={labelStyle}>المريض <span style={{ color: tokens.dangerBorder }}>*</span></label>
-            <input
-              value={patientSearch}
-              onChange={(e) => { setPatientSearch(e.target.value); searchPatients(e.target.value); }}
-              placeholder="ابحث بالاسم أو الرقم..."
-              style={inputStyle}
-            />
-            {patientOptions.length > 0 && !selectedPatient && (
-              <div className="mt-1 rounded-md border max-h-40 overflow-y-auto" style={{ borderColor: tokens.border }}>
-                {patientOptions.map((p) => (
-                  <button key={p.id} onClick={() => { setPatientSearch(`${p.fullName} (${p.patientNumber})`); onPatientSelect(p.id); }} className="w-full text-right px-3 py-2 text-sm transition-colors" style={{ color: tokens.textPrimary }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = tokens.cardHover; }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}>
-                    {p.fullName} ({p.patientNumber})
-                  </button>
-                ))}
-              </div>
-            )}
+            <PatientCombobox onSelect={(p) => onPatientSelect(p.id)} placeholder="ابحث بالاسم أو الرقم..." />
           </div>
 
           {/* Select invoice or contract */}

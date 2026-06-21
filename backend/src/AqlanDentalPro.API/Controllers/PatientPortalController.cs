@@ -15,6 +15,12 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
 {
     private readonly IConfiguration Configuration = configuration;
     private readonly ILogger<PatientPortalController> Logger = logger;
+
+    // SEC-10: cookie name carrying the long-lived patient refresh token.
+    // HttpOnly (no JS access) + Secure (HTTPS only, dev-configurable) +
+    // SameSite (Lax by default, configurable to None for cross-site) + Essential.
+    public const string RefreshTokenCookie = "portal_refresh";
+
     // ── Auth Endpoints (No auth required) ───────────────────────────────────
 
     [HttpPost("auth/login")]
@@ -26,6 +32,10 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
         {
             var (response, error) = await portalService.LoginAsync(req.Username, req.Password);
             if (response == null) return BadRequest(new { message = error });
+            // SEC-10: deliver the refresh token as an HttpOnly cookie so XSS
+            // cannot exfiltrate it. The body field stays for one release
+            // (backward compat for stale frontends).
+            SetRefreshTokenCookie(response.RefreshToken);
             return Ok(response);
         }
         catch (Exception ex)
@@ -73,6 +83,8 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
         {
             var (response, error) = await portalService.ResetPasswordAsync(req.PhoneNumber, req.Code, req.NewPassword);
             if (response == null) return BadRequest(new { message = error });
+            // SEC-10: set HttpOnly refresh-token cookie (same as login).
+            SetRefreshTokenCookie(response.RefreshToken);
             return Ok(response);
         }
         catch (Exception ex)
@@ -94,6 +106,8 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
         {
             var (response, error) = await portalService.ChangePasswordAsync(patientId.Value, req.CurrentPassword, req.NewPassword);
             if (response == null) return BadRequest(new { message = error });
+            // SEC-10: rotate the HttpOnly refresh-token cookie on password change.
+            SetRefreshTokenCookie(response.RefreshToken);
             return Ok(response);
         }
         catch (Exception ex)
@@ -106,16 +120,45 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
     [HttpPost("auth/refresh-token")]
     [AllowAnonymous]
     [EnableRateLimiting("PortalAuthPolicy")] // SEC-16: rate-limit refresh-token (5/min/IP)
-    public async Task<IActionResult> RefreshToken([FromBody] PatientRefreshTokenRequest req)
+    public async Task<IActionResult> RefreshToken([FromBody] PatientRefreshTokenRequest? req)
     {
         // Extract patientId from the (possibly expired) JWT in the Authorization header
         var patientId = ExtractPatientIdFromToken();
         if (patientId == null) return Unauthorized(new { message = "غير مصرح — رمز التحديث غير صالح" });
 
+        // SEC-10: read the refresh token from the HttpOnly cookie FIRST.
+        // Falls back to the request body for one release (backward compat with
+        // stale frontends). When the body path is used, log a warning so
+        // operators can track the remaining old-frontends.
+        var refreshToken = Request.Cookies[RefreshTokenCookie];
+        if (string.IsNullOrEmpty(refreshToken))
+        {
+            refreshToken = req?.RefreshToken;
+            if (!string.IsNullOrEmpty(refreshToken))
+            {
+                Logger.LogWarning(
+                    "SEC-10: patient {PatientId} sent refresh token in request body instead of cookie — deprecated path, will be removed next release",
+                    patientId);
+            }
+            else
+            {
+                return Unauthorized(new { message = "غير مصرح — رمز التحديث غير صالح" });
+            }
+        }
+
         try
         {
-            var (response, error) = await portalService.RefreshTokenAsync(patientId.Value, req.RefreshToken);
-            if (response == null) return BadRequest(new { message = error });
+            var (response, error) = await portalService.RefreshTokenAsync(patientId.Value, refreshToken);
+            if (response == null)
+            {
+                // SEC-10: clear the cookie on refresh failure so the browser
+                // stops sending an invalid token. Includes the body-fallback
+                // case where the rotated-then-stolen old token fails.
+                Response.Cookies.Delete(RefreshTokenCookie);
+                return BadRequest(new { message = error });
+            }
+            // SEC-10: rotation — issue a fresh cookie with the new token.
+            SetRefreshTokenCookie(response.RefreshToken);
             return Ok(response);
         }
         catch (Exception ex)
@@ -132,12 +175,15 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
         // SEC-09: clears the persisted refresh-token hash so any stolen-then-logged-out
         // token can no longer be used to refresh. The client must also discard its
         // local copy (frontend patientAuthStore.logout).
+        // SEC-10: also delete the HttpOnly cookie — the browser discards its copy
+        // so subsequent requests carry no refresh token at all.
         var patientId = GetPatientId();
         if (patientId == null) return Unauthorized(new { message = "غير مصرح" });
 
         try
         {
             await portalService.LogoutAsync(patientId.Value);
+            Response.Cookies.Delete(RefreshTokenCookie);
             return Ok(new { message = "تم تسجيل الخروج بنجاح" });
         }
         catch (Exception ex)
@@ -145,6 +191,44 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
             Logger.LogError(ex, "Portal logout failed for patient {PatientId}", patientId);
             return StatusCode(500, new { message = "حدث خطأ أثناء تسجيل الخروج. يرجى المحاولة لاحقاً" });
         }
+    }
+
+    /// <summary>
+    /// SEC-10: writes the patient refresh token as an HttpOnly + Secure +
+    /// SameSite cookie. Secure is configurable via <c>PatientPortal:CookieSecure</c>
+    /// (default <c>true</c> — set <c>false</c> only for http://localhost dev).
+    /// SameSite is configurable via <c>PatientPortal:CookieSameSite</c>
+    /// (default <c>Lax</c>; set <c>None</c> when the frontend calls the API
+    /// cross-site — requires <c>Secure=true</c>).
+    /// </summary>
+    private void SetRefreshTokenCookie(string? token)
+    {
+        if (string.IsNullOrEmpty(token)) return;
+
+        var secure = Configuration.GetValue<bool?>("PatientPortal:CookieSecure") ?? true;
+        var sameSite = ParseSameSite(Configuration["PatientPortal:CookieSameSite"], SameSiteMode.Lax);
+        var expiryDays = Configuration.GetValue<int?>("PatientPortal:CookieExpiryDays") ?? 7;
+
+        Response.Cookies.Append(RefreshTokenCookie, token, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = secure,
+            SameSite = sameSite,
+            IsEssential = true,
+            Expires = DateTimeOffset.UtcNow.AddDays(expiryDays),
+            Path = "/"
+        });
+    }
+
+    private static SameSiteMode ParseSameSite(string? value, SameSiteMode defaultMode)
+    {
+        return value?.Trim().ToLowerInvariant() switch
+        {
+            "none" => SameSiteMode.None,
+            "strict" => SameSiteMode.Strict,
+            "lax" => SameSiteMode.Lax,
+            _ => defaultMode
+        };
     }
 
     /// <summary>

@@ -38,10 +38,13 @@ public class PatientAuthResponse
     public PatientPortalProfileDto Profile { get; set; } = null!;
     public bool MustChangePassword { get; set; }
 
-    // SEC-09: Plaintext refresh token — returned to the client ONCE so it can be
-    // stored locally (localStorage today; SEC-10 will move it to an HttpOnly
-    // cookie). The backend persists ONLY the SHA-256 hash; this plaintext value
-    // is never written to the database.
+    // SEC-10 [Obsolete]: The plaintext refresh token is now delivered via an
+    // HttpOnly + Secure + SameSite cookie named "portal_refresh" (set by the
+    // controller on login/reset/change/refresh). This property is RETAINED
+    // FOR ONE RELEASE ONLY as a backward-compatibility fallback so a stale
+    // frontend that still reads the body keeps working. New frontends MUST
+    // ignore this field — the cookie is not readable from JS. Scheduled for
+    // removal in the next release.
     public string? RefreshToken { get; set; }
 }
 

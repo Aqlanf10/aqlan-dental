@@ -18,9 +18,11 @@ export interface PatientAuthResponse {
   accessToken: string;
   profile: PatientPortalProfile;
   mustChangePassword: boolean;
-  // SEC-09: plaintext refresh token returned once on login/reset/change/refresh.
-  // The backend persists only the SHA-256 hash; the frontend stores this in
-  // localStorage (SEC-10 will later move it to an HttpOnly cookie).
+  // SEC-10 [Deprecated]: The plaintext refresh token is now delivered as an
+  // HttpOnly + Secure + SameSite cookie named `portal_refresh` (set by the
+  // backend on login/reset/change/refresh). This body field is RETAINED FOR
+  // ONE RELEASE as a backward-compat fallback. New frontends MUST IGNORE it —
+  // the cookie is not readable from JS. Will be removed in the next release.
   refreshToken?: string;
 }
 

@@ -46,7 +46,7 @@ export default function ChangePasswordPage() {
         currentPassword,
         newPassword,
       });
-      setAuth(data.profile, data.accessToken, false, data.refreshToken);
+      setAuth(data.profile, data.accessToken, false);
       setMustChangePassword(false);
       router.push("/portal");
     } catch (err: unknown) {

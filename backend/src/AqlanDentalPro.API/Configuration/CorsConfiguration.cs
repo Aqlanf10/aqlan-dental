@@ -23,7 +23,15 @@ public static class CorsConfiguration
             "https://aqlan-dental.vercel.app"];
         services.AddCors(opts =>
         {
-            // Authenticated staff endpoints — strict origins, cookies allowed
+            // Authenticated staff endpoints — strict origins, cookies allowed.
+            // SEC-10: AllowCredentials() is REQUIRED so the patient-portal refresh
+            // token (HttpOnly cookie) travels cross-origin when the Vercel frontend
+            // calls the Railway backend directly. With AllowCredentials, the
+            // browser sends/receives the `portal_refresh` cookie on cross-site
+            // requests; the response also exposes Set-Cookie to the frontend XHR.
+            // For cross-site (Vercel→Railway) cookies, set PatientPortal:CookieSameSite=None
+            // (which requires CookieSecure=true). Default SameSite=Lax works when
+            // the frontend proxies /api/* through Next.js rewrites (same-origin).
             opts.AddPolicy("AllowFrontend", policy =>
             {
                 policy.SetIsOriginAllowed(origin =>

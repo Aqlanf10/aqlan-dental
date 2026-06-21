@@ -5,6 +5,8 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 export const portalApi = axios.create({
   baseURL: API_URL,
+  // SEC-10: required so the HttpOnly `portal_refresh` cookie is sent on every
+  // request AND received from Set-Cookie responses (login/refresh/logout).
   withCredentials: true,
   headers: {
     "Content-Type": "application/json",
@@ -42,8 +44,11 @@ function processQueue(error: unknown) {
 
 function clearAuthAndRedirect() {
   if (typeof window === "undefined") return;
+  // SEC-10: only the access token is stored locally now — the refresh token
+  // lives in an HttpOnly cookie, which the backend `/api/portal/auth/logout`
+  // endpoint clears via Set-Cookie. We still call the store logout so the
+  // server-side hash is wiped and the cookie deleted.
   localStorage.removeItem("portal_token");
-  localStorage.removeItem("portal_refresh_token");
   document.cookie = "aqlan_portal_auth=; path=/portal; max-age=0";
   // Use store logout to keep state consistent
   usePatientAuthStore.getState().logout();
@@ -104,24 +109,21 @@ portalApi.interceptors.response.use(
     isRefreshing = true;
 
     try {
-      const refreshToken = localStorage.getItem("portal_refresh_token");
-      if (!refreshToken) {
-        throw new Error("No refresh token");
-      }
-
-      // We need the current (expired) access token for the patientId claim
+      // SEC-10: the refresh token is sent automatically via the HttpOnly
+      // `portal_refresh` cookie (withCredentials=true). No body needed.
+      // The expired access token is still required in the Authorization
+      // header so the backend can extract the patientId claim.
       const currentToken = localStorage.getItem("portal_token");
-      const { data } = await axios.post(`${API_URL}/api/portal/auth/refresh-token`, {
-        refreshToken,
-      }, {
-        headers: { Authorization: `Bearer ${currentToken}` },
-      });
+      const { data } = await portalApi.post(
+        "/api/portal/auth/refresh-token",
+        undefined,
+        { headers: { Authorization: `Bearer ${currentToken}` } }
+      );
 
-      // Save new tokens
+      // Save the new access token (short-lived, stays in localStorage).
+      // SEC-10: refresh-token rotation is handled by the cookie — the
+      // Set-Cookie response header replaces `portal_refresh` automatically.
       localStorage.setItem("portal_token", data.accessToken);
-      if (data.refreshToken) {
-        localStorage.setItem("portal_refresh_token", data.refreshToken);
-      }
 
       // If the refreshed token indicates mustChangePassword, update the store
       if (data.mustChangePassword) {

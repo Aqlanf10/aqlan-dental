@@ -129,6 +129,15 @@ public class CephReportPdfGenerator(AppDbContext db)
     /// Throws <see cref="ArgumentException"/> when the analysis does not exist
     /// (mapped to an Arabic 404 by the controller).
     /// </summary>
+    /// <remarks>
+    /// CLIN-12: the radiograph file is read with <see cref="File.ReadAllBytesAsync"/>
+    /// so the request thread is not blocked on disk I/O, and the CPU-bound QuestPDF
+    /// <see cref="QuestPDF.Fluent.Document.Create"/> is offloaded to the thread pool
+    /// via <see cref="Task.Run"/>. EF queries stay async (no <c>Task.Run</c> wrap);
+    /// the captured <paramref name="analysis"/> graph is fully loaded by the time
+    /// <see cref="Generate"/> runs, so reading its navigation properties from another
+    /// thread is safe (no lazy loading, no further EF queries).
+    /// </remarks>
     public async Task<byte[]> GenerateAsync(Guid analysisId)
     {
         var analysis = await db.CephAnalyses
@@ -148,7 +157,24 @@ public class CephReportPdfGenerator(AppDbContext db)
             .GroupBy(n => n.MeasurementName)
             .ToDictionary(g => g.Key, g => g.First());
 
-        return Generate(analysis, identity, normByName);
+        // Async file I/O — never block a request thread on the radiograph read.
+        byte[]? xrayImageBytes = null;
+        var imagePath = ResolveUploadFilePath(analysis.XrayFileUrl);
+        if (imagePath is not null)
+        {
+            try
+            {
+                xrayImageBytes = await File.ReadAllBytesAsync(imagePath);
+            }
+            catch
+            {
+                xrayImageBytes = null;
+            }
+        }
+
+        // CPU-bound PDF generation — offloaded so the request thread is released
+        // while QuestPDF composes and rasterizes the document.
+        return await Task.Run(() => Generate(analysis, identity, normByName, xrayImageBytes));
     }
 
     /// <summary>
@@ -228,7 +254,8 @@ public class CephReportPdfGenerator(AppDbContext db)
     private static byte[] Generate(
         CephAnalysis analysis,
         CephReportClinicIdentity identity,
-        IReadOnlyDictionary<string, CephNorm> normByName)
+        IReadOnlyDictionary<string, CephNorm> normByName,
+        byte[]? xrayImageBytes)
     {
         QuestPDF.Settings.License = LicenseType.Community;
         AqlanDentalPro.Infrastructure.Services.PdfService.EnsureFontsRegistered();
@@ -237,15 +264,14 @@ public class CephReportPdfGenerator(AppDbContext db)
         var measurements = analysis.Measurements.Where(m => m.IsActive).ToList();
         var (imageWidth, imageHeight) = ReadImageDimensions(analysis.Notes);
 
-        // Load the radiograph; any failure (missing file, unreadable, non-image)
-        // degrades to the «الصورة غير متاحة» note — never a crash.
+        // Wrap the pre-read radiograph bytes into a QuestPDF Image. Any failure
+        // (unreadable, non-image) degrades to the «الصورة غير متاحة» note — never a crash.
         Image? xrayImage = null;
-        var imagePath = ResolveUploadFilePath(analysis.XrayFileUrl);
-        if (imagePath is not null)
+        if (xrayImageBytes is not null)
         {
             try
             {
-                xrayImage = Image.FromBinaryData(File.ReadAllBytes(imagePath));
+                xrayImage = Image.FromBinaryData(xrayImageBytes);
             }
             catch
             {
@@ -286,12 +312,11 @@ public class CephReportPdfGenerator(AppDbContext db)
             {
                 row.RelativeItem().Row(idRow =>
                 {
-                    // Clinic logo (same mechanism as receipts/invoices: Fonts/logo.png).
+                    // Clinic logo (cached bytes — CLIN-12: avoids sync file I/O per render).
                     // Fallback is graceful — when no logo file exists the clinic name
                     // text alone heads the report; no broken image is ever shown.
-                    var logoPath = ResolveLogoPath();
-                    if (logoPath is not null)
-                        idRow.ConstantItem(48).PaddingLeft(8).AlignTop().Image(logoPath);
+                    if (AqlanDentalPro.Infrastructure.Services.PdfLogoCache.TryGetLogo(out var logoBytes))
+                        idRow.ConstantItem(48).PaddingLeft(8).AlignTop().Image(logoBytes);
 
                     idRow.RelativeItem().Column(col =>
                     {
@@ -657,23 +682,6 @@ public class CephReportPdfGenerator(AppDbContext db)
         if (p is null) return "غير محدد";
         var name = $"{p.FirstName} {p.LastName}".Trim();
         return name.Length > 0 ? name : "غير محدد";
-    }
-
-    /// <summary>
-    /// Resolves the clinic logo file — same convention as the receipt/invoice
-    /// PDFs (Fonts/logo.png next to the app). Returns null when absent so the
-    /// report falls back to the clinic name text with no broken image.
-    /// </summary>
-    private static string? ResolveLogoPath()
-    {
-        var paths = new[]
-        {
-            Path.Combine(AppContext.BaseDirectory, "Fonts", "logo.png"),
-            Path.Combine(Directory.GetCurrentDirectory(), "Fonts", "logo.png"),
-        };
-        foreach (var path in paths)
-            if (File.Exists(path)) return path;
-        return null;
     }
 
     private static string AnalysisTypeArOf(string? analysisType) =>

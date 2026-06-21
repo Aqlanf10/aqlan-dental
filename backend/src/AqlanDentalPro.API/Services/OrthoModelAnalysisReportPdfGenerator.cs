@@ -64,7 +64,10 @@ public class OrthoModelAnalysisReportPdfGenerator(AppDbContext db)
         try { result = JsonSerializer.Deserialize<DentalModelAnalysisResult>(analysis.ResultDataJson, JsonOptions); }
         catch (JsonException) { /* fall back to entity summary columns only */ }
 
-        return Generate(analysis, result, identity);
+        // CLIN-12: CPU-bound QuestPDF generation is offloaded to the thread pool so the
+        // request thread is released. The AsNoTracking entity graph is fully materialized
+        // by this point, so reading it from another thread is safe.
+        return await Task.Run(() => Generate(analysis, result, identity));
     }
 
     private static byte[] Generate(ModelAnalysis analysis, DentalModelAnalysisResult? result, CephReportClinicIdentity identity)
@@ -99,9 +102,9 @@ public class OrthoModelAnalysisReportPdfGenerator(AppDbContext db)
             {
                 row.RelativeItem().Row(idRow =>
                 {
-                    var logoPath = ResolveLogoPath();
-                    if (logoPath is not null)
-                        idRow.ConstantItem(48).PaddingLeft(8).AlignTop().Image(logoPath);
+                    // CLIN-12: logo bytes are cached statically — no per-render file I/O.
+                    if (AqlanDentalPro.Infrastructure.Services.PdfLogoCache.TryGetLogo(out var logoBytes))
+                        idRow.ConstantItem(48).PaddingLeft(8).AlignTop().Image(logoBytes);
 
                     idRow.RelativeItem().Column(col =>
                     {
@@ -307,17 +310,5 @@ public class OrthoModelAnalysisReportPdfGenerator(AppDbContext db)
         if (p is null) return "غير محدد";
         var name = $"{p.FirstName} {p.LastName}".Trim();
         return name.Length > 0 ? name : "غير محدد";
-    }
-
-    private static string? ResolveLogoPath()
-    {
-        var paths = new[]
-        {
-            Path.Combine(AppContext.BaseDirectory, "Fonts", "logo.png"),
-            Path.Combine(Directory.GetCurrentDirectory(), "Fonts", "logo.png"),
-        };
-        foreach (var path in paths)
-            if (File.Exists(path)) return path;
-        return null;
     }
 }

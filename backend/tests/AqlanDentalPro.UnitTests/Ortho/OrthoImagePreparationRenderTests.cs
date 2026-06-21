@@ -130,12 +130,13 @@ public class OrthoImagePreparationRenderTests
     }
 
     [Fact]
-    public void Render_MissingOriginal_ReturnsNullWithoutThrowing()
+    public async Task Render_MissingOriginal_ReturnsNullWithoutThrowing()
     {
         var photo = new OrthoClinicalPhoto { Id = Guid.NewGuid(), PhotoUrl = "/uploads/does-not-exist.png" };
         var prep = new OrthoImagePreparation { CropWidth = 1m, CropHeight = 1m, Zoom = 1m };
 
-        Renderer().Render(photo, prep).Should().BeNull();
+        // CLIN-12: Render is now async (RenderAsync) — file I/O no longer blocks.
+        (await Renderer().RenderAsync(photo, prep)).Should().BeNull();
     }
 
     private static OrthoCasesController BuildController(AppDbContext db)

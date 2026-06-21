@@ -156,7 +156,9 @@ public class PdfService : IPdfService
 
         var identity = await FinanceClinicIdentity.ResolveAsync(_db);
         var document = new PaymentReceiptDocument(payment, identity);
-        var bytes = document.GeneratePdf();
+        // CLIN-12: QuestPDF rasterization is CPU-bound — offload to the thread pool
+        // so the request thread is released while the PDF is composed.
+        var bytes = await Task.Run(() => document.GeneratePdf());
         return bytes;
     }
 
@@ -180,7 +182,8 @@ public class PdfService : IPdfService
 
         var identity = await FinanceClinicIdentity.ResolveAsync(_db);
         var document = new FinancialStatementDocument(patient, payments, identity);
-        var bytes = document.GeneratePdf();
+        // CLIN-12: CPU-bound QuestPDF generation offloaded to the thread pool.
+        var bytes = await Task.Run(() => document.GeneratePdf());
         return bytes;
     }
 
@@ -200,7 +203,8 @@ public class PdfService : IPdfService
 
         var identity = await FinanceClinicIdentity.ResolveAsync(_db);
         var document = new InvoiceDocument(invoice, identity);
-        var bytes = document.GeneratePdf();
+        // CLIN-12: CPU-bound QuestPDF generation offloaded to the thread pool.
+        var bytes = await Task.Run(() => document.GeneratePdf());
         return bytes;
     }
 
@@ -228,7 +232,7 @@ public class PdfService : IPdfService
             Notes = expense.Notes,
         };
 
-        return new DisbursementVoucherDocument(model, identity).GeneratePdf();
+        return await Task.Run(() => new DisbursementVoucherDocument(model, identity).GeneratePdf());
     }
 
     private static string ExpenseCategoryLabel(ExpenseCategory category) => category switch

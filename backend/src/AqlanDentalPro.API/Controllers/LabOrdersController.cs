@@ -1352,7 +1352,9 @@ public class LabOrdersController(
             var clinicPhone = await db.Settings.Where(s => s.Key == "clinic.phones").Select(s => s.Value).FirstOrDefaultAsync() ?? "";
             var clinicAddress = await db.Settings.Where(s => s.Key == "clinic.location").Select(s => s.Value).FirstOrDefaultAsync() ?? "";
 
-            var pdfBytes = LabOrderPdfGenerator.Generate(order, clinicName, clinicPhone, clinicAddress);
+            // CLIN-12: CPU-bound PDF generation is offloaded to the thread pool
+            // (GenerateAsync wraps Task.Run) so the request thread is released.
+            var pdfBytes = await LabOrderPdfGenerator.GenerateAsync(order, clinicName, clinicPhone, clinicAddress);
             return File(pdfBytes, "application/pdf", $"lab-order-{order.OrderNumber}.pdf");
         }
         catch (Exception ex)

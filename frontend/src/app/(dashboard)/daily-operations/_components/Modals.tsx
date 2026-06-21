@@ -12,7 +12,7 @@ import {
   MessageCircle, Loader2, Send, Printer, Building2,
   UserPlus, Undo2, Keyboard, Clock, ChevronLeft,
   AlertCircle, Wallet, FileText, Stethoscope,
-  Search, User,
+  User,
 } from "lucide-react";
 import {
   PAYMENT_METHODS, APPOINTMENT_TYPES, inputCls, fmtRial,
@@ -22,8 +22,9 @@ import {
 } from "../_lib/constants";
 import type { TodayJourneyItem, DoctorOption, ServiceOption, RoomOption, BranchOption } from "../_lib/constants";
 import type { DailyJourneySummary } from "@/types/journey";
+import type { PatientListItem } from "@/types/patient";
+import { PatientCombobox } from "@/components/shared/PatientCombobox";
 import { usePaymentMethodSettings } from "../_lib/hooks";
-import api from "@/lib/api";
 import axios from "axios";
 import { toast } from "@/stores/toastStore";
 import { downloadPdfFromApi } from "@/lib/pdfDownload";
@@ -1423,11 +1424,7 @@ export function DirectPaymentModal({
     referenceNumber?: string;
   }) => void;
 }) {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchedPatient[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<SearchedPatient | null>(null);
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Payment form state
   const [amount, setAmount] = useState("");
@@ -1444,36 +1441,10 @@ export function DirectPaymentModal({
   const selectedMethodSetting = activePaymentMethods.find(m => m.code.toLowerCase() === method.toLowerCase());
   const requiresRef = selectedMethodSetting?.requiresReferenceNumber ?? false;
 
-  // Search patients with debounce
-  useEffect(() => {
-    if (!searchQuery.trim() || searchQuery.trim().length < 2) {
-      setSearchResults([]);
-      return;
-    }
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    searchTimeoutRef.current = setTimeout(async () => {
-      setIsSearching(true);
-      try {
-        const { data } = await api.get(`/api/patients?search=${encodeURIComponent(searchQuery.trim())}&pageSize=10`);
-        const patients = Array.isArray(data) ? data : (data as { data?: SearchedPatient[]; items?: SearchedPatient[] }).data ?? (data as { items?: SearchedPatient[] }).items ?? [];
-        setSearchResults(patients.map((p: SearchedPatient & { fullName?: string; arabicName?: string }) => ({
-          id: p.id,
-          name: p.name || p.fullName || p.arabicName || "—",
-          phone: p.phone,
-          patientNumber: p.patientNumber,
-        })));
-      } catch {
-        setSearchResults([]);
-      }
-      setIsSearching(false);
-    }, 350);
-    return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
-  }, [searchQuery]);
-
   // Reset on close
   useEffect(() => {
     if (!open) {
-      setSearchQuery(""); setSearchResults([]); setSelectedPatient(null);
+      setSelectedPatient(null);
       setAmount(""); setMethod("cash"); setDesc(""); setNotes(""); setVoucherType("consultation");
       setReferenceNumber(""); setReferenceError("");
     }
@@ -1514,59 +1485,16 @@ export function DirectPaymentModal({
           </div>
           <div>
             <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>بحث عن مريض *</label>
-            <div className="relative">
-              <Search className="w-4 h-4 absolute top-1/2 right-3 -translate-y-1/2" style={{ color: "#94a3b8" }} />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="اسم المريض أو رقم الهاتف..."
-                className={inputCls() + " pr-9"}
-                autoFocus
-              />
-              {isSearching && (
-                <Loader2 className="w-4 h-4 absolute top-1/2 left-3 -translate-y-1/2 animate-spin" style={{ color: BLUE }} />
-              )}
-            </div>
+            <PatientCombobox
+              onSelect={(p: PatientListItem) => setSelectedPatient({
+                id: p.id,
+                name: p.fullName,
+                phone: p.phone,
+                patientNumber: p.patientNumber,
+              })}
+              placeholder="اسم المريض أو رقم الهاتف..."
+            />
           </div>
-
-          {/* Search Results */}
-          {searchResults.length > 0 && (
-            <div className="border rounded-xl overflow-hidden" style={{ borderColor: "#e5e7eb" }}>
-              <div className="max-h-[200px] overflow-y-auto">
-                {searchResults.map(p => (
-                  <button
-                    key={p.id}
-                    onClick={() => setSelectedPatient(p)}
-                    className="w-full text-right px-4 py-3 flex items-center gap-3 transition hover:bg-[#f0f5fb] border-b last:border-0"
-                    style={{ borderColor: "#f1f5f9" }}
-                  >
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
-                      style={{ background: NAVY + "12" }}>
-                      <User className="w-4 h-4" style={{ color: NAVY }} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-bold truncate" style={{ color: NAVY }}>{p.name}</div>
-                      <div className="text-[10px]" style={{ color: "#94a3b8" }}>
-                        {p.phone && <span>{p.phone}</span>}
-                        {p.patientNumber && <span className="mr-2">#{p.patientNumber}</span>}
-                      </div>
-                    </div>
-                    <CreditCard className="w-4 h-4 flex-shrink-0" style={{ color: "#22c55e" }} />
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* No results */}
-          {searchQuery.trim().length >= 2 && !isSearching && searchResults.length === 0 && (
-            <div className="text-center py-6">
-              <User className="w-8 h-8 mx-auto mb-2 opacity-20" style={{ color: "#94a3b8" }} />
-              <p className="text-xs font-bold" style={{ color: "#94a3b8" }}>لم يتم العثور على مريض</p>
-              <p className="text-[10px] mt-1" style={{ color: "#94a3b8" }}>جرّب بحثاً مختلفاً أو سجّل مريض مشي جديد</p>
-            </div>
-          )}
         </div>
       )}
 

@@ -64,12 +64,15 @@ public partial class FinanceV3Controller
         var startDateTime = DateTime.SpecifyKind(fromDate.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
         var endDateTime = DateTime.SpecifyKind(toDate.ToDateTime(TimeOnly.MaxValue), DateTimeKind.Utc);
 
-        // 2. Query and aggregate invoice items per doctor
+        // 2. Aggregate invoice items per doctor (server-side GROUP BY ... SUM).
+        // FIN-13: previously loaded all matching InvoiceLineItems into memory and then
+        // ran in-memory `.Where(i => i.DoctorId == docId).Sum(i => i.TotalPrice)` per
+        // doctor (an O(doctors × items) scan). Now a single SQL GROUP BY returns one
+        // row per doctor with all three aggregates already computed.
         var itemsQuery = db.InvoiceLineItems
-            .Include(i => i.Invoice)
-            .Where(i => i.IsActive 
-                     && i.Invoice.IsActive 
-                     && i.Invoice.CreatedAt >= startDateTime 
+            .Where(i => i.IsActive
+                     && i.Invoice.IsActive
+                     && i.Invoice.CreatedAt >= startDateTime
                      && i.Invoice.CreatedAt <= endDateTime);
 
         if (branchId.HasValue)
@@ -82,19 +85,22 @@ public partial class FinanceV3Controller
             itemsQuery = itemsQuery.Where(i => i.DoctorId == doctorId.Value);
         }
 
-        var items = await itemsQuery
-            .Select(i => new 
-            { 
-                i.DoctorId, 
-                i.TotalPrice, 
-                i.DoctorCommissionAmount 
+        var itemsByDoctor = await itemsQuery
+            .Where(i => i.DoctorId.HasValue)
+            .GroupBy(i => i.DoctorId!.Value)
+            .Select(g => new
+            {
+                DoctorId = g.Key,
+                CasesCount = g.Count(),
+                TotalServiceValue = g.Sum(i => i.TotalPrice),
+                CommissionDue = g.Sum(i => i.DoctorCommissionAmount)
             })
-            .ToListAsync();
+            .ToDictionaryAsync(x => x.DoctorId);
 
-        // 3. Query payments per doctor
+        // 3. Aggregate commission payments per doctor (server-side GROUP BY ... SUM)
         var paymentsQuery = db.DoctorCommissionPayments
-            .Where(p => p.IsActive 
-                     && p.PaymentDate >= fromDate 
+            .Where(p => p.IsActive
+                     && p.PaymentDate >= fromDate
                      && p.PaymentDate <= toDate);
 
         if (branchId.HasValue)
@@ -107,19 +113,18 @@ public partial class FinanceV3Controller
             paymentsQuery = paymentsQuery.Where(p => p.DoctorId == doctorId.Value);
         }
 
-        var payments = await paymentsQuery
-            .Select(p => new 
-            { 
-                p.DoctorId, 
-                p.Amount 
+        var paymentsByDoctor = await paymentsQuery
+            .GroupBy(p => p.DoctorId)
+            .Select(g => new
+            {
+                DoctorId = g.Key,
+                CommissionPaid = g.Sum(p => p.Amount)
             })
-            .ToListAsync();
+            .ToDictionaryAsync(x => x.DoctorId);
 
         // 4. Resolve doctor records
-        var doctorIds = items
-            .Where(i => i.DoctorId.HasValue)
-            .Select(i => i.DoctorId!.Value)
-            .Concat(payments.Select(p => p.DoctorId))
+        var doctorIds = itemsByDoctor.Keys
+            .Concat(paymentsByDoctor.Keys)
             .Distinct()
             .ToList();
 
@@ -135,21 +140,21 @@ public partial class FinanceV3Controller
         }
         var doctorsMap = await doctorsMapQuery.ToDictionaryAsync(d => d.Id, d => d);
 
-        // 5. Build DTOs
+        // 5. Build DTOs from the pre-aggregated per-doctor rows
         var resultList = new List<DoctorCommissionSummaryDto>();
         foreach (var docId in doctorIds)
         {
             var doctor = doctorsMap.GetValueOrDefault(docId);
             if (doctor == null) continue; // Skip if doctor doesn't exist in DB or branch
 
-            var docItems = items.Where(i => i.DoctorId == docId).ToList();
-            var docPayments = payments.Where(p => p.DoctorId == docId).ToList();
+            itemsByDoctor.TryGetValue(docId, out var items);
+            paymentsByDoctor.TryGetValue(docId, out var payments);
 
-            var casesCount = docItems.Count;
-            var totalServiceValue = docItems.Sum(i => i.TotalPrice);
+            var casesCount = items?.CasesCount ?? 0;
+            var totalServiceValue = items?.TotalServiceValue ?? 0m;
             var commissionPercentage = doctor.DefaultCommissionPercentage ?? 0m;
-            var commissionDue = docItems.Sum(i => i.DoctorCommissionAmount);
-            var commissionPaid = docPayments.Sum(p => p.Amount);
+            var commissionDue = items?.CommissionDue ?? 0m;
+            var commissionPaid = payments?.CommissionPaid ?? 0m;
             var commissionRemaining = commissionDue - commissionPaid;
 
             resultList.Add(new DoctorCommissionSummaryDto

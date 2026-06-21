@@ -5033,7 +5033,11 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<bool>("PortalAccountActive")
                         .HasColumnType("boolean");
 
-                    b.Property<string>("RefreshToken")
+                    // SEC-09: C# property renamed to RefreshTokenHash; DB column stays "RefreshToken"
+                    // via [Column("RefreshToken")] on the entity. Snapshot reflects the new property
+                    // name so EF Core does not see a model diff (the physical column is unchanged).
+                    b.Property<string>("RefreshTokenHash")
+                        .HasColumnName("RefreshToken")
                         .HasColumnType("text");
 
                     b.Property<DateTime?>("RefreshTokenExpiry")

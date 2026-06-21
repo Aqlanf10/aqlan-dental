@@ -679,23 +679,26 @@ public class PortalMessagingSecurityTests
         using var db = CreateInMemoryDb();
         var (patientId, account, linkedUser) = await SeedPatientWithAccount(db);
 
-        // Login to get a refresh token
+        // Login to get a refresh token (SEC-09: plaintext returned in response, hash stored)
         var service = CreateService(db);
         var (loginResponse, _) = await service.LoginAsync("GM0001", "TempPass1");
+        loginResponse!.RefreshToken.Should().NotBeNullOrEmpty("login must return the plaintext refresh token");
 
-        // Act — refresh the token
+        // Act — refresh using the plaintext token returned by login
         var (refreshResponse, refreshError) = await service.RefreshTokenAsync(
-            patientId, loginResponse!.AccessToken); // Note: we need the actual refresh token
-
-        // The refresh token is stored on the account
-        var updatedAccount = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
-        var (refreshResponse2, refreshError2) = await service.RefreshTokenAsync(
-            patientId, updatedAccount!.RefreshToken!);
+            patientId, loginResponse.RefreshToken!);
 
         // Assert
-        refreshError2.Should().BeNull();
-        refreshResponse2.Should().NotBeNull();
-        refreshResponse2!.AccessToken.Should().NotBeNullOrEmpty();
+        refreshError.Should().BeNull();
+        refreshResponse.Should().NotBeNull();
+        refreshResponse!.AccessToken.Should().NotBeNullOrEmpty();
+        refreshResponse.RefreshToken.Should().NotBeNullOrEmpty("rotation must issue a new plaintext token");
+        refreshResponse.RefreshToken.Should().NotBe(loginResponse.RefreshToken, "rotation must produce a different token");
+
+        // The persisted hash must NOT equal the plaintext token (SEC-09: hash, not plaintext)
+        var updatedAccount = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
+        updatedAccount!.RefreshTokenHash.Should().NotBe(loginResponse.RefreshToken);
+        updatedAccount.RefreshTokenHash.Should().NotBe(refreshResponse.RefreshToken);
     }
 
     [Fact]
@@ -706,7 +709,7 @@ public class PortalMessagingSecurityTests
         var (patientId, account, linkedUser) = await SeedPatientWithAccount(db);
         var service = CreateService(db);
 
-        // Act
+        // Act — random string that has no matching hash
         var (response, error) = await service.RefreshTokenAsync(patientId, "invalid-refresh-token");
 
         // Assert

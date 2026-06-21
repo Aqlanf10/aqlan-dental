@@ -1,3 +1,4 @@
+using AqlanDentalPro.Application.Common;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
@@ -33,9 +34,10 @@ public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserReq
             .MaximumLength(50).WithMessage("اسم المستخدم يجب ألا يتجاوز 50 حرفاً")
             .Matches(@"^[a-zA-Z0-9_]+$").WithMessage("اسم المستخدم يجب أن يحتوي على أحرف وأرقام وشرطة سفلية فقط");
 
+        // SEC-11: password complexity is enforced explicitly in the controller via
+        // PasswordPolicy.Validate so the Arabic error is returned as { message }.
         RuleFor(x => x.Password)
-            .NotEmpty().WithMessage("كلمة المرور مطلوبة")
-            .MinimumLength(8).WithMessage("كلمة المرور يجب أن تكون 8 أحرف على الأقل");
+            .NotEmpty().WithMessage("كلمة المرور مطلوبة");
 
         RuleFor(x => x.Role)
             .NotEmpty().WithMessage("الدور مطلوب")
@@ -63,9 +65,10 @@ public sealed class ChangePasswordRequestValidator : AbstractValidator<ChangePas
     public ChangePasswordRequestValidator()
     {
         RuleFor(x => x.CurrentPassword).NotEmpty().WithMessage("كلمة المرور الحالية مطلوبة");
+        // SEC-11: complexity is enforced explicitly in UsersController.ChangePassword
+        // via PasswordPolicy.Validate so the Arabic error is returned as { message }.
         RuleFor(x => x.NewPassword)
             .NotEmpty().WithMessage("كلمة المرور الجديدة مطلوبة")
-            .MinimumLength(8).WithMessage("كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل")
             .NotEqual(x => x.CurrentPassword).WithMessage("كلمة المرور الجديدة يجب أن تختلف عن الحالية");
     }
 }
@@ -292,6 +295,11 @@ public class UsersController(
 
         if (role == UserRole.Patient)
             return BadRequest(new { message = "حسابات المرضى تدار من تبويب حسابات بوابة المرضى وليس من مستخدمي الطاقم" });
+
+        // SEC-11: enforce centralized password complexity policy before hashing.
+        var (valid, policyError) = PasswordPolicy.Validate(req.Password);
+        if (!valid)
+            return BadRequest(new { message = policyError });
 
         // Generate unique salt for each user
         var salt = AuthService.GenerateSalt();
@@ -577,6 +585,11 @@ public class UsersController(
     {
         var userId = currentUser.UserId;
         if (userId == Guid.Empty) return Unauthorized();
+
+        // SEC-11: enforce centralized password complexity policy before hashing.
+        var (valid, policyError) = PasswordPolicy.Validate(req.NewPassword);
+        if (!valid)
+            return BadRequest(new { message = policyError });
 
         var user = await db.Users.FindAsync(userId);
         if (user is null) return NotFound(new { message = "المستخدم غير موجود" });

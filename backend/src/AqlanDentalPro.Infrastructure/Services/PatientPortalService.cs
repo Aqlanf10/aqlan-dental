@@ -1,3 +1,4 @@
+using AqlanDentalPro.Application.Common;
 using AqlanDentalPro.Application.DTOs.PatientPortal;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
@@ -125,9 +126,10 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         if (account.VerificationCodeExpiry < DateTime.UtcNow)
             return (null, "انتهت صلاحية رمز التحقق");
 
-        // SEC-05 FIX: Validate new password strength (minimum 8 characters)
-        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 8)
-            return (null, "كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل");
+        // SEC-11: enforce centralized password complexity policy.
+        var (valid, policyError) = PasswordPolicy.Validate(newPassword);
+        if (!valid)
+            return (null, policyError);
 
         // Update password
         var salt = AuthService.GenerateSalt();
@@ -265,9 +267,10 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
             Convert.FromBase64String(account.PasswordHash)))
             return (null, "كلمة المرور الحالية غير صحيحة");
 
-        // SEC-05 FIX: Validate new password strength (minimum 8 characters)
-        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 8)
-            return (null, "كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل");
+        // SEC-11: enforce centralized password complexity policy.
+        var (valid, policyError) = PasswordPolicy.Validate(newPassword);
+        if (!valid)
+            return (null, policyError);
 
         // Update password
         var salt = AuthService.GenerateSalt();

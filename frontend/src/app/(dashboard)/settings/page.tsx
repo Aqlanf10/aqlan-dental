@@ -901,6 +901,23 @@ function CreateUserDialog({
       setError("اسم المستخدم وكلمة المرور مطلوبان");
       return;
     }
+    // SEC-11: client-side mirror of the centralized PasswordPolicy (UX only).
+    if (form.password.length < 8) {
+      setError("كلمة المرور يجب أن تكون 8 أحرف على الأقل");
+      return;
+    }
+    if (!/[A-Z]/.test(form.password)) {
+      setError("كلمة المرور يجب أن تحتوي على حرف كبير واحد على الأقل");
+      return;
+    }
+    if (!/[a-z]/.test(form.password)) {
+      setError("كلمة المرور يجب أن تحتوي على حرف صغير واحد على الأقل");
+      return;
+    }
+    if (!/[0-9]/.test(form.password)) {
+      setError("كلمة المرور يجب أن تحتوي على رقم واحد على الأقل");
+      return;
+    }
     setError("");
     onSubmit({
       ...form,
@@ -949,6 +966,8 @@ function CreateUserDialog({
                 className={inputCls}
                 autoComplete="new-password"
               />
+              {/* SEC-11: password complexity hint (UX only — backend enforces) */}
+              <p className="text-gray-400 text-[11px] mt-1">8+ أحرف، يحتوي على رقم وحرف كبير</p>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">الدور</label>

@@ -89,8 +89,22 @@ export default function PortalLoginPage() {
       setError("أدخل رمز التحقق المكون من 6 أرقام");
       return;
     }
-    if (!newPassword || newPassword.length < 4) {
-      setError("أدخل كلمة مرور جديدة (4 أحرف على الأقل)");
+    // SEC-11: client-side mirror of PasswordPolicy (8+ chars, digit, upper, lower).
+    // The backend is the source of truth — this is UX only.
+    if (!newPassword || newPassword.length < 8) {
+      setError("كلمة المرور يجب أن تكون 8 أحرف على الأقل");
+      return;
+    }
+    if (!/[A-Z]/.test(newPassword)) {
+      setError("كلمة المرور يجب أن تحتوي على حرف كبير واحد على الأقل");
+      return;
+    }
+    if (!/[a-z]/.test(newPassword)) {
+      setError("كلمة المرور يجب أن تحتوي على حرف صغير واحد على الأقل");
+      return;
+    }
+    if (!/[0-9]/.test(newPassword)) {
+      setError("كلمة المرور يجب أن تحتوي على رقم واحد على الأقل");
       return;
     }
     setLoading(true);
@@ -319,7 +333,7 @@ export default function PortalLoginPage() {
                     type="password"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="أدخل كلمة مرور جديدة"
+                    placeholder="8 أحرف على الأقل"
                     dir="ltr"
                     className={cn(
                       "w-full px-4 py-3 rounded-lg border bg-white text-[#0d2137] text-left",
@@ -327,6 +341,10 @@ export default function PortalLoginPage() {
                       "border-gray-300"
                     )}
                   />
+                  {/* SEC-11: password complexity hint (UX only — backend enforces) */}
+                  <p className="mt-1 text-xs text-[#94a3b8]">
+                    8+ أحرف، يحتوي على رقم وحرف كبير
+                  </p>
                 </div>
 
                 <button

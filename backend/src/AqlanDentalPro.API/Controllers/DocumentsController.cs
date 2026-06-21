@@ -150,6 +150,16 @@ public class DocumentsController(
         if (req.PatientId == Guid.Empty)
             return BadRequest(new { message = "معرّف المريض مطلوب" });
 
+        // SEC-DOCS: Per-patient access check before creating. The class-level
+        // PatientAccessFilter only inspects route + query values for "patientId", but
+        // CreateDocument receives PatientId in the REQUEST BODY, so the filter cannot
+        // see it. Without this explicit check a doctor with no access to Patient X
+        // could still create documents under Patient X. Mirrors PrescriptionsController.
+        // (Placed before the patientExists check so we don't leak patient existence
+        // to a doctor who has no access.)
+        var denied = await DenyIfDoctorCannotAccess(req.PatientId);
+        if (denied is not null) return denied;
+
         var patientExists = await db.Patients.AnyAsync(p => p.Id == req.PatientId);
         if (!patientExists)
             return BadRequest(new { message = "المريض غير موجود" });
@@ -195,6 +205,15 @@ public class DocumentsController(
         if (doc is null)
             return NotFound(new { message = "المستند غير موجود" });
 
+        // SEC-DOCS: Per-patient access check before mutating. UpdateDocumentRequest does
+        // NOT carry PatientId (it only patches Title/DocumentType/Notes/Signed), and the
+        // class-level PatientAccessFilter only inspects route + query for "patientId" —
+        // so the filter never sees a patientId for this action. Resolve it from the
+        // fetched document and check explicitly. Mirrors the established pattern
+        // (PrescriptionsController.Delete / ClinicalPhotosController.DeletePhoto).
+        var denied = await DenyIfDoctorCannotAccess(doc.PatientId);
+        if (denied is not null) return denied;
+
         if (!doc.IsActive)
             return BadRequest(new { message = "لا يمكن تعديل مستند محذوف" });
 
@@ -223,6 +242,13 @@ public class DocumentsController(
         var doc = await db.Documents.FindAsync(id);
         if (doc is null)
             return NotFound(new { message = "المستند غير موجود" });
+
+        // SEC-DOCS: Per-patient access check before soft-deleting. The route only
+        // carries the document id ({id:guid}), so the class-level PatientAccessFilter
+        // never sees a patientId for this action. Resolve it from the fetched document
+        // and check explicitly. Mirrors PrescriptionsController.Delete.
+        var denied = await DenyIfDoctorCannotAccess(doc.PatientId);
+        if (denied is not null) return denied;
 
         if (!doc.IsActive)
             return BadRequest(new { message = "المستند محذوف بالفعل" });

@@ -84,6 +84,7 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
 
     [HttpPost("auth/change-password")]
     [Authorize(Policy = "PatientAccess")]
+    [EnableRateLimiting("PortalPasswordResetPolicy")] // SEC-16: rate-limit change-password (3/15min/IP)
     public async Task<IActionResult> ChangePassword([FromBody] PatientChangePasswordRequest req)
     {
         var patientId = GetPatientId();
@@ -104,6 +105,7 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
 
     [HttpPost("auth/refresh-token")]
     [AllowAnonymous]
+    [EnableRateLimiting("PortalAuthPolicy")] // SEC-16: rate-limit refresh-token (5/min/IP)
     public async Task<IActionResult> RefreshToken([FromBody] PatientRefreshTokenRequest req)
     {
         // Extract patientId from the (possibly expired) JWT in the Authorization header
@@ -120,6 +122,28 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
         {
             Logger.LogError(ex, "Portal refresh-token failed for patient {PatientId}", patientId);
             return StatusCode(500, new { message = "حدث خطأ أثناء تحديث الجلسة. يرجى تسجيل الدخول مرة أخرى" });
+        }
+    }
+
+    [HttpPost("auth/logout")]
+    [Authorize(Policy = "PatientAccess")]
+    public async Task<IActionResult> Logout()
+    {
+        // SEC-09: clears the persisted refresh-token hash so any stolen-then-logged-out
+        // token can no longer be used to refresh. The client must also discard its
+        // local copy (frontend patientAuthStore.logout).
+        var patientId = GetPatientId();
+        if (patientId == null) return Unauthorized(new { message = "غير مصرح" });
+
+        try
+        {
+            await portalService.LogoutAsync(patientId.Value);
+            return Ok(new { message = "تم تسجيل الخروج بنجاح" });
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Portal logout failed for patient {PatientId}", patientId);
+            return StatusCode(500, new { message = "حدث خطأ أثناء تسجيل الخروج. يرجى المحاولة لاحقاً" });
         }
     }
 

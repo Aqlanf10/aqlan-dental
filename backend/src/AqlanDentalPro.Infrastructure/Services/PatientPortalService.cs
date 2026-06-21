@@ -52,8 +52,9 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         account.VerificationCodeExpiry = null;
 
         var accessToken = GeneratePatientToken(account);
+        // SEC-09: generate plaintext token for the client, persist only the SHA-256 hash.
         var refreshToken = GenerateRefreshToken();
-        account.RefreshToken = refreshToken;
+        account.RefreshTokenHash = HashToken(refreshToken);
         account.RefreshTokenExpiry = DateTime.UtcNow.AddDays(30);
 
         await db.SaveChangesAsync();
@@ -62,7 +63,8 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         {
             AccessToken = accessToken,
             Profile = MapProfile(account.Patient, account),
-            MustChangePassword = account.MustChangePassword
+            MustChangePassword = account.MustChangePassword,
+            RefreshToken = refreshToken
         }, null);
     }
 
@@ -139,8 +141,9 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         account.LastLogin = DateTime.UtcNow;
 
         var accessToken = GeneratePatientToken(account);
+        // SEC-09: persist SHA-256 hash; return plaintext to client once.
         var refreshToken = GenerateRefreshToken();
-        account.RefreshToken = refreshToken;
+        account.RefreshTokenHash = HashToken(refreshToken);
         account.RefreshTokenExpiry = DateTime.UtcNow.AddDays(30);
 
         await db.SaveChangesAsync();
@@ -149,7 +152,8 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         {
             AccessToken = accessToken,
             Profile = MapProfile(account.Patient, account),
-            MustChangePassword = false
+            MustChangePassword = false,
+            RefreshToken = refreshToken
         }, null);
     }
 
@@ -273,8 +277,9 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         account.MustChangePassword = false;
 
         var accessToken = GeneratePatientToken(account);
+        // SEC-09: persist SHA-256 hash; return plaintext to client once.
         var refreshToken = GenerateRefreshToken();
-        account.RefreshToken = refreshToken;
+        account.RefreshTokenHash = HashToken(refreshToken);
         account.RefreshTokenExpiry = DateTime.UtcNow.AddDays(30);
 
         await db.SaveChangesAsync();
@@ -283,44 +288,44 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         {
             AccessToken = accessToken,
             Profile = MapProfile(account.Patient, account),
-            MustChangePassword = false
+            MustChangePassword = false,
+            RefreshToken = refreshToken
         }, null);
     }
 
     public async Task<(PatientAuthResponse? response, string? error)> RefreshTokenAsync(Guid patientId, string refreshToken)
     {
+        if (string.IsNullOrWhiteSpace(refreshToken))
+            return (null, "توكن غير صالح");
+
+        // SEC-09: look up the account by the SHA-256 hash of the received token.
+        // A DB-compromise attacker only has the hash and cannot derive a usable token.
+        var hash = HashToken(refreshToken);
         var account = await db.PatientAccounts
             .Include(a => a.Patient)
                 .ThenInclude(p => p!.PrimaryDoctor)
-            .FirstOrDefaultAsync(a => a.PatientId == patientId);
+            .FirstOrDefaultAsync(a => a.PatientId == patientId && a.RefreshTokenHash == hash);
 
         if (account == null)
-            return (null, "الحساب غير موجود");
+            return (null, "جلسة منتهية، يرجى تسجيل الدخول مجددًا");
 
         if (account.Patient == null)
             return (null, "تم تعطيل هذا الحساب");
 
-        // C-04 FIX: Constant-time refresh token comparison
-        // Gracefully handle malformed (non-Base64) tokens — they are invalid by definition.
-        try
-        {
-            if (!CryptographicOperations.FixedTimeEquals(
-                Convert.FromBase64String(account.RefreshToken ?? ""),
-                Convert.FromBase64String(refreshToken)))
-                return (null, "رمز التحديث غير صالح");
-        }
-        catch (FormatException)
-        {
-            return (null, "رمز التحديث غير صالح");
-        }
+        if (account.RefreshTokenExpiry == null || account.RefreshTokenExpiry < DateTime.UtcNow)
+            return (null, "جلسة منتهية، يرجى تسجيل الدخول مجددًا");
 
-        if (account.RefreshTokenExpiry < DateTime.UtcNow)
-            return (null, "انتهت صلاحية رمز التحديث");
+        // Defense in depth: constant-time comparison of the computed hash against
+        // the stored hash. The DB WHERE clause already matched, but this guards
+        // against any future code path that loosens the lookup predicate.
+        if (!FixedTimeEqualsHash(account.RefreshTokenHash, hash))
+            return (null, "توكن غير صالح");
 
-        // Generate new tokens
+        // SEC-09: rotation — issue a fresh refresh token on every refresh so a
+        // stolen-then-replaced token cannot be replayed. The old hash is overwritten.
         var accessToken = GeneratePatientToken(account);
         var newRefreshToken = GenerateRefreshToken();
-        account.RefreshToken = newRefreshToken;
+        account.RefreshTokenHash = HashToken(newRefreshToken);
         account.RefreshTokenExpiry = DateTime.UtcNow.AddDays(30);
 
         await db.SaveChangesAsync();
@@ -329,8 +334,24 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         {
             AccessToken = accessToken,
             Profile = MapProfile(account.Patient, account),
-            MustChangePassword = account.MustChangePassword
+            MustChangePassword = account.MustChangePassword,
+            RefreshToken = newRefreshToken
         }, null);
+    }
+
+    /// <summary>
+    /// SEC-09: clears the persisted refresh-token hash so any stolen-then-logged-out
+    /// token can no longer be used to refresh. The client is responsible for
+    /// discarding its local copy; the backend can only invalidate its own half.
+    /// </summary>
+    public async Task LogoutAsync(Guid patientId)
+    {
+        var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
+        if (account == null) return;
+
+        account.RefreshTokenHash = null;
+        account.RefreshTokenExpiry = null;
+        await db.SaveChangesAsync();
     }
 
     public async Task<PatientPortalDashboardDto> GetDashboardAsync(Guid patientId)
@@ -917,7 +938,36 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
     private static string GenerateRefreshToken()
     {
-        return Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+        // SEC-09: 64 random bytes (512 bits) of entropy from the cryptographic RNG,
+        // base64url-safe encoded. Well above the 32-byte minimum in the audit spec.
+        var bytes = RandomNumberGenerator.GetBytes(64);
+        return Convert.ToBase64String(bytes)
+            .Replace('+', '-')
+            .Replace('/', '_')
+            .TrimEnd('=');
+    }
+
+    /// <summary>
+    /// SEC-09: SHA-256 hash of the refresh token, returned as lowercase hex.
+    /// Used for storage and lookup — the plaintext token is NEVER persisted.
+    /// </summary>
+    private static string HashToken(string token)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// SEC-09: constant-time comparison of two hex-encoded SHA-256 hashes.
+    /// Prevents timing attacks on the hash comparison step.
+    /// </summary>
+    private static bool FixedTimeEqualsHash(string? stored, string computed)
+    {
+        if (string.IsNullOrEmpty(stored)) return false;
+        var a = Encoding.UTF8.GetBytes(stored);
+        var b = Encoding.UTF8.GetBytes(computed);
+        if (a.Length != b.Length) return false;
+        return CryptographicOperations.FixedTimeEquals(a, b);
     }
 
     // SEC-05 FIX: Generate a secure temporary password (10 chars with special characters)

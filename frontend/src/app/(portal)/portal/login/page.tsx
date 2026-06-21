@@ -31,7 +31,7 @@ export default function PortalLoginPage() {
     setError("");
     try {
       const { data } = await portalApi.post("/api/portal/auth/login", { username, password });
-      setAuth(data.profile, data.accessToken, data.mustChangePassword);
+      setAuth(data.profile, data.accessToken, data.mustChangePassword, data.refreshToken);
       router.push("/portal");
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { message?: string } } };
@@ -101,7 +101,7 @@ export default function PortalLoginPage() {
         code,
         newPassword,
       });
-      setAuth(data.profile, data.accessToken, data.mustChangePassword);
+      setAuth(data.profile, data.accessToken, data.mustChangePassword, data.refreshToken);
       router.push("/portal");
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;

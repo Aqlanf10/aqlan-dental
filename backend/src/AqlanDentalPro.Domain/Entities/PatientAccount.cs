@@ -11,7 +11,14 @@ public class PatientAccount : BaseEntity
     public bool IsVerified { get; set; } = false;
     public DateTime? LastLogin { get; set; }
     public string? DeviceToken { get; set; }  // For push notifications
-    public string? RefreshToken { get; set; }
+
+    // SEC-09 FIX: Stores the SHA-256 hash (hex lowercase) of the refresh token,
+    // NOT the plaintext token. The plaintext token is handed to the client once
+    // (in PatientAuthResponse.RefreshToken) and never persisted. DB column name
+    // stays "RefreshToken" for zero-migration compatibility — only the C# property
+    // is renamed to reflect what's actually stored.
+    [Column("RefreshToken")]
+    public string? RefreshTokenHash { get; set; }
     public DateTime? RefreshTokenExpiry { get; set; }
 
     // Username/Password authentication

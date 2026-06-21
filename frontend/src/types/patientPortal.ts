@@ -18,6 +18,10 @@ export interface PatientAuthResponse {
   accessToken: string;
   profile: PatientPortalProfile;
   mustChangePassword: boolean;
+  // SEC-09: plaintext refresh token returned once on login/reset/change/refresh.
+  // The backend persists only the SHA-256 hash; the frontend stores this in
+  // localStorage (SEC-10 will later move it to an HttpOnly cookie).
+  refreshToken?: string;
 }
 
 // Profile — extended with more fields

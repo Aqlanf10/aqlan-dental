@@ -37,6 +37,12 @@ public class PatientAuthResponse
     public string AccessToken { get; set; } = string.Empty;
     public PatientPortalProfileDto Profile { get; set; } = null!;
     public bool MustChangePassword { get; set; }
+
+    // SEC-09: Plaintext refresh token — returned to the client ONCE so it can be
+    // stored locally (localStorage today; SEC-10 will move it to an HttpOnly
+    // cookie). The backend persists ONLY the SHA-256 hash; this plaintext value
+    // is never written to the database.
+    public string? RefreshToken { get; set; }
 }
 
 // Account info — lightweight DTO for account creation

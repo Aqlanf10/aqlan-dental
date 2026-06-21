@@ -283,57 +283,97 @@ public class OrthoCasesController(
     [HttpGet("{id:guid}/overview")]
     public async Task<IActionResult> GetOverview(Guid id)
     {
-        var orthoCase = await db.OrthoCases
+        // CLIN-15: Single server-side projection. Previously this method loaded the full
+        // entity graph (8 Includes — every TreatmentPlan/Stage/Visit/Photo/CephAnalysis row,
+        // all columns) plus 3 follow-up queries (hasClinicalExam, problemsCount,
+        // diagnosisSummary) — up to 11 DB hits transferring far more data than needed.
+        // Now: ONE projection query fetches only the columns the overview DTO uses.
+        // "Latest" rows are computed in SQL via correlated subqueries (ROW_NUMBER).
+        // hasClinicalExam / problemsCount / diagnosisSummary are folded into the same
+        // projection as EXISTS / COUNT / scalar-subquery.
+        // The only remaining extra round-trips are:
+        //   - contract lookup (needs Payments included for the active-only paid sum);
+        //   - optional photo projection for checklist auto-derive (only when no saved checklist).
+        var overview = await db.OrthoCases
             .AsNoTracking()
-            .Include(c => c.TreatmentPlans)
-            .Include(c => c.Stages)
-            .Include(c => c.Visits)
-            .Include(c => c.OrthoClinicalPhotos)
-            .Include(c => c.CephAnalyses)
-            .Include(c => c.PhotoAnalyses)
-            .Include(c => c.RetentionRecord)
-            .Include(c => c.RecordsChecklist)
-            .FirstOrDefaultAsync(c => c.Id == id);
-
-        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
-
-        var hasClinicalExam = await db.OrthoClinicalExams.AnyAsync(e => e.OrthoCaseId == id);
-        var problemsCount = await db.ProblemListItems.CountAsync(p => p.OrthoCaseId == id);
-        var diagnosisSummary = await db.OrthoDiagnoses
-            .Where(d => d.OrthoCaseId == id)
-            .Select(d => new
+            .Where(c => c.Id == id)
+            .Select(c => new
             {
-                d.ApprovedAt,
-                d.CephSourceAnalysisId,
-                d.CephSyncedAt,
-                d.ProfileSourceAnalysisId,
-                d.FrontalSourceAnalysisId,
-                d.PhotoAnalysisSyncedAt,
+                c.PatientId,
+                TreatmentPlansCount = c.TreatmentPlans.Count,
+                CompletedStages = c.Stages.Count(s => s.Status == "completed"),
+                TotalStages = c.Stages.Count,
+                VisitsCount = c.Visits.Count,
+                PhotosCount = c.OrthoClinicalPhotos.Count,
+                CephAnalysesCount = c.CephAnalyses.Count,
+                PhotoAnalysesCount = c.PhotoAnalyses.Count,
+                HasClinicalExam = c.ClinicalExam != null,
+                ProblemsCount = c.ProblemList.Count,
+                HasModelAnalysis = c.ModelAnalyses.Any(),
+                LatestPlanIsApproved = c.TreatmentPlans
+                    .OrderByDescending(p => p.CreatedAt)
+                    .Select(p => p.IsApproved)
+                    .FirstOrDefault(),
+                LatestVisit = c.Visits
+                    .OrderByDescending(v => v.VisitDate)
+                    .Select(v => new { v.VisitDate, v.NextAppointmentDate })
+                    .FirstOrDefault(),
+                LatestCeph = c.CephAnalyses
+                    .OrderByDescending(a => a.AnalysisDate)
+                    .ThenByDescending(a => a.UpdatedAt)
+                    .Select(a => new { a.Id, a.AnalysisDate })
+                    .FirstOrDefault(),
+                LatestProfile = c.PhotoAnalyses
+                    .Where(a => a.ViewType == "profile")
+                    .OrderByDescending(a => a.CreatedAt)
+                    .Select(a => new { a.Id, a.CreatedAt })
+                    .FirstOrDefault(),
+                LatestFrontal = c.PhotoAnalyses
+                    .Where(a => a.ViewType == "frontal")
+                    .OrderByDescending(a => a.CreatedAt)
+                    .Select(a => new { a.Id, a.CreatedAt })
+                    .FirstOrDefault(),
+                HasRetention = c.RetentionRecord != null,
+                Diagnosis = c.Diagnosis == null ? null : new
+                {
+                    c.Diagnosis.ApprovedAt,
+                    c.Diagnosis.CephSourceAnalysisId,
+                    c.Diagnosis.CephSyncedAt,
+                    c.Diagnosis.ProfileSourceAnalysisId,
+                    c.Diagnosis.FrontalSourceAnalysisId,
+                    c.Diagnosis.PhotoAnalysisSyncedAt,
+                },
+                Checklist = c.RecordsChecklist == null ? null : new
+                {
+                    c.RecordsChecklist.ExtraoralFrontal,
+                    c.RecordsChecklist.ExtraoralProfile,
+                    c.RecordsChecklist.ExtraoralSmile,
+                    c.RecordsChecklist.IntraoralFrontal,
+                    c.RecordsChecklist.IntraoralRight,
+                    c.RecordsChecklist.IntraoralLeft,
+                    c.RecordsChecklist.UpperOcclusal,
+                    c.RecordsChecklist.LowerOcclusal,
+                    c.RecordsChecklist.Opg,
+                    c.RecordsChecklist.LateralCeph,
+                    c.RecordsChecklist.Cbct,
+                    c.RecordsChecklist.StudyModels,
+                    c.RecordsChecklist.Consent,
+                    c.RecordsChecklist.Contract,
+                },
             })
             .FirstOrDefaultAsync();
-        var hasDiagnosis = diagnosisSummary is not null;
-        var isDiagnosisApproved = diagnosisSummary?.ApprovedAt is not null;
-        var latestCeph = orthoCase.CephAnalyses
-            .OrderByDescending(a => a.AnalysisDate)
-            .ThenByDescending(a => a.UpdatedAt)
-            .FirstOrDefault();
-        var latestProfile = orthoCase.PhotoAnalyses
-            .Where(a => a.ViewType == "profile")
-            .OrderByDescending(a => a.CreatedAt)
-            .FirstOrDefault();
-        var latestFrontal = orthoCase.PhotoAnalyses
-            .Where(a => a.ViewType == "frontal")
-            .OrderByDescending(a => a.CreatedAt)
-            .FirstOrDefault();
-        var latestPlan = orthoCase.TreatmentPlans.OrderByDescending(p => p.CreatedAt).FirstOrDefault();
-        var latestVisit = orthoCase.Visits.OrderByDescending(v => v.VisitDate).FirstOrDefault();
+
+        if (overview is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var hasDiagnosis = overview.Diagnosis is not null;
+        var isDiagnosisApproved = overview.Diagnosis?.ApprovedAt is not null;
 
         // Contract selection: prefer contract explicitly linked to this ortho case.
         // Fallback: unlinked legacy ortho contracts (RelatedCaseId == null).
         // Never select a contract linked to a different ortho case.
         var contract = await db.Contracts
             .Include(c => c.Payments)
-            .Where(c => c.PatientId == orthoCase.PatientId &&
+            .Where(c => c.PatientId == overview.PatientId &&
                 c.RelatedCaseId == id)
             .OrderByDescending(c => c.CreatedAt)
             .FirstOrDefaultAsync();
@@ -343,7 +383,7 @@ public class OrthoCasesController(
             // Legacy fallback: orthodontics contracts with no case link (pre-dating RelatedCaseId)
             var unlinkedOrthoContracts = await db.Contracts
                 .Include(c => c.Payments)
-                .Where(c => c.PatientId == orthoCase.PatientId &&
+                .Where(c => c.PatientId == overview.PatientId &&
                     c.RelatedCaseId == null &&
                     (c.Specialty == "orthodontics" || c.Specialty == "ortho"))
                 .OrderByDescending(c => c.CreatedAt)
@@ -369,11 +409,11 @@ public class OrthoCasesController(
         }
 
         // Records checklist completion
-        var checklist = orthoCase.RecordsChecklist;
         int checklistCompleted = 0;
         int checklistTotal = 14;
-        if (checklist is not null)
+        if (overview.Checklist is not null)
         {
+            var checklist = overview.Checklist;
             checklistCompleted = new[]
             {
                 checklist.ExtraoralFrontal, checklist.ExtraoralProfile, checklist.ExtraoralSmile,
@@ -383,12 +423,24 @@ public class OrthoCasesController(
                 checklist.StudyModels, checklist.Consent, checklist.Contract,
             }.Count(b => b);
         }
-        // Auto-derive checklist items from existing data using same per-item logic as GET /checklist
-        if (checklist is null)
+        else
         {
-            var photos = orthoCase.OrthoClinicalPhotos.ToList();
-            var hasCeph = orthoCase.CephAnalyses.Count > 0;
-            var hasModel = await db.ModelAnalyses.AnyAsync(m => m.OrthoCaseId == id);
+            // Auto-derive checklist items from existing data using same per-item logic as GET /checklist.
+            // CLIN-15: fetch only the 4 columns actually used by OrthoPhotoRecords (Category, Subtype,
+            // PhotoType, Caption) instead of pulling the full OrthoClinicalPhoto rows.
+            var photos = await db.OrthoClinicalPhotos
+                .AsNoTracking()
+                .Where(p => p.OrthoCaseId == id)
+                .Select(p => new OrthoClinicalPhoto
+                {
+                    Category = p.Category,
+                    Subtype = p.Subtype,
+                    PhotoType = p.PhotoType,
+                    Caption = p.Caption,
+                })
+                .ToListAsync();
+            var hasCeph = overview.CephAnalysesCount > 0;
+            var hasModel = overview.HasModelAnalysis;
             // Use precise per-item matching — same as GET /checklist derivation:
             // (Category, Subtype) tags first, legacy caption keywords as fallback
             checklistCompleted = new[]
@@ -412,41 +464,41 @@ public class OrthoCasesController(
 
         return Ok(new
         {
-            HasClinicalExam = hasClinicalExam,
-            ProblemsCount = problemsCount,
+            HasClinicalExam = overview.HasClinicalExam,
+            ProblemsCount = overview.ProblemsCount,
             HasDiagnosis = hasDiagnosis,
             IsDiagnosisApproved = isDiagnosisApproved,
-            HasTreatmentPlan = latestPlan is not null,
-            IsTreatmentPlanApproved = latestPlan?.IsApproved ?? false,
-            TreatmentPlansCount = orthoCase.TreatmentPlans.Count,
-            CompletedStages = orthoCase.Stages.Count(s => s.Status == "completed"),
-            TotalStages = orthoCase.Stages.Count,
-            VisitsCount = orthoCase.Visits.Count,
-            PhotosCount = orthoCase.OrthoClinicalPhotos.Count,
-            CephAnalysesCount = orthoCase.CephAnalyses.Count,
-            PhotoAnalysesCount = orthoCase.PhotoAnalyses.Count,
-            LatestCephAnalysisId = latestCeph?.Id,
-            LatestCephAnalysisDate = latestCeph?.AnalysisDate.ToString("yyyy-MM-dd"),
-            CephDiagnosisSyncedAt = diagnosisSummary?.CephSyncedAt,
-            IsCephDiagnosisOutdated = latestCeph is not null &&
-                diagnosisSummary?.CephSourceAnalysisId != latestCeph.Id,
-            LatestProfileAnalysisId = latestProfile?.Id,
-            LatestProfileAnalysisDate = latestProfile?.CreatedAt.ToString("yyyy-MM-dd"),
-            LatestFrontalAnalysisId = latestFrontal?.Id,
-            LatestFrontalAnalysisDate = latestFrontal?.CreatedAt.ToString("yyyy-MM-dd"),
-            PhotoAnalysisSyncedAt = diagnosisSummary?.PhotoAnalysisSyncedAt,
+            HasTreatmentPlan = overview.TreatmentPlansCount > 0,
+            IsTreatmentPlanApproved = overview.LatestPlanIsApproved,
+            TreatmentPlansCount = overview.TreatmentPlansCount,
+            CompletedStages = overview.CompletedStages,
+            TotalStages = overview.TotalStages,
+            VisitsCount = overview.VisitsCount,
+            PhotosCount = overview.PhotosCount,
+            CephAnalysesCount = overview.CephAnalysesCount,
+            PhotoAnalysesCount = overview.PhotoAnalysesCount,
+            LatestCephAnalysisId = overview.LatestCeph?.Id,
+            LatestCephAnalysisDate = overview.LatestCeph?.AnalysisDate.ToString("yyyy-MM-dd"),
+            CephDiagnosisSyncedAt = overview.Diagnosis?.CephSyncedAt,
+            IsCephDiagnosisOutdated = overview.LatestCeph is not null &&
+                overview.Diagnosis?.CephSourceAnalysisId != overview.LatestCeph.Id,
+            LatestProfileAnalysisId = overview.LatestProfile?.Id,
+            LatestProfileAnalysisDate = overview.LatestProfile?.CreatedAt.ToString("yyyy-MM-dd"),
+            LatestFrontalAnalysisId = overview.LatestFrontal?.Id,
+            LatestFrontalAnalysisDate = overview.LatestFrontal?.CreatedAt.ToString("yyyy-MM-dd"),
+            PhotoAnalysisSyncedAt = overview.Diagnosis?.PhotoAnalysisSyncedAt,
             IsPhotoAnalysisSyncOutdated =
-                (latestProfile is not null && diagnosisSummary?.ProfileSourceAnalysisId != latestProfile.Id) ||
-                (latestFrontal is not null && diagnosisSummary?.FrontalSourceAnalysisId != latestFrontal.Id),
-            HasRetention = orthoCase.RetentionRecord is not null,
+                (overview.LatestProfile is not null && overview.Diagnosis?.ProfileSourceAnalysisId != overview.LatestProfile.Id) ||
+                (overview.LatestFrontal is not null && overview.Diagnosis?.FrontalSourceAnalysisId != overview.LatestFrontal.Id),
+            HasRetention = overview.HasRetention,
             ChecklistCompleted = checklistCompleted,
             ChecklistTotal = checklistTotal,
             ContractId = contract?.Id,
             ContractTotal = contractTotal,
             ContractPaid = contractPaid,
             ContractRemaining = contractRemaining,
-            LatestVisitDate = latestVisit?.VisitDate.ToString("yyyy-MM-dd"),
-            NextAppointmentDate = latestVisit?.NextAppointmentDate?.ToString("yyyy-MM-dd")
+            LatestVisitDate = overview.LatestVisit?.VisitDate.ToString("yyyy-MM-dd"),
+            NextAppointmentDate = overview.LatestVisit?.NextAppointmentDate?.ToString("yyyy-MM-dd")
         });
     }
 

@@ -200,7 +200,13 @@ public class SurgeryController(
             .Include(s => s.Doctor)
             .AsQueryable();
 
-        if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<SurgeryCaseStatus>(status, true, out var surgeryStatus))
+        // SURG-FIX: normalize snake_case → PascalCase before Enum.TryParse.
+        // The frontend sends snake_case ("in_progress") per the UpdateSurgeryStatusRequestValidator
+        // contract, but Enum.TryParse<SurgeryCaseStatus>("in_progress", true, ...) FAILS because
+        // the enum is InProgress (PascalCase) and TryParse doesn't handle underscores.
+        // Removing underscores yields "inprogress" which matches "InProgress" case-insensitively.
+        // Without this, the Scheduled→InProgress transition is unreachable (returns 400).
+        if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<SurgeryCaseStatus>(NormalizeStatusEnum(status), true, out var surgeryStatus))
             query = query.Where(s => s.Status == surgeryStatus);
         if (doctorId.HasValue) query = query.Where(s => s.DoctorId == doctorId);
         if (patientId.HasValue) query = query.Where(s => s.PatientId == patientId);
@@ -335,7 +341,10 @@ public class SurgeryController(
         var denied = await DenyIfDoctorCannotAccess(surgery.PatientId);
         if (denied is not null) return denied;
 
-        if (!Enum.TryParse<SurgeryCaseStatus>(req.Status, true, out var surgeryStatus))
+        // SURG-FIX: normalize snake_case → PascalCase before Enum.TryParse (see GetAll for details).
+        // Without this, "in_progress" fails to parse and the Scheduled→InProgress transition
+        // returns 400 "حالة الجراحة غير صالحة" — production-broken since the frontend only sends snake_case.
+        if (!Enum.TryParse<SurgeryCaseStatus>(NormalizeStatusEnum(req.Status), true, out var surgeryStatus))
             return BadRequest(new { message = "حالة الجراحة غير صالحة" });
 
         // CLIN-03: Validate the transition before applying. Previously any status could
@@ -613,4 +622,11 @@ public class SurgeryController(
 
     private static bool IsUniqueViolation(DbUpdateException ex)
         => ex.InnerException is NpgsqlException pgEx && pgEx.SqlState == "23505";
+
+    // SURG-FIX: Converts snake_case status strings (the frontend contract, e.g. "in_progress")
+    // to a form Enum.TryParse can match against PascalCase enum names (InProgress).
+    // Enum.TryParse is case-insensitive but does NOT handle underscores, so "in_progress"
+    // → "inprogress" → matches InProgress. The 4 underscore-free statuses parse fine either way.
+    private static string NormalizeStatusEnum(string? s) =>
+        string.IsNullOrWhiteSpace(s) ? "" : s.Trim().Replace("_", "");
 }

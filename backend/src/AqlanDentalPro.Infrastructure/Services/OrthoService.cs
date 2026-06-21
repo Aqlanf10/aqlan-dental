@@ -22,7 +22,12 @@ public class OrthoService(AppDbContext db, ICurrentUserService currentUser)
 
         if (doctorId.HasValue) query = query.Where(c => c.DoctorId == doctorId);
         if (patientId.HasValue) query = query.Where(c => c.PatientId == patientId);
-        if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<OrthoCaseStatus>(status, true, out var orthoStatus))
+        // SURG-FIX (cross-cutting): normalize snake_case → PascalCase before Enum.TryParse.
+        // Same bug as SurgeryController: frontend sends "on_hold" (snake_case) but the enum is
+        // OnHold (PascalCase). Enum.TryParse doesn't handle underscores, so without normalization
+        // the filter silently drops and ALL ortho cases are returned instead of just on_hold ones.
+        // "on_hold" → "onhold" → matches OnHold case-insensitively.
+        if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<OrthoCaseStatus>(NormalizeStatusEnum(status), true, out var orthoStatus))
             query = query.Where(c => c.Status == orthoStatus);
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -347,4 +352,10 @@ public class OrthoService(AppDbContext db, ICurrentUserService currentUser)
 
     private static bool IsUniqueViolation(DbUpdateException ex)
         => ex.InnerException is NpgsqlException pgEx && pgEx.SqlState == "23505";
+
+    // SURG-FIX (cross-cutting): Converts snake_case status strings (the frontend contract, e.g.
+    // "on_hold") to a form Enum.TryParse can match against PascalCase enum names (OnHold).
+    // Mirrors SurgeryController.NormalizeStatusEnum — see that method for the full rationale.
+    private static string NormalizeStatusEnum(string? s) =>
+        string.IsNullOrWhiteSpace(s) ? "" : s.Trim().Replace("_", "");
 }

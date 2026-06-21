@@ -2657,6 +2657,17 @@ public static class StartupDatabaseMaintenance
                 logger.LogError(ex, "Failed to ensure Treasuries table");
             }
 
+            // DB-02 NOTE: CashierSessions, Invoices, and Payments now use PostgreSQL's xmin
+            // system column as an EF Core optimistic concurrency token (mirrors the FIN-06 fix
+            // applied to Treasuries). xmin is a PostgreSQL system column that exists on every
+            // table automatically — there is no DDL to run here. EF Core's runtime model
+            // (configured in CashierSessionConfiguration / InvoiceConfiguration /
+            // PaymentConfiguration via UseXminAsConcurrencyToken) includes the xmin value in
+            // UPDATE WHERE clauses, so concurrent edits throw DbUpdateConcurrencyException,
+            // which the global ErrorHandlingMiddleware converts to HTTP 409 Conflict with an
+            // Arabic message. The empty migration 20260706000000 advances the ModelSnapshot
+            // only. No startup maintenance DDL is required for these three tables.
+
             // ── OperationalExpenses ────────────────────────────────────────────────
             try
             {

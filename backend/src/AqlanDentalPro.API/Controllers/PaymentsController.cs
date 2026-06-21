@@ -3,6 +3,7 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -51,6 +52,11 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
             logger.LogWarning(ex, "Payment creation operation failed");
             return BadRequest(new { message = ex.Message });
         }
+        catch (DbUpdateConcurrencyException)
+        {
+            // DB-02: xmin concurrency token on Payment (or a related Invoice/CashierSession) detected a concurrent edit.
+            return Conflict(new { message = "تم تعديل الدفعة من قبل مستخدم آخر، يرجى التحديث والمحاولة مرة أخرى" });
+        }
     }
 
     [HttpPut("payments/{id:guid}")]
@@ -66,25 +72,38 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
             logger.LogWarning(ex, "Payment update validation failed for payment {PaymentId}", id);
             return BadRequest(new { message = ex.Message });
         }
+        catch (DbUpdateConcurrencyException)
+        {
+            // DB-02: xmin concurrency token on Payment detected a concurrent edit.
+            return Conflict(new { message = "تم تعديل الدفعة من قبل مستخدم آخر، يرجى التحديث والمحاولة مرة أخرى" });
+        }
     }
 
     [HttpDelete("payments/{id:guid}")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> DeletePayment(Guid id)
     {
-        // Fetch payment details for audit before deletion
-        var payment = await service.GetPaymentByIdAsync(id);
-
-        var deleted = await service.DeletePaymentAsync(id);
-
-        if (deleted && payment != null)
+        try
         {
-            // H3: Audit logging for payment deletion
-            await audit.LogAsync(AuditAction.Delete, "Payment", id,
-                oldData: new { payment.Amount, payment.PatientId });
-        }
+            // Fetch payment details for audit before deletion
+            var payment = await service.GetPaymentByIdAsync(id);
 
-        return deleted ? Ok(new { message = "تم حذف الدفعة بنجاح" }) : NotFound(new { message = "الدفعة غير موجودة" });
+            var deleted = await service.DeletePaymentAsync(id);
+
+            if (deleted && payment != null)
+            {
+                // H3: Audit logging for payment deletion
+                await audit.LogAsync(AuditAction.Delete, "Payment", id,
+                    oldData: new { payment.Amount, payment.PatientId });
+            }
+
+            return deleted ? Ok(new { message = "تم حذف الدفعة بنجاح" }) : NotFound(new { message = "الدفعة غير موجودة" });
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // DB-02: xmin concurrency token on Payment detected a concurrent edit.
+            return Conflict(new { message = "تم تعديل الدفعة من قبل مستخدم آخر، يرجى التحديث والمحاولة مرة أخرى" });
+        }
     }
 
     [HttpPost("payments/{id:guid}/refund")]

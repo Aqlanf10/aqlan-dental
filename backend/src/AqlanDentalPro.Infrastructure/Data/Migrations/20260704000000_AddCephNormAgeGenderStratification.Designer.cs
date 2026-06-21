@@ -3,6 +3,7 @@ using System;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AqlanDentalPro.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260704000000_AddCephNormAgeGenderStratification")]
+    partial class AddCephNormAgeGenderStratification
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -7120,9 +7123,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("CurrentStage")
-                        .HasColumnType("text");
-
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -7175,12 +7175,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasColumnType("date");
 
                     b.Property<string>("VisitType")
-                        .HasColumnType("text");
-
-                    b.Property<string>("WireLower")
-                        .HasColumnType("text");
-
-                    b.Property<string>("WireUpper")
                         .HasColumnType("text");
 
                     b.HasKey("Id");

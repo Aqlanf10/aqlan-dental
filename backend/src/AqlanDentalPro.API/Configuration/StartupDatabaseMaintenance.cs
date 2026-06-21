@@ -1445,9 +1445,30 @@ public static class StartupDatabaseMaintenance
                         "IsActive" boolean NOT NULL DEFAULT true,
                         "DeletedAt" timestamp with time zone NULL,
                         "DeletedBy" uuid NULL,
+                        "AgeMin" integer NULL,
+                        "AgeMax" integer NULL,
+                        "Sex" character varying(1) NULL,
                         CONSTRAINT "PK_CephNorms" PRIMARY KEY ("Id")
                     );
-                    CREATE UNIQUE INDEX IF NOT EXISTS "IX_CephNorms_MeasurementName_AnalysisGroup" ON "CephNorms" ("MeasurementName", "AnalysisGroup");
+                    """);
+
+                // CLIN-10 — age/gender stratification. For clinics whose CephNorms
+                // table predates the 20260704000000 migration (created by the
+                // runtime DDL above without AgeMin/AgeMax/Sex), ALTER ADD COLUMN
+                // IF NOT EXISTS brings them forward. DROP the legacy unique index
+                // so the stratified seeder rows (same MeasurementName +
+                // AnalysisGroup, different age band / sex) don't violate it.
+                // CREATE the composite index that supports the best-match lookup.
+                // All statements are idempotent (PostgreSQL IF EXISTS / IF NOT
+                // EXISTS guards) so this block is a no-op on clinics already on
+                // the new schema.
+                await cnDb.Database.ExecuteSqlRawAsync("""
+                    ALTER TABLE "CephNorms" ADD COLUMN IF NOT EXISTS "AgeMin" integer NULL;
+                    ALTER TABLE "CephNorms" ADD COLUMN IF NOT EXISTS "AgeMax" integer NULL;
+                    ALTER TABLE "CephNorms" ADD COLUMN IF NOT EXISTS "Sex" character varying(1) NULL;
+                    DROP INDEX IF EXISTS "IX_CephNorms_MeasurementName_AnalysisGroup";
+                    CREATE INDEX IF NOT EXISTS "IX_CephNorms_MeasurementName_AnalysisGroup_AgeMin_AgeMax_Sex"
+                        ON "CephNorms" ("MeasurementName", "AnalysisGroup", "AgeMin", "AgeMax", "Sex");
                     """);
             }
 

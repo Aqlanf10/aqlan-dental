@@ -195,9 +195,8 @@ public class CephJarabakAnalysisTests
         (await db.CephNorms.AnyAsync(n => n.MeasurementName == "Jarabak-Ratio" && n.AnalysisGroup == "jarabak"))
             .Should().BeTrue();
 
-        var sna = await db.CephNorms.SingleAsync(n => n.MeasurementName == "SNA");
-        sna.NameAr.Should().Be("مخصص", "existing customized rows must not be overwritten");
-        sna.NormalValue.Should().Be(79);
+        var sna = await db.CephNorms.SingleAsync(n => n.MeasurementName == "SNA" && n.NameAr == "مخصص");
+        sna.NormalValue.Should().Be(79, "existing customized rows must not be overwritten");
     }
 
     [Fact]

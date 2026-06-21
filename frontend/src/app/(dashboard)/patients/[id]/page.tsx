@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   User, Stethoscope, Phone, MapPin, Pencil,
@@ -274,6 +274,34 @@ export default function PatientProfilePage() {
         });
     }
   }, [id, router]);
+
+  // ─── FE-06: ?focus=journey deep-link ──────────────────────────────────
+  // When the URL carries ?focus=journey (e.g., redirected from the old
+  // /patient-journey/[patientId] page), activate the most journey-relevant
+  // tab on first mount. For roles that can see the activity-log (Admin /
+  // Reception / Accountant) that is the Timeline sub-tab. For clinical
+  // roles (Doctor / Orthodontist / GeneralDentist / OralSurgeon) the
+  // activity-log tab is hidden, so fall back to the Visits tab (the
+  // closest journey-relevant content).
+  const searchParams = useSearchParams();
+  const hasAppliedFocusRef = useRef(false);
+  useEffect(() => {
+    if (hasAppliedFocusRef.current) return;
+    const focus = searchParams?.get("focus");
+    if (!focus) return;
+    hasAppliedFocusRef.current = true;
+    if (focus === "journey") {
+      // activity-log is hidden for clinical roles (visibleTabs filter above);
+      // use the same predicate to decide the deep-link target.
+      const canSeeActivityLog = !isDoctor;
+      if (canSeeActivityLog) {
+        setActiveTab("activity-log");
+        setActivitySubTab("timeline");
+      } else {
+        setActiveTab("visits");
+      }
+    }
+  }, [searchParams, isDoctor]);
 
   // ─── Data Fetching ──────────────────────────────────────────────────────
 

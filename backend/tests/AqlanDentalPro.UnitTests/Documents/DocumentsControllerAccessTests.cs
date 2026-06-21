@@ -19,21 +19,17 @@ namespace AqlanDentalPro.UnitTests.Documents;
 ///   - GetDocument: audit LogAsync IS called with action=View on a 403 (the
 ///     DenyIfDoctorCannotAccess helper logs the denial — critical for the security audit trail).
 ///
-/// FINDING #1 (TEST-13, documented in PR description, NOT fixed per test-only scope):
-///   DocumentsController.CreateDocument, UpdateDocument, and DeleteDocument do NOT
-///   explicitly call <c>DenyIfDoctorCannotAccess</c>. They rely solely on the
-///   <c>[ServiceFilter(typeof(PatientAccessFilter))]</c> attribute — but the filter only
-///   inspects route + query values for <c>patientId</c>. For CreateDocument the patientId
-///   is in the request BODY (not route/query), so the filter does NOT enforce per-patient
-///   access for CreateDocument. A doctor (with PatientAccessService.CanAccessPatientAsync
-///   returning false) can still create a document under any patient. GetDocument is the
-///   ONLY action that explicitly calls DenyIfDoctorCannotAccess and is therefore the only
-///   one safe against cross-patient access by doctor roles when invoked outside the
-///   routing pipeline.
-///
-///   The test <c>CreateDocument_ByDoctorWithoutPatientAccess_SucceedsBecauseNoExplicitCheck</c>
-///   documents this finding by asserting that the access mock is NEVER called (because
-///   the controller never invokes it) and the document IS persisted.
+/// SEC-DOCS (fix for TEST-13 Finding #1):
+///   DocumentsController.CreateDocument, UpdateDocument, and DeleteDocument previously
+///   relied solely on the class-level <c>[ServiceFilter(typeof(PatientAccessFilter))]</c>
+///   attribute — but that filter only inspects route + query values for <c>patientId</c>.
+///   For CreateDocument the patientId is in the request BODY, and for Update/Delete the
+///   route only carries the document id, so the filter never saw a patientId and a doctor
+///   could create/update/delete documents for ANY patient. The fix added an explicit
+///   <c>DenyIfDoctorCannotAccess</c> call at the top of each body-bound / route-only-id
+///   action (mirroring PrescriptionsController). The three <c>..._Returns403_WhenNoAccess</c>
+///   tests below pin the FIXED behavior: 403 + Arabic message + audit LogAsync called +
+///   no mutation persisted.
 /// </summary>
 public class DocumentsControllerAccessTests : IDisposable
 {
@@ -144,29 +140,26 @@ public class DocumentsControllerAccessTests : IDisposable
             "admin roles must short-circuit the access check (IsDoctor == false)");
     }
 
-    // ── CreateDocument access (FINDING #1 — missing access check) ────────────────
+    // ── CreateDocument access (SEC-DOCS — fixed: explicit DenyIfDoctorCannotAccess) ─
 
     [Fact]
-    public async Task CreateDocument_ByDoctorWithoutPatientAccess_SucceedsBecauseNoExplicitCheck_Finding()
+    public async Task CreateDocument_ByDoctorWithoutPatientAccess_Returns403_WhenNoAccess()
     {
-        // FINDING #1: CreateDocument does NOT call DenyIfDoctorCannotAccess. It relies on
-        // the PatientAccessFilter — but patientId is in the request body, not route/query,
-        // so the filter (which only checks route+query) does NOT enforce per-patient access.
-        //
-        // In a real HTTP pipeline, the filter would skip the check (patientId not in route/query).
-        // In unit tests (no filter), the controller itself never calls CanAccessPatientAsync.
-        //
-        // Result: a doctor mock with NO access to the patient can still create a document.
-        // This is a security finding documented in the PR description.
+        // SEC-DOCS: CreateDocument now calls DenyIfDoctorCannotAccess(req.PatientId) at the
+        // top of the action — the body-bound patientId is enforced even though the
+        // class-level PatientAccessFilter cannot see it. A doctor with no access to the
+        // patient gets 403 + Arabic message + audit log + NO document persisted.
         var seeded = await SeedDocumentAsync();
 
         var accessMock = new Mock<IPatientAccessService>();
         DocumentsTestData.SetupDoctorWithAccess(accessMock); // no accessible patients
+        var doctorUserId = Guid.NewGuid();
         var currentUserMock = new Mock<ICurrentUserService>();
-        currentUserMock.SetupGet(c => c.UserId).Returns(Guid.NewGuid());
+        currentUserMock.SetupGet(c => c.UserId).Returns(doctorUserId);
         currentUserMock.SetupGet(c => c.Role).Returns(UserRole.GeneralDentist);
+        var auditMock = new Mock<IAuditService>();
 
-        var controller = DocumentsTestData.BuildController(_db, accessMock, currentUserMock);
+        var controller = DocumentsTestData.BuildController(_db, accessMock, currentUserMock, auditMock);
 
         var req = new CreateDocumentRequest
         {
@@ -176,65 +169,121 @@ public class DocumentsControllerAccessTests : IDisposable
 
         var result = await controller.CreateDocument(req);
 
-        // The document IS persisted despite the doctor not having access — this is the bug.
-        result.Should().BeOfType<OkObjectResult>(
-            "FINDING #1: CreateDocument does not call DenyIfDoctorCannotAccess — the cross-patient " +
-            "doctor succeeds. The PatientAccessFilter does not cover body-bound patientId.");
-        (await _db.Documents.CountAsync(d => d.PatientId == seeded.PatientId)).Should().Be(2,
-            "the seeded document + the new one (created despite no access) = 2");
+        var statusResult = result.Should().BeOfType<ObjectResult>().Subject;
+        statusResult.StatusCode.Should().Be(403);
+        ExtractMessage(statusResult.Value).Should().Be("غير مصرح لك بعرض بيانات هذا المريض");
 
-        accessMock.Verify(p => p.CanAccessPatientAsync(It.IsAny<Guid>()), Times.Never,
-            "CreateDocument never calls CanAccessPatientAsync — the only access guard is the " +
-            "PatientAccessFilter, which cannot see body-bound patientId.");
+        // No document was persisted (the seeded one remains the only row).
+        (await _db.Documents.CountAsync(d => d.PatientId == seeded.PatientId)).Should().Be(1,
+            "a 403 denial must not persist the cross-patient document");
+
+        accessMock.Verify(p => p.CanAccessPatientAsync(seeded.PatientId), Times.Once,
+            "CreateDocument must call CanAccessPatientAsync with the body-bound patientId");
+
+        auditMock.Verify(
+            a => a.LogAsync(
+                AuditAction.View,
+                "Patient",
+                seeded.PatientId,
+                It.IsAny<object?>(),
+                It.IsAny<object?>(),
+                It.IsAny<string?>()),
+            Times.Once,
+            "a 403 denial on CreateDocument must produce an audit log entry");
     }
 
     [Fact]
-    public async Task UpdateDocument_ByDoctorWithoutPatientAccess_SucceedsBecauseNoExplicitCheck_Finding()
+    public async Task UpdateDocument_ByDoctorWithoutPatientAccess_Returns403_WhenNoAccess()
     {
-        // FINDING #1 (Update variant): same root cause — UpdateDocument does not call
-        // DenyIfDoctorCannotAccess. The patientId is loaded from the DB inside the action
-        // but no access check is performed against it.
+        // SEC-DOCS (Update variant): UpdateDocument now resolves PatientId from the fetched
+        // document and calls DenyIfDoctorCannotAccess(doc.PatientId). A cross-patient doctor
+        // gets 403 + Arabic message + audit log + NO mutation. The fetched doc is returned
+        // unchanged from the DB.
         var seeded = await SeedDocumentAsync();
+        var originalTitle = (await _db.Documents.FindAsync(seeded.DocumentId))!.Title;
 
         var accessMock = new Mock<IPatientAccessService>();
         DocumentsTestData.SetupDoctorWithAccess(accessMock); // no accessible patients
+        var doctorUserId = Guid.NewGuid();
         var currentUserMock = new Mock<ICurrentUserService>();
-        currentUserMock.SetupGet(c => c.UserId).Returns(Guid.NewGuid());
+        currentUserMock.SetupGet(c => c.UserId).Returns(doctorUserId);
         currentUserMock.SetupGet(c => c.Role).Returns(UserRole.GeneralDentist);
+        var auditMock = new Mock<IAuditService>();
 
-        var controller = DocumentsTestData.BuildController(_db, accessMock, currentUserMock);
+        var controller = DocumentsTestData.BuildController(_db, accessMock, currentUserMock, auditMock);
 
         var result = await controller.UpdateDocument(
             seeded.DocumentId,
             new UpdateDocumentRequest { Title = "محاولة تعديل غير مصرح بها" });
 
-        result.Should().BeOfType<OkObjectResult>(
-            "FINDING #1 (Update): UpdateDocument does not call DenyIfDoctorCannotAccess — " +
-            "the cross-patient doctor can mutate the document.");
-        accessMock.Verify(p => p.CanAccessPatientAsync(It.IsAny<Guid>()), Times.Never);
+        var statusResult = result.Should().BeOfType<ObjectResult>().Subject;
+        statusResult.StatusCode.Should().Be(403);
+        ExtractMessage(statusResult.Value).Should().Be("غير مصرح لك بعرض بيانات هذا المريض");
+
+        accessMock.Verify(p => p.CanAccessPatientAsync(seeded.PatientId), Times.Once,
+            "UpdateDocument must call CanAccessPatientAsync with the doc's patientId");
+
+        auditMock.Verify(
+            a => a.LogAsync(
+                AuditAction.View,
+                "Patient",
+                seeded.PatientId,
+                It.IsAny<object?>(),
+                It.IsAny<object?>(),
+                It.IsAny<string?>()),
+            Times.Once,
+            "a 403 denial on UpdateDocument must produce an audit log entry");
+
+        _db.ChangeTracker.Clear();
+        var stored = await _db.Documents.FindAsync(seeded.DocumentId);
+        stored!.Title.Should().Be(originalTitle,
+            "a 403 denial must NOT mutate the document (no title update, no UpdatedAt refresh)");
     }
 
     [Fact]
-    public async Task DeleteDocument_ByDoctorWithoutPatientAccess_SucceedsBecauseNoExplicitCheck_Finding()
+    public async Task DeleteDocument_ByDoctorWithoutPatientAccess_Returns403_WhenNoAccess()
     {
-        // FINDING #1 (Delete variant): same root cause — DeleteDocument does not call
-        // DenyIfDoctorCannotAccess.
+        // SEC-DOCS (Delete variant): DeleteDocument now resolves PatientId from the fetched
+        // document and calls DenyIfDoctorCannotAccess(doc.PatientId). A cross-patient doctor
+        // gets 403 + Arabic message + audit log + NO soft-delete (IsActive stays true).
         var seeded = await SeedDocumentAsync();
 
         var accessMock = new Mock<IPatientAccessService>();
         DocumentsTestData.SetupDoctorWithAccess(accessMock); // no accessible patients
+        var doctorUserId = Guid.NewGuid();
         var currentUserMock = new Mock<ICurrentUserService>();
-        currentUserMock.SetupGet(c => c.UserId).Returns(Guid.NewGuid());
+        currentUserMock.SetupGet(c => c.UserId).Returns(doctorUserId);
         currentUserMock.SetupGet(c => c.Role).Returns(UserRole.GeneralDentist);
+        var auditMock = new Mock<IAuditService>();
 
-        var controller = DocumentsTestData.BuildController(_db, accessMock, currentUserMock);
+        var controller = DocumentsTestData.BuildController(_db, accessMock, currentUserMock, auditMock);
 
         var result = await controller.DeleteDocument(seeded.DocumentId);
 
-        result.Should().BeOfType<OkObjectResult>(
-            "FINDING #1 (Delete): DeleteDocument does not call DenyIfDoctorCannotAccess — " +
-            "the cross-patient doctor can soft-delete the document.");
-        accessMock.Verify(p => p.CanAccessPatientAsync(It.IsAny<Guid>()), Times.Never);
+        var statusResult = result.Should().BeOfType<ObjectResult>().Subject;
+        statusResult.StatusCode.Should().Be(403);
+        ExtractMessage(statusResult.Value).Should().Be("غير مصرح لك بعرض بيانات هذا المريض");
+
+        accessMock.Verify(p => p.CanAccessPatientAsync(seeded.PatientId), Times.Once,
+            "DeleteDocument must call CanAccessPatientAsync with the doc's patientId");
+
+        auditMock.Verify(
+            a => a.LogAsync(
+                AuditAction.View,
+                "Patient",
+                seeded.PatientId,
+                It.IsAny<object?>(),
+                It.IsAny<object?>(),
+                It.IsAny<string?>()),
+            Times.Once,
+            "a 403 denial on DeleteDocument must produce an audit log entry");
+
+        _db.ChangeTracker.Clear();
+        var stored = await _db.Documents.IgnoreQueryFilters().FirstOrDefaultAsync(d => d.Id == seeded.DocumentId);
+        stored!.IsActive.Should().BeTrue(
+            "a 403 denial must NOT soft-delete the document (IsActive stays true, no DeletedBy/DeletedAt)");
+        stored.DeletedBy.Should().BeNull();
+        stored.DeletedAt.Should().BeNull();
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────

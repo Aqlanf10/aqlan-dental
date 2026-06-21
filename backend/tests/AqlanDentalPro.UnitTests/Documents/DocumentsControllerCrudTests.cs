@@ -24,12 +24,12 @@ namespace AqlanDentalPro.UnitTests.Documents;
 ///   - UpdateDocument: 200 + PATCH-like null-skip + Signed transition sets SignedAt
 ///   - DeleteDocument: 200 + soft-delete sets IsActive=false, DeletedBy=currentUser.UserId
 ///
-/// TEST-13 finding: DocumentsController.CreateDocument / UpdateDocument / DeleteDocument do
-/// NOT call DenyIfDoctorCannotAccess explicitly — they rely solely on the PatientAccessFilter
-/// (a route+query-param check). Since patientId for Create is in the request BODY (not route
-/// or query), the filter does NOT enforce per-patient access for those actions. Only
-/// GetDocument (which manually calls DenyIfDoctorCannotAccess) is safe. See
-/// <c>DocumentsControllerAccessTests</c> for the access-control coverage and finding doc.
+/// SEC-DOCS note: DocumentsController.CreateDocument / UpdateDocument / DeleteDocument now
+/// explicitly call <c>DenyIfDoctorCannotAccess</c> (body-bound patientId for Create; resolved
+/// from the fetched doc for Update/Delete — the class-level PatientAccessFilter only inspects
+/// route + query for "patientId" so it cannot enforce these on its own). The cross-patient
+/// denial paths are covered in <c>DocumentsControllerAccessTests</c>. These CRUD happy-path
+/// tests run as Admin (IsDoctor == false) so the access check short-circuits.
 /// </summary>
 public class DocumentsControllerCrudTests : IDisposable
 {

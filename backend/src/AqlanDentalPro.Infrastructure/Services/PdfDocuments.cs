@@ -56,10 +56,10 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
                             .FontSize(7).FontColor(Colors.Grey.Darken1);
                 });
 
-                var logoPath = ResolveLogoPath();
-                if (logoPath != null)
+                // CLIN-12: logo bytes are cached statically — no per-render file I/O.
+                if (PdfLogoCache.TryGetLogo(out var receiptLogoBytes))
                 {
-                    row.ConstantItem(45).AlignLeft().Image(logoPath);
+                    row.ConstantItem(45).AlignLeft().Image(receiptLogoBytes);
                 }
             });
 
@@ -171,19 +171,6 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
         });
     }
 
-    private static string? ResolveLogoPath()
-    {
-        var paths = new[]
-        {
-            Path.Combine(AppContext.BaseDirectory, "Fonts", "logo.png"),
-            Path.Combine(Directory.GetCurrentDirectory(), "Fonts", "logo.png"),
-        };
-        foreach (var path in paths)
-        {
-            if (File.Exists(path)) return path;
-        }
-        return null;
-    }
 }
 
 public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient Patient, List<AqlanDentalPro.Domain.Entities.Payment> Payments, FinanceClinicIdentity Identity) : IDocument
@@ -240,10 +227,10 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
                         .FontSize(8).FontColor(Colors.Grey.Darken2);
                 });
 
-                var logoPath = ResolveLogoPath();
-                if (logoPath != null)
+                // CLIN-12: logo bytes are cached statically — no per-render file I/O.
+                if (PdfLogoCache.TryGetLogo(out var statementLogoBytes))
                 {
-                    row.ConstantItem(60).AlignLeft().Image(logoPath);
+                    row.ConstantItem(60).AlignLeft().Image(statementLogoBytes);
                 }
             });
 
@@ -369,20 +356,6 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
             });
         });
     }
-
-    private static string? ResolveLogoPath()
-    {
-        var paths = new[]
-        {
-            Path.Combine(AppContext.BaseDirectory, "Fonts", "logo.png"),
-            Path.Combine(Directory.GetCurrentDirectory(), "Fonts", "logo.png"),
-        };
-        foreach (var path in paths)
-        {
-            if (File.Exists(path)) return path;
-        }
-        return null;
-    }
 }
 
 /// <summary>
@@ -442,10 +415,10 @@ public class InvoiceDocument(Invoice Invoice, FinanceClinicIdentity Identity) : 
                         .FontSize(8).FontFamily(FontName).FontColor(Colors.Grey.Darken2);
                 });
 
-                var logoPath = ResolveLogoPath();
-                if (logoPath != null)
+                // CLIN-12: logo bytes are cached statically — no per-render file I/O.
+                if (PdfLogoCache.TryGetLogo(out var statementLogoBytes))
                 {
-                    row.ConstantItem(60).AlignLeft().Image(logoPath);
+                    row.ConstantItem(60).AlignLeft().Image(statementLogoBytes);
                 }
             });
 
@@ -641,19 +614,5 @@ public class InvoiceDocument(Invoice Invoice, FinanceClinicIdentity Identity) : 
                 row.ConstantItem(120).Text($"طبعت: {DateTime.UtcNow:yyyy-MM-dd HH:mm}").FontSize(7).FontColor(Colors.Grey.Lighten1);
             });
         });
-    }
-
-    private static string? ResolveLogoPath()
-    {
-        var paths = new[]
-        {
-            Path.Combine(AppContext.BaseDirectory, "Fonts", "logo.png"),
-            Path.Combine(Directory.GetCurrentDirectory(), "Fonts", "logo.png"),
-        };
-        foreach (var path in paths)
-        {
-            if (File.Exists(path)) return path;
-        }
-        return null;
     }
 }

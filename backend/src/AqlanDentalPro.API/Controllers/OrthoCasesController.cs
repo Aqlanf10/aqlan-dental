@@ -1944,11 +1944,13 @@ public class OrthoCasesController(
         // Bake the adjustments into a fresh prepared image (best-effort). On success the
         // reports use the fully-rendered copy; on failure PreparedImageUrl is cleared so
         // they fall back to the original with native crop/flip — the save never fails.
+        // CLIN-12: RenderAsync/DeletePreparedAsync use async file I/O so the request
+        // thread is not blocked while SkiaSharp rasterizes the prepared JPEG.
         var previousPreparedUrl = preparation.PreparedImageUrl;
-        var renderedUrl = renderer.Render(photo, preparation);
+        var renderedUrl = await renderer.RenderAsync(photo, preparation);
         preparation.PreparedImageUrl = renderedUrl;
         if (!string.IsNullOrWhiteSpace(previousPreparedUrl) && previousPreparedUrl != renderedUrl)
-            renderer.DeletePrepared(previousPreparedUrl);
+            await renderer.DeletePreparedAsync(previousPreparedUrl);
 
         await db.SaveChangesAsync();
         return Ok(MapImagePreparation(photo, preparation));
@@ -1970,7 +1972,7 @@ public class OrthoCasesController(
 
         if (photo.ImagePreparation is not null)
         {
-            renderer.DeletePrepared(photo.ImagePreparation.PreparedImageUrl);
+            await renderer.DeletePreparedAsync(photo.ImagePreparation.PreparedImageUrl);
             db.OrthoImagePreparations.Remove(photo.ImagePreparation);
         }
         photo.IsSelectedForReport = false;

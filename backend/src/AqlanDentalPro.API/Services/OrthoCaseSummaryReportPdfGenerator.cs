@@ -42,7 +42,10 @@ public class OrthoCaseSummaryReportPdfGenerator(AppDbContext db)
         var identity = await CephReportPdfGenerator.ResolveClinicIdentityAsync(db);
         var finance = await ResolveFinanceAsync(orthoCase);
 
-        return Generate(orthoCase, identity, finance);
+        // CLIN-12: CPU-bound QuestPDF generation is offloaded to the thread pool so the
+        // request thread is released. The AsNoTracking entity graph is fully materialized
+        // by this point, so reading it from another thread is safe.
+        return await Task.Run(() => Generate(orthoCase, identity, finance));
     }
 
     private sealed record FinanceSummary(decimal? Total, decimal? Paid, decimal? Remaining);

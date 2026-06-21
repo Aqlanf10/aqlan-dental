@@ -38,6 +38,11 @@ public class PhotoAnalysisReportPdfGenerator(AppDbContext db)
     }
 
     /// <summary>Throws <see cref="ArgumentException"/> (mapped to Arabic 404) when missing.</summary>
+    /// <remarks>
+    /// CLIN-12: the photo file is read with <see cref="File.ReadAllBytesAsync"/> and the
+    /// CPU-bound QuestPDF <see cref="QuestPDF.Fluent.Document.Create"/> is offloaded via
+    /// <see cref="Task.Run"/> so the request thread is not blocked on either I/O or CPU.
+    /// </remarks>
     public async Task<byte[]> GenerateAsync(Guid id)
     {
         var analysis = await db.PhotoAnalyses
@@ -48,10 +53,27 @@ public class PhotoAnalysisReportPdfGenerator(AppDbContext db)
             throw new ArgumentException($"Photo analysis {id} not found.", nameof(id));
 
         var identity = await CephReportPdfGenerator.ResolveClinicIdentityAsync(db);
-        return Generate(analysis, identity);
+
+        // Async file I/O — never block a request thread on the photo read.
+        byte[]? photoBytes = null;
+        var imagePath = CephReportPdfGenerator.ResolveUploadFilePath(analysis.ImageFileUrl);
+        if (imagePath is not null)
+        {
+            try
+            {
+                photoBytes = await File.ReadAllBytesAsync(imagePath);
+            }
+            catch
+            {
+                photoBytes = null;
+            }
+        }
+
+        // CPU-bound PDF generation — offloaded so the request thread is released.
+        return await Task.Run(() => Generate(analysis, identity, photoBytes));
     }
 
-    private static byte[] Generate(PhotoAnalysis analysis, CephReportClinicIdentity identity)
+    private static byte[] Generate(PhotoAnalysis analysis, CephReportClinicIdentity identity, byte[]? photoBytes)
     {
         QuestPDF.Settings.License = LicenseType.Community;
         AqlanDentalPro.Infrastructure.Services.PdfService.EnsureFontsRegistered();
@@ -62,14 +84,12 @@ public class PhotoAnalysisReportPdfGenerator(AppDbContext db)
 
         Image? photo = null;
         (int W, int H)? dims = null;
-        var imagePath = CephReportPdfGenerator.ResolveUploadFilePath(analysis.ImageFileUrl);
-        if (imagePath is not null)
+        if (photoBytes is not null)
         {
             try
             {
-                var bytes = File.ReadAllBytes(imagePath);
-                photo = Image.FromBinaryData(bytes);
-                dims = ReadImageDimensions(bytes);
+                photo = Image.FromBinaryData(photoBytes);
+                dims = ReadImageDimensions(photoBytes);
             }
             catch { photo = null; }
         }
@@ -105,9 +125,9 @@ public class PhotoAnalysisReportPdfGenerator(AppDbContext db)
             {
                 row.RelativeItem().Row(idRow =>
                 {
-                    var logoPath = ResolveLogoPath();
-                    if (logoPath is not null)
-                        idRow.ConstantItem(48).PaddingLeft(8).AlignTop().Image(logoPath);
+                    // CLIN-12: logo bytes are cached statically — no per-render file I/O.
+                    if (AqlanDentalPro.Infrastructure.Services.PdfLogoCache.TryGetLogo(out var logoBytes))
+                        idRow.ConstantItem(48).PaddingLeft(8).AlignTop().Image(logoBytes);
 
                     idRow.RelativeItem().Column(col =>
                     {
@@ -377,18 +397,6 @@ public class PhotoAnalysisReportPdfGenerator(AppDbContext db)
 
     private static string FormatArabicDate(DateTime dt) =>
         $"{dt.Day} {ArabicMonths[dt.Month - 1]} {dt.Year}";
-
-    private static string? ResolveLogoPath()
-    {
-        var paths = new[]
-        {
-            Path.Combine(AppContext.BaseDirectory, "Fonts", "logo.png"),
-            Path.Combine(Directory.GetCurrentDirectory(), "Fonts", "logo.png"),
-        };
-        foreach (var path in paths)
-            if (File.Exists(path)) return path;
-        return null;
-    }
 
     private static IContainer CellStyle(IContainer container) =>
         container.BorderBottom(1).BorderColor(Colors.Grey.Lighten2).PaddingVertical(3).PaddingHorizontal(5);

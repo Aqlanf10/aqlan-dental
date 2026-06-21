@@ -71,9 +71,10 @@ public class DisbursementVoucherDocument(DisbursementVoucherModel Model, Finance
                             .FontSize(7).FontColor(Colors.Grey.Darken1);
                 });
 
-                var logoPath = ResolveLogoPath();
-                if (logoPath != null)
-                    row.ConstantItem(45).AlignLeft().Image(logoPath);
+                // CLIN-12: logo bytes are cached statically — no per-render file I/O.
+                var logoBytes = PdfLogoCache.LogoBytes;
+                if (logoBytes is not null)
+                    row.ConstantItem(45).AlignLeft().Image(logoBytes);
             });
 
             column.Item().LineHorizontal(0.5f).LineColor("#1a3a5c");
@@ -153,16 +154,4 @@ public class DisbursementVoucherDocument(DisbursementVoucherModel Model, Finance
         "mobilewallet" => "محفظة إلكترونية",
         _ => string.IsNullOrWhiteSpace(method) ? "—" : method,
     };
-
-    private static string? ResolveLogoPath()
-    {
-        var paths = new[]
-        {
-            Path.Combine(AppContext.BaseDirectory, "Fonts", "logo.png"),
-            Path.Combine(Directory.GetCurrentDirectory(), "Fonts", "logo.png"),
-        };
-        foreach (var path in paths)
-            if (File.Exists(path)) return path;
-        return null;
-    }
 }

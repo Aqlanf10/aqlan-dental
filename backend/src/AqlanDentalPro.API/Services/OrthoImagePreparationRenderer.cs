@@ -22,27 +22,38 @@ public sealed class OrthoImagePreparationRenderer(ILogger<OrthoImagePreparationR
     /// relative URL, or <c>null</c> when the original is unavailable/unreadable or
     /// rendering fails (caller keeps the previous PreparedImageUrl semantics).
     /// </summary>
-    public string? Render(OrthoClinicalPhoto photo, OrthoImagePreparation prep)
+    /// <remarks>
+    /// CLIN-12: file reads/writes use <see cref="File.ReadAllBytesAsync"/>/
+    /// <see cref="File.WriteAllBytesAsync"/> so the request thread is not blocked on
+    /// disk I/O, and the CPU-bound SkiaSharp rasterization is offloaded via
+    /// <see cref="Task.Run"/>. Failures still degrade to <c>null</c> (best-effort).
+    /// </remarks>
+    public async Task<string?> RenderAsync(OrthoClinicalPhoto photo, OrthoImagePreparation prep)
     {
         try
         {
             var sourcePath = CephReportPdfGenerator.ResolveUploadFilePath(photo.PhotoUrl);
             if (sourcePath is null) return null;
 
-            var bytes = File.ReadAllBytes(sourcePath);
-            using var data = SKData.CreateCopy(bytes);
-            using var source = DecodeRobust(data);
-            if (source is null) return null;
+            var bytes = await File.ReadAllBytesAsync(sourcePath);
+            var renderedBytes = await Task.Run(() =>
+            {
+                using var data = SKData.CreateCopy(bytes);
+                using var source = DecodeRobust(data);
+                if (source is null) return (byte[]?)null;
 
-            using var output = RenderToImage(source, prep);
-            if (output is null) return null;
+                using var output = RenderToImage(source, prep);
+                if (output is null) return null;
 
-            using var encoded = output.Encode(SKEncodedImageFormat.Jpeg, JpegQuality);
-            if (encoded is null) return null;
+                using var encoded = output.Encode(SKEncodedImageFormat.Jpeg, JpegQuality);
+                return encoded?.ToArray();
+            });
+
+            if (renderedBytes is null) return null;
 
             var dir = ResolveUploadsDirectory();
             var fileName = $"prepared-{Guid.NewGuid():N}.jpg";
-            File.WriteAllBytes(Path.Combine(dir, fileName), encoded.ToArray());
+            await File.WriteAllBytesAsync(Path.Combine(dir, fileName), renderedBytes);
             return $"/uploads/{fileName}";
         }
         catch (Exception ex)
@@ -53,14 +64,17 @@ public sealed class OrthoImagePreparationRenderer(ILogger<OrthoImagePreparationR
         }
     }
 
-    /// <summary>Deletes a previously rendered prepared file (best-effort).</summary>
-    public void DeletePrepared(string? preparedImageUrl)
+    /// <summary>
+    /// Deletes a previously rendered prepared file (best-effort).
+    /// CLIN-12: file delete is async to keep the request thread free.
+    /// </summary>
+    public async Task DeletePreparedAsync(string? preparedImageUrl)
     {
         try
         {
             var path = CephReportPdfGenerator.ResolveUploadFilePath(preparedImageUrl);
             if (path is not null && File.Exists(path))
-                File.Delete(path);
+                await Task.Run(() => File.Delete(path));
         }
         catch (Exception ex)
         {

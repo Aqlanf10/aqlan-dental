@@ -328,15 +328,30 @@ public partial class FinanceV3Controller
         var draftInvoicesCount = await draftInvoicesQuery.CountAsync();
 
         // Overdue amount — contracts with installments past due
-        var overdueContracts = await db.Contracts
-            .Include(c => c.Patient)
-            .Include(c => c.Payments)
-            .Where(c => c.Status == ContractStatus.Active && c.InstallmentAmount > 0 && c.StartDate != null)
+        // FIN-13: Project only the fields needed + the per-contract PaidAmount (computed
+        // in SQL via correlated subquery). Previously loaded Contracts.Include(Payments)
+        // into memory and then iterated with in-memory .Sum() on c.Payments per contract.
+        // Branch filter moved into the WHERE clause (was previously a per-row `continue`).
+        var overdueContractsQuery = db.Contracts
+            .Where(c => c.Status == ContractStatus.Active && c.InstallmentAmount > 0 && c.StartDate != null);
+        if (branchId.HasValue)
+            overdueContractsQuery = overdueContractsQuery.Where(c => c.Patient.BranchId == branchId.Value);
+
+        var overdueCandidates = await overdueContractsQuery
+            .Select(c => new
+            {
+                c.StartDate,
+                c.InstallmentsCount,
+                c.InstallmentAmount,
+                c.DownPayment,
+                // Server-side correlated subquery → COALESCE(SUM(p.Amount), 0)
+                PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => (decimal?)p.Amount) ?? 0m
+            })
             .ToListAsync();
+
         var overdueAmount = 0m;
-        foreach (var c in overdueContracts)
+        foreach (var c in overdueCandidates)
         {
-            if (branchId.HasValue && c.Patient?.BranchId != branchId.Value) continue;
             // Sprint 1: Null safety — use GetValueOrDefault instead of ! operator
             // to prevent NullReferenceException when StartDate is null
             var startDate = c.StartDate.GetValueOrDefault();
@@ -344,8 +359,7 @@ public partial class FinanceV3Controller
             var monthsElapsed = ((today.Year - startDate.Year) * 12) + (today.Month - startDate.Month);
             if (monthsElapsed <= 0) continue;
             var expectedPaid = c.DownPayment + (Math.Min(monthsElapsed, c.InstallmentsCount) * (c.InstallmentAmount ?? 0));
-            var actualPaid = c.Payments?.Where(p => p.IsActive).Sum(p => (decimal?)p.Amount) ?? 0m;
-            var overAmt = expectedPaid - actualPaid;
+            var overAmt = expectedPaid - c.PaidAmount;
             if (overAmt > 0) overdueAmount += overAmt;
         }
 

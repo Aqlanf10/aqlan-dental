@@ -118,22 +118,41 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     {
         var today = ClinicTimeProvider.ClinicToday();
 
-        var contracts = await db.Contracts
-            .Include(c => c.Patient)
-            .Include(c => c.Payments)
+        // FIN-13: Project only the fields needed for the overdue calculation + the
+        // per-contract PaidAmount (computed in SQL via correlated subquery).
+        // Previously this loaded Contracts.Include(c => c.Payments).ToListAsync()
+        // which fetched every Payment row for every active installment contract.
+        // The month-since-StartDate calc remains in C# (EF can't translate DateOnly
+        // year/month arithmetic cleanly) but operates on a tiny projected set.
+        var candidates = await db.Contracts
             .Where(c => c.Status == ContractStatus.Active && c.InstallmentAmount > 0 && c.StartDate != null)
+            .Select(c => new
+            {
+                c.Id,
+                c.PatientId,
+                PatientName   = c.Patient.FirstName + " " + c.Patient.LastName,
+                PatientNumber = c.Patient.PatientNumber,
+                Phone         = c.Patient.Phone,
+                c.Specialty,
+                c.TotalAmount,
+                c.DiscountAmount,
+                c.DownPayment,
+                c.StartDate,
+                c.InstallmentsCount,
+                c.InstallmentAmount,
+                PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount)
+            })
             .ToListAsync();
 
         var overdue = new List<OverdueContractDto>();
 
-        foreach (var c in contracts)
+        foreach (var c in candidates)
         {
             var monthsElapsed = ((today.Year - c.StartDate!.Value.Year) * 12) + (today.Month - c.StartDate.Value.Month);
             if (monthsElapsed <= 0) continue;
 
             var expectedPaid = c.DownPayment + (Math.Min(monthsElapsed, c.InstallmentsCount) * (c.InstallmentAmount ?? 0));
-            var actualPaid   = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount);
-            var overdueAmt   = expectedPaid - actualPaid;
+            var overdueAmt   = expectedPaid - c.PaidAmount;
 
             if (overdueAmt > 0)
             {
@@ -141,14 +160,14 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 {
                     ContractId     = c.Id,
                     PatientId      = c.PatientId,
-                    PatientName    = c.Patient.FirstName + " " + c.Patient.LastName,
-                    PatientNumber  = c.Patient.PatientNumber,
-                    Phone          = c.Patient.Phone,
+                    PatientName    = c.PatientName,
+                    PatientNumber  = c.PatientNumber,
+                    Phone          = c.Phone,
                     Specialty      = c.Specialty,
                     TotalAmount    = c.TotalAmount,
-                    PaidAmount     = actualPaid,
+                    PaidAmount     = c.PaidAmount,
                     OverdueAmount  = overdueAmt,
-                    RemainingAmount= c.TotalAmount - c.DiscountAmount - actualPaid,
+                    RemainingAmount= c.TotalAmount - c.DiscountAmount - c.PaidAmount,
                     MonthsElapsed  = monthsElapsed,
                     StartDate      = c.StartDate?.ToString("yyyy-MM-dd")
                 });
@@ -514,11 +533,34 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         var patient = await db.Patients.FindAsync(patientId);
         if (patient == null) return null;
 
-        var contracts = await db.Contracts
-            .Include(c => c.Payments)
+        // FIN-13: All summary aggregations now execute server-side as SQL SUM(...)
+        // (replaces in-memory .Sum() over ToListAsync-loaded entities). Each query
+        // returns a single scalar, so we move less data across the wire.
+
+        // Sprint Patient-Finance-Ledger: Exclude Draft invoices — same as GetPatientFinanceSummaryAsync
+        var invoicesPredicate = new Func<IQueryable<Invoice>, IQueryable<Invoice>>(q => q
+            .Where(i => i.PatientId == patientId
+                     && i.Status != InvoiceStatus.Cancelled
+                     && i.Status != InvoiceStatus.Draft
+                     && i.IsActive));
+
+        var totalContractedFromContracts = await db.Contracts
             .Where(c => c.PatientId == patientId)
-            .OrderByDescending(c => c.CreatedAt)
-            .ToListAsync();
+            .SumAsync(c => (decimal?)c.TotalAmount) ?? 0m;
+
+        var totalContractedFromInvoices = await invoicesPredicate(db.Invoices)
+            .SumAsync(i => (decimal?)(i.Subtotal + (i.TaxAmount ?? 0m))) ?? 0m;
+
+        var totalContracted = totalContractedFromContracts + totalContractedFromInvoices;
+
+        var totalDiscountsFromContracts = await db.Contracts
+            .Where(c => c.PatientId == patientId)
+            .SumAsync(c => (decimal?)c.DiscountAmount) ?? 0m;
+
+        var totalDiscountsFromInvoices = await invoicesPredicate(db.Invoices)
+            .SumAsync(i => (decimal?)i.DiscountAmount) ?? 0m;
+
+        var totalDiscounts = totalDiscountsFromContracts + totalDiscountsFromInvoices;
 
         // FIX: Calculate totalPaid from ALL active payments for the patient,
         // not just contract-linked ones. Unlinked/orphan payments must still
@@ -528,19 +570,33 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             .Where(p => p.PatientId == patientId && p.IsActive)
             .SumAsync(p => (decimal?)p.Amount) ?? 0m;
 
-        // Sprint Patient-Finance-Ledger: Exclude Draft invoices — same as GetPatientFinanceSummaryAsync
-        var invoices = await db.Invoices
-            .Where(i => i.PatientId == patientId
-                     && i.Status != InvoiceStatus.Cancelled
-                     && i.Status != InvoiceStatus.Draft
-                     && i.IsActive)
+        var totalRemaining = Math.Max(0m, totalContracted - totalDiscounts - totalPaid);
+
+        // ── Contracts list with per-contract paid/remaining computed in SQL ──
+        // FIN-13: Project ContractStatementDto directly. The correlated subquery
+        // `c.Payments.Where(p => p.IsActive).Sum(p => p.Amount)` is translated to
+        // `(SELECT COALESCE(SUM(p.Amount), 0) FROM Payments p WHERE p.ContractId = c.Id AND p.IsActive)`
+        // — avoids loading any Payment rows into memory.
+        var contracts = await db.Contracts
+            .Where(c => c.PatientId == patientId)
+            .OrderByDescending(c => c.CreatedAt)
+            .Select(c => new ContractStatementDto
+            {
+                Id              = c.Id,
+                Specialty       = c.Specialty,
+                TotalAmount     = c.TotalAmount,
+                DiscountAmount  = c.DiscountAmount,
+                PaidAmount      = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
+                RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
+                StartDate       = c.StartDate.HasValue ? c.StartDate.Value.ToString("yyyy-MM-dd") : null,
+                Status          = c.Status.ToString(),
+                InstallmentsCount  = c.InstallmentsCount,
+                InstallmentAmount  = c.InstallmentAmount
+            })
             .ToListAsync();
 
-        var totalContracted = contracts.Sum(c => c.TotalAmount)
-                            + invoices.Sum(i => i.Subtotal + (i.TaxAmount ?? 0m));
-        var totalDiscounts  = contracts.Sum(c => c.DiscountAmount)
-                            + invoices.Sum(i => i.DiscountAmount ?? 0m);
-        var totalRemaining  = Math.Max(0m, totalContracted - totalDiscounts - totalPaid);
+        var activeContracts     = await db.Contracts.CountAsync(c => c.PatientId == patientId && c.Status == ContractStatus.Active);
+        var completedContracts  = await db.Contracts.CountAsync(c => c.PatientId == patientId && c.Status == ContractStatus.Completed);
 
         // FIX: Filter recentPayments to active only — inactive/refunded/cancelled
         // payments should not appear in the recent list.
@@ -561,29 +617,10 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             TotalDiscounts   = totalDiscounts,
             TotalPaid        = totalPaid,
             TotalRemaining   = totalRemaining,
-            ActiveContracts  = contracts.Count(c => c.Status == ContractStatus.Active),
-            CompletedContracts = contracts.Count(c => c.Status == ContractStatus.Completed),
-            Contracts        = contracts.Select(c => new ContractStatementDto
-            {
-                Id              = c.Id,
-                Specialty       = c.Specialty,
-                TotalAmount     = c.TotalAmount,
-                DiscountAmount  = c.DiscountAmount,
-                // Per-contract balance still uses only contract-linked payments
-                PaidAmount      = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
-                RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
-                StartDate       = c.StartDate?.ToString("yyyy-MM-dd"),
-                Status          = c.Status.ToString(),
-                InstallmentsCount  = c.InstallmentsCount,
-                InstallmentAmount  = c.InstallmentAmount
-            }).ToList(),
-            RecentPayments = recentPayments.Select(p =>
-            {
-                // Note: we deliberately do NOT mutate p.Patient to avoid ChangeTracker
-                // side-effects. MapPayment reads p.Patient?.FirstName which falls back
-                // to the already-loaded Patient navigation reference from the Include above.
-                return MapPayment(p);
-            }).ToList()
+            ActiveContracts  = activeContracts,
+            CompletedContracts = completedContracts,
+            Contracts        = contracts,
+            RecentPayments   = recentPayments.Select(p => MapPayment(p)).ToList()
         };
     }
 
@@ -931,42 +968,25 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
     public async Task<PatientFinanceSummaryDto> GetPatientFinanceSummaryAsync(Guid patientId)
     {
-        // ── Contract-based financials (legacy/ortho contracts) ───────────────
-        var contracts = await db.Contracts
-            .Include(c => c.Payments)
+        // ── Contract-based cost (server-side aggregation, FIN-13) ───────────
+        // Previously: loaded all contracts (+ Payments collection) into memory then
+        //             `contracts.Sum(c => c.TotalAmount - c.DiscountAmount)`.
+        // Now:        single SQL `SELECT SUM(TotalAmount - DiscountAmount) FROM Contracts
+        //             WHERE PatientId = @patientId` (returns 0 for empty set).
+        var contractCost = await db.Contracts
             .Where(c => c.PatientId == patientId)
-            .ToListAsync();
-
-        var contractCost    = contracts.Sum(c => c.TotalAmount - c.DiscountAmount);
-        var contractPaid    = contracts.Sum(c => c.Payments.Where(p => p.IsActive).Sum(p => p.Amount));
+            .SumAsync(c => (decimal?)(c.TotalAmount - c.DiscountAmount)) ?? 0m;
 
         // ── Invoice-based financials (new invoice system) ───────────────────
         // Sprint Patient-Finance-Ledger: Exclude Draft invoices from outstanding balance.
         // Draft invoices are not yet committed — only Issued and Paid represent actual obligation.
         // This aligns with FinanceV3 GetPatientBalance which also excludes Drafts.
-        var invoices = await db.Invoices
-            .Include(i => i.Payments)
+        var invoiceCost = await db.Invoices
             .Where(i => i.PatientId == patientId
                      && i.Status != InvoiceStatus.Cancelled
                      && i.Status != InvoiceStatus.Draft
                      && i.IsActive)
-            .ToListAsync();
-
-        var invoiceCost = invoices.Sum(i => i.TotalAmount);
-        var invoicePaid = invoices.Sum(i => i.Payments.Where(p => p.IsActive).Sum(p => p.Amount));
-
-        // ── Orphan payments (no ContractId and no InvoiceId) ────────────────
-        // Payments created before invoice linkage or without either FK are
-        // invisible to the contract/invoice sums above. Count them separately.
-        var invoiceIds = invoices.Select(i => i.Id).ToHashSet();
-        var contractIds = contracts.Select(c => c.Id).ToHashSet();
-
-        var orphanPaid = await db.Payments
-            .Where(p => p.PatientId == patientId
-                     && p.IsActive
-                     && (p.InvoiceId == null || !invoiceIds.Contains(p.InvoiceId.Value))
-                     && (p.ContractId == null || !contractIds.Contains(p.ContractId.Value)))
-            .SumAsync(p => (decimal?)p.Amount) ?? 0m;
+            .SumAsync(i => (decimal?)i.TotalAmount) ?? 0m;
 
         // ── Combined totals ─────────────────────────────────────────────────
         var totalCost      = contractCost + invoiceCost;
@@ -975,14 +995,33 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             .SumAsync(p => (decimal?)p.Amount) ?? 0m;
         var outstanding    = Math.Max(0m, totalCost - totalPaid);
 
+        // ── Overdue amount ──────────────────────────────────────────────────
+        // FIN-13: Project only the fields needed for the date math + the per-contract
+        // paid total (computed in SQL via correlated subquery). Avoids loading the
+        // full Payment collection for every contract. The month-since-StartDate calc
+        // stays in C# because EF can't translate DateOnly year/month arithmetic cleanly.
         var today          = ClinicTimeProvider.ClinicToday();
+        var overdueCandidates = await db.Contracts
+            .Where(c => c.PatientId == patientId
+                     && c.Status == ContractStatus.Active
+                     && c.InstallmentAmount > 0
+                     && c.StartDate != null)
+            .Select(c => new
+            {
+                c.StartDate,
+                c.InstallmentsCount,
+                c.InstallmentAmount,
+                c.DownPayment,
+                PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount)
+            })
+            .ToListAsync();
+
         var overdueAmount  = 0m;
-        foreach (var c in contracts.Where(c => c.Status == ContractStatus.Active && c.InstallmentAmount > 0 && c.StartDate != null))
+        foreach (var c in overdueCandidates)
         {
             var months   = ((today.Year - c.StartDate!.Value.Year) * 12) + (today.Month - c.StartDate.Value.Month);
             var expected = c.DownPayment + Math.Min(months, c.InstallmentsCount) * (c.InstallmentAmount ?? 0);
-            var paid     = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount);
-            if (expected > paid) overdueAmount += expected - paid;
+            if (expected > c.PaidAmount) overdueAmount += expected - c.PaidAmount;
         }
 
         var latestPayment = await db.Payments
@@ -994,6 +1033,9 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         var totalPaymentsCount = await db.Payments
             .CountAsync(p => p.PatientId == patientId && p.IsActive);
+
+        var activeContractsCount = await db.Contracts
+            .CountAsync(c => c.PatientId == patientId && c.Status == ContractStatus.Active);
 
         var status = totalCost == 0 ? "no_plan"
             : outstanding <= 0 ? "paid"
@@ -1008,7 +1050,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             OverdueAmount        = overdueAmount,
             LatestPayment        = latestPayment == null ? null : MapPayment(latestPayment),
             FinancialStatus      = status,
-            ActiveContractsCount = contracts.Count(c => c.Status == ContractStatus.Active),
+            ActiveContractsCount = activeContractsCount,
             TotalPaymentsCount   = totalPaymentsCount
         };
     }

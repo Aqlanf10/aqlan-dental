@@ -323,6 +323,12 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 message = "تم إقفال صندوق الاستقبال وترحيل المبالغ وتأمين القيود بنجاح"
             });
         }
+        catch (DbUpdateConcurrencyException)
+        {
+            // DB-02: xmin concurrency token on CashierSession detected a concurrent edit.
+            await tx.RollbackAsync();
+            return Conflict(new { message = "تم تعديل الجلسة من قبل مستخدم آخر، يرجى التحديث والمحاولة مرة أخرى" });
+        }
         catch (Exception ex)
         {
             await tx.RollbackAsync();
@@ -725,6 +731,12 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 Status = session.Status.ToString(),
                 message = "تمت المطابقة والاعتماد المحاسبي للوردية اليومية بنجاح"
             });
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // DB-02: xmin concurrency token on CashierSession detected a concurrent edit.
+            await tx.RollbackAsync();
+            return Conflict(new { message = "تم تعديل الجلسة من قبل مستخدم آخر، يرجى التحديث والمحاولة مرة أخرى" });
         }
         catch (Exception ex)
         {

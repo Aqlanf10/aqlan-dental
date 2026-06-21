@@ -12,6 +12,11 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
 {
     public void Configure(EntityTypeBuilder<Payment> builder)
     {
+        // DB-02: optimistic concurrency using PostgreSQL xmin system column.
+        // EF includes the xmin value in UPDATE WHERE; concurrent edits throw DbUpdateConcurrencyException.
+        // Mirrors TreasuryConfiguration (FIN-06). xmin is a PostgreSQL system column — no DDL needed.
+        builder.UseXminAsConcurrencyToken();
+
         // DB-01 FIX: Index for querying payments by doctor
         builder.HasIndex(p => p.DoctorId);
 

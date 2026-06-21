@@ -596,6 +596,12 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
                 message = "تم تحديث الفاتورة بنجاح"
             });
         }
+        catch (DbUpdateConcurrencyException)
+        {
+            // DB-02: xmin concurrency token on Invoice (or a related entity) detected a concurrent edit.
+            await tx.RollbackAsync();
+            return Conflict(new { message = "تم تعديل الفاتورة من قبل مستخدم آخر، يرجى التحديث والمحاولة مرة أخرى" });
+        }
         catch (Exception ex)
         {
             await tx.RollbackAsync();
@@ -609,54 +615,62 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
     [HttpPatch("{id:guid}/issue")]
     public async Task<IActionResult> Issue(Guid id)
     {
-        var invoice = await db.Invoices.FindAsync(id);
-        if (invoice == null)
-            return NotFound(new { message = "الفاتورة غير موجودة" });
-        if (!invoice.IsActive)
-            return BadRequest(new { message = "الفاتورة محذوفة" });
-        if (invoice.Status != InvoiceStatus.Draft)
-            return BadRequest(new { message = "يمكن إصدار الفواتير المسودة فقط" });
-
-        var userId = GetCurrentUserId();
-        invoice.Status = InvoiceStatus.Issued;
-        invoice.UpdatedBy = userId;
-
-        // IMPORTANT: No Payment is created. No Contract is changed.
-        // No patient balance is altered. Payments module remains source of truth.
-
-        // Finance V3: Post accrual journal entry for invoice issuance
-        // Wrap status change + accrual journal creation + journal posting in one
-        // explicit transaction so any failure rolls everything back and the invoice
-        // remains Draft (atomic operation, Blocker 1).
-        var financeService = HttpContext.RequestServices.GetRequiredService<IFinanceService>();
-
-        var useTx = db.Database.IsRelational();
-        var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
         try
         {
-            await financeService.PostInvoiceIssuedEntryAsync(invoice.Id);
-            await db.SaveChangesAsync();
-            if (useTx) await tx!.CommitAsync();
-        }
-        catch
-        {
-            if (useTx) await tx!.RollbackAsync();
-            // Reload invoice from DB to discard the in-memory status change
-            await db.Entry(invoice).ReloadAsync();
-            throw;
-        }
+            var invoice = await db.Invoices.FindAsync(id);
+            if (invoice == null)
+                return NotFound(new { message = "الفاتورة غير موجودة" });
+            if (!invoice.IsActive)
+                return BadRequest(new { message = "الفاتورة محذوفة" });
+            if (invoice.Status != InvoiceStatus.Draft)
+                return BadRequest(new { message = "يمكن إصدار الفواتير المسودة فقط" });
 
-        // H3: Audit logging for invoice issue
-        await audit.LogAsync(AuditAction.Update, "Invoice", id, details: "Invoice issued");
+            var userId = GetCurrentUserId();
+            invoice.Status = InvoiceStatus.Issued;
+            invoice.UpdatedBy = userId;
 
-        return Ok(new
+            // IMPORTANT: No Payment is created. No Contract is changed.
+            // No patient balance is altered. Payments module remains source of truth.
+
+            // Finance V3: Post accrual journal entry for invoice issuance
+            // Wrap status change + accrual journal creation + journal posting in one
+            // explicit transaction so any failure rolls everything back and the invoice
+            // remains Draft (atomic operation, Blocker 1).
+            var financeService = HttpContext.RequestServices.GetRequiredService<IFinanceService>();
+
+            var useTx = db.Database.IsRelational();
+            var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+            try
+            {
+                await financeService.PostInvoiceIssuedEntryAsync(invoice.Id);
+                await db.SaveChangesAsync();
+                if (useTx) await tx!.CommitAsync();
+            }
+            catch
+            {
+                if (useTx) await tx!.RollbackAsync();
+                // Reload invoice from DB to discard the in-memory status change
+                await db.Entry(invoice).ReloadAsync();
+                throw;
+            }
+
+            // H3: Audit logging for invoice issue
+            await audit.LogAsync(AuditAction.Update, "Invoice", id, details: "Invoice issued");
+
+            return Ok(new
+            {
+                invoice.Id,
+                invoice.InvoiceNumber,
+                Status = invoice.Status.ToString(),
+                StatusArabic = GetStatusArabic(invoice.Status),
+                message = "تم إصدار الفاتورة بنجاح"
+            });
+        }
+        catch (DbUpdateConcurrencyException)
         {
-            invoice.Id,
-            invoice.InvoiceNumber,
-            Status = invoice.Status.ToString(),
-            StatusArabic = GetStatusArabic(invoice.Status),
-            message = "تم إصدار الفاتورة بنجاح"
-        });
+            // DB-02: xmin concurrency token on Invoice detected a concurrent edit.
+            return Conflict(new { message = "تم تعديل الفاتورة من قبل مستخدم آخر، يرجى التحديث والمحاولة مرة أخرى" });
+        }
     }
 
     // ─── 6. PATCH /api/invoices/{id}/cancel — Cancel invoice ────────
@@ -664,96 +678,104 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
     [HttpPatch("{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, [FromBody] CancelInvoiceRequest? req = null)
     {
-        var invoice = await db.Invoices
-            .Include(i => i.Payments)
-            .FirstOrDefaultAsync(i => i.Id == id);
-            
-        if (invoice == null)
-            return NotFound(new { message = "الفاتورة غير موجودة" });
-        if (!invoice.IsActive)
-            return BadRequest(new { message = "الفاتورة محذوفة" });
-
-        // Capture original status before any changes
-        var originalStatus = invoice.Status;
-
-        // Paid invoices cannot be cancelled — payments must be refunded first.
-        if (originalStatus == InvoiceStatus.Paid)
-            return BadRequest(new { message = "لا يمكن إلغاء فاتورة مدفوعة. يجب استرداد المدفوعات أولاً." });
-        if (originalStatus == InvoiceStatus.Cancelled)
-            return BadRequest(new { message = "الفاتورة ملغاة بالفعل" });
-
-        // For Issued invoices, reject cancellation if there are active payments
-        if (originalStatus == InvoiceStatus.Issued)
+        try
         {
-            var hasActivePayments = invoice.Payments.Any(p => p.IsActive);
-            if (hasActivePayments)
-                return BadRequest(new { message = "لا يمكن إلغاء فاتورة مصدرة بها مدفوعات نشطة. يجب استرداد أو حذف المدفوعات أولاً." });
-        }
+            var invoice = await db.Invoices
+                .Include(i => i.Payments)
+                .FirstOrDefaultAsync(i => i.Id == id);
 
-        var userId = GetCurrentUserId();
-        invoice.Status = InvoiceStatus.Cancelled;
-        invoice.UpdatedBy = userId;
+            if (invoice == null)
+                return NotFound(new { message = "الفاتورة غير موجودة" });
+            if (!invoice.IsActive)
+                return BadRequest(new { message = "الفاتورة محذوفة" });
 
-        if (req?.Notes != null)
-            invoice.Notes = string.IsNullOrWhiteSpace(invoice.Notes)
-                ? $"[إلغاء] {req.Notes}"
-                : $"{invoice.Notes}\n[إلغاء] {req.Notes}";
+            // Capture original status before any changes
+            var originalStatus = invoice.Status;
 
-        // Blocker 1: Atomic cancellation — only reverse for Issued invoices
-        // Draft -> Cancelled: no reversal needed (no accrual was posted), status-only
-        // Issued -> Cancelled: status change + reversal MUST both succeed atomically,
-        //   otherwise we do NOT persist the cancellation and invoice remains Issued.
-        if (originalStatus == InvoiceStatus.Issued)
-        {
-            // Check if a reversal already exists to prevent double reversal on retry
-            var existingReversal = await db.JournalEntries
-                .AnyAsync(e => e.FinancialDocumentId == invoice.Id
-                    && e.FinancialDocumentType == FinancialDocumentType.Invoice
-                    && e.IsReversal);
+            // Paid invoices cannot be cancelled — payments must be refunded first.
+            if (originalStatus == InvoiceStatus.Paid)
+                return BadRequest(new { message = "لا يمكن إلغاء فاتورة مدفوعة. يجب استرداد المدفوعات أولاً." });
+            if (originalStatus == InvoiceStatus.Cancelled)
+                return BadRequest(new { message = "الفاتورة ملغاة بالفعل" });
 
-            if (!existingReversal)
+            // For Issued invoices, reject cancellation if there are active payments
+            if (originalStatus == InvoiceStatus.Issued)
             {
-                var financeService = HttpContext.RequestServices.GetRequiredService<IFinanceService>();
+                var hasActivePayments = invoice.Payments.Any(p => p.IsActive);
+                if (hasActivePayments)
+                    return BadRequest(new { message = "لا يمكن إلغاء فاتورة مصدرة بها مدفوعات نشطة. يجب استرداد أو حذف المدفوعات أولاً." });
+            }
 
-                var useCancelTx = db.Database.IsRelational();
-                var cancelTx = useCancelTx ? await db.Database.BeginTransactionAsync() : null;
-                try
+            var userId = GetCurrentUserId();
+            invoice.Status = InvoiceStatus.Cancelled;
+            invoice.UpdatedBy = userId;
+
+            if (req?.Notes != null)
+                invoice.Notes = string.IsNullOrWhiteSpace(invoice.Notes)
+                    ? $"[إلغاء] {req.Notes}"
+                    : $"{invoice.Notes}\n[إلغاء] {req.Notes}";
+
+            // Blocker 1: Atomic cancellation — only reverse for Issued invoices
+            // Draft -> Cancelled: no reversal needed (no accrual was posted), status-only
+            // Issued -> Cancelled: status change + reversal MUST both succeed atomically,
+            //   otherwise we do NOT persist the cancellation and invoice remains Issued.
+            if (originalStatus == InvoiceStatus.Issued)
+            {
+                // Check if a reversal already exists to prevent double reversal on retry
+                var existingReversal = await db.JournalEntries
+                    .AnyAsync(e => e.FinancialDocumentId == invoice.Id
+                        && e.FinancialDocumentType == FinancialDocumentType.Invoice
+                        && e.IsReversal);
+
+                if (!existingReversal)
                 {
-                    // Status change + reversal creation + linking + posting + save — all atomic
-                    await financeService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
-                    await db.SaveChangesAsync();
-                    if (useCancelTx) await cancelTx!.CommitAsync();
+                    var financeService = HttpContext.RequestServices.GetRequiredService<IFinanceService>();
+
+                    var useCancelTx = db.Database.IsRelational();
+                    var cancelTx = useCancelTx ? await db.Database.BeginTransactionAsync() : null;
+                    try
+                    {
+                        // Status change + reversal creation + linking + posting + save — all atomic
+                        await financeService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
+                        await db.SaveChangesAsync();
+                        if (useCancelTx) await cancelTx!.CommitAsync();
+                    }
+                    catch
+                    {
+                        if (useCancelTx) await cancelTx!.RollbackAsync();
+                        // Reload invoice to discard the in-memory status change
+                        await db.Entry(invoice).ReloadAsync();
+                        throw;
+                    }
                 }
-                catch
+                else
                 {
-                    if (useCancelTx) await cancelTx!.RollbackAsync();
-                    // Reload invoice to discard the in-memory status change
-                    await db.Entry(invoice).ReloadAsync();
-                    throw;
+                    await db.SaveChangesAsync();
                 }
             }
             else
             {
+                // Draft -> Cancelled: status-only, no JE reversal needed
                 await db.SaveChangesAsync();
             }
-        }
-        else
-        {
-            // Draft -> Cancelled: status-only, no JE reversal needed
-            await db.SaveChangesAsync();
-        }
 
-        // H3: Audit logging for invoice cancellation
-        await audit.LogAsync(AuditAction.Update, "Invoice", id, details: "Invoice cancelled");
+            // H3: Audit logging for invoice cancellation
+            await audit.LogAsync(AuditAction.Update, "Invoice", id, details: "Invoice cancelled");
 
-        return Ok(new
+            return Ok(new
+            {
+                invoice.Id,
+                invoice.InvoiceNumber,
+                Status = invoice.Status.ToString(),
+                StatusArabic = GetStatusArabic(invoice.Status),
+                message = "تم إلغاء الفاتورة بنجاح"
+            });
+        }
+        catch (DbUpdateConcurrencyException)
         {
-            invoice.Id,
-            invoice.InvoiceNumber,
-            Status = invoice.Status.ToString(),
-            StatusArabic = GetStatusArabic(invoice.Status),
-            message = "تم إلغاء الفاتورة بنجاح"
-        });
+            // DB-02: xmin concurrency token on Invoice detected a concurrent edit.
+            return Conflict(new { message = "تم تعديل الفاتورة من قبل مستخدم آخر، يرجى التحديث والمحاولة مرة أخرى" });
+        }
     }
 
     // ─── 7. GET /api/invoices/{id}/pdf — Invoice PDF ──────────────────────

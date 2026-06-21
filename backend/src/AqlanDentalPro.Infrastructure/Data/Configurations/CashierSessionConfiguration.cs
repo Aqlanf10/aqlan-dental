@@ -11,6 +11,11 @@ public class CashierSessionConfiguration : IEntityTypeConfiguration<CashierSessi
         builder.HasKey(s => s.Id);
         builder.ToTable("CashierSessions");
 
+        // DB-02: optimistic concurrency using PostgreSQL xmin system column.
+        // EF includes the xmin value in UPDATE WHERE; concurrent edits throw DbUpdateConcurrencyException.
+        // Mirrors TreasuryConfiguration (FIN-06). xmin is a PostgreSQL system column — no DDL needed.
+        builder.UseXminAsConcurrencyToken();
+
         // Decimal precision
         builder.Property(s => s.OpeningBalance).HasPrecision(12, 2);
         builder.Property(s => s.ExpectedClosingCash).HasPrecision(12, 2);

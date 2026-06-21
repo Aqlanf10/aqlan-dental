@@ -13,6 +13,11 @@ public class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
 
         builder.ToTable("Invoices");
 
+        // DB-02: optimistic concurrency using PostgreSQL xmin system column.
+        // EF includes the xmin value in UPDATE WHERE; concurrent edits throw DbUpdateConcurrencyException.
+        // Mirrors TreasuryConfiguration (FIN-06). xmin is a PostgreSQL system column — no DDL needed.
+        builder.UseXminAsConcurrencyToken();
+
         // String properties
         builder.Property(i => i.InvoiceNumber).HasMaxLength(50).IsRequired();
         builder.Property(i => i.Notes).IsRequired(false);

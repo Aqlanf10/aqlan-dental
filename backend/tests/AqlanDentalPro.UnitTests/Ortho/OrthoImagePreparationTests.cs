@@ -38,7 +38,7 @@ public class OrthoImagePreparationTests : IDisposable
     public void Dispose() => _db.Dispose();
 
     private OrthoCasesController CreateController(IPatientAccessService patientAccess) =>
-        new(new OrthoService(_db, _currentUser.Object), _db, _currentUser.Object, patientAccess);
+        new(new OrthoService(_db, _currentUser.Object), _db, _currentUser.Object, patientAccess, new Mock<IAuditService>().Object);
 
     private async Task<(Guid CaseId, Guid PhotoId)> SeedPhotoAsync(string photoUrl = "/uploads/original.jpg")
     {

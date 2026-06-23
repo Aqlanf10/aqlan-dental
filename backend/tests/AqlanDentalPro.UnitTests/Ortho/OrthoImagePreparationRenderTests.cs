@@ -146,7 +146,8 @@ public class OrthoImagePreparationRenderTests
         currentUser.SetupGet(x => x.IsAdmin).Returns(true);
         var access = new Mock<IPatientAccessService>();
         access.Setup(x => x.CanAccessPatientAsync(It.IsAny<Guid>())).ReturnsAsync(true);
+        var audit = new Mock<IAuditService>();
         return new OrthoCasesController(
-            new OrthoService(db, currentUser.Object), db, currentUser.Object, access.Object);
+            new OrthoService(db, currentUser.Object), db, currentUser.Object, access.Object, audit.Object);
     }
 }

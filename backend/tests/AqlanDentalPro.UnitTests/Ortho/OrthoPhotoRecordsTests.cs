@@ -38,8 +38,9 @@ public class OrthoPhotoRecordsTests : IDisposable
         currentUser.SetupGet(x => x.IsAdmin).Returns(true);
         var patientAccess = new Mock<IPatientAccessService>();
         patientAccess.Setup(p => p.CanAccessPatientAsync(It.IsAny<Guid>())).ReturnsAsync(true);
+        var audit = new Mock<IAuditService>();
         _controller = new OrthoCasesController(
-            new OrthoService(_db, currentUser.Object), _db, currentUser.Object, patientAccess.Object);
+            new OrthoService(_db, currentUser.Object), _db, currentUser.Object, patientAccess.Object, audit.Object);
     }
 
     public void Dispose() => _db.Dispose();

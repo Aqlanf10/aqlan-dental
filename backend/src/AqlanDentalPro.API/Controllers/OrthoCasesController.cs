@@ -2,6 +2,7 @@ using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.Application.DTOs.Ortho;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -91,11 +92,13 @@ public sealed class UpsertClinicalExamRequest
 [ApiController]
 [Route("api/ortho-cases")]
 [Authorize(Policy = "OrthoAccess")]
+[ServiceFilter(typeof(PatientAccessFilter))]
 public class OrthoCasesController(
     OrthoService service,
     AppDbContext db,
     ICurrentUserService currentUser,
-    IPatientAccessService patientAccess) : ControllerBase
+    IPatientAccessService patientAccess,
+    IAuditService audit) : ControllerBase
 {
     private const int DefaultOrthoFollowUpIntervalDays = 21;
     private static readonly HashSet<string> ImagePreparationStatuses = new(StringComparer.OrdinalIgnoreCase)
@@ -109,6 +112,22 @@ public class OrthoCasesController(
     {
         "Original", "4:5", "3:4", "16:9", "2:1", "4:3", "1:1",
     };
+
+    // SEC-ROUTE: Per-patient access check for actions where patientId is in body or inferred.
+    // Mirrors the established pattern in DocumentsController / PrescriptionsController / SurgeryController:
+    // non-doctor roles short-circuit, doctors are denied + audit-logged when crossing patients.
+    // Uses StatusCode(403, new { message }) per CLIN-17 (not Forbid(...)).
+    private async Task<IActionResult?> DenyIfDoctorCannotAccess(Guid patientId)
+    {
+        if (!patientAccess.IsDoctor) return null;
+        if (!await patientAccess.CanAccessPatientAsync(patientId))
+        {
+            await audit.LogAsync(AuditAction.View, "Patient", patientId,
+                newData: new { status = "denied", resource = "OrthoCase", role = currentUser.Role?.ToString(), userId = currentUser.UserId });
+            return StatusCode(403, new { message = "غير مصرح لك بعرض بيانات هذا المريض" });
+        }
+        return null;
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetList(
@@ -505,6 +524,15 @@ public class OrthoCasesController(
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateOrthoCaseRequest req)
     {
+        // SEC-ROUTE: per-patient access check before creating. The class-level
+        // PatientAccessFilter only inspects route + query values for "patientId", but
+        // CreateOrthoCaseRequest carries PatientId in the REQUEST BODY, so the filter
+        // cannot see it. Without this explicit check a doctor with no access to Patient X
+        // could still create an ortho case under Patient X. Mirrors DocumentsController
+        // (SEC-DOCS fix) and the established DenyIfDoctorCannotAccess pattern.
+        var denied = await DenyIfDoctorCannotAccess(req.PatientId);
+        if (denied is not null) return denied;
+
         var result = await service.CreateAsync(req);
         return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
     }

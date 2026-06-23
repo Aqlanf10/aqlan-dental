@@ -1,78 +1,60 @@
 import { test, expect } from "@playwright/test";
 
-const BASE_URL = "https://aqlan-dental-git-claude-aqlan-de-30a03c-aqlanf10-9871s-projects.vercel.app";
-const USERNAME = "admin";
-const PASSWORD = "AqlanDental2024!";
+/**
+ * VoiceRecorder visibility e2e spec (TEST-16 refactor).
+ *
+ * Previously this spec hardcoded a production Vercel URL + admin credentials
+ * (audit finding: "Single Playwright spec hardens production URL + admin
+ * password, NOT enabled in CI"). It now:
+ *   - Reads the frontend base URL from `E2E_API_URL` (provided by the CI
+ *     `e2e` job from a GitHub secret pointing at a staging deployment).
+ *   - Reads staff credentials from `E2E_STAFF_PHONE` / `E2E_STAFF_PASSWORD`.
+ *   - Skips entirely when `E2E_API_URL` is unset, so CI stays green without
+ *     a staging env.
+ *
+ * The flow: log in as staff → open the dashboard messages page → assert the
+ * voice-recorder button is present and visible inside an open conversation.
+ */
+
+const apiUrl = process.env.E2E_API_URL;
+const staffPhone = process.env.E2E_STAFF_PHONE;
+const staffPassword = process.env.E2E_STAFF_PASSWORD;
+
+test.skip(!apiUrl, "E2E_API_URL not set — skipping e2e (no staging frontend).");
+test.skip(
+  !staffPhone || !staffPassword,
+  "E2E_STAFF_PHONE / E2E_STAFF_PASSWORD not set — skipping e2e (no staff credentials)."
+);
 
 test("VoiceRecorder mic button is visible in dashboard messages", async ({ page }) => {
-  // Login
-  await page.goto(`${BASE_URL}/login`);
+  if (!apiUrl || !staffPhone || !staffPassword) {
+    // Guards for TS — `test.skip` above already handles runtime skip.
+    return;
+  }
+
+  // 1. Staff login.
+  await page.goto(`${apiUrl}/login`);
   await page.waitForLoadState("networkidle");
 
-  await page.fill('input[name="username"], input[type="text"], input[placeholder*="اسم"]', USERNAME);
-  await page.fill('input[name="password"], input[type="password"]', PASSWORD);
+  await page.fill('input[name="username"]', staffPhone);
+  await page.fill('input[name="password"]', staffPassword);
   await page.click('button[type="submit"]');
   await page.waitForLoadState("networkidle");
 
-  // Navigate to messages
-  await page.goto(`${BASE_URL}/messages`);
+  // 2. Navigate to messages.
+  await page.goto(`${apiUrl}/messages`);
   await page.waitForLoadState("networkidle");
-  await page.waitForTimeout(3000);
+  await page.waitForTimeout(2000);
 
-  // Take screenshot of full page
-  await page.screenshot({ path: "playwright-tests/screenshots/messages-list.png", fullPage: true });
-
-  // Click first conversation if any exist
+  // 3. Open the first conversation (the voice recorder button only renders
+  //    inside an active conversation thread).
   const firstConv = page.locator('[data-testid="conversation-item"], .cursor-pointer').first();
-  if (await firstConv.isVisible()) {
+  if (await firstConv.isVisible().catch(() => false)) {
     await firstConv.click();
     await page.waitForTimeout(2000);
   }
 
-  // Take screenshot of chat area
-  await page.screenshot({ path: "playwright-tests/screenshots/messages-chat.png", fullPage: true });
-
-  // Check for voice recorder button
-  const byTestId = page.getByTestId("voice-recorder-button");
-  const byTitle = page.locator('[title="تسجيل رسالة صوتية"]');
-  const byAriaLabel = page.getByLabel("تسجيل رسالة صوتية");
-
-  console.log("byTestId count:", await byTestId.count());
-  console.log("byTitle count:", await byTitle.count());
-  console.log("byAriaLabel count:", await byAriaLabel.count());
-
-  // Check DOM presence regardless of visibility
-  const domCount = await page.evaluate(() =>
-    document.querySelectorAll('[title="تسجيل رسالة صوتية"]').length
-  );
-  console.log("DOM nodes with title:", domCount);
-
-  const inDom = await page.evaluate(() =>
-    document.querySelector('[data-testid="voice-recorder-button"]') !== null
-  );
-  console.log("voice-recorder-button in DOM:", inDom);
-
-  if (inDom) {
-    // Check CSS visibility
-    const cssInfo = await page.evaluate(() => {
-      const el = document.querySelector('[data-testid="voice-recorder-button"]');
-      if (!el) return null;
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      return {
-        display: style.display,
-        visibility: style.visibility,
-        opacity: style.opacity,
-        width: rect.width,
-        height: rect.height,
-        top: rect.top,
-        left: rect.left,
-        overflow: style.overflow,
-      };
-    });
-    console.log("CSS computed style:", JSON.stringify(cssInfo, null, 2));
-  }
-
-  // Final screenshot
-  await page.screenshot({ path: "playwright-tests/screenshots/messages-final.png", fullPage: true });
+  // 4. Assert the voice-recorder button is present + visible.
+  const voiceBtn = page.getByTestId("voice-recorder-button");
+  await expect(voiceBtn).toBeVisible({ timeout: 10000 });
 });

@@ -214,11 +214,13 @@ public class PatientJourneyFinancialRulesTests
 
         // CLIN-22: controller is now a thin delegate over PatientJourneyService + CheckoutService.
         // Real service instances + InMemory db preserve the original end-to-end test semantics.
+        var push = new Mock<IRealTimePushService>();
         var journeyService = new PatientJourneyService(
             db, access.Object, finance.Object,
             journeyLogger ?? NullLogger<PatientJourneyService>.Instance);
         var checkoutService = new CheckoutService(
             db, commission.Object, currentUser.Object, access.Object,
+            push.Object,
             NullLogger<CheckoutService>.Instance);
 
         return new PatientJourneyController(journeyService, checkoutService);

@@ -6,6 +6,7 @@ using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Infrastructure.Services;
+using AqlanDentalPro.API.Hubs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -15,8 +16,29 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/appointments")]
 [Authorize(Policy = "StaffOnly")]
-public class AppointmentsController(AppointmentService service, AppDbContext db, ICurrentUserService currentUser, IWhatsAppService whatsapp, IEmailService emailService, ILogger<AppointmentsController> logger) : ControllerBase
+public class AppointmentsController(AppointmentService service, AppDbContext db, ICurrentUserService currentUser, IWhatsAppService whatsapp, IEmailService emailService, IRealTimePushService pushService, ILogger<AppointmentsController> logger) : ControllerBase
 {
+    /// <summary>
+    /// Best-effort push of JourneyUpdated. Scoped to the caller's branch when
+    /// resolvable; falls back to PushToAllAsync for admin callers without a branch.
+    /// Never throws — push failure must not fail the HTTP request.
+    /// </summary>
+    private async Task PushJourneyUpdatedAsync(string action, Guid? appointmentId = null, Guid? patientId = null, Guid? branchId = null)
+    {
+        try
+        {
+            var payload = new { action, appointmentId, patientId, branchId };
+            if (branchId.HasValue && branchId.Value != Guid.Empty)
+                await pushService.PushToBranchAsync(branchId.Value, MessagingHubEvents.JourneyUpdated, payload);
+            else
+                await pushService.PushToAllAsync(MessagingHubEvents.JourneyUpdated, payload);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to push JourneyUpdated ({Action})", action);
+        }
+    }
+
     /// <summary>Check if a time slot conflicts with existing appointments</summary>
     [HttpPost("check-conflict")]
     public async Task<IActionResult> CheckConflict([FromBody] CheckConflictRequest req)
@@ -200,6 +222,9 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         if (error != null)
             return Conflict(new { message = error });
 
+        // SignalR: best-effort push so daily-ops screens invalidate instantly.
+        await PushJourneyUpdatedAsync("appointment-created", result!.Id, req.PatientId, branchId: currentUser.BranchId);
+
         return CreatedAtAction(nameof(GetById), new { id = result!.Id }, result);
     }
 
@@ -234,6 +259,9 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         var (result, error) = await service.UpdateAsync(id, req);
         if (error != null)
             return error.Contains("تعارض") ? Conflict(new { message = error }) : NotFound(new { message = error });
+
+        // SignalR: best-effort push so daily-ops screens invalidate instantly.
+        await PushJourneyUpdatedAsync("appointment-updated", id, req.PatientId, branchId: currentUser.BranchId);
 
         return Ok(result);
     }
@@ -310,6 +338,13 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
             }
         }
 
+        // SignalR: best-effort push so daily-ops screens invalidate instantly.
+        // patientId resolved from the appointment for the payload (best-effort — null if not found).
+        Guid? patientIdForPush = null;
+        try { patientIdForPush = await db.Appointments.Where(a => a.Id == id).Select(a => a.PatientId).FirstOrDefaultAsync(); }
+        catch (Exception ex) { logger.LogWarning(ex, "Failed to resolve patientId for JourneyUpdated push (appointment {AppointmentId})", id); }
+        await PushJourneyUpdatedAsync("appointment-status-changed", id, patientIdForPush, branchId: currentUser.BranchId);
+
         return Ok(result);
     }
 
@@ -345,6 +380,11 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         }
 
         await db.SaveChangesAsync();
+
+        // SignalR: best-effort push so daily-ops screens invalidate instantly.
+        // Batch update touches many appointments; payload carries no ids (just the action)
+        // so clients invalidate the whole daily-ops query.
+        await PushJourneyUpdatedAsync("appointment-status-changed", branchId: currentUser.BranchId);
 
         return Ok(new { updated, skipped, message = $"تم تحديث {updated} موعد، تم تخطي {skipped} موعد بسبب تعارض في الحالة" });
     }

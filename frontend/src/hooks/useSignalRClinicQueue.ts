@@ -83,11 +83,24 @@ export function useSignalRClinicQueue(options: UseSignalRClinicQueueOptions = {}
         }
       });
 
+      // تحديث رحلة المريض (وصول/طابور/زيارة/تحصيل/خروج/موعد/دفع) — يُدفع من
+      // CheckoutService + AppointmentsController + VisitsController + PaymentsController
+      // بعد كل عملية تعديل ناجحة. يُلغي صلاحية كل الاستعلامات المرتبطة فورًا حتى
+      // تُعاد جلب البيانات الملتزمة دون انتظار polling.
+      connection.on("JourneyUpdated", () => {
+        queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
+        queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
+        queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
+        queryClient.invalidateQueries({ queryKey: ["finance"] });
+      });
+
       // Reconnect
       connection.onreconnected(() => {
         setIsConnected(true);
         queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
         queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
+        queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
+        queryClient.invalidateQueries({ queryKey: ["finance"] });
       });
 
       connection.onclose(() => {

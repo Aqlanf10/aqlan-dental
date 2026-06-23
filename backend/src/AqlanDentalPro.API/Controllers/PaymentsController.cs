@@ -1,5 +1,6 @@
 using AqlanDentalPro.Application.DTOs.Finance;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.API.Hubs;
 using AqlanDentalPro.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -10,8 +11,31 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api")]
 [Authorize(Policy = "FinanceAccess")]
-public class PaymentsController(IFinanceService service, IPdfService pdfService, IAuditService audit, ILogger<PaymentsController> logger) : ControllerBase
+public class PaymentsController(IFinanceService service, IPdfService pdfService, IAuditService audit, ICurrentUserService currentUser, IRealTimePushService pushService, ILogger<PaymentsController> logger) : ControllerBase
 {
+    /// <summary>
+    /// Best-effort push of JourneyUpdated. Payment changes affect the checkout/balance
+    /// flow on the daily-ops screen. Scoped to the caller's branch when resolvable
+    /// (via ICurrentUserService.BranchId, or the ResolvedBranchId on CreatePaymentRequest);
+    /// falls back to PushToAllAsync for admin callers without a branch.
+    /// Never throws — push failure must not fail the HTTP request.
+    /// </summary>
+    private async Task PushJourneyUpdatedAsync(string action, Guid? paymentId = null, Guid? patientId = null, Guid? invoiceId = null, Guid? branchId = null)
+    {
+        try
+        {
+            var payload = new { action, paymentId, patientId, invoiceId, branchId };
+            if (branchId.HasValue && branchId.Value != Guid.Empty)
+                await pushService.PushToBranchAsync(branchId.Value, MessagingHubEvents.JourneyUpdated, payload);
+            else
+                await pushService.PushToAllAsync(MessagingHubEvents.JourneyUpdated, payload);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to push JourneyUpdated ({Action})", action);
+        }
+    }
+
     [HttpGet("payments")]
     public async Task<IActionResult> GetPayments(
         [FromQuery] int page = 1,
@@ -40,6 +64,11 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
             await audit.LogAsync(AuditAction.Create, "Payment", result.Id,
                 newData: new { result.Amount, result.PatientId, result.PaymentMethod });
 
+            // SignalR: best-effort push so daily-ops + finance screens invalidate instantly.
+            // Prefer the controller-resolved branch on the request (matches FinanceService write);
+            // fall back to currentUser.BranchId for non-admin callers without it.
+            await PushJourneyUpdatedAsync("payment-created", result.Id, result.PatientId, result.InvoiceId, branchId: req.ResolvedBranchId ?? currentUser.BranchId);
+
             return Ok(result);
         }
         catch (ArgumentException ex)
@@ -65,7 +94,12 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
         try
         {
             var result = await service.UpdatePaymentAsync(id, req);
-            return result == null ? NotFound(new { message = "الدفعة غير موجودة" }) : Ok(result);
+            if (result == null) return NotFound(new { message = "الدفعة غير موجودة" });
+
+            // SignalR: best-effort push so daily-ops + finance screens invalidate instantly.
+            await PushJourneyUpdatedAsync("payment-updated", result.Id, result.PatientId, result.InvoiceId, branchId: currentUser.BranchId);
+
+            return Ok(result);
         }
         catch (ArgumentException ex)
         {
@@ -95,6 +129,9 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
                 // H3: Audit logging for payment deletion
                 await audit.LogAsync(AuditAction.Delete, "Payment", id,
                     oldData: new { payment.Amount, payment.PatientId });
+
+                // SignalR: best-effort push so daily-ops + finance screens invalidate instantly.
+                await PushJourneyUpdatedAsync("payment-deleted", id, payment.PatientId, payment.InvoiceId, branchId: currentUser.BranchId);
             }
 
             return deleted ? Ok(new { message = "تم حذف الدفعة بنجاح" }) : NotFound(new { message = "الدفعة غير موجودة" });
@@ -117,6 +154,9 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
             // H3: Audit logging for payment refund
             await audit.LogAsync(AuditAction.Refund, "PaymentRefund", result.Id,
                 details: $"Refund of payment {id}");
+
+            // SignalR: best-effort push so daily-ops + finance screens invalidate instantly.
+            await PushJourneyUpdatedAsync("payment-refunded", result.Id, result.PatientId, result.InvoiceId, branchId: currentUser.BranchId);
         }
 
         return result == null ? NotFound(new { message = "الدفعة غير موجودة أو ملغاة" }) : Ok(result);

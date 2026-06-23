@@ -1,6 +1,9 @@
+using AqlanDentalPro.Application.Common;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -35,7 +38,7 @@ public sealed class UpdatePaymentMethodRequest
 [ApiController]
 [Route("api/settings")]
 [Authorize(Policy = "AdminOnly")]
-public class SettingsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
+public class SettingsController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll()
@@ -149,6 +152,194 @@ public class SettingsController(AppDbContext db, ICurrentUserService currentUser
         }
 
         return Ok(result);
+    }
+
+    // ─── FIN-SETTINGS — Finance settings (mirror the website batch pattern) ──────────
+
+    /// <summary>جلب إعدادات المالية (المدير + المحاسب للقراءة)</summary>
+    /// <remarks>
+    /// Returns ALL finance.* keys with their current values or defaults applied.
+    /// Read access is open to Admin and Accountant (ReportsAccess policy) so the
+    /// Accountant can SEE the configured limits. Write access stays Admin-only.
+    /// </remarks>
+    [HttpGet("finance")]
+    [Authorize(Policy = "ReportsAccess")]
+    public async Task<IActionResult> GetFinanceSettings()
+    {
+        var defaults = FinanceSettingsKeys.Defaults;
+
+        var stored = await db.Settings
+            .AsNoTracking()
+            .Where(s => s.Category == FinanceSettingsKeys.Category)
+            .ToDictionaryAsync(s => s.Key, s => s.Value);
+
+        var result = new Dictionary<string, string?>();
+        foreach (var (key, defaultValue) in defaults)
+        {
+            result[key] = stored.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v)
+                ? v!.Trim()
+                : defaultValue;
+        }
+        return Ok(result);
+    }
+
+    /// <summary>تحديث إعدادات المالية (المدير فقط — دفعات)</summary>
+    /// <remarks>
+    /// Accepts a partial dict of <c>{ "finance.xxx": "value", ... }</c>. Unknown
+    /// keys are rejected with a 400 Arabic message. Each value is validated:
+    /// <list type="bullet">
+    /// <item><c>finance.max_discount_percentage</c> — 0–100</item>
+    /// <item><c>finance.commission.default_doctor_percentage</c> — 0–100</item>
+    /// <item><c>finance.commission.default_recognition_mode</c> — valid enum name</item>
+    /// <item><c>finance.commission.default_base_rule</c> — valid enum name</item>
+    /// <item><c>finance.receipt.show_lead_doctor</c> — "true" | "false"</item>
+    /// </list>
+    /// Every successful PUT is audit-logged.
+    /// </remarks>
+    [HttpPut("finance")]
+    public async Task<IActionResult> UpdateFinanceSettings([FromBody] Dictionary<string, string?> request)
+    {
+        if (request is null || request.Count == 0)
+            return BadRequest(new { message = "لا توجد قيم للتحديث" });
+
+        var allowedKeys = FinanceSettingsKeys.Defaults.Keys.ToHashSet();
+
+        // Reject unknown keys (don't silently drop — surface a clear Arabic error).
+        var unknown = request.Keys.Where(k => !allowedKeys.Contains(k)).ToList();
+        if (unknown.Count > 0)
+            return BadRequest(new { message = $"مفاتيح غير معروفة: {string.Join("، ", unknown)}" });
+
+        // Validate values per-key.
+        foreach (var (key, value) in request)
+        {
+            var raw = (value ?? "").Trim();
+            var error = ValidateFinanceValue(key, raw);
+            if (error is not null)
+                return BadRequest(new { message = error, key });
+        }
+
+        // Batch-load existing finance rows so we can compute audit old-vs-new.
+        var keysToUpdate = request.Keys.ToList();
+        var existing = await db.Settings
+            .Where(s => keysToUpdate.Contains(s.Key))
+            .ToDictionaryAsync(s => s.Key, s => s);
+
+        var oldData = new Dictionary<string, string?>();
+        var newData = new Dictionary<string, string?>();
+
+        foreach (var (key, value) in request)
+        {
+            var raw = (value ?? "").Trim();
+
+            if (!existing.TryGetValue(key, out var setting))
+            {
+                oldData[key] = FinanceSettingsKeys.Defaults.GetValueOrDefault(key);
+                setting = new Setting
+                {
+                    Key = key,
+                    Value = raw,
+                    Category = FinanceSettingsKeys.Category,
+                    UpdatedAt = DateTime.UtcNow,
+                };
+                db.Settings.Add(setting);
+            }
+            else
+            {
+                oldData[key] = setting.Value;
+                setting.Value = raw;
+                setting.UpdatedAt = DateTime.UtcNow;
+            }
+            newData[key] = raw;
+        }
+
+        await db.SaveChangesAsync();
+
+        await audit.LogAsync(
+            AuditAction.Update,
+            "Setting",
+            resourceId: null,
+            oldData: oldData,
+            newData: newData,
+            details: "FIN-SETTINGS: finance settings updated");
+
+        // Return updated values (re-read so the response reflects what was stored).
+        var updated = await db.Settings
+            .AsNoTracking()
+            .Where(s => s.Category == FinanceSettingsKeys.Category)
+            .ToDictionaryAsync(s => s.Key, s => s.Value);
+
+        var result = new Dictionary<string, string?>();
+        foreach (var (key, defaultValue) in FinanceSettingsKeys.Defaults)
+        {
+            result[key] = updated.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v)
+                ? v!.Trim()
+                : defaultValue;
+        }
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Per-key validation. Returns an Arabic error message when invalid, or
+    /// <c>null</c> when the value is acceptable. Empty values are allowed for
+    /// free-text fields (footer_text) — they reset to the default on read.
+    /// </summary>
+    private static string? ValidateFinanceValue(string key, string raw)
+    {
+        switch (key)
+        {
+            case FinanceSettingsKeys.MaxDiscountPercentage:
+            {
+                if (!decimal.TryParse(raw, out var pct))
+                    return "قيمة غير صالحة — يُتوقع رقم";
+                if (pct < 0 || pct > 100)
+                    return "نسبة الخصم القصوى يجب أن تكون بين 0 و 100";
+                return null;
+            }
+            case FinanceSettingsKeys.CommissionDefaultDoctorPercentage:
+            {
+                if (!decimal.TryParse(raw, out var pct))
+                    return "قيمة غير صالحة — يُتوقع رقم";
+                if (pct < 0 || pct > 100)
+                    return "نسبة عمولة الطبيب الافتراضية يجب أن تكون بين 0 و 100";
+                return null;
+            }
+            case FinanceSettingsKeys.DefaultConsultationFee:
+            case FinanceSettingsKeys.CashierDefaultOpeningBalance:
+            {
+                if (!decimal.TryParse(raw, out _))
+                    return "قيمة غير صالحة — يُتوقع رقم";
+                return null;
+            }
+            case FinanceSettingsKeys.CommissionDefaultRecognitionMode:
+            {
+                if (!Enum.TryParse<CommissionRecognitionMode>(raw, ignoreCase: true, out _))
+                    return "وضع احتساب العمولة غير صالح";
+                return null;
+            }
+            case FinanceSettingsKeys.CommissionDefaultBaseRule:
+            {
+                if (!Enum.TryParse<CommissionBaseRule>(raw, ignoreCase: true, out _))
+                    return "قاعدة احتساب العمولة غير صالحة";
+                return null;
+            }
+            case FinanceSettingsKeys.ReceiptShowLeadDoctor:
+            {
+                var r = raw.ToLowerInvariant();
+                if (r is not "true" and not "false")
+                    return "قيمة غير صالحة — يُتوقع true أو false";
+                return null;
+            }
+            case FinanceSettingsKeys.PaymentMethodsDefaultVisibility:
+            {
+                if (string.IsNullOrWhiteSpace(raw))
+                    return "القيمة مطلوبة";
+                return null;
+            }
+            // Free text — accept anything (including empty to reset to default).
+            case FinanceSettingsKeys.ReceiptFooterText:
+            default:
+                return null;
+        }
     }
 
     // ─── Sprint 2 — Payment Method Settings ─────────────────────────────────

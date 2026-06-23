@@ -49,7 +49,9 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
                 {
                     col.Item().Text(Identity.Name)
                         .Bold().FontSize(9).FontColor("#1a3a5c");
-                    if (Identity.HasLeadDoctor)
+                    // FIN-SETTINGS: lead-doctor block is gated on both clinic.lead_doctor
+                    // being configured AND finance.receipt.show_lead_doctor=true (default).
+                    if (Identity.ShouldRenderLeadDoctor)
                         col.Item().Text(Identity.HasLeadDoctorTitle
                                 ? $"{Identity.LeadDoctor} — {Identity.LeadDoctorTitle}"
                                 : Identity.LeadDoctor)
@@ -166,7 +168,13 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
             column.Item().LineHorizontal(0.5f).LineColor("#f5922e");
             column.Item().PaddingTop(3).AlignCenter().Text(Identity.ContactLine)
                 .FontSize(6).FontColor("#1a3a5c");
-            column.Item().AlignCenter().Text("شكراً لثقتكم بنا — نتمنى لكم دوام الصحة والعافية")
+            // FIN-SETTINGS: when finance.receipt.footer_text is configured, print it
+            // instead of the legacy hard-coded thank-you line. Empty → legacy default
+            // (preserves the prior behavior until the owner customizes it).
+            var footerLine = !string.IsNullOrWhiteSpace(Identity.ReceiptFooterText)
+                ? Identity.ReceiptFooterText.Trim()
+                : "شكراً لثقتكم بنا — نتمنى لكم دوام الصحة والعافية";
+            column.Item().AlignCenter().Text(footerLine)
                 .FontSize(6).FontColor(Colors.Grey.Darken1);
         });
     }

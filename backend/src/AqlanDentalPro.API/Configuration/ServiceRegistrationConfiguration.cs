@@ -38,6 +38,8 @@ public static class ServiceRegistrationConfiguration
         services.AddScoped<DashboardService>();
         services.AddScoped<OrthoService>();
         services.AddScoped<IFinanceService, FinanceService>();
+        // FIN-SETTINGS: read helper for the finance.* Settings namespace.
+        services.AddScoped<FinanceSettingsReader>();
         services.AddScoped<IJournalEntryService, JournalEntryService>();
         services.AddScoped<ITreasuryResolutionService, TreasuryResolutionService>();
         services.AddScoped<GeneralService>();

@@ -57,6 +57,12 @@ public static class DbSeeder
             if (!await context.Settings.AnyAsync())
                 await SeedSettingsAsync(context);
 
+            // FIN-SETTINGS: idempotent additive seeding for the finance.* namespace.
+            // Uses a sentinel row (finance.settings.seeded.v1) so existing DBs get the
+            // new keys without re-running the full SeedSettingsAsync path (which is gated
+            // on an empty Settings table above and so would never fire on an existing DB).
+            await SeedFinanceSettingsAsync(context);
+
             // Always run ClinicServices upsert — syncs commission defaults for existing records,
             // inserts new services if table is empty. Safe to run every startup.
             await SeedClinicServicesAsync(context);
@@ -679,6 +685,58 @@ public static class DbSeeder
             new Setting { Key = "website.whatsappButtonText",   Value = "تواصل عبر الواتساب", Category = "website" },
         };
         await context.Settings.AddRangeAsync(settings);
+    }
+
+    /// <summary>
+    /// FIN-SETTINGS — idempotent additive seeding for the finance.* Settings namespace.
+    /// Uses a sentinel row (finance.settings.seeded.v1) so this only ADDS missing keys
+    /// once per database. Existing rows are never overwritten — the clinic owner's
+    /// customized values always win. Safe to run on every startup.
+    /// </summary>
+    private static async Task SeedFinanceSettingsAsync(AppDbContext context)
+    {
+        const string sentinelKey = "finance.settings.seeded.v1";
+        const string category = "finance";
+
+        // Already-done fast path: sentinel exists → nothing to do.
+        if (await context.Settings.AnyAsync(s => s.Key == sentinelKey))
+            return;
+
+        // Pull only the existing finance.* keys (cheap single query) so we add
+        // ONLY the missing ones — never overwrite a value the owner customized.
+        var existingKeys = (await context.Settings
+            .Where(s => s.Category == category || s.Key.StartsWith("finance."))
+            .Select(s => s.Key)
+            .ToListAsync()).ToHashSet();
+
+        var toAdd = new List<Setting>();
+        foreach (var (key, defaultValue) in Application.Common.FinanceSettingsKeys.Defaults)
+        {
+            if (existingKeys.Contains(key)) continue;
+            toAdd.Add(new Setting
+            {
+                Key = key,
+                Value = defaultValue,
+                Category = category,
+                UpdatedAt = DateTime.UtcNow,
+            });
+        }
+
+        if (toAdd.Count > 0)
+            await context.Settings.AddRangeAsync(toAdd);
+
+        // Always write the sentinel (even if zero new keys were added, which can happen
+        // if an older seed pass already populated everything but not the sentinel) so the
+        // next startup takes the fast path.
+        context.Settings.Add(new Setting
+        {
+            Key = sentinelKey,
+            Value = DateTime.UtcNow.ToString("O"),
+            Category = "system",
+            UpdatedAt = DateTime.UtcNow,
+        });
+
+        await context.SaveChangesAsync();
     }
 
     private static async Task SeedClinicServicesAsync(AppDbContext context)

@@ -1,5 +1,7 @@
+using AqlanDentalPro.Application.Common;
 using AqlanDentalPro.Application.DTOs.Finance;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,7 +10,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/contracts")]
 [Authorize(Policy = "FinanceAccess")]
-public class ContractsController(IFinanceService service) : ControllerBase
+public class ContractsController(IFinanceService service, FinanceSettingsReader financeSettings) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetList(
@@ -31,6 +33,11 @@ public class ContractsController(IFinanceService service) : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateContractRequest req)
     {
+        // FIN-SETTINGS: global max-discount % cap (defaults to 100 = no restriction).
+        // Preserves current behavior until the clinic owner lowers the setting.
+        var maxError = await ValidateMaxDiscountAsync(req.TotalAmount, req.DiscountAmount);
+        if (maxError is not null) return maxError;
+
         var result = await service.CreateContractAsync(req);
         return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
     }
@@ -40,6 +47,10 @@ public class ContractsController(IFinanceService service) : ControllerBase
     {
         if (req.DiscountAmount > req.TotalAmount)
             return BadRequest(new { message = "قيمة الخصم لا يمكن أن تتجاوز إجمالي العقد" });
+
+        // FIN-SETTINGS: global max-discount % cap (defaults to 100 = no restriction).
+        var maxError = await ValidateMaxDiscountAsync(req.TotalAmount, req.DiscountAmount);
+        if (maxError is not null) return maxError;
 
         if (!string.IsNullOrWhiteSpace(req.StartDate) && !DateOnly.TryParse(req.StartDate, out _))
             return BadRequest(new { message = "تاريخ البدء غير صالح" });
@@ -58,6 +69,31 @@ public class ContractsController(IFinanceService service) : ControllerBase
         var result = await service.UpdateContractStatusAsync(id, body.Status);
         if (result == null) return NotFound(new { message = "العقد غير موجود" });
         return Ok(result);
+    }
+
+    /// <summary>
+    /// FIN-SETTINGS — rejects a discount whose percentage-of-total exceeds the
+    /// configured cap. Returns <c>null</c> when the discount is within bounds.
+    /// Defaults to 100% (= no restriction) so current behavior is preserved.
+    /// </summary>
+    private async Task<IActionResult?> ValidateMaxDiscountAsync(decimal totalAmount, decimal discountAmount)
+    {
+        if (discountAmount <= 0 || totalAmount <= 0) return null;
+
+        var maxDiscountPct = await financeSettings.GetDecimalAsync(FinanceSettingsKeys.MaxDiscountPercentage);
+        if (maxDiscountPct >= 100m) return null;
+
+        var discountPct = discountAmount / totalAmount * 100m;
+        if (discountPct > maxDiscountPct)
+        {
+            return BadRequest(new
+            {
+                message = $"نسبة الخصم ({discountPct:F1}%) تتجاوز الحد الأقصى المسموح ({maxDiscountPct:F0}%)",
+                discountPercent = discountPct,
+                maxAllowed = maxDiscountPct,
+            });
+        }
+        return null;
     }
 }
 

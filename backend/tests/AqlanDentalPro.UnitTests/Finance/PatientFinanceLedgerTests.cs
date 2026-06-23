@@ -513,7 +513,8 @@ public class PatientFinanceLedgerTests
             mockAuditService.Object,
             mockLogger.Object,
             mockCommissionService.Object,
-            mockCurrentUser.Object);
+            mockCurrentUser.Object,
+            new FinanceSettingsReader(db));
 
         // Act
         var result = await controller.GetInvoicePdf(invoiceId);

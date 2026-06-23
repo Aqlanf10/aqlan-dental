@@ -12,6 +12,7 @@ import {
   MoreHorizontal, Eye, Phone, Clock,
   Building2, PanelRight, Timer, AlertCircle, Heart,
   ChevronDown, ChevronUp, GitBranch,
+  Wallet, ClipboardCheck, MessageCircle,
 } from "lucide-react";
 import {
   ACTION_LABELS,
@@ -351,6 +352,7 @@ export default function AppointmentsTable({
 function AppointmentRow({
   item, isDoctor, canProcessCheckout, isSelected, isEven, queueWaitMinutes,
   onIntake, onSendToQueue, onCallPatient, onEnterRoom,
+  onQuickPayment, onWhatsApp,
   onViewPatient, onCompleteVisit, onOpenSidePanel, onContextMenu,
 }: {
   item: TodayJourneyItem; isDoctor: boolean; canProcessCheckout: boolean; isSelected: boolean; isEven: boolean; queueWaitMinutes?: number;
@@ -359,13 +361,32 @@ function AppointmentRow({
   const overdueText = isAppointmentOverdue(item) ? fmtOverdueMinutes(item) : "";
 
   // Determine next patient highlight
-  const isNextPatient = item.nextAction === "CallPatient" || item.nextAction === "EnterRoom" || 
+  const isNextPatient = item.nextAction === "CallPatient" || item.nextAction === "EnterRoom" ||
     (item.nextAction === "Intake" && (item.appointmentStatus === "Scheduled" || item.appointmentStatus === "Confirmed"));
 
-  // Render the primary labeled action button based on the nextAction status
-  let primaryBtn = null;
+  // ── Secondary quick-action visibility rules ──────────────────────────────
+  // Surface the most common secondary actions inline so the user does not need
+  // to open the context menu. Only render a button when its condition is met
+  // (no disabled buttons — keep the row clean).
+  const showQuickPayment = canProcessCheckout && (
+    item.checkoutStatus === "ReadyForCheckout" || item.nextAction === "Checkout"
+  );
+  // Visit is in-progress and can be completed.
+  const showCompleteVisit =
+    item.appointmentStatus === "InRoom" ||
+    item.appointmentStatus === "InProgress" ||
+    item.queueStatus === "InRoom" ||
+    item.queueStatus === "InProgress";
+  const showWhatsApp = !!item.patientPhone;
+
+  // Render the primary labeled action button based on the nextAction status.
+  // Track whether a real (non-fallback) primary action was set so the
+  // secondary View-File icon can be hidden when the fallback already covers it.
+  let primaryBtn: React.ReactNode = null;
+  let hasPrimaryAction = false;
   if (canAct && !isDoctor) {
     if (item.nextAction === "Intake") {
+      hasPrimaryAction = true;
       primaryBtn = (
         <button
           onClick={() => onIntake(item)}
@@ -377,6 +398,7 @@ function AppointmentRow({
         </button>
       );
     } else if (item.nextAction === "SendToQueue") {
+      hasPrimaryAction = true;
       primaryBtn = (
         <button
           onClick={() => onSendToQueue(item)}
@@ -388,6 +410,7 @@ function AppointmentRow({
         </button>
       );
     } else if (item.queueItemId && (item.queueStatus === "Waiting" || item.nextAction === "CallPatient")) {
+      hasPrimaryAction = true;
       primaryBtn = (
         <button
           onClick={() => onCallPatient(item)}
@@ -399,6 +422,7 @@ function AppointmentRow({
         </button>
       );
     } else if (item.queueItemId && (item.queueStatus === "Called" || item.nextAction === "EnterRoom")) {
+      hasPrimaryAction = true;
       primaryBtn = (
         <button
           onClick={() => onEnterRoom(item)}
@@ -414,6 +438,7 @@ function AppointmentRow({
 
   // Checkout primary button
   if (canProcessCheckout && (item.nextAction === "Checkout" || item.checkoutStatus === "ReadyForCheckout")) {
+    hasPrimaryAction = true;
     primaryBtn = (
       <button
         onClick={() => onCompleteVisit(item)}
@@ -426,7 +451,7 @@ function AppointmentRow({
     );
   }
 
-  if (!primaryBtn) {
+  if (!hasPrimaryAction) {
     primaryBtn = (
       <button
         onClick={() => onViewPatient(item)}
@@ -533,6 +558,59 @@ function AppointmentRow({
         <div className="flex items-center gap-2">
           {/* Labeled Dynamic Primary Action */}
           {primaryBtn}
+
+          {/* ── Secondary quick-action icon buttons ──────────────────────
+              Surface the most common secondary actions inline so the user
+              does not need to open the context menu. Only rendered when
+              their condition is met (no disabled buttons). The View-File
+              icon is hidden when the primary button already falls back to
+              "عرض الملف" to avoid redundancy. */}
+          <div className="flex items-center gap-1">
+            {showQuickPayment && (
+              <button
+                type="button"
+                onClick={() => onQuickPayment(item)}
+                title="تحصيل سريع"
+                aria-label="تحصيل سريع"
+                className="w-8 h-8 rounded-lg flex items-center justify-center bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
+              >
+                <Wallet className="w-4 h-4" />
+              </button>
+            )}
+            {showCompleteVisit && (
+              <button
+                type="button"
+                onClick={() => onCompleteVisit(item)}
+                title="إكمال الزيارة"
+                aria-label="إكمال الزيارة"
+                className="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+              >
+                <ClipboardCheck className="w-4 h-4" />
+              </button>
+            )}
+            {showWhatsApp && (
+              <button
+                type="button"
+                onClick={() => onWhatsApp(item)}
+                title="إرسال رسالة واتساب"
+                aria-label="إرسال رسالة واتساب"
+                className="w-8 h-8 rounded-lg flex items-center justify-center bg-green-50 text-green-600 hover:bg-green-100 transition-colors"
+              >
+                <MessageCircle className="w-4 h-4" />
+              </button>
+            )}
+            {hasPrimaryAction && (
+              <button
+                type="button"
+                onClick={() => onViewPatient(item)}
+                title="عرض الملف"
+                aria-label="عرض الملف"
+                className="w-8 h-8 rounded-lg flex items-center justify-center bg-gray-50 text-gray-600 hover:bg-gray-100 transition-colors"
+              >
+                <Eye className="w-4 h-4" />
+              </button>
+            )}
+          </div>
 
           {/* Inline Context Trigger */}
           <button

@@ -67,6 +67,7 @@ import {
 import AppointmentsTable from "./_components/AppointmentsTable";
 import JourneyContextMenu from "./_components/JourneyContextMenu";
 import type { ContextMenuPosition } from "./_components/JourneyContextMenu";
+import StatusCardsBar, { type ModuleTabKey } from "./_components/StatusCardsBar";
 import {
   QuickPaymentModal,
   CompleteVisitModal,
@@ -1596,56 +1597,26 @@ export default function DailyOperationsPage() {
         </div>
 
         {/* ═══════════════════════════════════════════════════════════════════
-            STATUS BAR (32px)
+            STATUS CARDS BAR — replaces the old 8px navy text-status bar.
+            5 prominent clickable cards + a compact row below (SignalR,
+            finance, rooms, date). Clicking a card filters the view.
             ═══════════════════════════════════════════════════════════════════ */}
-        <div className="h-8 flex-shrink-0 flex items-center px-3 gap-4 text-[11px] font-medium text-white select-none"
-          style={{ background: NAVY }}>
-          {/* SignalR */}
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full" style={{ background: signalrConnected ? "#4ade80" : "#f87171" }} />
-            <span>{signalrConnected ? "مباشر" : "غير متصل"}</span>
-          </div>
-
-          <div className="w-px h-4" style={{ background: "rgba(255,255,255,0.2)" }} />
-
-          {/* Stats */}
-          <span>{dayStats.totalAppointments} موعد</span>
-          <span>{dayStats.waiting} انتظار</span>
-          <span>{dayStats.inClinic} عيادة</span>
-          <span>{dayStats.completed} مكتمل</span>
-          {dayStats.noShow > 0 && <span>{dayStats.noShow} لم يحضر</span>}
-
-          <div className="w-px h-4" style={{ background: "rgba(255,255,255,0.2)" }} />
-
-          {/* Finance */}
-          <span>💰 {fmtRial(dayStats.todayPayments)}</span>
-          {dayStats.overdueAmount > 0 && <span>⚠ {fmtRial(dayStats.overdueAmount)} متأخر</span>}
-
-          <div className="w-px h-4" style={{ background: "rgba(255,255,255,0.2)" }} />
-
-          {/* Rooms */}
-          {roomOccupancy.length > 0 && (
-            <div className="flex items-center gap-2">
-              <span>🏥</span>
-              {roomOccupancy.slice(0, 4).map(room => (
-                <span key={room.roomId} className="px-1.5 py-0.5 rounded text-[10px]"
-                  style={{ background: room.isOccupied ? "rgba(147,51,234,0.3)" : "rgba(34,197,94,0.3)" }}>
-                  {room.roomName}:{room.isOccupied ? room.patientName : "فارغة"}
-                </span>
-              ))}
-            </div>
-          )}
-
-          <div className="flex-1" />
-
-          {/* Date + Time */}
-          <span>{fmtDate(filterDate)}</span>
-          <span>{new Date().toLocaleTimeString("ar-YE", { hour: "2-digit", minute: "2-digit" })}</span>
-
-          <div className="w-px h-4" style={{ background: "rgba(255,255,255,0.2)" }} />
-
-          <span>⌨ ?</span>
-        </div>
+        <StatusCardsBar
+          dayStats={dayStats}
+          readyForCheckoutCount={tabCounts.payments}
+          activeTab={activeTab}
+          activeModule={activeModule as ModuleTabKey}
+          onTabSelect={(tab) => {
+            // Switching a sub-tab also routes the user back to the
+            // appointments module so the filter is actually visible.
+            if (activeModule !== "appointments") setActiveModule("appointments");
+            setActiveTab(tab);
+          }}
+          onModuleSelect={(mod) => setActiveModule(mod)}
+          signalrConnected={signalrConnected}
+          filterDate={filterDate}
+          roomOccupancy={roomOccupancy}
+        />
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════

@@ -467,6 +467,7 @@ public class PatientFinanceLedgerTests
         
         var mockAuditService = new Mock<IAuditService>();
         var mockCurrentUser = new Mock<ICurrentUserService>();
+        mockCurrentUser.SetupGet(c => c.Role).Returns(UserRole.Admin); // Admin bypasses PermissionGuard; these tests assert PDF/statement behavior, not authz
         var mockPush = new Mock<IRealTimePushService>();
         var mockLogger = new Mock<ILogger<PaymentsController>>();
         
@@ -475,6 +476,7 @@ public class PatientFinanceLedgerTests
             mockPdfService.Object,
             mockAuditService.Object,
             mockCurrentUser.Object,
+            CreateDb(),
             mockPush.Object,
             mockLogger.Object);
 
@@ -510,6 +512,7 @@ public class PatientFinanceLedgerTests
         var mockLogger = new Mock<ILogger<InvoicesController>>();
         var mockCommissionService = new Mock<ICommissionService>();
         var mockCurrentUser = new Mock<ICurrentUserService>();
+        mockCurrentUser.SetupGet(c => c.Role).Returns(UserRole.Admin); // Admin bypasses PermissionGuard; these tests assert PDF/statement behavior, not authz
         
         var controller = new InvoicesController(
             db,
@@ -550,6 +553,7 @@ public class PatientFinanceLedgerTests
         
         var mockAuditService = new Mock<IAuditService>();
         var mockCurrentUser = new Mock<ICurrentUserService>();
+        mockCurrentUser.SetupGet(c => c.Role).Returns(UserRole.Admin); // Admin bypasses PermissionGuard; these tests assert PDF/statement behavior, not authz
         var mockPush = new Mock<IRealTimePushService>();
         var mockLogger = new Mock<ILogger<PaymentsController>>();
         
@@ -558,6 +562,7 @@ public class PatientFinanceLedgerTests
             mockPdfService.Object,
             mockAuditService.Object,
             mockCurrentUser.Object,
+            CreateDb(),
             mockPush.Object,
             mockLogger.Object);
 
@@ -586,6 +591,7 @@ public class PatientFinanceLedgerTests
         
         var mockAuditService = new Mock<IAuditService>();
         var mockCurrentUser = new Mock<ICurrentUserService>();
+        mockCurrentUser.SetupGet(c => c.Role).Returns(UserRole.Admin); // Admin bypasses PermissionGuard; these tests assert PDF/statement behavior, not authz
         var mockPush = new Mock<IRealTimePushService>();
         var mockLogger = new Mock<ILogger<PaymentsController>>();
         
@@ -594,6 +600,7 @@ public class PatientFinanceLedgerTests
             mockPdfService.Object,
             mockAuditService.Object,
             mockCurrentUser.Object,
+            CreateDb(),
             mockPush.Object,
             mockLogger.Object);
 

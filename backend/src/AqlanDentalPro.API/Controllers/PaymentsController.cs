@@ -1,7 +1,9 @@
 using AqlanDentalPro.Application.DTOs.Finance;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.API.Hubs;
 using AqlanDentalPro.Domain.Enums;
+using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -11,8 +13,20 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api")]
 [Authorize(Policy = "FinanceAccess")]
-public class PaymentsController(IFinanceService service, IPdfService pdfService, IAuditService audit, ICurrentUserService currentUser, IRealTimePushService pushService, ILogger<PaymentsController> logger) : ControllerBase
+public class PaymentsController(IFinanceService service, IPdfService pdfService, IAuditService audit, ICurrentUserService currentUser, AppDbContext db, IRealTimePushService pushService, ILogger<PaymentsController> logger) : ControllerBase
 {
+    // FIN-PERM: the class-level FinanceAccess policy (Admin + Reception + Accountant)
+    // is the coarse gate; the granular finance.* permission (RolePermissions, owner-
+    // configurable from Settings) is the real per-action gate. Admin always bypasses
+    // (see PermissionGuard). Reception is seeded only for payments/receipts view+create,
+    // so it is denied editing payments, reading balances, or printing statements unless
+    // the owner explicitly grants it.
+    private Task<bool> CanAsync(string resource, string action) =>
+        PermissionGuard.HasAsync(db, currentUser, resource, action);
+
+    private IActionResult Deny() =>
+        StatusCode(403, new { message = "غير مصرح لك بهذا الإجراء المالي" });
+
     /// <summary>
     /// Best-effort push of JourneyUpdated. Payment changes affect the checkout/balance
     /// flow on the daily-ops screen. Scoped to the caller's branch when resolvable
@@ -42,6 +56,7 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
         [FromQuery] int pageSize = 20,
         [FromQuery] Guid? patientId = null)
     {
+        if (!await CanAsync("finance.payments", "view")) return Deny();
         var result = await service.GetPaymentsAsync(page, pageSize, patientId);
         return Ok(result);
     }
@@ -49,6 +64,7 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
     [HttpGet("payments/{id:guid}")]
     public async Task<IActionResult> GetPaymentById(Guid id)
     {
+        if (!await CanAsync("finance.payments", "view")) return Deny();
         var result = await service.GetPaymentByIdAsync(id);
         return result == null ? NotFound(new { message = "الدفعة غير موجودة" }) : Ok(result);
     }
@@ -56,6 +72,7 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
     [HttpPost("payments")]
     public async Task<IActionResult> CreatePayment([FromBody] CreatePaymentRequest req)
     {
+        if (!await CanAsync("finance.payments", "create")) return Deny();
         try
         {
             var result = await service.CreatePaymentAsync(req);
@@ -91,6 +108,7 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
     [HttpPut("payments/{id:guid}")]
     public async Task<IActionResult> UpdatePayment(Guid id, [FromBody] UpdatePaymentRequest req)
     {
+        if (!await CanAsync("finance.payments", "edit")) return Deny();
         try
         {
             var result = await service.UpdatePaymentAsync(id, req);
@@ -165,6 +183,7 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
     [HttpGet("patients/{patientId:guid}/finance-summary")]
     public async Task<IActionResult> GetPatientFinanceSummary(Guid patientId)
     {
+        if (!await CanAsync("finance.patient_balance", "view")) return Deny();
         var result = await service.GetPatientFinanceSummaryAsync(patientId);
         return Ok(result);
     }
@@ -172,6 +191,7 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
     [HttpGet("patients/{patientId:guid}/financial-statement/pdf")]
     public async Task<IActionResult> GetPatientFinancialStatementPdf(Guid patientId)
     {
+        if (!await CanAsync("finance.account_statement", "export")) return Deny();
         try
         {
             var pdfBytes = await pdfService.GenerateFinancialStatementAsync(patientId);
@@ -192,6 +212,7 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
     [HttpGet("payments/{id:guid}/pdf")]
     public async Task<IActionResult> GetPaymentPdf(Guid id)
     {
+        if (!await CanAsync("finance.receipts", "view")) return Deny();
         try
         {
             var pdfBytes = await pdfService.GeneratePaymentReceiptAsync(id);

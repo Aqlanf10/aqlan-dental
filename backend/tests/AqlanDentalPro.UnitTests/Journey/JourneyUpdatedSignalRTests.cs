@@ -326,11 +326,13 @@ public class JourneyUpdatedSignalRTests
         var currentUser = new Mock<ICurrentUserService>();
         currentUser.SetupGet(c => c.BranchId).Returns((Guid?)null);
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
+        currentUser.SetupGet(c => c.Role).Returns(UserRole.Admin); // Admin bypasses PermissionGuard
         var push = new Mock<IRealTimePushService>();
 
+        await using var db = CreateDb();
         var controller = new PaymentsController(
             finance.Object, pdf.Object, audit.Object,
-            currentUser.Object, push.Object,
+            currentUser.Object, db, push.Object,
             NullLogger<PaymentsController>.Instance);
 
         var result = await controller.CreatePayment(new CreatePaymentRequest

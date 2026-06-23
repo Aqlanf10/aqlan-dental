@@ -327,6 +327,10 @@ public class TechnicalDebtCleanupTests
         // Arrange
         await using var db = CreateDb();
         var nonAdminNoBranch = CreateNonAdminUserWithoutBranch();
+        // FIN-PERM: grant cashier-session view so the 403 under test comes from the
+        // branch guard (no branch assigned), not the granular permission gate.
+        db.RolePermissions.Add(new RolePermission { Role = "Accountant", Resource = "finance.cashier_session", CanView = true });
+        await db.SaveChangesAsync();
         var audit = new Mock<IAuditService>().Object;
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
         var logger = new Mock<ILogger<CashierSessionsController>>().Object;
@@ -346,6 +350,10 @@ public class TechnicalDebtCleanupTests
         // Arrange
         await using var db = CreateDb();
         var nonAdminEmptyBranch = CreateNonAdminUserWithEmptyBranch();
+        // FIN-PERM: grant cashier-session view so the 403 under test comes from the
+        // branch guard (Guid.Empty branch), not the granular permission gate.
+        db.RolePermissions.Add(new RolePermission { Role = "Accountant", Resource = "finance.cashier_session", CanView = true });
+        await db.SaveChangesAsync();
         var audit = new Mock<IAuditService>().Object;
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
         var logger = new Mock<ILogger<CashierSessionsController>>().Object;

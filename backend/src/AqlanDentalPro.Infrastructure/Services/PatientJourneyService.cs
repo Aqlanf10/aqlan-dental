@@ -392,6 +392,39 @@ public class PatientJourneyService(
         }
     }
 
+    // FIN-PERM: database-driven finance permission check for the daily-summary
+    // balance tiers. The owner configures finance.* permissions from Settings
+    // (RolePermissions), so checkout balance access is NOT tied to hardcoded role
+    // names. Admin always bypasses. Evaluated via IsInRole against each matching
+    // RolePermission row so it works with the request ClaimsPrincipal without
+    // needing ICurrentUserService (this service receives a ClaimsPrincipal).
+    private async Task<bool> HasFinancePermissionAsync(ClaimsPrincipal user, string resource, string action)
+    {
+        if (user.IsInRole("Admin")) return true;
+
+        var rows = await db.RolePermissions
+            .AsNoTracking()
+            .Where(p => p.Resource == resource)
+            .ToListAsync();
+
+        foreach (var p in rows)
+        {
+            if (!user.IsInRole(p.Role)) continue;
+            var granted = action switch
+            {
+                "view" => p.CanView,
+                "create" => p.CanCreate,
+                "edit" => p.CanEdit,
+                "delete" => p.CanDelete,
+                "export" => p.CanExport,
+                "approve" => p.CanApprove,
+                _ => false
+            };
+            if (granted) return true;
+        }
+        return false;
+    }
+
     // ─── 1B. GET /api/patient-journey/{patientId}/daily-summary ───────────
     /// <summary>Returns a comprehensive daily journey summary for a specific patient,
     /// aggregating patient info, today's appointment, queue status, finance snapshot,
@@ -523,16 +556,25 @@ public class PatientJourneyService(
                 })
                 .FirstOrDefaultAsync();
 
-            // FIX-2: Finance access tiers
-            // Full:    Admin + Accountant (via FinanceAccess policy / finance.view permission)
-            // Limited: Reception (daily checkout only — outstandingBalance, overdueAmount, latestPayment, financialStatus)
-            // None:    Doctors
-            var isAdminOrAccountant = user.IsInRole("Admin") || user.IsInRole("Accountant") ||
-                user.HasClaim("permission", "finance.view");
-            var isReception = user.IsInRole("Reception");
-            var hasFullFinanceAccess = isAdminOrAccountant;
-            var hasLimitedFinanceAccess = isReception;
+            // FIX-2 / FIN-PERM: Finance access tiers — now database/permission-driven
+            // (owner-configurable from Settings) instead of hardcoded role names.
+            // Full:    finance.patient_balance.view — Admin/Accountant seeded; the owner
+            //          may grant it to other roles. Exposes the complete snapshot.
+            // Limited: finance.payments.view — cashier-safe checkout only. Exposes ONLY
+            //          the collection essentials (outstandingBalance, overdueAmount,
+            //          latestPayment for receipt reprint, financialStatus) — no total
+            //          treatment cost, no totals/history counts, no account statement.
+            // None:    no finance permission (e.g. doctors).
+            // Legacy Admin/Accountant role + finance.view claim are kept as a safety
+            // fallback so a not-yet-seeded DB never strips Admin/Accountant access.
+            var hasFullFinanceAccess = user.IsInRole("Admin") || user.IsInRole("Accountant") ||
+                user.HasClaim("permission", "finance.view") ||
+                await HasFinancePermissionAsync(user, "finance.patient_balance", "view");
+            var hasLimitedFinanceAccess = !hasFullFinanceAccess &&
+                await HasFinancePermissionAsync(user, "finance.payments", "view");
             var hasAnyFinanceAccess = hasFullFinanceAccess || hasLimitedFinanceAccess;
+            // Reused below for non-finance display gating (patient contact fields, etc.).
+            var isReception = user.IsInRole("Reception");
 
             object? financeSummary = null;
             int unpaidInvoicesCount = 0;

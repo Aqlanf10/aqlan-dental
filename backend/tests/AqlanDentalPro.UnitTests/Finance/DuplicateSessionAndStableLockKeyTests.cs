@@ -386,7 +386,7 @@ public class DuplicateSessionAndStableLockKeyTests
 
         // Verify Expense number format (EXP-yyyyMMdd-NNN) via OperationalExpensesController
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
-        var expenseController = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution);
+        var expenseController = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution, new FinanceSettingsReader(db));
 
         var expenseResult = await expenseController.Create(new CreateExpenseRequest
         {

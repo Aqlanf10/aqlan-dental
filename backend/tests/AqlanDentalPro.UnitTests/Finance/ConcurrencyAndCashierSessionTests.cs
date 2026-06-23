@@ -146,7 +146,7 @@ public class ConcurrencyAndCashierSessionTests
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
 
-        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution);
+        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution, new FinanceSettingsReader(db));
 
         // First approval — should succeed
         var firstResult = await controller.Approve(expense.Id, new ApproveExpenseRequest());
@@ -229,7 +229,7 @@ public class ConcurrencyAndCashierSessionTests
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
 
-        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution);
+        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution, new FinanceSettingsReader(db));
 
         // First reversal — should succeed
         var firstResult = await controller.Delete(expense.Id);
@@ -568,7 +568,7 @@ public class ConcurrencyAndCashierSessionTests
         db.OperationalExpenses.Add(expense);
         await db.SaveChangesAsync();
 
-        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution);
+        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution, new FinanceSettingsReader(db));
 
         // Act — approve the cash expense
         var result = await controller.Approve(expense.Id, new ApproveExpenseRequest());

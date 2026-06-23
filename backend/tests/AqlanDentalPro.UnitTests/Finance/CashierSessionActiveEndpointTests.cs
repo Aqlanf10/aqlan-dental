@@ -33,6 +33,17 @@ public class CashierSessionActiveEndpointTests
 
         db.Branches.Add(new Branch { Id = branchId, Name = "فرع الاختبار" });
         db.Users.Add(new User { Id = cashierId, Username = "cashier_test", BranchId = branchId, Role = role });
+        // FIN-PERM: grant the role's cashier-session permission so these behavior tests
+        // pass the granular gate and exercise the underlying session logic, not authz.
+        db.RolePermissions.Add(new RolePermission
+        {
+            Role = role.ToString(),
+            Resource = "finance.cashier_session",
+            CanView = true,
+            CanCreate = true,
+            CanEdit = true,
+            CanApprove = true,
+        });
         db.SaveChanges();
 
         return (branchId, cashierId);

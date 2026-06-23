@@ -1,6 +1,7 @@
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Application.Common;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -35,14 +36,8 @@ public sealed class RejectExpenseRequest
 [ApiController]
 [Route("api/expenses")]
 [Authorize(Policy = "ReportsAccess")] // Admin + Accountant only
-public class OperationalExpensesController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution) : ControllerBase
+public class OperationalExpensesController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution, FinanceSettingsReader financeSettings) : ControllerBase
 {
-    /// <summary>
-    /// Approval threshold in YER: expenses above this amount require managerial approval.
-    /// Can be made configurable via Settings table in future.
-    /// </summary>
-    private const decimal ApprovalThreshold = 50_000m;
-
     /// <summary>سند صرف (quarter-A4) PDF for an operational expense.</summary>
     [HttpGet("{id:guid}/voucher/pdf")]
     public async Task<IActionResult> DownloadDisbursementVoucher(Guid id, [FromServices] IPdfService pdfService)
@@ -122,8 +117,10 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
                 return BadRequest(new { message = "أمر المختبر المحدد غير موجود" });
         }
 
-        // Determine approval status based on amount threshold
-        var needsApproval = req.Amount > ApprovalThreshold;
+        // Determine approval status based on the clinic-configurable amount threshold
+        // (finance.expenses.approval_threshold; default 50,000 YER preserves prior behavior).
+        var approvalThreshold = await financeSettings.GetDecimalAsync(FinanceSettingsKeys.ExpenseApprovalThreshold);
+        var needsApproval = req.Amount > approvalThreshold;
         var approvalStatus = needsApproval ? ApprovalStatus.Pending : ApprovalStatus.NotRequired;
 
         // Generate sequential EXP number using advisory lock (relational only)

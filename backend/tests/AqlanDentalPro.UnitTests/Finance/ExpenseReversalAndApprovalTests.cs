@@ -1,4 +1,5 @@
 using AqlanDentalPro.API.Controllers;
+using AqlanDentalPro.Application.Common;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -116,7 +117,7 @@ public class ExpenseReversalAndApprovalTests
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
 
-        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution);
+        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution, new FinanceSettingsReader(db));
 
         return (controller, db, branchId, adminId, vault, bank, session);
     }
@@ -290,7 +291,7 @@ public class ExpenseReversalAndApprovalTests
         var audit = new Mock<IAuditService>().Object;
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
-        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution);
+        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution, new FinanceSettingsReader(db));
 
         var expense = CreatePendingCashExpense(db, branchId, adminId);
 
@@ -324,6 +325,65 @@ public class ExpenseReversalAndApprovalTests
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // FIN-SETTINGS: expense approval threshold is clinic-configurable (no hardcoding)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task OperationalExpensesController_Create_UsesConfigurableApprovalThreshold()
+    {
+        var (controller, db, branchId, adminId, vault, bank, session) = SetupExpenseControllerWithSession();
+
+        // Owner lowers the approval threshold to 10,000 YER from the default 50,000.
+        db.Settings.Add(new Setting
+        {
+            Key = FinanceSettingsKeys.ExpenseApprovalThreshold,
+            Value = "10000",
+            Category = FinanceSettingsKeys.Category,
+        });
+        await db.SaveChangesAsync();
+
+        // A 20,000 YER expense is BELOW the old hardcoded 50,000 (would have been
+        // NotRequired) but ABOVE the configured 10,000 — so it must now require approval.
+        var result = await controller.Create(new CreateExpenseRequest
+        {
+            Title = "مصروف فوق الحد المُهيأ",
+            Category = "marketing",
+            Amount = 20_000m,
+            ExpenseDate = DateTime.UtcNow.ToString("yyyy-MM-dd"),
+            PaymentMethod = "cash",
+        });
+
+        result.Should().BeOfType<CreatedResult>();
+        var expense = await db.OperationalExpenses.FirstOrDefaultAsync(e => e.Title == "مصروف فوق الحد المُهيأ");
+        expense.Should().NotBeNull();
+        expense!.ApprovalStatus.Should().Be(ApprovalStatus.Pending,
+            "20,000 exceeds the configured 10,000 threshold and must require approval");
+        expense.IsPostedToLedger.Should().BeFalse("pending expenses are not posted until approved");
+    }
+
+    [Fact]
+    public async Task OperationalExpensesController_Create_DefaultsToFiftyThousandThreshold_WhenUnset()
+    {
+        var (controller, db, branchId, adminId, vault, bank, session) = SetupExpenseControllerWithSession();
+
+        // No threshold Setting row — the default (50,000 YER) must apply, preserving prior behavior.
+        var result = await controller.Create(new CreateExpenseRequest
+        {
+            Title = "مصروف ضمن الحد الافتراضي",
+            Category = "marketing",
+            Amount = 40_000m,
+            ExpenseDate = DateTime.UtcNow.ToString("yyyy-MM-dd"),
+            PaymentMethod = "cash",
+        });
+
+        result.Should().BeOfType<CreatedResult>();
+        var expense = await db.OperationalExpenses.FirstOrDefaultAsync(e => e.Title == "مصروف ضمن الحد الافتراضي");
+        expense.Should().NotBeNull();
+        expense!.ApprovalStatus.Should().Be(ApprovalStatus.NotRequired,
+            "40,000 is below the default 50,000 threshold, so no approval is required");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // TEST 2: Approve cash expense with open session → decrements correct treasury, links session
     // ═══════════════════════════════════════════════════════════════════════════
 
@@ -339,7 +399,7 @@ public class ExpenseReversalAndApprovalTests
         var audit = new Mock<IAuditService>().Object;
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
-        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution);
+        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution, new FinanceSettingsReader(db));
 
         var expense = CreatePendingCashExpense(db, branchId, adminId, amount: 10_000m);
         var initialVaultBalance = vault.Balance;
@@ -402,7 +462,7 @@ public class ExpenseReversalAndApprovalTests
         var audit = new Mock<IAuditService>().Object;
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
-        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution);
+        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution, new FinanceSettingsReader(db));
 
         // Act — delete the posted expense (triggers reversal)
         var result = await controller.Delete(expense.Id);
@@ -455,7 +515,7 @@ public class ExpenseReversalAndApprovalTests
         var audit = new Mock<IAuditService>().Object;
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
-        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution);
+        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution, new FinanceSettingsReader(db));
 
         // Act — attempt to delete the posted expense with missing treasury
         var result = await controller.Delete(expense.Id);
@@ -496,7 +556,7 @@ public class ExpenseReversalAndApprovalTests
         var audit = new Mock<IAuditService>().Object;
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
-        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution);
+        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution, new FinanceSettingsReader(db));
 
         // First deletion — should succeed and restore balance
         var firstResult = await controller.Delete(expense.Id);
@@ -540,7 +600,7 @@ public class ExpenseReversalAndApprovalTests
         var audit = new Mock<IAuditService>().Object;
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
-        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution);
+        var controller = new OperationalExpensesController(db, currentUser, audit, journalEntryService, treasuryResolution, new FinanceSettingsReader(db));
 
         // Act
         var result = await controller.Delete(expense.Id);

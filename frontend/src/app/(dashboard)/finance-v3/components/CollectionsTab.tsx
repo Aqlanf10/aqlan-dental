@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Receipt,
   Plus,
@@ -41,6 +44,28 @@ interface FinanceV3Contract {
   status: string;
 }
 
+/* ── FE-30: zod schema for the inline "register payment" modal ────────────────
+   Mirrors the prior ad-hoc validation:
+     - patientId required (set via PatientCombobox → setValue)
+     - amount required, > 0, ≤ maxAmount (maxAmount is dynamic — enforced in
+       onSubmit + inline UI warning, NOT in zod, since it depends on the
+       invoice/contract selection state outside the schema).
+     - paymentMethod required (select with PAYMENT_METHODS default)
+     - invoiceId / contractId mutually exclusive (cleared via onChange)
+     - notes optional ──────────────────────────────────────────────────────── */
+const registerPaymentSchema = z.object({
+  patientId: z.string().min(1, { message: "يرجى اختيار المريض" }),
+  invoiceId: z.string().optional(),
+  contractId: z.string().optional(),
+  amount: z
+    .string()
+    .min(1, { message: "يرجى إدخال المبلغ" })
+    .refine((v) => Number(v) > 0, { message: "المبلغ يجب أن يكون أكبر من صفر" }),
+  paymentMethod: z.string().min(1, { message: "طريقة الدفع مطلوبة" }),
+  notes: z.string().optional(),
+});
+type RegisterPaymentFormData = z.infer<typeof registerPaymentSchema>;
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 4: Collections
 
@@ -67,15 +92,29 @@ export function CollectionsTab() {
   const isAdmin = user?.role === "Admin";
   const { data: activeCashierSession } = useActiveCashierSession();
 
-  // Register payment form state
-  const [selectedPatient, setSelectedPatient] = useState("");
+  // Linked invoice/contract option lists (populated on patient select).
   const [invoiceOptions, setInvoiceOptions] = useState<{ id: string; invoiceNumber: string; balance: number }[]>([]);
   const [contractOptions, setContractOptions] = useState<{ id: string; contractNumber: string; outstandingAmount: number }[]>([]);
-  const [selectedInvoice, setSelectedInvoice] = useState("");
-  const [selectedContract, setSelectedContract] = useState("");
-  const [payAmount, setPayAmount] = useState("");
-  const [payMethod, setPayMethod] = useState("cash");
-  const [payNotes, setPayNotes] = useState("");
+
+  // FE-30: react-hook-form + zod for the register-payment modal.
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    watch,
+    formState: { errors },
+  } = useForm<RegisterPaymentFormData>({
+    resolver: zodResolver(registerPaymentSchema),
+    defaultValues: {
+      patientId: "",
+      invoiceId: "",
+      contractId: "",
+      amount: "",
+      paymentMethod: "cash",
+      notes: "",
+    },
+  });
 
   const fetchPayments = useCallback(async () => {
     try { setLoading(true); const { data: responseData } = await api.get<{ data: PaymentListItem[]; total: number }>("/api/finance-v3/payments"); setPayments(responseData?.data ?? []); } catch { toast.error("فشل في تحميل التحصيلات"); } finally { setLoading(false); }
@@ -84,9 +123,9 @@ export function CollectionsTab() {
   useEffect(() => { fetchPayments(); }, [fetchPayments]);
 
   const onPatientSelect = async (patientId: string) => {
-    setSelectedPatient(patientId);
-    setSelectedInvoice("");
-    setSelectedContract("");
+    setValue("patientId", patientId);
+    setValue("invoiceId", "");
+    setValue("contractId", "");
     try {
       // Fix 1: Use real backend routes
       // Invoices: GET /api/patients/{patientId}/invoices (exists in InvoicesController)
@@ -121,36 +160,37 @@ export function CollectionsTab() {
     } catch { /* ignore */ }
   };
 
-  // Overpayment guard
+  // Overpayment guard — depends on the currently selected invoice/contract.
+  const selectedInvoice = watch("invoiceId");
+  const selectedContract = watch("contractId");
+  const payAmount = watch("amount");
+
   const maxAmount = (() => {
     if (selectedInvoice) { const inv = invoiceOptions.find((i) => i.id === selectedInvoice); return inv?.balance ?? 0; }
     if (selectedContract) { const con = contractOptions.find((c) => c.id === selectedContract); return con?.outstandingAmount ?? 0; }
     return 0;
   })();
 
-  const handleRegister = async () => {
+  const onSubmit = handleSubmit(async (formData) => {
     if (!activeCashierSession) {
       toast.error("يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل تسجيل أي مدفوعات");
       return;
     }
-    if (!selectedPatient || !payAmount || Number(payAmount) <= 0) {
-      toast.error("يرجى اختيار المريض وإدخال المبلغ");
-      return;
-    }
-    if (maxAmount > 0 && Number(payAmount) > maxAmount) {
+    // Overpayment guard (dynamic — cannot live in zod).
+    if (maxAmount > 0 && Number(formData.amount) > maxAmount) {
       toast.error(`المبلغ يتجاوز المستحق (${formatYER(maxAmount)})`);
       return;
     }
     try {
       setSubmitting(true);
       const payload: RegisterPaymentRequest = {
-        patientId: selectedPatient,
-        amount: Number(payAmount),
-        paymentMethod: payMethod,
-        notes: payNotes || undefined,
+        patientId: formData.patientId,
+        amount: Number(formData.amount),
+        paymentMethod: formData.paymentMethod,
+        notes: formData.notes || undefined,
       };
-      if (selectedInvoice) payload.invoiceId = selectedInvoice;
-      if (selectedContract) payload.contractId = selectedContract;
+      if (formData.invoiceId) payload.invoiceId = formData.invoiceId;
+      if (formData.contractId) payload.contractId = formData.contractId;
 
       // Part C: Capture created payment id + receiptNumber for immediate receipt download
       const { data: created } = await api.post<{ id?: string; receiptNumber?: string }>("/api/finance-v3/payments", payload);
@@ -175,7 +215,7 @@ export function CollectionsTab() {
         toast.success("تم تسجيل الدفعة بنجاح");
       }
     } catch (err) { toast.error(extractErrorMessage(err, "فشل في تسجيل الدفعة")); } finally { setSubmitting(false); }
-  };
+  });
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
@@ -189,15 +229,23 @@ export function CollectionsTab() {
   };
 
   const resetForm = () => {
-    setSelectedPatient("");
-    setInvoiceOptions([]); setContractOptions([]);
-    setSelectedInvoice(""); setSelectedContract("");
-    setPayAmount(""); setPayMethod("cash"); setPayNotes("");
+    reset({
+      patientId: "",
+      invoiceId: "",
+      contractId: "",
+      amount: "",
+      paymentMethod: "cash",
+      notes: "",
+    });
+    setInvoiceOptions([]);
+    setContractOptions([]);
   };
 
   // Fix 2: Prefer receiptNumber from backend; paymentNumber is an alias for the same value
   const getReceiptNumber = (r: PaymentListItem) =>
     r.receiptNumber ?? r.paymentNumber ?? "—";
+
+  const overpaid = maxAmount > 0 && Number(payAmount) > maxAmount;
 
   return (
     <div className="p-6 space-y-4">
@@ -285,25 +333,42 @@ export function CollectionsTab() {
 
       {/* Register Payment Modal */}
       <Modal open={showRegister} onClose={() => setShowRegister(false)} title="تسجيل دفعة جديدة" wide>
-        <div className="space-y-4">
+        <form className="space-y-4" onSubmit={onSubmit}>
           {/* Patient search */}
           <div>
             <label style={labelStyle}>المريض <span style={{ color: tokens.dangerBorder }}>*</span></label>
             <PatientCombobox onSelect={(p) => onPatientSelect(p.id)} placeholder="ابحث بالاسم أو الرقم..." />
+            {errors.patientId && (
+              <p className="text-xs mt-1" style={{ color: tokens.dangerBorder }}>{errors.patientId.message}</p>
+            )}
           </div>
 
           {/* Select invoice or contract */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label style={labelStyle}>فاتورة</label>
-              <select value={selectedInvoice} onChange={(e) => { setSelectedInvoice(e.target.value); setSelectedContract(""); }} style={inputStyle}>
+              <select
+                {...register("invoiceId")}
+                onChange={(e) => {
+                  setValue("invoiceId", e.target.value, { shouldValidate: false });
+                  if (e.target.value) setValue("contractId", "");
+                }}
+                style={inputStyle}
+              >
                 <option value="">— اختر فاتورة —</option>
                 {invoiceOptions.map((i) => (<option key={i.id} value={i.id}>{i.invoiceNumber} ({formatYER(i.balance)})</option>))}
               </select>
             </div>
             <div>
               <label style={labelStyle}>عقد</label>
-              <select value={selectedContract} onChange={(e) => { setSelectedContract(e.target.value); setSelectedInvoice(""); }} style={inputStyle}>
+              <select
+                {...register("contractId")}
+                onChange={(e) => {
+                  setValue("contractId", e.target.value, { shouldValidate: false });
+                  if (e.target.value) setValue("invoiceId", "");
+                }}
+                style={inputStyle}
+              >
                 <option value="">— اختر عقد —</option>
                 {contractOptions.map((c) => (<option key={c.id} value={c.id}>{c.contractNumber} ({formatYER(c.outstandingAmount)})</option>))}
               </select>
@@ -313,8 +378,20 @@ export function CollectionsTab() {
           {/* Amount */}
           <div>
             <label style={labelStyle}>المبلغ <span style={{ color: tokens.dangerBorder }}>*</span></label>
-            <input type="number" min="0" max={maxAmount || undefined} step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder="0" dir="ltr" style={inputStyle} />
-            {maxAmount > 0 && Number(payAmount) > maxAmount && (
+            <input
+              {...register("amount")}
+              type="number"
+              min="0"
+              max={maxAmount || undefined}
+              step="0.01"
+              placeholder="0"
+              dir="ltr"
+              style={inputStyle}
+            />
+            {errors.amount && (
+              <p className="text-xs mt-1" style={{ color: tokens.dangerBorder }}>{errors.amount.message}</p>
+            )}
+            {overpaid && (
               <p className="text-xs mt-1" style={{ color: tokens.dangerBorder }}>⚠ المبلغ يتجاوز المستحق ({formatYER(maxAmount)})</p>
             )}
           </div>
@@ -322,25 +399,28 @@ export function CollectionsTab() {
           {/* Payment method */}
           <div>
             <label style={labelStyle}>طريقة الدفع</label>
-            <select value={payMethod} onChange={(e) => setPayMethod(e.target.value)} style={inputStyle}>
+            <select {...register("paymentMethod")} style={inputStyle}>
               {PAYMENT_METHODS.map((m) => (<option key={m.value} value={m.value}>{m.label}</option>))}
             </select>
+            {errors.paymentMethod && (
+              <p className="text-xs mt-1" style={{ color: tokens.dangerBorder }}>{errors.paymentMethod.message}</p>
+            )}
           </div>
 
           {/* Notes */}
           <div>
             <label style={labelStyle}>ملاحظات</label>
-            <input value={payNotes} onChange={(e) => setPayNotes(e.target.value)} placeholder="ملاحظات اختيارية..." style={inputStyle} />
+            <input {...register("notes")} placeholder="ملاحظات اختيارية..." style={inputStyle} />
           </div>
 
           <div className="flex gap-3 pt-2 border-t" style={{ borderColor: tokens.border }}>
-            <button onClick={() => setShowRegister(false)} style={btnGhost}>إلغاء</button>
-            <button onClick={handleRegister} disabled={submitting || (maxAmount > 0 && Number(payAmount) > maxAmount)} style={{ ...btnPrimary, opacity: submitting || (maxAmount > 0 && Number(payAmount) > maxAmount) ? 0.6 : 1 }}>
+            <button type="button" onClick={() => setShowRegister(false)} style={btnGhost}>إلغاء</button>
+            <button type="submit" disabled={submitting || overpaid} style={{ ...btnPrimary, opacity: submitting || overpaid ? 0.6 : 1 }}>
               {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
               {submitting ? "جارٍ الحفظ..." : "تسجيل الدفعة"}
             </button>
           </div>
-        </div>
+        </form>
       </Modal>
 
       {/* Fix 3: Confirm dialog for delete — only reachable by Admin */}

@@ -16,6 +16,10 @@ public static class FinanceSettingsKeys
     public const string DefaultConsultationFee = "finance.default_consultation_fee";
     public const string MaxDiscountPercentage  = "finance.max_discount_percentage";
 
+    // ── Operational expenses ────────────────────────────────────────────────
+    /// <summary>Expenses above this amount (YER) require managerial approval before posting.</summary>
+    public const string ExpenseApprovalThreshold = "finance.expenses.approval_threshold";
+
     // ── Cashier sessions ────────────────────────────────────────────────────
     public const string CashierDefaultOpeningBalance = "finance.cashier_session.default_opening_balance";
 
@@ -40,6 +44,7 @@ public static class FinanceSettingsKeys
     {
         [DefaultConsultationFee]              = "5000",
         [MaxDiscountPercentage]               = "100",   // 100 = no restriction (current behavior)
+        [ExpenseApprovalThreshold]            = "50000", // preserves the previous hardcoded 50,000 YER threshold
         [CashierDefaultOpeningBalance]        = "0",
         [PaymentMethodsDefaultVisibility]     = "all",   // informational — all active methods are shown
         [CommissionDefaultRecognitionMode]    = "OnPaymentCollection",

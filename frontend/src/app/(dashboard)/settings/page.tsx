@@ -1,5 +1,8 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Settings, Users, Shield, Save, Plus, X, UserCheck, UserX,
   FileSearch, Globe, Stethoscope, DoorOpen, Search, Filter, Languages,
@@ -48,14 +51,6 @@ const TABS: { key: Tab; label: string; icon: typeof Settings }[] = [
   { key: "ai",     label: "الذكاء الاصطناعي", icon: Sparkles },
 ];
 
-interface ClinicSettings {
-  "clinic.name"?: string;
-  "clinic.location"?: string;
-  "clinic.phones"?: string;
-  "clinic.currency"?: string;
-  [key: string]: string | undefined;
-}
-
 const ROLE_LABELS: Record<string, string> = {
   Admin: "مدير النظام",
   Orthodontist: "أخصائي تقويم",
@@ -74,20 +69,62 @@ const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-
 // FE-11: getApiErrorMessage removed — use extractErrorMessage from @/lib/errors.
 
 // ─── Clinic Info Tab ──────────────────────────────────────────────────────────
+// FE-30: migrated from ad-hoc useState to react-hook-form + zod. The clinic info
+// form is a flat settings-key/value map; zod just enforces non-undefined strings
+// (the backend stores everything as text via PUT /api/settings/{key}).
+const clinicSettingsSchema = z.object({
+  "clinic.name": z.string().optional(),
+  "clinic.location": z.string().optional(),
+  "clinic.phones": z.string().optional(),
+  "clinic.lead_doctor": z.string().optional(),
+  "clinic.lead_doctor_title": z.string().optional(),
+  "clinic.lead_doctor_credentials": z.string().optional(),
+  "patient.number_prefix": z.string().optional(),
+});
+type ClinicSettingsFormData = z.infer<typeof clinicSettingsSchema>;
+
 function ClinicTab() {
-  const [settings, setSettings] = useState<ClinicSettings>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<ClinicSettingsFormData>({
+    resolver: zodResolver(clinicSettingsSchema),
+    defaultValues: {
+      "clinic.name": "",
+      "clinic.location": "",
+      "clinic.phones": "",
+      "clinic.lead_doctor": "",
+      "clinic.lead_doctor_title": "",
+      "clinic.lead_doctor_credentials": "",
+      "patient.number_prefix": "GM",
+    },
+  });
+
   useEffect(() => {
-    api.get<ClinicSettings>("/api/settings")
-      .then((r) => setSettings(r.data))
+    api.get<ClinicSettingsFormData>("/api/settings")
+      .then((r) => {
+        const data = r.data ?? {};
+        reset({
+          "clinic.name": data["clinic.name"] ?? "",
+          "clinic.location": data["clinic.location"] ?? "",
+          "clinic.phones": data["clinic.phones"] ?? "",
+          "clinic.lead_doctor": data["clinic.lead_doctor"] ?? "",
+          "clinic.lead_doctor_title": data["clinic.lead_doctor_title"] ?? "",
+          "clinic.lead_doctor_credentials": data["clinic.lead_doctor_credentials"] ?? "",
+          "patient.number_prefix": data["patient.number_prefix"] ?? "GM",
+        });
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [reset]);
 
-  const handleSave = async () => {
+  const onSubmit = handleSubmit(async (formData) => {
     setSaving(true);
     setSaved(false);
     try {
@@ -98,7 +135,7 @@ function ClinicTab() {
       await Promise.all(
         clinicFields.map((key) =>
           api.put(`/api/settings/${encodeURIComponent(key)}`, {
-            value: settings[key] ?? "",
+            value: formData[key] ?? "",
             category: "clinic",
           })
         )
@@ -109,28 +146,29 @@ function ClinicTab() {
     } finally {
       setSaving(false);
     }
-  };
+  });
 
   if (loading) {
     return <div className="animate-pulse space-y-3">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-10 bg-gray-100 rounded-lg" />)}</div>;
   }
 
   return (
-    <div className="space-y-4">
+    <form className="space-y-4" onSubmit={onSubmit}>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1.5">اسم المركز</label>
         <input
-          value={settings["clinic.name"] ?? ""}
-          onChange={(e) => setSettings({ ...settings, "clinic.name": e.target.value })}
+          {...register("clinic.name")}
           className={inputCls}
           placeholder="مركز د. عقلان الكامل لطب وتقويم الأسنان"
         />
+        {errors["clinic.name"] && (
+          <p className="text-xs text-red-600 mt-1">{errors["clinic.name"].message}</p>
+        )}
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1.5">العنوان</label>
         <input
-          value={settings["clinic.location"] ?? ""}
-          onChange={(e) => setSettings({ ...settings, "clinic.location": e.target.value })}
+          {...register("clinic.location")}
           className={inputCls}
           placeholder="تعز، اليمن"
         />
@@ -138,8 +176,7 @@ function ClinicTab() {
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1.5">أرقام الهاتف</label>
         <input
-          value={settings["clinic.phones"] ?? ""}
-          onChange={(e) => setSettings({ ...settings, "clinic.phones": e.target.value })}
+          {...register("clinic.phones")}
           className={inputCls}
           placeholder="04-253028، 770XXXXXX"
           dir="ltr"
@@ -151,8 +188,7 @@ function ClinicTab() {
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">اسم الطبيب</label>
           <input
-            value={settings["clinic.lead_doctor"] ?? ""}
-            onChange={(e) => setSettings({ ...settings, "clinic.lead_doctor": e.target.value })}
+            {...register("clinic.lead_doctor")}
             className={inputCls}
             placeholder="د. عقلان الكامل"
           />
@@ -160,8 +196,7 @@ function ClinicTab() {
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">التخصص</label>
           <input
-            value={settings["clinic.lead_doctor_title"] ?? ""}
-            onChange={(e) => setSettings({ ...settings, "clinic.lead_doctor_title": e.target.value })}
+            {...register("clinic.lead_doctor_title")}
             className={inputCls}
             placeholder="أخصائي تقويم الأسنان"
           />
@@ -169,8 +204,7 @@ function ClinicTab() {
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">المؤهل العلمي (يظهر تحت التخصص)</label>
           <input
-            value={settings["clinic.lead_doctor_credentials"] ?? ""}
-            onChange={(e) => setSettings({ ...settings, "clinic.lead_doctor_credentials": e.target.value })}
+            {...register("clinic.lead_doctor_credentials")}
             className={inputCls}
             placeholder="جامعة مانيلا المركزية — الفلبين"
           />
@@ -179,8 +213,7 @@ function ClinicTab() {
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1.5">بادئة رقم المريض</label>
         <input
-          value={settings["patient.number_prefix"] ?? "GM"}
-          onChange={(e) => setSettings({ ...settings, "patient.number_prefix": e.target.value })}
+          {...register("patient.number_prefix")}
           className={inputCls}
           placeholder="GM"
           dir="ltr"
@@ -210,7 +243,7 @@ function ClinicTab() {
 
       <div className="flex items-center gap-3 pt-2">
         <button
-          onClick={handleSave}
+          type="submit"
           disabled={saving}
           className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
         >
@@ -219,7 +252,7 @@ function ClinicTab() {
         </button>
         {saved && <span className="text-sm text-green-600 font-medium">✓ تم الحفظ</span>}
       </div>
-    </div>
+    </form>
   );
 }
 
@@ -874,7 +907,26 @@ function UsersTab() {
   );
 }
 
-// ─── Create User Dialog ──────────────────────────────────────────────────────
+// ─── Create User Dialog (FE-30: react-hook-form + zod) ───────────────────────
+// SEC-11: client-side mirror of the centralized PasswordPolicy (UX only —
+// backend enforces). Arabic error messages preserved from the prior
+// ad-hoc validator.
+const createUserSchema = z.object({
+  username: z.string().min(1, { message: "اسم المستخدم مطلوب" }),
+  password: z
+    .string()
+    .min(8, { message: "كلمة المرور يجب أن تكون 8 أحرف على الأقل" })
+    .refine((v) => /[A-Z]/.test(v), { message: "كلمة المرور يجب أن تحتوي على حرف كبير واحد على الأقل" })
+    .refine((v) => /[a-z]/.test(v), { message: "كلمة المرور يجب أن تحتوي على حرف صغير واحد على الأقل" })
+    .refine((v) => /[0-9]/.test(v), { message: "كلمة المرور يجب أن تحتوي على رقم واحد على الأقل" }),
+  role: z.string().min(1, { message: "الدور مطلوب" }),
+  email: z.string().optional(),
+  doctorName: z.string().optional(),
+  doctorSpecialty: z.string().optional(),
+  doctorColor: z.string().optional(),
+});
+type CreateUserFormData = z.infer<typeof createUserSchema>;
+
 function CreateUserDialog({
   onClose,
   onSubmit,
@@ -884,49 +936,37 @@ function CreateUserDialog({
   onSubmit: (data: CreateUserRequest) => void;
   saving: boolean;
 }) {
-  const [form, setForm] = useState<CreateUserRequest>({
-    username: "",
-    password: "",
-    role: "Reception",
-    email: "",
-    doctorName: "",
-    doctorSpecialty: "",
-    doctorColor: "#3d7ab5",
+  const {
+    register,
+    handleSubmit,
+    watch,
+    formState: { errors },
+  } = useForm<CreateUserFormData>({
+    resolver: zodResolver(createUserSchema),
+    defaultValues: {
+      username: "",
+      password: "",
+      role: "Reception",
+      email: "",
+      doctorName: "",
+      doctorSpecialty: "",
+      doctorColor: "#3d7ab5",
+    },
   });
-  const [error, setError] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.username || !form.password) {
-      setError("اسم المستخدم وكلمة المرور مطلوبان");
-      return;
-    }
-    // SEC-11: client-side mirror of the centralized PasswordPolicy (UX only).
-    if (form.password.length < 8) {
-      setError("كلمة المرور يجب أن تكون 8 أحرف على الأقل");
-      return;
-    }
-    if (!/[A-Z]/.test(form.password)) {
-      setError("كلمة المرور يجب أن تحتوي على حرف كبير واحد على الأقل");
-      return;
-    }
-    if (!/[a-z]/.test(form.password)) {
-      setError("كلمة المرور يجب أن تحتوي على حرف صغير واحد على الأقل");
-      return;
-    }
-    if (!/[0-9]/.test(form.password)) {
-      setError("كلمة المرور يجب أن تحتوي على رقم واحد على الأقل");
-      return;
-    }
-    setError("");
+  const doctorName = watch("doctorName");
+
+  const onSubmitHandler = handleSubmit((formData) => {
     onSubmit({
-      ...form,
-      email: form.email || undefined,
-      doctorName: form.doctorName || undefined,
-      doctorSpecialty: form.doctorSpecialty || undefined,
-      doctorColor: form.doctorName ? form.doctorColor : undefined,
+      username: formData.username,
+      password: formData.password,
+      role: formData.role,
+      email: formData.email || undefined,
+      doctorName: formData.doctorName || undefined,
+      doctorSpecialty: formData.doctorSpecialty || undefined,
+      doctorColor: formData.doctorName ? formData.doctorColor : undefined,
     });
-  };
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
@@ -942,54 +982,60 @@ function CreateUserDialog({
           </button>
         </div>
 
-        {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
-
-        <form onSubmit={handleSubmit} className="space-y-3">
+        <form onSubmit={onSubmitHandler} className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">اسم المستخدم <span className="text-red-500">*</span></label>
               <input
-                value={form.username}
-                onChange={(e) => setForm({ ...form, username: e.target.value })}
+                {...register("username")}
                 className={inputCls}
                 placeholder="username"
                 dir="ltr"
                 autoComplete="off"
               />
+              {errors.username && (
+                <p className="text-xs text-red-600 mt-1">{errors.username.message}</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">كلمة المرور <span className="text-red-500">*</span></label>
               <input
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                {...register("password")}
                 type="password"
                 className={inputCls}
                 autoComplete="new-password"
               />
+              {errors.password && (
+                <p className="text-xs text-red-600 mt-1">{errors.password.message}</p>
+              )}
               {/* SEC-11: password complexity hint (UX only — backend enforces) */}
               <p className="text-gray-400 text-[11px] mt-1">8+ أحرف، يحتوي على رقم وحرف كبير</p>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">الدور</label>
-              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className={inputCls}>
+              <select {...register("role")} className={inputCls}>
                 {ALL_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r] ?? r}</option>)}
               </select>
+              {errors.role && (
+                <p className="text-xs text-red-600 mt-1">{errors.role.message}</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">البريد الإلكتروني</label>
               <input
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                {...register("email")}
                 type="email"
                 className={inputCls}
                 dir="ltr"
               />
+              {errors.email && (
+                <p className="text-xs text-red-600 mt-1">{errors.email.message}</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">اسم الطبيب (اختياري)</label>
               <input
-                value={form.doctorName}
-                onChange={(e) => setForm({ ...form, doctorName: e.target.value })}
+                {...register("doctorName")}
                 className={inputCls}
                 placeholder="د. محمد أحمد"
               />
@@ -997,18 +1043,16 @@ function CreateUserDialog({
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">تخصص الطبيب</label>
               <input
-                value={form.doctorSpecialty ?? ""}
-                onChange={(e) => setForm({ ...form, doctorSpecialty: e.target.value })}
+                {...register("doctorSpecialty")}
                 className={inputCls}
                 placeholder="أخصائي تقويم"
               />
             </div>
-            {form.doctorName && (
+            {doctorName && (
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">لون الطبيب</label>
                 <input
-                  value={form.doctorColor}
-                  onChange={(e) => setForm({ ...form, doctorColor: e.target.value })}
+                  {...register("doctorColor")}
                   type="color"
                   className="h-9 w-full rounded-lg border border-gray-300 cursor-pointer"
                 />
@@ -1038,7 +1082,21 @@ function CreateUserDialog({
   );
 }
 
-// ─── Edit User Dialog ────────────────────────────────────────────────────────
+// ─── Edit User Dialog (FE-30: react-hook-form + zod) ────────────────────────
+// The prior ad-hoc dialog had no inline validation (just sent whatever was in
+// the form). The zod schema here is therefore permissive — only username
+// remains required to match the prior behaviour (it was always pre-filled
+// from user.username, so the constraint never fires in practice).
+const editUserSchema = z.object({
+  username: z.string().min(1, { message: "اسم المستخدم مطلوب" }),
+  email: z.string().optional(),
+  role: z.string().optional(),
+  doctorName: z.string().optional(),
+  doctorSpecialty: z.string().optional(),
+  doctorColor: z.string().optional(),
+});
+type EditUserFormData = z.infer<typeof editUserSchema>;
+
 function EditUserDialog({
   user,
   onClose,
@@ -1050,25 +1108,35 @@ function EditUserDialog({
   onSubmit: (data: EditUserRequest) => void;
   saving: boolean;
 }) {
-  const [form, setForm] = useState<EditUserRequest>({
-    username: user.username,
-    email: user.email ?? "",
-    role: user.role,
-    doctorName: user.doctorName ?? "",
-    doctorSpecialty: user.doctorSpecialty ?? "",
-    doctorColor: user.doctorColor ?? "#3d7ab5",
+  const {
+    register,
+    handleSubmit,
+    watch,
+    formState: { errors },
+  } = useForm<EditUserFormData>({
+    resolver: zodResolver(editUserSchema),
+    defaultValues: {
+      username: user.username,
+      email: user.email ?? "",
+      role: user.role,
+      doctorName: user.doctorName ?? "",
+      doctorSpecialty: user.doctorSpecialty ?? "",
+      doctorColor: user.doctorColor ?? "#3d7ab5",
+    },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const doctorName = watch("doctorName");
+
+  const onSubmitHandler = handleSubmit((formData) => {
     onSubmit({
-      ...form,
-      email: form.email || undefined,
-      doctorName: form.doctorName || undefined,
-      doctorSpecialty: form.doctorSpecialty || undefined,
-      doctorColor: form.doctorName ? form.doctorColor : undefined,
+      username: formData.username,
+      email: formData.email || undefined,
+      role: formData.role,
+      doctorName: formData.doctorName || undefined,
+      doctorSpecialty: formData.doctorSpecialty || undefined,
+      doctorColor: formData.doctorName ? formData.doctorColor : undefined,
     });
-  };
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
@@ -1084,38 +1152,41 @@ function EditUserDialog({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3">
+        <form onSubmit={onSubmitHandler} className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">اسم المستخدم</label>
               <input
-                value={form.username}
-                onChange={(e) => setForm({ ...form, username: e.target.value })}
+                {...register("username")}
                 className={inputCls}
                 dir="ltr"
               />
+              {errors.username && (
+                <p className="text-xs text-red-600 mt-1">{errors.username.message}</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">البريد الإلكتروني</label>
               <input
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                {...register("email")}
                 type="email"
                 className={inputCls}
                 dir="ltr"
               />
+              {errors.email && (
+                <p className="text-xs text-red-600 mt-1">{errors.email.message}</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">الدور</label>
-              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className={inputCls}>
+              <select {...register("role")} className={inputCls}>
                 {ALL_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r] ?? r}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">اسم الطبيب (اختياري)</label>
               <input
-                value={form.doctorName}
-                onChange={(e) => setForm({ ...form, doctorName: e.target.value })}
+                {...register("doctorName")}
                 className={inputCls}
                 placeholder="د. محمد أحمد"
               />
@@ -1123,18 +1194,16 @@ function EditUserDialog({
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">تخصص الطبيب</label>
               <input
-                value={form.doctorSpecialty ?? ""}
-                onChange={(e) => setForm({ ...form, doctorSpecialty: e.target.value })}
+                {...register("doctorSpecialty")}
                 className={inputCls}
                 placeholder="أخصائي تقويم"
               />
             </div>
-            {form.doctorName && (
+            {doctorName && (
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">لون الطبيب</label>
                 <input
-                  value={form.doctorColor}
-                  onChange={(e) => setForm({ ...form, doctorColor: e.target.value })}
+                  {...register("doctorColor")}
                   type="color"
                   className="h-9 w-full rounded-lg border border-gray-300 cursor-pointer"
                 />

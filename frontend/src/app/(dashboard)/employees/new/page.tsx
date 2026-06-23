@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
   ChevronLeft,
   Loader2,
@@ -29,48 +32,37 @@ import {
   type CreateEmployeeRequest,
 } from "@/types/employee";
 
-// ─── Validation ─────────────────────────────────────────────────────────────
-
-interface FormErrors {
-  fullName?: string;
-  username?: string;
-  password?: string;
-  role?: string;
-}
-
-function validate(data: CreateEmployeeRequest): FormErrors {
-  const errors: FormErrors = {};
-
-  if (!data.fullName.trim()) {
-    errors.fullName = "الاسم الكامل مطلوب";
-  }
-
-  if (!data.username.trim()) {
-    errors.username = "اسم المستخدم مطلوب";
-  } else if (data.username.length < 3) {
-    errors.username = "اسم المستخدم يجب أن يكون 3 أحرف على الأقل";
-  } else if (!/^[a-zA-Z0-9_]+$/.test(data.username)) {
-    errors.username = "اسم المستخدم يجب أن يحتوي على أحرف لاتينية وأرقام وشرطة سفلية فقط";
-  }
-
-  // SEC-11: client-side mirror of the centralized PasswordPolicy.
-  // The backend is the source of truth — this is UX only.
-  if (!data.password || data.password.length < 8) {
-    errors.password = "كلمة المرور يجب أن تكون 8 أحرف على الأقل";
-  } else if (!/[A-Z]/.test(data.password)) {
-    errors.password = "كلمة المرور يجب أن تحتوي على حرف كبير واحد على الأقل";
-  } else if (!/[a-z]/.test(data.password)) {
-    errors.password = "كلمة المرور يجب أن تحتوي على حرف صغير واحد على الأقل";
-  } else if (!/[0-9]/.test(data.password)) {
-    errors.password = "كلمة المرور يجب أن تحتوي على رقم واحد على الأقل";
-  }
-
-  if (!data.role) {
-    errors.role = "الدور مطلوب";
-  }
-
-  return errors;
-}
+// ─── Validation (FE-30: zod schema mirrors the prior ad-hoc `validate()` ──────)
+// SEC-11: client-side mirror of the centralized PasswordPolicy (UX only —
+// backend enforces). Arabic messages preserved verbatim from the prior
+// validator.
+const employeeSchema = z.object({
+  fullName: z.string().trim().min(1, { message: "الاسم الكامل مطلوب" }),
+  username: z
+    .string()
+    .trim()
+    .min(3, { message: "اسم المستخدم يجب أن يكون 3 أحرف على الأقل" })
+    .regex(/^[a-zA-Z0-9_]+$/, {
+      message: "اسم المستخدم يجب أن يحتوي على أحرف لاتينية وأرقام وشرطة سفلية فقط",
+    }),
+  password: z
+    .string()
+    .min(8, { message: "كلمة المرور يجب أن تكون 8 أحرف على الأقل" })
+    .refine((v) => /[A-Z]/.test(v), { message: "كلمة المرور يجب أن تحتوي على حرف كبير واحد على الأقل" })
+    .refine((v) => /[a-z]/.test(v), { message: "كلمة المرور يجب أن تحتوي على حرف صغير واحد على الأقل" })
+    .refine((v) => /[0-9]/.test(v), { message: "كلمة المرور يجب أن تحتوي على رقم واحد على الأقل" }),
+  role: z.string().min(1, { message: "الدور مطلوب" }),
+  phone: z.string().optional(),
+  nationalId: z.string().optional(),
+  position: z.string().optional(),
+  branchId: z.string().optional(),
+  hireDate: z.string().optional(),
+  baseSalary: z.string().optional(),
+  emergencyContact: z.string().optional(),
+  emergencyPhone: z.string().optional(),
+  notes: z.string().optional(),
+});
+type EmployeeFormData = z.infer<typeof employeeSchema>;
 
 // ─── Page Component ─────────────────────────────────────────────────────────
 
@@ -78,62 +70,50 @@ export default function NewEmployeePage() {
   const router = useRouter();
   const { data: branches } = useBranches();
 
-  const [form, setForm] = useState<CreateEmployeeRequest>({
-    fullName: "",
-    phone: "",
-    nationalId: "",
-    position: "",
-    branchId: "",
-    hireDate: "",
-    baseSalary: undefined,
-    emergencyContact: "",
-    emergencyPhone: "",
-    notes: "",
-    username: "",
-    password: "",
-    role: "",
-  });
-
-  const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
-  const handleChange = (
-    field: keyof CreateEmployeeRequest,
-    value: string | number | undefined
-  ) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-    // Clear error on change
-    setErrors((prev) => ({ ...prev, [field]: undefined }));
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<EmployeeFormData>({
+    resolver: zodResolver(employeeSchema),
+    defaultValues: {
+      fullName: "",
+      phone: "",
+      nationalId: "",
+      position: "",
+      branchId: "",
+      hireDate: "",
+      baseSalary: "",
+      emergencyContact: "",
+      emergencyPhone: "",
+      notes: "",
+      username: "",
+      password: "",
+      role: "",
+    },
+  });
+
+  const onSubmit = handleSubmit(async (formData) => {
     setApiError(null);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setApiError(null);
-
-    const validationErrors = validate(form);
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
-      return;
-    }
-
     setIsSubmitting(true);
     try {
       const payload: CreateEmployeeRequest = {
-        fullName: form.fullName.trim(),
-        phone: form.phone?.trim() || undefined,
-        nationalId: form.nationalId?.trim() || undefined,
-        position: form.position?.trim() || undefined,
-        branchId: form.branchId?.trim() || undefined,
-        hireDate: form.hireDate || undefined,
-        baseSalary: form.baseSalary ? Number(form.baseSalary) : undefined,
-        emergencyContact: form.emergencyContact?.trim() || undefined,
-        emergencyPhone: form.emergencyPhone?.trim() || undefined,
-        notes: form.notes?.trim() || undefined,
-        username: form.username.trim(),
-        password: form.password || undefined,
-        role: form.role,
+        fullName: formData.fullName.trim(),
+        phone: formData.phone?.trim() || undefined,
+        nationalId: formData.nationalId?.trim() || undefined,
+        position: formData.position?.trim() || undefined,
+        branchId: formData.branchId?.trim() || undefined,
+        hireDate: formData.hireDate || undefined,
+        baseSalary: formData.baseSalary ? Number(formData.baseSalary) : undefined,
+        emergencyContact: formData.emergencyContact?.trim() || undefined,
+        emergencyPhone: formData.emergencyPhone?.trim() || undefined,
+        notes: formData.notes?.trim() || undefined,
+        username: formData.username.trim(),
+        password: formData.password || undefined,
+        role: formData.role,
       };
 
       await api.post("/api/employees", payload);
@@ -149,7 +129,7 @@ export default function NewEmployeePage() {
     } finally {
       setIsSubmitting(false);
     }
-  };
+  });
 
   // ─── Render ─────────────────────────────────────────────────────────────────
 
@@ -165,7 +145,7 @@ export default function NewEmployeePage() {
       </nav>
 
       {/* Form Card */}
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={onSubmit}>
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           {/* Header */}
           <div className="bg-[#0d2137] px-6 py-4">
@@ -200,8 +180,7 @@ export default function NewEmployeePage() {
                   <div className="relative">
                     <User className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input
-                      value={form.username}
-                      onChange={(e) => handleChange("username", e.target.value)}
+                      {...register("username")}
                       placeholder="مثال: ahmed ali"
                       className={cn(
                         "w-full border rounded-xl pr-9 pl-3 py-2.5 text-sm focus:outline-none focus:ring-2 transition",
@@ -214,7 +193,7 @@ export default function NewEmployeePage() {
                     />
                   </div>
                   {errors.username && (
-                    <p className="text-red-500 text-xs mt-1">{errors.username}</p>
+                    <p className="text-red-500 text-xs mt-1">{errors.username.message}</p>
                   )}
                 </div>
 
@@ -227,8 +206,7 @@ export default function NewEmployeePage() {
                     <Lock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input
                       type="password"
-                      value={form.password}
-                      onChange={(e) => handleChange("password", e.target.value)}
+                      {...register("password")}
                       placeholder="8 أحرف على الأقل"
                       className={cn(
                         "w-full border rounded-xl pr-9 pl-3 py-2.5 text-sm focus:outline-none focus:ring-2 transition",
@@ -240,7 +218,7 @@ export default function NewEmployeePage() {
                     />
                   </div>
                   {errors.password && (
-                    <p className="text-red-500 text-xs mt-1">{errors.password}</p>
+                    <p className="text-red-500 text-xs mt-1">{errors.password.message}</p>
                   )}
                   {/* SEC-11: password complexity hint (UX only — backend enforces) */}
                   <p className="text-gray-400 text-xs mt-1">
@@ -256,8 +234,7 @@ export default function NewEmployeePage() {
                   <div className="relative">
                     <Shield className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <select
-                      value={form.role}
-                      onChange={(e) => handleChange("role", e.target.value)}
+                      {...register("role")}
                       className={cn(
                         "w-full border rounded-xl pr-9 pl-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 transition appearance-none",
                         errors.role
@@ -274,7 +251,7 @@ export default function NewEmployeePage() {
                     </select>
                   </div>
                   {errors.role && (
-                    <p className="text-red-500 text-xs mt-1">{errors.role}</p>
+                    <p className="text-red-500 text-xs mt-1">{errors.role.message}</p>
                   )}
                 </div>
               </div>
@@ -295,8 +272,7 @@ export default function NewEmployeePage() {
                   <div className="relative">
                     <User className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input
-                      value={form.fullName}
-                      onChange={(e) => handleChange("fullName", e.target.value)}
+                      {...register("fullName")}
                       placeholder="الاسم الكامل بالعربية"
                       className={cn(
                         "w-full border rounded-xl pr-9 pl-3 py-2.5 text-sm focus:outline-none focus:ring-2 transition",
@@ -307,7 +283,7 @@ export default function NewEmployeePage() {
                     />
                   </div>
                   {errors.fullName && (
-                    <p className="text-red-500 text-xs mt-1">{errors.fullName}</p>
+                    <p className="text-red-500 text-xs mt-1">{errors.fullName.message}</p>
                   )}
                 </div>
 
@@ -319,8 +295,7 @@ export default function NewEmployeePage() {
                   <div className="relative">
                     <Phone className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input
-                      value={form.phone}
-                      onChange={(e) => handleChange("phone", e.target.value)}
+                      {...register("phone")}
                       placeholder="05XXXXXXXX"
                       className="w-full border border-gray-200 rounded-xl pr-9 pl-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a5c]/40 focus:border-[#1a3a5c] transition"
                       dir="ltr"
@@ -336,8 +311,7 @@ export default function NewEmployeePage() {
                   <div className="relative">
                     <CreditCard className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input
-                      value={form.nationalId}
-                      onChange={(e) => handleChange("nationalId", e.target.value)}
+                      {...register("nationalId")}
                       placeholder="رقم الهوية الوطنية"
                       className="w-full border border-gray-200 rounded-xl pr-9 pl-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a5c]/40 focus:border-[#1a3a5c] transition"
                       dir="ltr"
@@ -353,8 +327,7 @@ export default function NewEmployeePage() {
                     جهة اتصال الطوارئ
                   </label>
                   <input
-                    value={form.emergencyContact}
-                    onChange={(e) => handleChange("emergencyContact", e.target.value)}
+                    {...register("emergencyContact")}
                     placeholder="اسم جهة الاتصال"
                     className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a5c]/40 focus:border-[#1a3a5c] transition"
                   />
@@ -366,8 +339,7 @@ export default function NewEmployeePage() {
                     هاتف الطوارئ
                   </label>
                   <input
-                    value={form.emergencyPhone}
-                    onChange={(e) => handleChange("emergencyPhone", e.target.value)}
+                    {...register("emergencyPhone")}
                     placeholder="05XXXXXXXX"
                     className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a5c]/40 focus:border-[#1a3a5c] transition"
                     dir="ltr"
@@ -389,8 +361,7 @@ export default function NewEmployeePage() {
                     المسمى الوظيفي
                   </label>
                   <select
-                    value={form.position}
-                    onChange={(e) => handleChange("position", e.target.value)}
+                    {...register("position")}
                     className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1a3a5c]/40 focus:border-[#1a3a5c] transition"
                   >
                     <option value="">اختر المسمى</option>
@@ -410,8 +381,7 @@ export default function NewEmployeePage() {
                   <div className="relative">
                     <MapPin className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <select
-                      value={form.branchId}
-                      onChange={(e) => handleChange("branchId", e.target.value)}
+                      {...register("branchId")}
                       className="w-full border border-gray-200 rounded-xl pr-9 pl-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1a3a5c]/40 focus:border-[#1a3a5c] transition appearance-none"
                     >
                       <option value="">اختر الفرع</option>
@@ -433,8 +403,7 @@ export default function NewEmployeePage() {
                     <CalendarDays className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input
                       type="date"
-                      value={form.hireDate}
-                      onChange={(e) => handleChange("hireDate", e.target.value)}
+                      {...register("hireDate")}
                       className="w-full border border-gray-200 rounded-xl pr-9 pl-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a5c]/40 focus:border-[#1a3a5c] transition"
                     />
                   </div>
@@ -451,10 +420,7 @@ export default function NewEmployeePage() {
                     type="number"
                     min="0"
                     step="0.01"
-                    value={form.baseSalary ?? ""}
-                    onChange={(e) =>
-                      handleChange("baseSalary", e.target.value ? Number(e.target.value) : undefined)
-                    }
+                    {...register("baseSalary")}
                     placeholder="الراتب الشهري"
                     className="w-full border border-gray-200 rounded-xl pr-9 pl-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a5c]/40 focus:border-[#1a3a5c] transition"
                     dir="ltr"
@@ -470,8 +436,7 @@ export default function NewEmployeePage() {
                 ملاحظات
               </label>
               <textarea
-                value={form.notes}
-                onChange={(e) => handleChange("notes", e.target.value)}
+                {...register("notes")}
                 placeholder="ملاحظات إضافية..."
                 rows={3}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a5c]/40 focus:border-[#1a3a5c] transition resize-none"
@@ -506,5 +471,3 @@ export default function NewEmployeePage() {
     </div>
   );
 }
-
-

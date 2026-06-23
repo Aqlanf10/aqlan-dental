@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using AqlanDentalPro.API.Controllers;
+using AqlanDentalPro.Application.DTOs.Finance;
 using AqlanDentalPro.Application.DTOs.Journey;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
@@ -182,6 +184,100 @@ public class PatientJourneyFinancialRulesTests
         audit.NewData.RootElement.GetProperty("checkoutStatus").GetString()
             .Should().Be("LeftWithoutCompletion");
     }
+
+    // ── FIN-PERM: daily-summary checkout balance is permission-driven ──────────
+
+    [Fact]
+    public async Task DailySummary_Reception_WithPaymentsPermission_SeesLimitedCheckoutBalanceOnly()
+    {
+        await using var db = CreateDb();
+        var patient = new Patient { PatientNumber = "P-900", FirstName = "A", LastName = "B", IsActive = true };
+        db.Patients.Add(patient);
+        // Owner-seeded cashier-safe permission (RolePermissions, configurable from Settings).
+        db.RolePermissions.Add(new RolePermission { Role = "Reception", Resource = "finance.payments", CanView = true, CanCreate = true });
+        await db.SaveChangesAsync();
+
+        var finance = new Mock<IFinanceService>();
+        finance.Setup(f => f.GetPatientFinanceSummaryAsync(patient.Id))
+            .ReturnsAsync(new PatientFinanceSummaryDto
+            {
+                TotalTreatmentCost = 2000m,
+                TotalPaid = 1500m,
+                OutstandingBalance = 500m,
+                OverdueAmount = 0m,
+                FinancialStatus = "on_track",
+                ActiveContractsCount = 1,
+                TotalPaymentsCount = 3,
+            });
+
+        var result = await BuildService(db, finance).GetDailySummaryAsync(PrincipalInRole("Reception"), patient.Id);
+
+        var fin = ExtractFinanceSummary(result);
+        fin.Should().NotBeNull("Reception holds finance.payments and may see the checkout balance");
+        Get<decimal>(fin!, "OutstandingBalance").Should().Be(500m);
+        HasProperty(fin!, "FinancialStatus").Should().BeTrue();
+        HasProperty(fin!, "TotalTreatmentCost").Should().BeFalse("the limited tier must not expose total treatment cost");
+        HasProperty(fin!, "TotalPaid").Should().BeFalse("the limited tier must not expose totals/history");
+        HasProperty(fin!, "TotalPaymentsCount").Should().BeFalse("the limited tier must not expose payment history counts");
+    }
+
+    [Fact]
+    public async Task DailySummary_Reception_WithoutPaymentsPermission_SeesNoBalance()
+    {
+        await using var db = CreateDb();
+        var patient = new Patient { PatientNumber = "P-901", FirstName = "A", LastName = "B", IsActive = true };
+        db.Patients.Add(patient);
+        await db.SaveChangesAsync(); // no RolePermissions seeded for Reception
+
+        var finance = new Mock<IFinanceService>();
+        var result = await BuildService(db, finance).GetDailySummaryAsync(PrincipalInRole("Reception"), patient.Id);
+
+        ExtractFinanceSummary(result).Should().BeNull("without finance.payments the cashier sees no balance");
+        finance.Verify(f => f.GetPatientFinanceSummaryAsync(It.IsAny<Guid>()), Times.Never,
+            "the balance must not even be computed when no finance permission is held");
+    }
+
+    [Fact]
+    public async Task DailySummary_Admin_BypassesAndSeesFullSummary()
+    {
+        await using var db = CreateDb();
+        var patient = new Patient { PatientNumber = "P-902", FirstName = "A", LastName = "B", IsActive = true };
+        db.Patients.Add(patient);
+        await db.SaveChangesAsync(); // no RolePermissions seeded — Admin must still bypass
+
+        var finance = new Mock<IFinanceService>();
+        finance.Setup(f => f.GetPatientFinanceSummaryAsync(patient.Id))
+            .ReturnsAsync(new PatientFinanceSummaryDto { TotalTreatmentCost = 2000m, OutstandingBalance = 500m, FinancialStatus = "on_track" });
+
+        var result = await BuildService(db, finance).GetDailySummaryAsync(PrincipalInRole("Admin"), patient.Id);
+
+        var fin = ExtractFinanceSummary(result);
+        fin.Should().NotBeNull();
+        HasProperty(fin!, "TotalTreatmentCost").Should().BeTrue("Admin gets the full summary even with no RolePermission rows");
+    }
+
+    private static PatientJourneyService BuildService(AppDbContext db, Mock<IFinanceService> finance)
+    {
+        var access = new Mock<IPatientAccessService>();
+        access.SetupGet(x => x.IsDoctor).Returns(false);
+        access.SetupGet(x => x.HasFullAccess).Returns(true);
+        access.SetupGet(x => x.IsReception).Returns(false);
+        access.Setup(x => x.GetAccessiblePatientIdsAsync()).ReturnsAsync((HashSet<Guid>?)null);
+        return new PatientJourneyService(db, access.Object, finance.Object, NullLogger<PatientJourneyService>.Instance);
+    }
+
+    private static ClaimsPrincipal PrincipalInRole(string role) =>
+        new(new ClaimsIdentity(new[] { new Claim(ClaimTypes.Role, role) }, "TestAuth"));
+
+    private static object? ExtractFinanceSummary(IActionResult result)
+    {
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var prop = ok.Value!.GetType().GetProperty("FinanceSummary");
+        prop.Should().NotBeNull("daily-summary response must include FinanceSummary");
+        return prop!.GetValue(ok.Value);
+    }
+
+    private static bool HasProperty(object obj, string name) => obj.GetType().GetProperty(name) != null;
 
     private static async Task<object> GetSingleJourneyItem(AppDbContext db, DateOnly date)
     {

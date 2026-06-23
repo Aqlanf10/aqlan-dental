@@ -10,6 +10,7 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "test:clinic-announcement": "npx tsx scripts/test-clinic-announcement.ts"
   },
   "dependencies": {

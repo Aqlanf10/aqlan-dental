@@ -811,6 +811,14 @@ public class LabOrdersController(
 
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
 
+        // SEC-ROUTE: per-patient access check before mutating. UpdateLabOrderRequest does NOT
+        // carry PatientId, and the class-level PatientAccessFilter only inspects route + query
+        // values for "patientId" — so the filter never sees a patientId for this {id:guid} action.
+        // Resolve it from the fetched order and check explicitly. Mirrors DocumentsController
+        // (SEC-DOCS fix) and the established DenyIfDoctorCannotAccess pattern.
+        var denied = await DenyIfDoctorCannotAccess(order.PatientId);
+        if (denied is not null) return denied;
+
         // Only allow edits when the order is in draft or sent status
         var editableStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "draft", "sent" };
         if (!editableStatuses.Contains(order.Status))
@@ -926,6 +934,12 @@ public class LabOrdersController(
         var order = await db.LabOrders.FindAsync(id);
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
 
+        // SEC-ROUTE: per-patient access check before mutating. The route only carries the
+        // order id ({id:guid}/status), so the class-level PatientAccessFilter never sees a
+        // patientId for this action. Resolve it from the fetched order and check explicitly.
+        var denied = await DenyIfDoctorCannotAccess(order.PatientId);
+        if (denied is not null) return denied;
+
         var oldStatus = order.Status;
         if (!CanTransition(oldStatus, nextStatus))
             return BadRequest(new { message = $"لا يمكن نقل الطلب من {oldStatus} إلى {nextStatus}" });
@@ -996,6 +1010,13 @@ public class LabOrdersController(
 
         var order = await db.LabOrders.FindAsync(id);
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
+
+        // SEC-ROUTE: per-patient access check before mutating. The route only carries the
+        // order id ({id:guid}/mark-received), so the class-level PatientAccessFilter never
+        // sees a patientId for this action. Resolve it from the fetched order and check.
+        var denied = await DenyIfDoctorCannotAccess(order.PatientId);
+        if (denied is not null) return denied;
+
         if (order.Status != "ready")
             return BadRequest(new { message = "لا يمكن تأكيد الوصول للحالة الحالية" });
 
@@ -1116,6 +1137,13 @@ public class LabOrdersController(
 
         var order = await db.LabOrders.FindAsync(id);
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
+
+        // SEC-ROUTE: per-patient access check before mutating. The route only carries the
+        // order id ({id:guid}/return), so the class-level PatientAccessFilter never sees a
+        // patientId for this action. Resolve it from the fetched order and check.
+        var denied = await DenyIfDoctorCannotAccess(order.PatientId);
+        if (denied is not null) return denied;
+
         var validReturnStatuses = new HashSet<string> { "tryIn", "ready", "received", "delivered" };
         if (!validReturnStatuses.Contains(order.Status))
             return BadRequest(new { message = "لا يمكن إرجاع الطلب للحالة الحالية" });
@@ -1148,6 +1176,13 @@ public class LabOrdersController(
 
         var order = await db.LabOrders.FindAsync(id);
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
+
+        // SEC-ROUTE: per-patient access check before mutating. The route only carries the
+        // order id ({id:guid}/remake), so the class-level PatientAccessFilter never sees a
+        // patientId for this action. Resolve it from the fetched order and check.
+        var denied = await DenyIfDoctorCannotAccess(order.PatientId);
+        if (denied is not null) return denied;
+
         if (order.Status != "returned")
             return BadRequest(new { message = "لا يمكن إعادة الصنع إلا للطلبات المرتجعة" });
 

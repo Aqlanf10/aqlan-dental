@@ -416,6 +416,12 @@ public class SurgeryController(
         var surgery = await db.SurgeryCases.FindAsync(id);
         if (surgery is null) return NotFound(new { message = "الحالة غير موجودة" });
 
+        // SEC-ROUTE: per-patient access check before mutating. The route only carries the
+        // surgery case id ({id:guid}/preop), so the class-level PatientAccessFilter never
+        // sees a patientId for this action. Resolve it from the fetched surgery and check.
+        var denied = await DenyIfDoctorCannotAccess(surgery.PatientId);
+        if (denied is not null) return denied;
+
         var existing = await db.PreopReports.FirstOrDefaultAsync(p => p.SurgeryCaseId == id);
         if (existing is null)
         {
@@ -458,6 +464,12 @@ public class SurgeryController(
         var surgery = await db.SurgeryCases.FindAsync(id);
         if (surgery is null) return NotFound(new { message = "الحالة غير موجودة" });
 
+        // SEC-ROUTE: per-patient access check before mutating. The route only carries the
+        // surgery case id ({id:guid}/postop), so the class-level PatientAccessFilter never
+        // sees a patientId for this action. Resolve it from the fetched surgery and check.
+        var denied = await DenyIfDoctorCannotAccess(surgery.PatientId);
+        if (denied is not null) return denied;
+
         var existing = await db.PostopRecords.FirstOrDefaultAsync(p => p.SurgeryCaseId == id);
         if (existing is null)
         {
@@ -480,6 +492,12 @@ public class SurgeryController(
     {
         var surgery = await db.SurgeryCases.FindAsync(id);
         if (surgery is null) return NotFound(new { message = "الحالة الجراحية غير موجودة" });
+
+        // SEC-ROUTE: per-patient access check before mutating. The route only carries the
+        // surgery case id ({id:guid}), so the class-level PatientAccessFilter never sees a
+        // patientId for this action. Resolve it from the fetched surgery and check.
+        var denied = await DenyIfDoctorCannotAccess(surgery.PatientId);
+        if (denied is not null) return denied;
 
         if (req.DoctorId.HasValue) surgery.DoctorId = req.DoctorId;
         if (req.SurgeryType is not null) surgery.SurgeryType = req.SurgeryType;
@@ -519,6 +537,12 @@ public class SurgeryController(
         var surgery = await db.SurgeryCases.FindAsync(id);
         if (surgery is null) return NotFound(new { message = "الحالة غير موجودة" });
 
+        // SEC-ROUTE: per-patient access check before mutating. The route only carries the
+        // surgery case id ({id:guid}/operative), so the class-level PatientAccessFilter never
+        // sees a patientId for this action. Resolve it from the fetched surgery and check.
+        var denied = await DenyIfDoctorCannotAccess(surgery.PatientId);
+        if (denied is not null) return denied;
+
         var existing = await db.OperativeReports.FirstOrDefaultAsync(r => r.SurgeryCaseId == id);
         if (existing is null)
         {
@@ -546,6 +570,17 @@ public class SurgeryController(
     {
         var report = await db.OperativeReports.FirstOrDefaultAsync(r => r.SurgeryCaseId == id);
         if (report is null) return NotFound(new { message = "التقرير الجراحي غير موجود" });
+
+        // SEC-ROUTE: per-patient access check before mutating. The route only carries the
+        // surgery case id ({id:guid}/operative/approve) and the operative report itself has no
+        // PatientId column, so the class-level PatientAccessFilter never sees a patientId for
+        // this action. Resolve the patient via the parent surgery case and check.
+        var patientId = await db.SurgeryCases
+            .Where(s => s.Id == id)
+            .Select(s => s.PatientId)
+            .FirstOrDefaultAsync();
+        var denied = await DenyIfDoctorCannotAccess(patientId);
+        if (denied is not null) return denied;
 
         report.ApprovedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
@@ -578,6 +613,12 @@ public class SurgeryController(
         var surgery = await db.SurgeryCases.FindAsync(id);
         if (surgery is null) return NotFound(new { message = "الحالة غير موجودة" });
 
+        // SEC-ROUTE: per-patient access check before mutating. The route only carries the
+        // surgery case id ({id:guid}/referrals), so the class-level PatientAccessFilter never
+        // sees a patientId for this action. Resolve it from the fetched surgery and check.
+        var denied = await DenyIfDoctorCannotAccess(surgery.PatientId);
+        if (denied is not null) return denied;
+
         var referral = new HospitalReferral
         {
             SurgeryCaseId = id,
@@ -599,6 +640,17 @@ public class SurgeryController(
         var referral = await db.HospitalReferrals.FirstOrDefaultAsync(r => r.Id == referralId && r.SurgeryCaseId == id);
         if (referral is null) return NotFound(new { message = "الإحالة غير موجودة" });
 
+        // SEC-ROUTE: per-patient access check before mutating. The route only carries the
+        // surgery case id + referral id ({id:guid}/referrals/{referralId:guid}), so the
+        // class-level PatientAccessFilter never sees a patientId for this action. Resolve the
+        // patient via the parent surgery case (id) and check.
+        var patientId = await db.SurgeryCases
+            .Where(s => s.Id == id)
+            .Select(s => s.PatientId)
+            .FirstOrDefaultAsync();
+        var denied = await DenyIfDoctorCannotAccess(patientId);
+        if (denied is not null) return denied;
+
         if (req.HospitalName is not null) referral.HospitalName = req.HospitalName;
         if (req.Reason is not null) referral.Reason = req.Reason;
         if (req.ReferralDate is not null) referral.ReferralDate = DateOnly.Parse(req.ReferralDate);
@@ -614,6 +666,17 @@ public class SurgeryController(
     {
         var referral = await db.HospitalReferrals.FirstOrDefaultAsync(r => r.Id == referralId && r.SurgeryCaseId == id);
         if (referral is null) return NotFound(new { message = "الإحالة غير موجودة" });
+
+        // SEC-ROUTE: per-patient access check before mutating. The route only carries the
+        // surgery case id + referral id ({id:guid}/referrals/{referralId:guid}), so the
+        // class-level PatientAccessFilter never sees a patientId for this action. Resolve the
+        // patient via the parent surgery case (id) and check.
+        var patientId = await db.SurgeryCases
+            .Where(s => s.Id == id)
+            .Select(s => s.PatientId)
+            .FirstOrDefaultAsync();
+        var denied = await DenyIfDoctorCannotAccess(patientId);
+        if (denied is not null) return denied;
 
         referral.IsActive = false;
         await db.SaveChangesAsync();

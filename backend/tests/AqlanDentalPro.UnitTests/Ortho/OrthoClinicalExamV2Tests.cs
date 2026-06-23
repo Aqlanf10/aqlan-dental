@@ -39,11 +39,14 @@ public class OrthoClinicalExamV2Tests : IDisposable
         var patientAccess = new Mock<IPatientAccessService>();
         patientAccess.Setup(p => p.CanAccessPatientAsync(It.IsAny<Guid>())).ReturnsAsync(true);
 
+        var audit = new Mock<IAuditService>();
+
         _controller = new OrthoCasesController(
             new OrthoService(_db, currentUser.Object),
             _db,
             currentUser.Object,
-            patientAccess.Object);
+            patientAccess.Object,
+            audit.Object);
     }
 
     public void Dispose() => _db.Dispose();

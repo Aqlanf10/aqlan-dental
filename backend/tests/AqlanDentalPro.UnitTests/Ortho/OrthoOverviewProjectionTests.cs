@@ -34,8 +34,9 @@ public class OrthoOverviewProjectionTests : IDisposable
         currentUser.SetupGet(x => x.IsAdmin).Returns(true);
         var patientAccess = new Mock<Application.Interfaces.Services.IPatientAccessService>();
         patientAccess.Setup(p => p.CanAccessPatientAsync(It.IsAny<Guid>())).ReturnsAsync(true);
+        var audit = new Mock<Application.Interfaces.Services.IAuditService>();
         _controller = new API.Controllers.OrthoCasesController(
-            new Application.Services.OrthoService(_db, currentUser.Object), _db, currentUser.Object, patientAccess.Object);
+            new Application.Services.OrthoService(_db, currentUser.Object), _db, currentUser.Object, patientAccess.Object, audit.Object);
     }
 
     public void Dispose() => _db.Dispose();

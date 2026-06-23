@@ -112,7 +112,8 @@ public class FinanceV3ControllerTests
         var audit = new Mock<IAuditService>().Object;
         var logger = new Mock<ILogger<InvoicesController>>().Object;
         var commission = new Mock<ICommissionService>().Object;
-        return new InvoicesController(db, pdfService, audit, logger, commission, currentUser);
+        var financeSettings = new FinanceSettingsReader(db);
+        return new InvoicesController(db, pdfService, audit, logger, commission, currentUser, financeSettings);
     }
 
     private static AdvancePaymentController BuildAdvancePaymentController(

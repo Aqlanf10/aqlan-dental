@@ -1,3 +1,4 @@
+using AqlanDentalPro.Application.Common;
 using AqlanDentalPro.Application.DTOs.Finance;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
@@ -19,7 +20,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/invoices")]
 [Authorize(Policy = "FinanceAccess")]
-public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditService audit, ILogger<InvoicesController> logger, ICommissionService commissionService, ICurrentUserService currentUser) : ControllerBase
+public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditService audit, ILogger<InvoicesController> logger, ICommissionService commissionService, ICurrentUserService currentUser, FinanceSettingsReader financeSettings) : ControllerBase
 {
     // ─── F5: POST /api/invoices — Create standalone invoice ──────────────────
     /// <summary>
@@ -165,6 +166,23 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
                         discountRatio,
                         threshold = discountApprovalThreshold,
                         requiresAdminApproval = true
+                    });
+                }
+            }
+
+            // FIN-SETTINGS: global max-discount % cap. Defaults to 100 (= no restriction)
+            // so current production behavior is preserved until the clinic owner lowers it.
+            var maxDiscountPct = await financeSettings.GetDecimalAsync(FinanceSettingsKeys.MaxDiscountPercentage);
+            if (discount > 0 && invoice.Subtotal > 0 && maxDiscountPct < 100m)
+            {
+                var discountPct = discount / invoice.Subtotal * 100m;
+                if (discountPct > maxDiscountPct)
+                {
+                    return BadRequest(new
+                    {
+                        message = $"نسبة الخصم ({discountPct:F1}%) تتجاوز الحد الأقصى المسموح ({maxDiscountPct:F0}%)",
+                        discountPercent = discountPct,
+                        maxAllowed = maxDiscountPct,
                     });
                 }
             }
@@ -481,6 +499,23 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
                             threshold = 0.10m,
                             requiresAdminApproval = true
                         });
+                    }
+
+                    // FIN-SETTINGS: global max-discount % cap. Defaults to 100 (= no restriction)
+                    // so current production behavior is preserved until the clinic owner lowers it.
+                    var maxDiscountPct = await financeSettings.GetDecimalAsync(FinanceSettingsKeys.MaxDiscountPercentage);
+                    if (maxDiscountPct < 100m)
+                    {
+                        var discountPct = newDiscount / currentSubtotal * 100m;
+                        if (discountPct > maxDiscountPct)
+                        {
+                            return BadRequest(new
+                            {
+                                message = $"نسبة الخصم ({discountPct:F1}%) تتجاوز الحد الأقصى المسموح ({maxDiscountPct:F0}%)",
+                                discountPercent = discountPct,
+                                maxAllowed = maxDiscountPct,
+                            });
+                        }
                     }
                 }
                 invoice.DiscountAmount = newDiscount;

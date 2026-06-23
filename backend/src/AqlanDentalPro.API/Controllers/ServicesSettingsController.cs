@@ -1,6 +1,8 @@
+using AqlanDentalPro.Application.Common;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -12,7 +14,7 @@ namespace AqlanDentalPro.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/settings/services")]
-public class ServicesSettingsController(AppDbContext db) : ControllerBase
+public class ServicesSettingsController(AppDbContext db, FinanceSettingsReader financeSettings) : ControllerBase
 {
     /// <summary>Get all services (including inactive). Admin only.</summary>
     [HttpGet]
@@ -85,6 +87,18 @@ public class ServicesSettingsController(AppDbContext db) : ControllerBase
         if (codeExists)
             return Conflict(new { message = "كود الخدمة مستخدم بالفعل" });
 
+        // FIN-SETTINGS: when the caller doesn't specify a price/commission field,
+        // default it from the finance.* settings (clinic-owner-configurable). When
+        // the caller DOES specify a value, that wins — existing behavior preserved.
+        var defaultPrice = req.DefaultPrice
+            ?? await financeSettings.GetDecimalAsync(FinanceSettingsKeys.DefaultConsultationFee);
+        var defaultDoctorPct = req.DefaultDoctorCommissionPercentage
+            ?? await financeSettings.GetDecimalAsync(FinanceSettingsKeys.CommissionDefaultDoctorPercentage);
+        var defaultRecognitionMode = req.CommissionRecognitionMode
+            ?? await financeSettings.GetEnumAsync(FinanceSettingsKeys.CommissionDefaultRecognitionMode, CommissionRecognitionMode.OnPaymentCollection);
+        var defaultBaseRule = req.CommissionBaseRule
+            ?? await financeSettings.GetEnumAsync(FinanceSettingsKeys.CommissionDefaultBaseRule, CommissionBaseRule.AfterDiscountAndCosts);
+
         var service = new ClinicService
         {
             ArabicName = req.ArabicName.Trim(),
@@ -94,7 +108,7 @@ public class ServicesSettingsController(AppDbContext db) : ControllerBase
             Category = req.Category ?? ServiceCategory.Other,
             Description = req.Description?.Trim(),
             DefaultDurationMinutes = req.DefaultDurationMinutes ?? 30,
-            DefaultPrice = req.DefaultPrice ?? 0,
+            DefaultPrice = defaultPrice,
             RequiresDoctor = req.RequiresDoctor ?? true,
             RequiresConsultationFee = req.RequiresConsultationFee ?? false,
             ShowInBooking = req.ShowInBooking ?? true,
@@ -104,9 +118,9 @@ public class ServicesSettingsController(AppDbContext db) : ControllerBase
             DefaultMaterialCost = req.DefaultMaterialCost ?? 0,
             DefaultMaterialCostType = req.DefaultMaterialCostType ?? MaterialCostType.FixedAmount,
             DefaultLabCost = req.DefaultLabCost ?? 0,
-            DefaultDoctorCommissionPercentage = req.DefaultDoctorCommissionPercentage,
-            CommissionBaseRule = req.CommissionBaseRule ?? CommissionBaseRule.AfterDiscountAndCosts,
-            CommissionRecognitionMode = req.CommissionRecognitionMode ?? CommissionRecognitionMode.OnPaymentCollection,
+            DefaultDoctorCommissionPercentage = defaultDoctorPct,
+            CommissionBaseRule = defaultBaseRule,
+            CommissionRecognitionMode = defaultRecognitionMode,
             IsActive = true
         };
 

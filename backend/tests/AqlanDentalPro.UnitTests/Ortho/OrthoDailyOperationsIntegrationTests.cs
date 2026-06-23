@@ -216,6 +216,7 @@ public class OrthoDailyOperationsIntegrationTests
             NullLogger<PatientJourneyService>.Instance);
         var checkoutService = new CheckoutService(
             db, commission.Object, currentUser.Object, access,
+            new Mock<IRealTimePushService>().Object,
             NullLogger<CheckoutService>.Instance);
 
         return new PatientJourneyController(journeyService, checkoutService);

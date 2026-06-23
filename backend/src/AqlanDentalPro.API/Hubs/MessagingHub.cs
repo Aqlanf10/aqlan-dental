@@ -149,4 +149,7 @@ public static class MessagingHubEvents
 
     /// <summary>إعادة ترتيب الطابور (سحب وإفلات)</summary>
     public const string QueueReordered = "QueueReordered";
+
+    /// <summary>تحديث رحلة المريض (وصول/طابور/زيارة/تحصيل/خروج) — للتحديث الفوري لشاشة العمليات اليومية</summary>
+    public const string JourneyUpdated = "JourneyUpdated";
 }

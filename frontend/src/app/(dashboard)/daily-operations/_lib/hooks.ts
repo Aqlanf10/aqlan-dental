@@ -54,7 +54,11 @@ export function useTodayJourneyItems(params: {
       return data;
     },
     staleTime: 15_000,
-    refetchInterval: 30_000,
+    // Sprint 2 Part 2: polling reduced from 30s → 5min as a safety-net fallback.
+    // SignalR "JourneyUpdated" events now invalidate this query instantly on any
+    // journey/appointment/visit/payment mutation. The 5min fallback only catches
+    // cases where a SignalR push was missed (client disconnect, race, etc.).
+    refetchInterval: 300_000,
   });
 }
 
@@ -163,7 +167,8 @@ export function useEstimatedWait(queueItemId?: string) {
     },
     enabled: !!queueItemId,
     staleTime: 15_000,
-    refetchInterval: 30_000,
+    // Sprint 2 Part 2: polling 30s → 5min fallback (JourneyUpdated handles live updates).
+    refetchInterval: 300_000,
   });
 }
 
@@ -176,7 +181,8 @@ export function useQueueWaitTime() {
       return data;
     },
     staleTime: 15_000,
-    refetchInterval: 30_000,
+    // Sprint 2 Part 2: polling 30s → 5min fallback (JourneyUpdated handles live updates).
+    refetchInterval: 300_000,
   });
 }
 

@@ -4,6 +4,8 @@ using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace AqlanDentalPro.UnitTests.Visits;
@@ -175,17 +177,21 @@ internal static class VisitsTestData
         AppDbContext db,
         Mock<IPatientAccessService>? patientAccessMock = null,
         Mock<ICurrentUserService>? currentUserMock = null,
-        Mock<IAuditService>? auditMock = null)
+        Mock<IAuditService>? auditMock = null,
+        Mock<IRealTimePushService>? pushMock = null)
     {
         patientAccessMock ??= new Mock<IPatientAccessService>();
         currentUserMock ??= new Mock<ICurrentUserService>();
         auditMock ??= new Mock<IAuditService>();
+        pushMock ??= new Mock<IRealTimePushService>();
 
         return new VisitsController(
             db,
             currentUserMock.Object,
             patientAccessMock.Object,
-            auditMock.Object);
+            auditMock.Object,
+            pushMock.Object,
+            NullLogger<VisitsController>.Instance);
     }
 
     /// <summary>

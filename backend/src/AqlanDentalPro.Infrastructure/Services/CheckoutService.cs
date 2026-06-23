@@ -1,3 +1,4 @@
+using AqlanDentalPro.Application.Common;
 using AqlanDentalPro.Application.DTOs.Journey;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
@@ -25,6 +26,7 @@ public class CheckoutService(
     ICommissionService commissionService,
     ICurrentUserService currentUser,
     IPatientAccessService patientAccessService,
+    IRealTimePushService pushService,
     ILogger<CheckoutService> logger)
 {
     // IAuditService is injected per CLIN-22 spec for future audit-log migration.
@@ -37,6 +39,33 @@ public class CheckoutService(
     // IPatientAccessService is injected (in addition to the CLIN-22 spec list) because
     // ValidateFinancialClosureAsync uses IsDoctor / HasFullAccess / IsReception to
     // gate the outstandingAmount field — preserved verbatim from the controller.
+    //
+    // IRealTimePushService is injected so successful journey mutations can push a
+    // "JourneyUpdated" SignalR event to all connected daily-ops screens. The push is
+    // best-effort: any failure is logged and swallowed so it never fails the HTTP
+    // response. Push happens AFTER SaveChangesAsync + CommitAsync so clients always
+    // re-fetch the committed state.
+
+    /// <summary>
+    /// Best-effort push of JourneyUpdated. Scoped to the caller's branch when
+    /// resolvable (so TV displays in other branches don't get spammed); falls
+    /// back to PushToAllAsync for admin callers without a branch. Never throws.
+    /// </summary>
+    private async Task PushJourneyUpdatedAsync(string action, Guid? appointmentId = null, Guid? patientId = null, Guid? visitId = null, Guid? branchId = null)
+    {
+        try
+        {
+            var payload = new { action, appointmentId, patientId, visitId, branchId };
+            if (branchId.HasValue && branchId.Value != Guid.Empty)
+                await pushService.PushToBranchAsync(branchId.Value, RealTimeEvents.JourneyUpdated, payload);
+            else
+                await pushService.PushToAllAsync(RealTimeEvents.JourneyUpdated, payload);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to push JourneyUpdated ({Action})", action);
+        }
+    }
 
     // ─── 2. POST /api/patient-journey/{appointmentId}/intake ────────────────
     /// <summary>Reception confirms patient arrival and records intake info.</summary>
@@ -114,6 +143,9 @@ public class CheckoutService(
 
             await db.SaveChangesAsync();
             await tx.CommitAsync();
+
+            // SignalR: best-effort push so daily-ops screens invalidate instantly.
+            await PushJourneyUpdatedAsync("intake", appointmentId, appointment.PatientId, branchId: currentUser.BranchId);
 
             return Ok(new
             {
@@ -233,6 +265,9 @@ public class CheckoutService(
             await db.SaveChangesAsync();
             await tx.CommitAsync();
 
+            // SignalR: best-effort push so daily-ops screens invalidate instantly.
+            await PushJourneyUpdatedAsync("send-to-queue", appointment.Id, appointment.PatientId, visitId: queueItem.Id, branchId: currentUser.BranchId);
+
             return Ok(new
             {
                 queueItem.Id,
@@ -343,6 +378,9 @@ public class CheckoutService(
                 await db.SaveChangesAsync();
                 await tx.CommitAsync();
 
+                // SignalR: best-effort push so daily-ops screens invalidate instantly.
+                await PushJourneyUpdatedAsync("start-visit", appointment.Id, appointment.PatientId, visitId: existingVisit.Id, branchId: currentUser.BranchId);
+
                 return Ok(new
                 {
                     existingVisit.Id,
@@ -402,6 +440,9 @@ public class CheckoutService(
 
             await db.SaveChangesAsync();
             await tx.CommitAsync();
+
+            // SignalR: best-effort push so daily-ops screens invalidate instantly.
+            await PushJourneyUpdatedAsync("start-visit", appointment.Id, appointment.PatientId, visitId: visit.Id, branchId: currentUser.BranchId);
 
             return Ok(new
             {
@@ -564,6 +605,9 @@ public class CheckoutService(
             await db.SaveChangesAsync();
             await tx.CommitAsync();
 
+            // SignalR: best-effort push so daily-ops screens invalidate instantly.
+            await PushJourneyUpdatedAsync("handoff", visit.AppointmentId, visit.PatientId, visitId: visit.Id, branchId: currentUser.BranchId);
+
             return Ok(new
             {
                 visit.Id,
@@ -684,6 +728,9 @@ public class CheckoutService(
 
             await db.SaveChangesAsync();
             await tx.CommitAsync();
+
+            // SignalR: best-effort push so daily-ops screens invalidate instantly.
+            await PushJourneyUpdatedAsync("checkout", appointment?.Id, visit.PatientId, visitId: visit.Id, branchId: currentUser.BranchId);
 
             // Build recommended next actions
             var nextActions = new List<string>();
@@ -809,6 +856,9 @@ public class CheckoutService(
         });
 
         await db.SaveChangesAsync();
+
+        // SignalR: best-effort push so daily-ops screens invalidate instantly.
+        await PushJourneyUpdatedAsync("left-without-completion", visit.AppointmentId, visit.PatientId, visitId: visit.Id, branchId: currentUser.BranchId);
 
         return Ok(new
         {
@@ -957,6 +1007,9 @@ public class CheckoutService(
 
             await db.SaveChangesAsync();
             await tx.CommitAsync();
+
+            // SignalR: best-effort push so daily-ops + finance screens invalidate instantly.
+            await PushJourneyUpdatedAsync("create-draft-invoice", visit.AppointmentId, visit.PatientId, visitId: visit.Id, branchId: currentUser.BranchId);
 
             // Preserve response fields: IsExisting, StatusArabic, Subtotal, TotalAmount, LineItemCount
             return Ok(new

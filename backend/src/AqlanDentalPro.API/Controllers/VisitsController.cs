@@ -1,5 +1,6 @@
 using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.API.Authorization;
+using AqlanDentalPro.API.Hubs;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -7,6 +8,7 @@ using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -64,8 +66,31 @@ public class VisitsController(
     AppDbContext db,
     ICurrentUserService currentUser,
     IPatientAccessService patientAccess,
-    IAuditService audit) : ControllerBase
+    IAuditService audit,
+    IRealTimePushService pushService,
+    ILogger<VisitsController> logger) : ControllerBase
 {
+    /// <summary>
+    /// Best-effort push of JourneyUpdated. Scoped to the caller's branch when
+    /// resolvable; falls back to PushToAllAsync for admin callers without a branch.
+    /// Never throws — push failure must not fail the HTTP request.
+    /// </summary>
+    private async Task PushJourneyUpdatedAsync(string action, Guid? appointmentId = null, Guid? patientId = null, Guid? visitId = null, Guid? branchId = null)
+    {
+        try
+        {
+            var payload = new { action, appointmentId, patientId, visitId, branchId };
+            if (branchId.HasValue && branchId.Value != Guid.Empty)
+                await pushService.PushToBranchAsync(branchId.Value, MessagingHubEvents.JourneyUpdated, payload);
+            else
+                await pushService.PushToAllAsync(MessagingHubEvents.JourneyUpdated, payload);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to push JourneyUpdated ({Action})", action);
+        }
+    }
+
     // CLIN-01: Per-patient access check for actions where patientId is in body or inferred.
     private async Task<IActionResult?> DenyIfDoctorCannotAccess(Guid patientId)
     {
@@ -300,6 +325,9 @@ public class VisitsController(
 
         await db.Entry(visit).Reference(v => v.Doctor).LoadAsync();
 
+        // SignalR: best-effort push so daily-ops screens invalidate instantly.
+        await PushJourneyUpdatedAsync("visit-created", req.AppointmentId, req.PatientId, visitId: visit.Id, branchId: currentUser.BranchId);
+
         return Ok(new
         {
             visit.Id,
@@ -387,6 +415,9 @@ public class VisitsController(
         visit.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
+        // SignalR: best-effort push so daily-ops screens invalidate instantly.
+        await PushJourneyUpdatedAsync("visit-updated", visit.AppointmentId, visit.PatientId, visitId: visit.Id, branchId: currentUser.BranchId);
+
         return Ok(new { message = "تم تحديث الزيارة بنجاح" });
     }
 
@@ -431,6 +462,9 @@ public class VisitsController(
         }
 
         await db.SaveChangesAsync();
+
+        // SignalR: best-effort push so daily-ops screens invalidate instantly.
+        await PushJourneyUpdatedAsync("visit-deleted", visit.AppointmentId, visit.PatientId, visitId: visit.Id, branchId: currentUser.BranchId);
 
         var cascadedCount = prescriptions.Count + treatments.Count;
         var msg = cascadedCount > 0

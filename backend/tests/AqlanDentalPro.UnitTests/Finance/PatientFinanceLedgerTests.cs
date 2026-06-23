@@ -466,12 +466,16 @@ public class PatientFinanceLedgerTests
             .ReturnsAsync(pdfBytes);
         
         var mockAuditService = new Mock<IAuditService>();
+        var mockCurrentUser = new Mock<ICurrentUserService>();
+        var mockPush = new Mock<IRealTimePushService>();
         var mockLogger = new Mock<ILogger<PaymentsController>>();
         
         var controller = new PaymentsController(
             mockFinanceService.Object,
             mockPdfService.Object,
             mockAuditService.Object,
+            mockCurrentUser.Object,
+            mockPush.Object,
             mockLogger.Object);
 
         // Act
@@ -545,12 +549,16 @@ public class PatientFinanceLedgerTests
             .ReturnsAsync(pdfBytes);
         
         var mockAuditService = new Mock<IAuditService>();
+        var mockCurrentUser = new Mock<ICurrentUserService>();
+        var mockPush = new Mock<IRealTimePushService>();
         var mockLogger = new Mock<ILogger<PaymentsController>>();
         
         var controller = new PaymentsController(
             mockFinanceService.Object,
             mockPdfService.Object,
             mockAuditService.Object,
+            mockCurrentUser.Object,
+            mockPush.Object,
             mockLogger.Object);
 
         // Act
@@ -577,12 +585,16 @@ public class PatientFinanceLedgerTests
             .ThrowsAsync(new ArgumentException("المريض غير موجود"));
         
         var mockAuditService = new Mock<IAuditService>();
+        var mockCurrentUser = new Mock<ICurrentUserService>();
+        var mockPush = new Mock<IRealTimePushService>();
         var mockLogger = new Mock<ILogger<PaymentsController>>();
         
         var controller = new PaymentsController(
             mockFinanceService.Object,
             mockPdfService.Object,
             mockAuditService.Object,
+            mockCurrentUser.Object,
+            mockPush.Object,
             mockLogger.Object);
 
         // Act

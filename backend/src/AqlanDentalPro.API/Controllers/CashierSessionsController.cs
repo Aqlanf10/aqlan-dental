@@ -1,6 +1,7 @@
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -42,9 +43,21 @@ public static class CashierClosingApprovalConfig
 [Authorize(Policy = "FinanceAccess")] // Admin, Accountant, Reception
 public class CashierSessionsController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, ITreasuryResolutionService treasuryResolution, ILogger<CashierSessionsController> logger) : ControllerBase
 {
+    // FIN-PERM: the class-level FinanceAccess policy is the coarse gate; the granular
+    // finance.cashier_session permission (RolePermissions, owner-configurable from
+    // Settings) is the real per-action gate. Admin always bypasses. With the seeded
+    // defaults Reception may open/close its own drawer (create) and view sessions, but
+    // reconciliation (approve) stays with Accountant/Admin.
+    private Task<bool> CanAsync(string action) =>
+        PermissionGuard.HasAsync(db, currentUser, "finance.cashier_session", action);
+
+    private IActionResult Deny() =>
+        StatusCode(403, new { message = "غير مصرح لك بهذا الإجراء المالي" });
+
     [HttpPost("open")]
     public async Task<IActionResult> OpenSession([FromBody] OpenSessionRequest req)
     {
+        if (!await CanAsync("create")) return Deny();
         var userId = currentUser.UserId ?? Guid.Empty;
 
         // BranchId resolution: use current user's branch, or fallback to first active branch for Admin
@@ -168,6 +181,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     [HttpPost("close")]
     public async Task<IActionResult> CloseSession([FromBody] CloseSessionRequest req)
     {
+        if (!await CanAsync("create")) return Deny();
         var userId = currentUser.UserId ?? Guid.Empty;
 
         // FIN-01 FIX: Wrap close in a transaction + advisory lock + re-check, mirroring OpenSession.
@@ -394,6 +408,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     [HttpGet("daily-summary")]
     public async Task<IActionResult> GetDailySummary()
     {
+        if (!await CanAsync("view")) return Deny();
         var branchId = currentUser.BranchId;
         if (!currentUser.IsAdmin && (!branchId.HasValue || branchId.Value == Guid.Empty))
             return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
@@ -472,6 +487,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     [Obsolete("Use GET /api/finance-v3/cashier-sessions/active instead where ReportsAccess is allowed. This legacy endpoint remains fully active and returns canonical session data to preserve Reception access under FinanceAccess policy.")]
     public async Task<IActionResult> GetActiveSession()
     {
+        if (!await CanAsync("view")) return Deny();
         var cashierId = currentUser.UserId ?? Guid.Empty;
 
         var session = await db.CashierSessions
@@ -573,6 +589,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         [FromQuery] int pageSize = 20,
         [FromQuery] string? status = null)
     {
+        if (!await CanAsync("view")) return Deny();
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
@@ -630,6 +647,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetSessionDetail(Guid id)
     {
+        if (!await CanAsync("view")) return Deny();
         var session = await db.CashierSessions
             .Include(s => s.Cashier)
             .Include(s => s.Transactions)
@@ -684,6 +702,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     [Authorize(Policy = "ReportsAccess")] // Admin + Accountant only
     public async Task<IActionResult> ReconcileSession(Guid id, [FromBody] string? notes)
     {
+        if (!await CanAsync("approve")) return Deny();
         // FIN-02 FIX: Wrap reconcile in a transaction + lock + re-check. Previously the method
         // only checked Status != Closed before mutating to Reconciled — two concurrent reconcile
         // calls both saw Closed and both set Reconciled.

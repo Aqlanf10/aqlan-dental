@@ -28,12 +28,50 @@ jobs:
       - name: Build
         run: dotnet build --no-restore --configuration Release --warnaserror:CS9113
 
-      - name: Run unit tests
+      - name: Run unit tests (with coverage)
         run: >
           dotnet test tests/AqlanDentalPro.UnitTests/AqlanDentalPro.UnitTests.csproj
           --no-restore --no-build --configuration Release
           --verbosity normal
           --logger "trx;LogFileName=test-results.trx"
+          --collect:"XPlat Code Coverage"
+          --results-directory ./TestResults
+
+      - name: Enforce coverage thresholds (baseline safety net)
+        # TEST-19: Non-blocking baseline. Current coverage is ~6% lines / ~28% branches
+        # (very large code-base, mostly untested). Aspirational targets are 60% lines / 50%
+        # branches but those would break CI today. Safety-net thresholds below are set to
+        # current-2% so the check still catches significant regressions without blocking.
+        # Ratchet these up over time as more tests are added. Remove `continue-on-error`
+        # once the safety net reaches 60% lines / 50% branches.
+        continue-on-error: true
+        run: |
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          files = glob.glob("TestResults/**/coverage.cobertura.xml", recursive=True)
+          if not files:
+              print("::warning::No coverage file found — skipping threshold check")
+              raise SystemExit(0)
+          tree = ET.parse(files[0])
+          root = tree.getroot()
+          line_rate = float(root.attrib["line-rate"]) * 100
+          branch_rate = float(root.attrib["branch-rate"]) * 100
+          print(f"::notice::Backend coverage — Lines: {line_rate:.2f}%  Branches: {branch_rate:.2f}%")
+          print(f"Coverage file: {files[0]}")
+          # Safety-net thresholds (current-2% baseline). Aspirational: 60% lines / 50% branches.
+          LINE_THRESHOLD = 4.0
+          BRANCH_THRESHOLD = 26.0
+          ok = True
+          if line_rate < LINE_THRESHOLD:
+              print(f"::error::Line coverage {line_rate:.2f}% < {LINE_THRESHOLD}% safety-net threshold")
+              ok = False
+          if branch_rate < BRANCH_THRESHOLD:
+              print(f"::error::Branch coverage {branch_rate:.2f}% < {BRANCH_THRESHOLD}% safety-net threshold")
+              ok = False
+          if ok:
+              print(f"::notice::Coverage above safety-net thresholds (lines≥{LINE_THRESHOLD}% branches≥{BRANCH_THRESHOLD}%). Aspirational targets: 60% lines / 50% branches — ratchet up over time.")
+          raise SystemExit(0 if ok else 1)
+          PY
 
       - name: Upload test results
         if: always()
@@ -42,6 +80,15 @@ jobs:
           name: backend-test-results
           path: backend/tests/AqlanDentalPro.UnitTests/TestResults/**/*.trx
           retention-days: 7
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/TestResults/**/coverage.cobertura.xml
+          retention-days: 7
+          if-no-files-found: ignore
 
   frontend:
     name: Frontend — Lint, Type-check & Build
@@ -69,8 +116,17 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Run frontend tests
-        run: npx vitest run --reporter=verbose
+      - name: Run frontend tests (with coverage)
+        run: npx vitest run --coverage --reporter=verbose
+
+      - name: Upload frontend coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Build
         run: npm run build

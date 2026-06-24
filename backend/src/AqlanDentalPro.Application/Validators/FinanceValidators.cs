@@ -51,6 +51,10 @@ public sealed class CreatePaymentRequestValidator : AbstractValidator<CreatePaym
             .NotEmpty().WithMessage("طريقة الدفع مطلوبة")
             .Must(m => m != null && ValidMethods.Contains(m.ToLower())).WithMessage("طريقة الدفع غير صالحة");
 
+        RuleFor(x => x.Currency)
+            .Must(c => c == null || c == "YER" || c == "SAR" || c == "USD")
+            .WithMessage("العملة يجب أن تكون YER أو SAR أو USD");
+
         RuleFor(x => x.ServiceDescription)
             .MaximumLength(500).WithMessage("وصف الخدمة يجب ألا يتجاوز 500 حرف")
             .When(x => !string.IsNullOrWhiteSpace(x.ServiceDescription));

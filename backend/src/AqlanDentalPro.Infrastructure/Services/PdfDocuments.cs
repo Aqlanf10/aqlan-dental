@@ -12,6 +12,15 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
 {
     private const string FontName = PdfService.ArabicFontName;
 
+    /// <summary>Arabic currency symbol for the receipt amount display.
+    /// SAR = Saudi Riyal (ر.س), USD = US Dollar ($), else = Yemeni Rial (ر.ي).</summary>
+    private static string CurrencySymbol(string? currency) => currency switch
+    {
+        "SAR" => "ر.س",
+        "USD" => "$",
+        _ => "ر.ي"
+    };
+
     public DocumentMetadata GetMetadata() => new()
     {
         Title = $"سند قبض {Payment.ReceiptNumber}",
@@ -128,7 +137,7 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
             column.Item().AlignCenter().Background("#eef3f9").Border(1).BorderColor("#1a3a5c").Padding(6).Column(box =>
             {
                 box.Item().Text("المبلغ المقبوض").AlignCenter().FontSize(7).FontColor(Colors.Grey.Darken2);
-                box.Item().Text($"{Payment.Amount:N0} ر.ي").AlignCenter().Bold().FontSize(16).FontColor("#1a3a5c");
+                box.Item().Text($"{Payment.Amount:N0} {CurrencySymbol(Payment.Currency)}").AlignCenter().Bold().FontSize(16).FontColor("#1a3a5c");
             });
 
             // Notes

@@ -9,6 +9,7 @@ public class PaymentDto
     public Guid? InvoiceId { get; set; }
     public string? InvoiceNumber { get; set; }
     public decimal Amount { get; set; }
+    public string? Currency { get; set; }
     public string PaymentDate { get; set; } = string.Empty;
     public string? PaymentMethod { get; set; }
     public string? ServiceDescription { get; set; }
@@ -28,6 +29,7 @@ public class CreatePaymentRequest
     public Guid? ContractId { get; set; }
     public Guid? InvoiceId { get; set; }
     public decimal Amount { get; set; }
+    public string? Currency { get; set; }
     public string? PaymentMethod { get; set; } = "cash";
     public string? ServiceDescription { get; set; }
     public string? Specialty { get; set; }
@@ -45,6 +47,7 @@ public class CreatePaymentRequest
 public class UpdatePaymentRequest
 {
     public decimal? Amount { get; init; }
+    public string? Currency { get; init; }
     public string? PaymentDate { get; init; }
     public string? PaymentMethod { get; init; }
     public string? ServiceDescription { get; init; }

@@ -126,6 +126,7 @@ export interface PaymentListItem {
   patientName: string;
   patientNumber: string;
   amount: number;
+  currency?: string | null;
   paymentMethod: string;
   paymentDate: string;
   invoiceId: string | null;
@@ -143,6 +144,7 @@ export interface RegisterPaymentRequest {
   contractId?: string;
   amount: number;
   paymentMethod: string;
+  currency?: string | null;
   notes?: string;
 }
 

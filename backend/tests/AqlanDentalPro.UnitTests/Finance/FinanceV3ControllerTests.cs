@@ -554,6 +554,12 @@ public class FinanceV3ControllerTests
             Id = Guid.NewGuid(), Name = "خزنة فرع ٢", Type = TreasuryType.Vault,
             Balance = 70_000m, BranchId = branch2, IsActive = true
         });
+        // FIN-PERM: grant Accountant finance.treasuries.view so the granular permission
+        // gate passes; the test then exercises the branch-isolation filter (not the gate).
+        db.RolePermissions.Add(new RolePermission
+        {
+            Role = "Accountant", Resource = "finance.treasuries", CanView = true,
+        });
         await db.SaveChangesAsync();
 
         var controller = BuildTreasuriesController(db, CreateBranchUser(Guid.NewGuid(), branch1));

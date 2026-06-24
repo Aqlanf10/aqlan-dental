@@ -1,3 +1,4 @@
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -44,12 +45,29 @@ public sealed class RejectTransferRequest
 [Authorize(Policy = "FinanceAccess")]
 public class VaultTransfersController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, IJournalEntryService journalEntryService) : ControllerBase
 {
+    // FIN-PERM: the class-level FinanceAccess policy (Admin + Reception + Accountant)
+    // is the coarse gate; the granular finance.treasuries permission (RolePermissions,
+    // owner-configurable from Settings) is the real per-action gate for vault transfers
+    // too — transfers move money between treasuries, so they share the treasury permission
+    // key. Admin always bypasses (see PermissionGuard). Reception is NOT seeded for
+    // finance.treasuries → auto-denied. Accountant has view+create+edit (no approve).
+    // Approve/Reject endpoints are also guarded by [Authorize(Roles="Admin,Accountant")]
+    // — the granular approve gate below is defense-in-depth for the action permission.
+    private Task<bool> CanAsync(string action) =>
+        PermissionGuard.HasAsync(db, currentUser, "finance.treasuries", action);
+
+    private IActionResult Deny() =>
+        StatusCode(403, new { message = "غير مصرح لك بهذا الإجراء المالي" });
+
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] string? status = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
+        // FIN-PERM: finance.treasuries.view (Reception auto-denied — no seeded row).
+        if (!await CanAsync("view")) return Deny();
+
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
@@ -109,6 +127,9 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateTransferRequest req)
     {
+        // FIN-PERM: finance.treasuries.create (Reception auto-denied — no seeded row).
+        if (!await CanAsync("create")) return Deny();
+
         if (req.Amount <= 0)
             return BadRequest(new { message = "يجب أن يكون مبلغ التحويل أكبر من الصفر" });
 
@@ -239,6 +260,12 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
     [Authorize(Roles = "Admin,Accountant")] // Only Admin or Accountant can reconcile and approve receipt of funds
     public async Task<IActionResult> Approve(Guid id, [FromBody] ApproveTransferRequest? approveReq = null)
     {
+        // FIN-PERM: finance.treasuries.approve — confirming receipt of funds is a
+        // sensitive financial reconciliation (posts JE; credits destination). The
+        // [Authorize(Roles="Admin,Accountant")] attribute enforces role scope; the
+        // granular permission gate below additionally honors owner-revoked approve.
+        if (!await CanAsync("approve")) return Deny();
+
         var userId = currentUser.UserId ?? Guid.Empty;
 
         var transfer = await db.VaultTransfers
@@ -426,6 +453,10 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
     [Authorize(Roles = "Admin,Accountant")]
     public async Task<IActionResult> Reject(Guid id, [FromBody] RejectTransferRequest req)
     {
+        // FIN-PERM: finance.treasuries.approve — rejecting a pending transfer restores
+        // the locked funds to the source treasury; treat as the same approve scope.
+        if (!await CanAsync("approve")) return Deny();
+
         if (string.IsNullOrWhiteSpace(req.Notes))
             return BadRequest(new { message = "يجب تحديد سبب رفض استلام المبالغ" });
 

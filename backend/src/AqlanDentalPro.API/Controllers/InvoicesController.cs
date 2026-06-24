@@ -1,6 +1,7 @@
 using AqlanDentalPro.Application.Common;
 using AqlanDentalPro.Application.DTOs.Finance;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -22,6 +23,18 @@ namespace AqlanDentalPro.API.Controllers;
 [Authorize(Policy = "FinanceAccess")]
 public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditService audit, ILogger<InvoicesController> logger, ICommissionService commissionService, ICurrentUserService currentUser, FinanceSettingsReader financeSettings) : ControllerBase
 {
+    // FIN-PERM: the class-level FinanceAccess policy (Admin + Reception + Accountant)
+    // is the coarse gate; the granular finance.invoices permission (RolePermissions,
+    // owner-configurable from Settings) is the real per-action gate. Admin always
+    // bypasses (see PermissionGuard). Reception is seeded view-only on
+    // finance.invoices — drafts for the journey are created via CheckoutService, not
+    // here. Issue/Cancel are financial state changes = approve (Accountant/Admin).
+    private Task<bool> CanAsync(string action) =>
+        PermissionGuard.HasAsync(db, currentUser, "finance.invoices", action);
+
+    private IActionResult Deny() =>
+        StatusCode(403, new { message = "غير مصرح لك بهذا الإجراء المالي" });
+
     // ─── F5: POST /api/invoices — Create standalone invoice ──────────────────
     /// <summary>
     /// Creates a new draft invoice. Unlike PatientJourneyController.CreateDraftInvoice
@@ -31,6 +44,9 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateInvoiceRequest req)
     {
+        // FIN-PERM: authorization FIRST — finance.invoices.create (Reception is seeded view-only).
+        if (!await CanAsync("create")) return Deny();
+
         // Validate patient exists
         var patient = await db.Patients.FindAsync(req.PatientId);
         if (patient == null || !patient.IsActive)
@@ -230,6 +246,9 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
         [FromQuery] string? status = null,
         [FromQuery] Guid? patientId = null)
     {
+        // FIN-PERM: finance.invoices.view
+        if (!await CanAsync("view")) return Deny();
+
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
@@ -285,6 +304,9 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
+        // FIN-PERM: finance.invoices.view
+        if (!await CanAsync("view")) return Deny();
+
         Invoice? invoice;
         try
         {
@@ -422,6 +444,9 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
     [HttpGet("/api/patients/{patientId:guid}/invoices")]
     public async Task<IActionResult> GetByPatient(Guid patientId)
     {
+        // FIN-PERM: finance.invoices.view
+        if (!await CanAsync("view")) return Deny();
+
         var patientExists = await db.Patients.AnyAsync(p => p.Id == patientId && p.IsActive);
         if (!patientExists)
             return NotFound(new { message = "المريض غير موجود" });
@@ -454,6 +479,9 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateInvoiceRequest req)
     {
+        // FIN-PERM: finance.invoices.edit (Reception is seeded view-only).
+        if (!await CanAsync("edit")) return Deny();
+
         // FIN-04 FIX: Wrap the entire update in a transaction. Previously the method did two
         // SaveChangesAsync calls (one to persist soft-deleted + new line items, one to persist
         // recalculated Subtotal/TotalAmount) with no transaction — if the second save threw
@@ -650,6 +678,11 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
     [HttpPatch("{id:guid}/issue")]
     public async Task<IActionResult> Issue(Guid id)
     {
+        // FIN-PERM: finance.invoices.approve — issuing a draft is a financial state change
+        // (posts accrual JE; cannot be reversed without posting a reversal JE). Restricted
+        // to Accountant/Admin (Reception is seeded view-only).
+        if (!await CanAsync("approve")) return Deny();
+
         try
         {
             var invoice = await db.Invoices.FindAsync(id);
@@ -713,6 +746,10 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
     [HttpPatch("{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, [FromBody] CancelInvoiceRequest? req = null)
     {
+        // FIN-PERM: finance.invoices.approve — cancelling reverses any posted accrual JE;
+        // treat as a financial state change like Issue. Accountant/Admin only.
+        if (!await CanAsync("approve")) return Deny();
+
         try
         {
             var invoice = await db.Invoices
@@ -818,6 +855,10 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
     [HttpGet("{id:guid}/pdf")]
     public async Task<IActionResult> GetInvoicePdf(Guid id)
     {
+        // FIN-PERM: finance.invoices.view — a PDF is a rendering of the invoice view.
+        // (Matches PaymentsController.GetPaymentPdf which uses finance.receipts.view.)
+        if (!await CanAsync("view")) return Deny();
+
         try
         {
             var pdfBytes = await pdfService.GenerateInvoicePdfAsync(id);

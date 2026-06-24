@@ -1,3 +1,4 @@
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -21,9 +22,23 @@ public sealed class CreateTreasuryRequest
 [Authorize(Policy = "FinanceAccess")]
 public class TreasuriesController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, ILogger<TreasuriesController> logger) : ControllerBase
 {
+    // FIN-PERM: the class-level FinanceAccess policy (Admin + Reception + Accountant)
+    // is the coarse gate; the granular finance.treasuries permission (RolePermissions,
+    // owner-configurable from Settings) is the real per-action gate. Admin always
+    // bypasses (see PermissionGuard). Reception is NOT seeded for finance.treasuries
+    // → auto-denied. Accountant has view/create/edit (no delete/export/approve).
+    private Task<bool> CanAsync(string action) =>
+        PermissionGuard.HasAsync(db, currentUser, "finance.treasuries", action);
+
+    private IActionResult Deny() =>
+        StatusCode(403, new { message = "غير مصرح لك بهذا الإجراء المالي" });
+
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
+        // FIN-PERM: finance.treasuries.view (Reception auto-denied — no seeded row).
+        if (!await CanAsync("view")) return Deny();
+
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
@@ -58,6 +73,12 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
     [Authorize(Roles = "Admin")] // Only Administrator can seed/create custom accounts/vaults
     public async Task<IActionResult> Create([FromBody] CreateTreasuryRequest req)
     {
+        // FIN-PERM: finance.treasuries.create. Admin-only is enforced by the
+        // class-level [Authorize(Roles="Admin")] above; PermissionGuard also bypasses
+        // Admin, so this gate is effectively redundant for Admin callers but stays for
+        // defense-in-depth and to keep the per-action permission pattern uniform.
+        if (!await CanAsync("create")) return Deny();
+
         if (string.IsNullOrWhiteSpace(req.Name))
             return BadRequest(new { message = "اسم الخزنة/الحساب مطلوب" });
 
@@ -123,6 +144,11 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> RecalculateBalance(Guid id)
     {
+        // FIN-PERM: finance.treasuries.edit — recalculates treasury balance from
+        // historical cashflow rows; admin-only via the role attribute, defense-in-depth
+        // via the granular permission.
+        if (!await CanAsync("edit")) return Deny();
+
         var treasury = await db.Treasuries.FindAsync(id);
         if (treasury == null || !treasury.IsActive)
             return NotFound(new { message = "الخزنة غير موجودة" });
@@ -199,6 +225,9 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
+        // FIN-PERM: finance.treasuries.view (Reception auto-denied — no seeded row).
+        if (!await CanAsync("view")) return Deny();
+
         var treasury = await db.Treasuries.FindAsync(id);
         if (treasury == null || !treasury.IsActive)
             return NotFound(new { message = "الخزنة غير موجودة" });

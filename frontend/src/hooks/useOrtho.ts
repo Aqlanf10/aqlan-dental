@@ -249,6 +249,20 @@ export function useApproveSpecificTreatmentPlan(caseId: string) {
   });
 }
 
+export function useDeleteTreatmentPlan(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (planId: string) => orthoService.deleteTreatmentPlan(caseId, planId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.plan(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.plans(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
+      toast.success("تم حذف خطة العلاج");
+    },
+    onError: () => toast.error("فشل حذف الخطة"),
+  });
+}
+
 export function useOrthoStages(caseId: string) {
   return useQuery({
     queryKey: orthoKeys.stages(caseId),
@@ -276,6 +290,35 @@ export function useAddOrthoVisit(caseId: string) {
       toast.success("تم تسجيل الزيارة");
     },
     onError: () => toast.error("فشل تسجيل الزيارة"),
+  });
+}
+
+export function useUpdateOrthoVisit(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ visitId, data }: { visitId: string; data: CreateOrthoVisitRequest }) =>
+      orthoService.updateVisit(caseId, visitId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.visits(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.case(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
+      toast.success("تم تحديث الزيارة");
+    },
+    onError: () => toast.error("فشل تحديث الزيارة"),
+  });
+}
+
+export function useDeleteOrthoVisit(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (visitId: string) => orthoService.deleteVisit(caseId, visitId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.visits(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.case(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
+      toast.success("تم حذف الزيارة");
+    },
+    onError: () => toast.error("فشل حذف الزيارة"),
   });
 }
 

@@ -6,12 +6,14 @@ import {
   CheckCircle2,
   Plus,
   Save,
+  Trash2,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   useApproveSpecificTreatmentPlan,
   useCreateTreatmentPlan,
+  useDeleteTreatmentPlan,
   useTreatmentPlans,
 } from "@/hooks/useOrtho";
 import type { TreatmentPlan } from "@/types/ortho";
@@ -22,7 +24,9 @@ export function OrthoTreatmentPlansTab({ caseId }: { caseId: string }) {
   const { data: plans = [] as TreatmentPlan[] } = useTreatmentPlans(caseId);
   const createPlan = useCreateTreatmentPlan(caseId);
   const approvePlan = useApproveSpecificTreatmentPlan(caseId);
+  const deletePlan = useDeleteTreatmentPlan(caseId);
   const [showCreate, setShowCreate] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [newPlan, setNewPlan] = useState<Partial<TreatmentPlan>>({
     planLabel: "B",
     applianceType: "",
@@ -67,6 +71,14 @@ export function OrthoTreatmentPlansTab({ caseId }: { caseId: string }) {
           risksLimitations: "",
         });
       },
+    });
+  };
+
+  // Sprint 3 — delete a non-approved plan. The API rejects approved plans with HTTP 400
+  // (Arabic), so we hide the button on approved plans AND guard here as a defense-in-depth.
+  const handleDelete = (planId: string) => {
+    deletePlan.mutate(planId, {
+      onSettled: () => setConfirmDeleteId(null),
     });
   };
 
@@ -309,17 +321,29 @@ export function OrthoTreatmentPlansTab({ caseId }: { caseId: string }) {
                       {plan.approvedByName && ` بواسطة ${plan.approvedByName}`}
                     </span>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        plan.id && approvePlan.mutate(plan.id)
-                      }
-                      disabled={!plan.id || approvePlan.isPending}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 transition hover:bg-green-100 disabled:opacity-50"
-                    >
-                      <BadgeCheck className="h-3.5 w-3.5" />
-                      اعتماد
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => plan.id && approvePlan.mutate(plan.id)}
+                        disabled={!plan.id || approvePlan.isPending}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 transition hover:bg-green-100 disabled:opacity-50"
+                      >
+                        <BadgeCheck className="h-3.5 w-3.5" />
+                        اعتماد
+                      </button>
+                      {/* Sprint 3 — delete non-approved plan only. Approved plans are
+                          rejected by the API (HTTP 400 Arabic); hide the button entirely. */}
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteId(plan.id ?? "")}
+                        disabled={!plan.id || deletePlan.isPending}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                        aria-label="حذف الخطة"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        حذف
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -364,6 +388,36 @@ export function OrthoTreatmentPlansTab({ caseId }: { caseId: string }) {
                   )}
                 </div>
               </div>
+
+              {/* Sprint 3 — inline delete confirmation. Only rendered for the plan the user
+                  clicked "حذف" on. The API soft-deletes the plan; an approved plan can never
+                  reach this UI (the delete button is hidden on approved plans), so the 400
+                  path is purely defense-in-depth. */}
+              {confirmDeleteId === plan.id && (
+                <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
+                  <p className="text-xs font-medium text-red-800">
+                    هل أنت متأكد من حذف خطة {PLAN_LABELS[plan.planLabel ?? "A"] ?? plan.planLabel}؟
+                    لا يمكن التراجع عن هذا الإجراء (سيتم إخفاؤها من القائمة؛ تظل محفوظة في سجل التدقيق).
+                  </p>
+                  <div className="mt-2 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteId(null)}
+                      className="rounded-lg border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      إلغاء
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => plan.id && handleDelete(plan.id)}
+                      disabled={deletePlan.isPending}
+                      className="rounded-lg bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60"
+                    >
+                      {deletePlan.isPending ? "جارٍ الحذف..." : "نعم، احذف"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>

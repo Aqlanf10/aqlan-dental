@@ -553,6 +553,43 @@ public class OrthoCasesController(
         return Ok(result);
     }
 
+    // Sprint 3 — Edit an existing ortho visit. Mirrors AddVisitAsync's field set and
+    // atomically syncs the linked daily-operations Visit row (CLIN-05). 404 (Arabic) if
+    // the visit doesn't exist or belongs to a different case. PatientAccessFilter on the
+    // controller class enforces per-patient ownership (CLIN-01/SEC-ROUTE).
+    [HttpPut("{id:guid}/visits/{visitId:guid}")]
+    public async Task<IActionResult> UpdateVisit(Guid id, Guid visitId, [FromBody] CreateOrthoVisitRequest req)
+    {
+        var accessError = await GetCaseAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        var result = await service.UpdateVisitAsync(id, visitId, req);
+        if (result is null)
+            return NotFound(new { message = "زيارة التقويم غير موجودة أو لا تنتمي لهذه الحالة" });
+
+        await audit.LogAsync(AuditAction.Update, "OrthoVisit", visitId,
+            newData: new { caseId = id, req.VisitDate, req.VisitType, req.CurrentStage, req.WireUpper, req.WireLower });
+        return Ok(result);
+    }
+
+    // Sprint 3 — Soft-delete an ortho visit (IsActive=false) and unlink the linked Visit
+    // (null OrthoCaseId; the Visit row itself is preserved — it may carry payments).
+    // 404 (Arabic) if the visit doesn't exist or doesn't belong to this case.
+    [HttpDelete("{id:guid}/visits/{visitId:guid}")]
+    public async Task<IActionResult> DeleteVisit(Guid id, Guid visitId)
+    {
+        var accessError = await GetCaseAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        var deleted = await service.DeleteVisitAsync(id, visitId, currentUser.UserId);
+        if (!deleted)
+            return NotFound(new { message = "زيارة التقويم غير موجودة أو لا تنتمي لهذه الحالة" });
+
+        await audit.LogAsync(AuditAction.Delete, "OrthoVisit", visitId,
+            newData: new { caseId = id, deletedAt = DateTime.UtcNow, deletedBy = currentUser.UserId });
+        return Ok(new { message = "تم حذف زيارة التقويم" });
+    }
+
     [HttpPost("{id:guid}/visits/{visitId:guid}/next-appointment")]
     public async Task<IActionResult> CreateNextAppointment(
         Guid id,
@@ -1251,6 +1288,46 @@ public class OrthoCasesController(
             ApprovedByDoctorId = approvedByDoctorId,
             ApprovedByUserId = approverId,
         });
+    }
+
+    // Sprint 3 — Delete a treatment plan. Soft-delete only (IsActive=false). An APPROVED plan
+    // cannot be deleted (data integrity): the owner must un-approve first. The single-approved-plan
+    // invariant (enforced on Approve) is unaffected by deleting a non-approved plan.
+    // 404 (Arabic) if the plan doesn't exist / doesn't belong to this case.
+    // 400 (Arabic) if the plan is approved.
+    [HttpDelete("{id:guid}/treatment-plans/{planId:guid}")]
+    public async Task<IActionResult> DeleteTreatmentPlan(Guid id, Guid planId)
+    {
+        var accessError = await GetCaseAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        var plan = await db.TreatmentPlans
+            .FirstOrDefaultAsync(p => p.Id == planId && p.OrthoCaseId == id);
+        if (plan is null)
+            return NotFound(new { message = "خطة العلاج غير موجودة" });
+
+        if (plan.IsApproved)
+            return BadRequest(new { message = "لا يمكن حذف خطة معتمدة — ألغِ الاعتماد أولاً" });
+
+        var oldData = new
+        {
+            plan.PlanLabel,
+            plan.ApplianceType,
+            plan.BracketSystem,
+            plan.ExtractionPlan,
+            plan.TreatmentGoals,
+        };
+
+        plan.IsActive = false;
+        plan.DeletedAt = DateTime.UtcNow;
+        plan.DeletedBy = currentUser.UserId;
+        plan.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        await audit.LogAsync(AuditAction.Delete, "TreatmentPlan", planId,
+            oldData: oldData,
+            newData: new { caseId = id, deletedAt = DateTime.UtcNow, deletedBy = currentUser.UserId });
+        return Ok(new { message = "تم حذف خطة العلاج" });
     }
 
     // ─── Extraction Decision ─────────────────────────────────────────────────────

@@ -253,19 +253,9 @@ export function PatientForm({ defaultValues, patientId }: Props) {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit, (validationErrors) => {
-      // DIAGNOSTIC: surface silent RHF validation failures
-      console.error("[PatientForm] validation errors:", validationErrors);
-      const fields = Object.keys(validationErrors);
-      if (fields.length > 0) {
-        setServerError("تحقق من الحقول: " + fields.map(f => {
-          const labels: Record<string, string> = {
-            firstName: "الاسم الأول", lastName: "الاسم الأخير", phone: "الهاتف",
-            email: "البريد", whatsApp: "الواتساب", gender: "الجنس", isPregnant: "حالة الحمل",
-          };
-          return labels[f] || f;
-        }).join("، "));
-      }
+    <form onSubmit={handleSubmit(onSubmit, () => {
+      // Safety net: if validation fails, surface a generic Arabic message.
+      setServerError("يرجى التحقق من الحقول المطلوبة (الاسم الأول، الاسم الأخير).");
     })} className="space-y-6">
       {serverError && (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3.5 text-sm font-semibold animate-pulse">

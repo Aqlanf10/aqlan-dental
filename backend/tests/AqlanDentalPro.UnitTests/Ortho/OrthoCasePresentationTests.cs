@@ -229,7 +229,8 @@ public class OrthoCasePresentationTests
         try
         {
             Environment.SetEnvironmentVariable("UPLOADS_PATH", uploads);
-            async Task<string> Photo(string phase)
+            var baseTime = new DateTime(2026, 1, 1, 9, 0, 0, DateTimeKind.Utc);
+            async Task<string> Photo(string phase, int dayOffset)
             {
                 var name = $"{Guid.NewGuid():N}.png";
                 await File.WriteAllBytesAsync(Path.Combine(uploads, name), OnePixelPng);
@@ -238,11 +239,17 @@ public class OrthoCasePresentationTests
                     Id = Guid.NewGuid(), OrthoCaseId = caseId, PhotoUrl = $"/uploads/{name}",
                     Category = "Extraoral", Subtype = "Frontal", TreatmentPhase = phase,
                     IsSelectedForReport = true, IsActive = true,
+                    // Deterministic ordering — the service sorts by SortOrder then TakenAt.
+                    // Without these, EF InMemory returns rows in non-deterministic order on
+                    // some CI runners, causing the before/after slide to intermittently miss
+                    // its pair. Set SortOrder=1 for Initial, 2 for Final + distinct TakenAt.
+                    SortOrder = dayOffset,
+                    TakenAt = baseTime.AddDays(dayOffset),
                 });
                 return name;
             }
-            await Photo("Initial");
-            await Photo("Final");
+            await Photo("Initial", 1);
+            await Photo("Final", 2);
             await db.SaveChangesAsync();
 
             var bytes = await new OrthoCasePresentationService(db).GenerateAsync(

@@ -167,7 +167,6 @@ export function PatientForm({ defaultValues, patientId }: Props) {
   };
 
   const onSubmit = async (data: FormData) => {
-    console.log("[PatientForm] onSubmit called with:", { firstName: data.firstName, lastName: data.lastName, phone: data.phone, isPregnant: data.isPregnant, duplicateWarning });
     if (duplicateWarning && duplicateWarning.length > 0) {
       const hasPhoneOrNumberMatch = duplicateWarning.some(
         (m) => m.matchType === "phone" || m.matchType === "whatsapp" || m.matchType === "patientNumber"

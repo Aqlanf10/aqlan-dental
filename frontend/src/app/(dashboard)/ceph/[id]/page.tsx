@@ -6,7 +6,7 @@ import {
   Brain, Calculator, Eye, EyeOff, Play, PlayCircle, ArrowRight,
   Save, CheckCircle2, ChevronRight, ChevronDown, Loader2, FileDown, Printer,
   Sun, Contrast, RotateCcw, ListChecks, ImageIcon, FileText, ScanLine, Target,
-  User, FolderOpen, History, Camera, Lock, X,
+  User, FolderOpen, History, Camera, Lock, X, ArrowLeftRight,
 } from "lucide-react";
 import type {
   CephAnalysis, CephLandmark, CephDiagnosis, AnalysisType,
@@ -459,19 +459,35 @@ export default function CephAnalysisPage() {
                       </div>
                     ) : (
                       versions.map(v => (
-                        <button
+                        <div
                           key={v.id}
-                          type="button"
-                          onClick={() => handleLoadVersion(v.id)}
-                          className="flex w-full items-center justify-between gap-2 px-3 py-2 text-xs hover:bg-gray-50 border-b border-gray-50 last:border-b-0 text-start">
-                          <div className="min-w-0 flex-1">
-                            <div className="font-semibold text-gray-800 truncate">{v.label}</div>
-                            <div className="text-[10px] text-gray-400">
-                              {formatArabicDate(v.snapshotDate)} · {new Date(v.createdAt).toLocaleString('ar', { hour: '2-digit', minute: '2-digit' })}
+                          className="flex w-full items-stretch border-b border-gray-50 last:border-b-0 text-start hover:bg-gray-50">
+                          <button
+                            type="button"
+                            onClick={() => handleLoadVersion(v.id)}
+                            title="عرض النسخة (للقراءة فقط)"
+                            className="flex min-w-0 flex-1 items-center justify-between gap-2 px-3 py-2 text-xs text-start">
+                            <div className="min-w-0 flex-1">
+                              <div className="font-semibold text-gray-800 truncate">{v.label}</div>
+                              <div className="text-[10px] text-gray-400">
+                                {formatArabicDate(v.snapshotDate)} · {new Date(v.createdAt).toLocaleString('ar', { hour: '2-digit', minute: '2-digit' })}
+                              </div>
                             </div>
-                          </div>
-                          <ChevronRight className="w-3.5 h-3.5 text-gray-400 rtl:rotate-180 flex-shrink-0" />
-                        </button>
+                            <ChevronRight className="w-3.5 h-3.5 text-gray-400 rtl:rotate-180 flex-shrink-0" />
+                          </button>
+                          {/* C-B: compare the live analysis against this saved
+                              version snapshot — opens /ceph/compare with
+                              ?baseId=&versionId=, which renders the structural
+                              superimposition (base landmarks vs version
+                              landmarks) + a client-side measurements diff. */}
+                          <Link
+                            href={`/ceph/compare?baseId=${id}&versionId=${v.id}`}
+                            title="قارن التحليل الحالي مع هذه النسخة"
+                            className="flex flex-shrink-0 items-center gap-1 border-s border-gray-100 px-2.5 text-[10px] font-medium text-teal-700 hover:bg-teal-50 transition">
+                            <ArrowLeftRight className="w-3 h-3" />
+                            قارن
+                          </Link>
+                        </div>
                       ))
                     )}
                   </div>

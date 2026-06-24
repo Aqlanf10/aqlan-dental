@@ -11,52 +11,49 @@ import { useDoctors } from "@/hooks/useDoctors";
 import { useAuthStore } from "@/stores/authStore";
 import { cn, normalizePhone } from "@/lib/utils";
 
-// Optional fields that come from <select> elements send "" when unselected.
-// zod's .optional() only allows undefined, not "", so we accept "" explicitly
-// and strip it to undefined when building the API payload (see onSubmit).
-const optionalString = z.string().optional();
+// Optional fields from form inputs/selects often send "" (empty string) when
+// left blank — but zod's .optional() only allows undefined. Use these helpers
+// everywhere so "" is accepted at validation time, then stripped to undefined
+// when building the API payload (see onSubmit).
+const optionalString = z.union([z.string(), z.literal(undefined)]).optional();
 const optionalEnum = (values: [string, ...string[]]) =>
-  z.union([z.enum(values), z.literal("")]).optional();
+  z.union([z.enum(values), z.literal(""), z.literal(undefined)]).optional();
+const optionalPhone = z.union([z.string(), z.literal(undefined)]).optional()
+  .refine((val: unknown) => !val || /^[0-9+\-\s]{7,15}$/.test(String(val)), {
+    message: "رقم الهاتف غير صحيح",
+  });
+const optionalEmail = z.union([z.string(), z.literal(undefined)]).optional()
+  .refine((val: unknown) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(val)), {
+    message: "البريد الإلكتروني غير صحيح",
+  });
 
 const schema = z.object({
   firstName:   z.string().min(1, "الاسم الأول مطلوب"),
-  middleName:  z.string().optional(),
+  middleName:  optionalString,
   lastName:    z.string().min(1, "الاسم الأخير مطلوب"),
   dateOfBirth: optionalString,
   gender:      optionalEnum(["Male", "Female"]),
-  phone:       z.string()
-    .optional()
-    .refine((val) => !val || /^[0-9+\-\s]{7,15}$/.test(val), {
-      message: "رقم الهاتف غير صحيح",
-    }),
-  email:       z.string()
-    .optional()
-    .refine((val) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val), {
-      message: "البريد الإلكتروني غير صحيح",
-    }),
-  whatsApp:    z.string()
-    .optional()
-    .refine((val) => !val || /^[0-9+\-\s]{7,15}$/.test(val), {
-      message: "رقم واتساب غير صحيح",
-    }),
-  address:     z.string().optional(),
-  occupation:  z.string().optional(),
-  referralSource: z.string().optional(),
-  chronicDiseases:    z.string().optional(),
-  currentMedications: z.string().optional(),
-  drugAllergies:      z.string().optional(),
+  phone:       optionalPhone,
+  email:       optionalEmail,
+  whatsApp:    optionalPhone,
+  address:     optionalString,
+  occupation:  optionalString,
+  referralSource: optionalString,
+  chronicDiseases:    optionalString,
+  currentMedications: optionalString,
+  drugAllergies:      optionalString,
   bleedingDisorders:  z.boolean(),
   isPregnant:         optionalEnum(["Yes", "No", "N/A"]),
   tmjProblems:        z.boolean(),
-  previousSurgeries:  z.string().optional(),
-  medNotes:           z.string().optional(),
-  chiefComplaint:     z.string().optional(),
-  previousTreatments: z.string().optional(),
+  previousSurgeries:  optionalString,
+  medNotes:           optionalString,
+  chiefComplaint:     optionalString,
+  previousTreatments: optionalString,
   mouthBreathing:     z.boolean(),
   bruxism:            z.boolean(),
   thumbSucking:       z.boolean(),
   tongueThrusing:     z.boolean(),
-  dentalNotes:        z.string().optional(),
+  dentalNotes:        optionalString,
   primaryDoctorId:    optionalString,
 });
 type FormData = z.infer<typeof schema>;

@@ -89,6 +89,59 @@ public class CephController(
         return Ok(detail);
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    //  CEPH-EPIC batch C-B — analysis VERSIONS (named snapshots)
+    //  POST   /api/ceph/{id}/versions              → save current state as a snapshot
+    //  GET    /api/ceph/{id}/versions              → list snapshots (id, label, date)
+    //  GET    /api/ceph/{id}/versions/{versionId}  → full snapshot for compare
+    //
+    //  PatientAccessFilter is enforced via GetAnalysisAccessErrorAsync (the
+    //  ceph analysis belongs to a patient — doctors see only their own).
+    //  The AuditLogMiddleware auto-logs every POST/GET-on-sensitive-endpoint.
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [HttpPost("{id:guid}/versions")]
+    public async Task<IActionResult> SaveVersion(Guid id, [FromBody] CreateCephVersionRequest req)
+    {
+        var accessError = await GetAnalysisAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        try
+        {
+            var version = await service.SaveVersionAsync(id, req);
+            return version is null
+                ? NotFound(new { message = "تحليل السيفالومتري غير موجود" })
+                : CreatedAtAction(nameof(GetVersion), new { id, versionId = version.Id }, version);
+        }
+        catch (ArgumentException ex)
+        {
+            // Label validation: empty/whitespace label → 400 Arabic.
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpGet("{id:guid}/versions")]
+    public async Task<IActionResult> ListVersions(Guid id)
+    {
+        var accessError = await GetAnalysisAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        var versions = await service.ListVersionsAsync(id);
+        return Ok(versions);
+    }
+
+    [HttpGet("{id:guid}/versions/{versionId:guid}")]
+    public async Task<IActionResult> GetVersion(Guid id, Guid versionId)
+    {
+        var accessError = await GetAnalysisAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        var version = await service.GetVersionAsync(id, versionId);
+        return version is null
+            ? NotFound(new { message = "النسخة غير موجودة" })
+            : Ok(version);
+    }
+
     // POST /api/ceph/{id}/simulate
     // Template-based landmark simulation — NOT AI (honest labeling, see
     // CephService.SimulateTemplateAsync). Disabled by default; enable via the

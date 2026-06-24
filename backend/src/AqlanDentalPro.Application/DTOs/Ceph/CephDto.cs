@@ -276,3 +276,44 @@ public class CephNormBestMatchRequest
     public int? Age { get; set; }
     public string? Sex { get; set; }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  CEPH-EPIC batch C-B — analysis VERSION snapshots
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// Request body for POST /api/ceph/{id}/versions — save the current analysis
+/// state (landmarks + measurements + diagnosis) as a named snapshot.
+/// </summary>
+public class CreateCephVersionRequest
+{
+    /// <summary>Free-text label, e.g. "قبل العلاج" / "بعد 6 أشهر". 1..100 chars.</summary>
+    public string Label { get; set; } = string.Empty;
+}
+
+/// <summary>List item for GET /api/ceph/{id}/versions (no JSON blobs).</summary>
+public class CephVersionListDto
+{
+    public Guid Id { get; set; }
+    public Guid CephAnalysisId { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public string SnapshotDate { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>
+/// Full snapshot for GET /api/ceph/{id}/versions/{versionId}. Carries the
+/// deserialized landmarks/measurements/diagnosis so the compare page can load
+/// a snapshot the same way it loads a live analysis.
+/// </summary>
+public class CephVersionDetailDto
+{
+    public Guid Id { get; set; }
+    public Guid CephAnalysisId { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public string SnapshotDate { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public List<CephLandmarkDto> Landmarks { get; set; } = [];
+    public List<CephMeasurementDto> Measurements { get; set; } = [];
+    public CephDiagnosisDto? Diagnosis { get; set; }
+}

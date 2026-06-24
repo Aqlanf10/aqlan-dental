@@ -211,3 +211,35 @@ export interface CephAnalysisList {
    *  matching the deck generator (analysisDate DESC, then createdAt DESC). */
   createdAt: string;
 }
+
+// ---------------------------------------------------------------------------
+// CEPH-EPIC batch C-B — analysis VERSION snapshots
+// POST   /api/ceph/{id}/versions              → save current state as a snapshot
+// GET    /api/ceph/{id}/versions              → list snapshots (id, label, date)
+// GET    /api/ceph/{id}/versions/{versionId}  → full snapshot for compare
+// ---------------------------------------------------------------------------
+
+/** List item for GET /api/ceph/{id}/versions (no JSON blobs). */
+export interface CephVersionListItem {
+  id: string;
+  cephAnalysisId: string;
+  label: string;
+  snapshotDate: string;
+  createdAt: string;
+}
+
+/**
+ * Full snapshot for GET /api/ceph/{id}/versions/{versionId}. Mirrors the live
+ * analysis detail DTO but with immutable JSON-backed landmark/measurement/
+ * diagnosis payloads captured at save time.
+ */
+export interface CephVersionDetail {
+  id: string;
+  cephAnalysisId: string;
+  label: string;
+  snapshotDate: string;
+  createdAt: string;
+  landmarks: CephLandmark[];
+  measurements: CephMeasurement[];
+  diagnosis?: CephDiagnosis;
+}

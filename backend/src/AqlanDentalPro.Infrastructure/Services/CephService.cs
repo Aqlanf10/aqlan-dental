@@ -906,6 +906,128 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    //  CEPH-EPIC batch C-B — ANALYSIS VERSIONS
+    //  Named snapshots of (landmarks + measurements + diagnosis) so the
+    //  orthodontist can track progress over time (e.g. "Pre-treatment" /
+    //  "6 months" / "12 months") and compare a snapshot against the live
+    //  analysis or another snapshot. The snapshot is IMMUTABLE — stored as
+    //  JSON, decoupled from the live rows.
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Saves the current state of the analysis (landmarks + measurements +
+    /// diagnosis) as a named snapshot. Returns null when the analysis does not
+    /// exist (the controller maps that to a 404 with an Arabic message).
+    /// </summary>
+    public async Task<CephVersionListDto?> SaveVersionAsync(Guid analysisId, CreateCephVersionRequest req)
+    {
+        // Reuse MapDetail to materialize the live DTOs (landmarks + measurements
+        // + diagnosis) — single source of truth for the snapshot payload.
+        var detail = await GetByIdAsync(analysisId);
+        if (detail is null) return null;
+
+        // Validate + normalize the label (trim, collapse whitespace, cap length).
+        var label = (req.Label ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(label))
+            throw new ArgumentException("اسم النسخة مطلوب");
+        if (label.Length > 100)
+            label = label[..100];
+
+        var version = new CephAnalysisVersion
+        {
+            CephAnalysisId   = analysisId,
+            Label            = label,
+            LandmarksJson    = JsonSerializer.Serialize(detail.Landmarks),
+            MeasurementsJson = JsonSerializer.Serialize(detail.Measurements),
+            DiagnosisJson    = detail.Diagnosis is null ? null : JsonSerializer.Serialize(detail.Diagnosis),
+            SnapshotDate     = ClinicTimeProvider.ClinicToday(),
+            CreatedByUserId  = currentUser.UserId,
+        };
+        db.CephAnalysisVersions.Add(version);
+        await db.SaveChangesAsync();
+
+        return new CephVersionListDto
+        {
+            Id              = version.Id,
+            CephAnalysisId  = version.CephAnalysisId,
+            Label           = version.Label,
+            SnapshotDate    = version.SnapshotDate.ToString("yyyy-MM-dd"),
+            CreatedAt       = version.CreatedAt,
+        };
+    }
+
+    /// <summary>Lists all snapshots of an analysis, newest first.</summary>
+    public async Task<List<CephVersionListDto>> ListVersionsAsync(Guid analysisId)
+    {
+        return await db.CephAnalysisVersions
+            .AsNoTracking()
+            .Where(v => v.CephAnalysisId == analysisId && v.IsActive)
+            .OrderByDescending(v => v.SnapshotDate)
+            .ThenByDescending(v => v.CreatedAt)
+            .Select(v => new CephVersionListDto
+            {
+                Id              = v.Id,
+                CephAnalysisId  = v.CephAnalysisId,
+                Label           = v.Label,
+                SnapshotDate    = v.SnapshotDate.ToString("yyyy-MM-dd"),
+                CreatedAt       = v.CreatedAt,
+            })
+            .ToListAsync();
+    }
+
+    /// <summary>
+    /// Loads a single snapshot with deserialized landmarks/measurements/
+    /// diagnosis. Returns null when not found. The caller (controller) is
+    /// responsible for access checks — this method does NOT re-check
+    /// PatientAccessFilter, the controller's GetAnalysisAccessErrorAsync
+    /// already verified the parent analysis belongs to a patient the user can
+    /// access.
+    /// </summary>
+    public async Task<CephVersionDetailDto?> GetVersionAsync(Guid analysisId, Guid versionId)
+    {
+        var version = await db.CephAnalysisVersions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(v => v.Id == versionId
+                && v.CephAnalysisId == analysisId
+                && v.IsActive);
+
+        if (version is null) return null;
+
+        var landmarks = TryDeserialize<List<CephLandmarkDto>>(version.LandmarksJson) ?? [];
+        var measurements = TryDeserialize<List<CephMeasurementDto>>(version.MeasurementsJson) ?? [];
+        var diagnosis = TryDeserialize<CephDiagnosisDto>(version.DiagnosisJson);
+
+        return new CephVersionDetailDto
+        {
+            Id              = version.Id,
+            CephAnalysisId  = version.CephAnalysisId,
+            Label           = version.Label,
+            SnapshotDate    = version.SnapshotDate.ToString("yyyy-MM-dd"),
+            CreatedAt       = version.CreatedAt,
+            Landmarks       = landmarks,
+            Measurements    = measurements,
+            Diagnosis       = diagnosis,
+        };
+    }
+
+    private static T? TryDeserialize<T>(string? json) where T : class
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<T>(json);
+        }
+        catch
+        {
+            // A malformed JSON blob in a snapshot is non-fatal — return null
+            // (or an empty list via the caller's ?? []). Snapshots are
+            // immutable; we never rewrite them. The compare page falls back
+            // to an empty list when the payload is unreadable.
+            return null;
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
     //  SAVE DIAGNOSIS
     // ──────────────────────────────────────────────────────────────────────────
     public async Task<bool> SaveDiagnosisAsync(Guid id, SaveDiagnosisRequest req)

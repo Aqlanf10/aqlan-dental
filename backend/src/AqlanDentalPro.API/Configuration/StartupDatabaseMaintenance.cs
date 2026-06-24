@@ -56,6 +56,7 @@ public static class StartupDatabaseMaintenance
         await EnsureCephNormsSchemaAndSeedAsync(app);
         await EnsureOrthodonticAiLogsSchemaAsync(app);
         await EnsurePhotoAnalysisSchemaAsync(app);
+        await EnsureCephAnalysisVersionsSchemaAsync(app);
 
         // ── Gated DB maintenance (ENABLE_STARTUP_DB_MAINTENANCE) ──────
         await RunGatedDbMaintenanceAsync(app, configuration);
@@ -1577,6 +1578,63 @@ public static class StartupDatabaseMaintenance
         {
             app.Services.GetRequiredService<ILogger<Program>>()
                 .LogWarning(ex, "PhotoAnalyses schema hotfix failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// CephAnalysisVersions table (CEPH-EPIC batch C-B — named snapshots of a
+    /// ceph analysis for longitudinal progress tracking). Idempotent CREATE
+    /// TABLE IF NOT EXISTS so databases predating migration
+    /// 20260708000000_AddCephAnalysisVersions still have it. Mirrors
+    /// CephAnalysisVersion + BaseEntity columns. The FK to CephAnalyses is
+    /// added only when both the parent table and the constraint are absent
+    /// (the migration creates it on fresh databases; this hotfix backfills it
+    /// on existing databases). Per C-08: a missing column/table here must
+    /// NEVER break a ceph save — this hotfix is best-effort and logs on failure.
+    /// </summary>
+    private static async Task EnsureCephAnalysisVersionsSchemaAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS "CephAnalysisVersions" (
+                    "Id" uuid NOT NULL,
+                    "CephAnalysisId" uuid NOT NULL,
+                    "Label" character varying(100) NOT NULL,
+                    "LandmarksJson" text NOT NULL,
+                    "MeasurementsJson" text NOT NULL,
+                    "DiagnosisJson" text NULL,
+                    "SnapshotDate" date NOT NULL,
+                    "CreatedByUserId" uuid NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "UpdatedAt" timestamp with time zone NOT NULL,
+                    "IsActive" boolean NOT NULL DEFAULT true,
+                    "DeletedAt" timestamp with time zone NULL,
+                    "DeletedBy" uuid NULL,
+                    CONSTRAINT "PK_CephAnalysisVersions" PRIMARY KEY ("Id")
+                );
+                CREATE INDEX IF NOT EXISTS "IX_CephAnalysisVersions_CephAnalysisId"
+                    ON "CephAnalysisVersions" ("CephAnalysisId");
+                CREATE INDEX IF NOT EXISTS "IX_CephAnalysisVersions_CephAnalysisId_SnapshotDate"
+                    ON "CephAnalysisVersions" ("CephAnalysisId", "SnapshotDate");
+                DO $$ BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'CephAnalyses')
+                       AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_CephAnalysisVersions_CephAnalyses_CephAnalysisId') THEN
+                        ALTER TABLE "CephAnalysisVersions"
+                            ADD CONSTRAINT "FK_CephAnalysisVersions_CephAnalyses_CephAnalysisId"
+                            FOREIGN KEY ("CephAnalysisId") REFERENCES "CephAnalyses" ("Id") ON DELETE CASCADE;
+                    END IF;
+                END $$;
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "CephAnalysisVersions schema hotfix failed (non-fatal)");
         }
     }
 

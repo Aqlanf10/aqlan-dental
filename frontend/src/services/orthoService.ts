@@ -61,6 +61,9 @@ export const orthoService = {
     api.patch<TreatmentPlan>(`${BASE}/${caseId}/treatment-plan/approve`),
   approveSpecificTreatmentPlan: (caseId: string, planId: string) =>
     api.patch<TreatmentPlan>(`${BASE}/${caseId}/treatment-plans/${planId}/approve`),
+  // Sprint 3 — soft-delete a non-approved treatment plan (approved plans are rejected by the API).
+  deleteTreatmentPlan: (caseId: string, planId: string) =>
+    api.delete(`${BASE}/${caseId}/treatment-plans/${planId}`),
 
   getStages: (caseId: string) => api.get<TreatmentStage[]>(`${BASE}/${caseId}/stages`),
   updateStage: (caseId: string, stageId: string, status: string) =>
@@ -69,6 +72,12 @@ export const orthoService = {
   getVisits: (caseId: string) => api.get<OrthoVisit[]>(`${BASE}/${caseId}/visits`),
   addVisit: (caseId: string, data: CreateOrthoVisitRequest) =>
     api.post<OrthoVisit>(`${BASE}/${caseId}/visits`, data),
+  // Sprint 3 — edit an existing ortho visit (syncs the linked daily-operations Visit per CLIN-05).
+  updateVisit: (caseId: string, visitId: string, data: CreateOrthoVisitRequest) =>
+    api.put<OrthoVisit>(`${BASE}/${caseId}/visits/${visitId}`, data),
+  // Sprint 3 — soft-delete an ortho visit (unlinks the linked Visit row; preserves payments).
+  deleteVisit: (caseId: string, visitId: string) =>
+    api.delete(`${BASE}/${caseId}/visits/${visitId}`),
 
   getExtractionDecision: (caseId: string) =>
     api.get<ExtractionDecision | null>(`${BASE}/${caseId}/extraction-decision`),

@@ -9,7 +9,7 @@ import {
   UserRound, Building2, UserCog,
   Truck, ShoppingCart, ChevronDown,
   Smartphone, Banknote, CalendarDays, CalendarOff, Shield, DollarSign,
-  Route, BellRing,
+  Route, BellRing, CalendarPlus,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -65,8 +65,11 @@ const NAV: NavEntry[] = [
   // ── العيادة ───────────────────────────────────────────────────────────────
   { href: "/appointments",   label: "المواعيد",        icon: CalendarDays,    roles: ["Admin", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.APPOINTMENTS_VIEW, section: "العيادة" },
   { href: "/appointments/recall", label: "قائمة الاستدعاء", icon: BellRing,   roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.APPOINTMENTS_VIEW },
-  { href: "/clinic-queue",   label: "قائمة الانتظار",  icon: ClipboardList,   roles: ["Admin", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.CLINIC_QUEUE_VIEW },
-  { href: "/patient-journey", label: "رحلة المرضى",   icon: Route,           roles: ["Admin", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.PATIENT_JOURNEY_VIEW },
+  // NAV-CEPH-FIX (audit §4 — Reception workflow): /clinic-queue and /patient-journey
+  // index pages are now thin redirect stubs to /daily-operations — the canonical workspace.
+  // The sidebar entries are removed to avoid three parallel "today's patients" screens.
+  // Routes themselves are preserved (redirect stubs) so direct URLs still resolve cleanly.
+  { href: "/booking-requests", label: "طلبات الحجز", icon: CalendarPlus, roles: ["Admin", "Reception"], permission: PERMISSION_KEYS.BOOKING_REQUESTS_VIEW },
   { href: "/schedule",       label: "جداول الأطباء",   icon: Clock,           roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"] },
   { href: "/doctor-clinic",  label: "عيادة الطبيب",    icon: Stethoscope,     roles: ["Admin","GeneralDentist","OralSurgeon","Orthodontist"] },
 
@@ -77,14 +80,22 @@ const NAV: NavEntry[] = [
   { href: "/surgery",        label: "الجراحة",          icon: Scissors,        roles: ["Admin","OralSurgeon"] },
 
   // ── التواصل ───────────────────────────────────────────────────────────────
-  { href: "/referrals",      label: "الإحالات",         icon: ArrowLeftRight,  roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"],                                         section: "التواصل" },
+  // NAV-CEPH-FIX (audit §4 — Referrals): Reception is not in routePermissions for /referrals
+  // (routePermissions.ts:26 is Admin + doctors only) → the link was a click→redirect dead-end.
+  // Backend already blocks Reception; only hides a confusing link.
+  { href: "/referrals",      label: "الإحالات",         icon: ArrowLeftRight,  roles: ["Admin", "GeneralDentist", "OralSurgeon", "Orthodontist"],                                         section: "التواصل" },
   { href: "/messages",       label: "الرسائل",          icon: MessageCircle,   roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"] },
   { href: "/whatsapp",       label: "واتساب",           icon: MessageSquare,   roles: ["Admin"] },
   { href: "/sms",            label: "رسائل SMS",        icon: Smartphone,      roles: ["Admin", "Reception"] },
 
   // ── المالية ───────────────────────────────────────────────────────────────
-  { href: "/finance-v3",  label: "المالية",  icon: Wallet,  roles: ["Admin","Accountant","Reception"],  section: "المالية" },
-  { href: "/finance-v3?tab=commissions", label: "عمولات الأطباء", icon: Banknote, roles: ["Admin","Accountant"] },
+  // NAV-CEPH-FIX (audit §4 — Finance): Reception is removed from /finance-v3 roles so the
+  // sidebar no longer advertises a link the route guard + page guard both deny (C-10 residual
+  // dead-end loop: click → AccessDenied → redirect to /daily-operations). Backend already
+  // blocks Reception from finance APIs.
+  // /finance-v3?tab=commissions entry deleted — same page, different starting tab; users pick
+  // the Commissions tab inside /finance-v3. Direct URL still works.
+  { href: "/finance-v3",  label: "المالية",  icon: Wallet,  roles: ["Admin","Accountant"],  section: "المالية" },
   {
     kind: "group",
     label: "المخزون", icon: Package,
@@ -133,9 +144,10 @@ const NAV: NavEntry[] = [
   { href: "/branches",       label: "الفروع",           icon: Building2,       roles: ["Admin"] },
 
   // ── النظام ───────────────────────────────────────────────────────────────
+  // NAV-CEPH-FIX (audit §4 — Settings): /settings/services and /settings/backup entries
+  // deleted — they are sub-pages of /settings (already reachable via the settings hub).
+  // Direct URLs still work; cleaner sidebar (no duplicated shortcuts).
   { href: "/settings",       label: "الإعدادات",        icon: Settings,        roles: ["Admin"],                                                      section: "النظام" },
-  { href: "/settings/services", label: "الخدمات والتسعير", icon: ClipboardList, roles: ["Admin"] },
-  { href: "/settings/backup", label: "النسخ الاحتياطي", icon: Shield,          roles: ["Admin"] },
 ];
 
 const ROLE_LABELS: Record<string, string> = {

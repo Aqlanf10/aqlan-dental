@@ -74,12 +74,14 @@ function toRelativeUploadUrl(url: string): string {
   }
 }
 
-/** Convert a relative /uploads/ path to a full URL for display (img src, links) */
+/** Convert a relative /uploads/ path to a URL for display (img src, links).
+ *  NAV-CEPH-FIX (Part 2): keep relative — the Next.js rewrite proxies /uploads/* same-origin
+ *  so the aqlan_access_token cookie travels and the backend /uploads auth middleware (SEC-03)
+ *  accepts the request. */
 function toFullUploadUrl(url: string): string {
   if (!url) return "";
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  const base = process.env.NEXT_PUBLIC_API_URL ?? "";
-  return `${base}${url}`;
+  return url;
 }
 
 // ─── مستخدمو النظام (للمحادثة الجديدة) ───────────────────────────────────────

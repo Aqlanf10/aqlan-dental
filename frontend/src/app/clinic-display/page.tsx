@@ -432,9 +432,10 @@ export default function ClinicDisplayPage() {
 
   // ── SignalR real-time connection for instant patient call updates ──
   useEffect(() => {
-    const hubUrl = process.env.NEXT_PUBLIC_API_URL
-      ? `${process.env.NEXT_PUBLIC_API_URL}/hubs/messaging`
-      : "/hubs/messaging";
+    // NAV-CEPH-FIX (Part 2): relative hub URL → Next.js rewrite proxies to backend (same-origin).
+    // The clinic display is unauthenticated, but a relative URL still avoids cross-origin
+    // WebSocket handshake complications in production (Vercel→Railway).
+    const hubUrl = "/hubs/messaging";
 
     const connectSignalR = async () => {
       try {

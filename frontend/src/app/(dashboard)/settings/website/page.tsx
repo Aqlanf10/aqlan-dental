@@ -108,12 +108,12 @@ const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-
 const textareaCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue resize-y min-h-[80px]";
 
 // ─── Helper: resolve image URL ────────────────────────────────────────────────
+// NAV-CEPH-FIX (Part 2): relative path → Next.js rewrite proxies /uploads/* same-origin.
 function resolveImageUrl(url: string | null | undefined): string | null {
   if (!url || url.trim() === "") return null;
   if (url.startsWith("http")) return url;
-  // Relative URL from backend (e.g. /uploads/xxx.webp)
-  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
-  return `${apiBase}${url}`;
+  // Relative URL from backend (e.g. /uploads/xxx.webp) — stays same-origin via the rewrite.
+  return url;
 }
 
 // ─── Image Upload Card Component ──────────────────────────────────────────────

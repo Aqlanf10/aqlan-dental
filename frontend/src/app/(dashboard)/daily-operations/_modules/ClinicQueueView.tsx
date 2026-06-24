@@ -125,9 +125,9 @@ function toArabicNum(n: number): string {
   return n.toString().replace(/\d/g, d => "٠١٢٣٤٥٦٧٨٩"[parseInt(d)]);
 }
 
-const HUB_URL = process.env.NEXT_PUBLIC_API_URL
-  ? `${process.env.NEXT_PUBLIC_API_URL}/hubs/messaging`
-  : "/hubs/messaging";
+// NAV-CEPH-FIX (Part 2): relative hub URL → Next.js rewrite proxies /hubs/* to the backend
+// (same-origin). See useSignalRClinicQueue.ts for the full rationale.
+const HUB_URL = "/hubs/messaging";
 
 /* ─── Component ────────────────────────────────────────────────────────────── */
 interface ClinicQueueViewProps {

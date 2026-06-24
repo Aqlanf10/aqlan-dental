@@ -4,11 +4,11 @@ import Link from "next/link";
 import { Menu, X, ChevronDown, User } from "lucide-react";
 
 // ─── Helper: resolve image URL ────────────────────────────────────────────────
+// NAV-CEPH-FIX (Part 2): relative path → Next.js rewrite proxies /uploads/* same-origin.
 function resolveImageUrl(url: string | null | undefined): string | null {
   if (!url || url.trim() === "") return null;
   if (url.startsWith("http")) return url;
-  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
-  return `${apiBase}${url}`;
+  return url;
 }
 
 export function PublicNavbar() {

@@ -7,20 +7,29 @@ import api from "@/lib/api";
 /** Helper: set/clear auth cookie for middleware */
 function setAuthCookie(authenticated: boolean, token?: string | null) {
   if (typeof document === "undefined") return;
+  // NAV-CEPH-FIX (Part 2): the access-token cookie must carry the Secure flag on HTTPS
+  // origins. Without it, browsers silently drop the cookie when the production frontend
+  // (Vercel HTTPS) talks to the backend /uploads/* endpoint (proxied same-origin via the
+  // Next.js rewrite) → image requests go out unauthenticated → 401 → ceph X-rays and
+  // clinical photos fail to load. Computed once per call (login/logout/rehydrate).
+  const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+  const secureFlag = isHttps ? "; Secure" : "";
   // SEC-03: aqlan_auth_status is the sentinel cookie for Next.js middleware routing (existing).
   document.cookie = `aqlan_auth_status=${
     authenticated ? "authenticated" : ""
-  }; path=/; max-age=${authenticated ? 60 * 60 * 24 * 7 : 0}; SameSite=Strict`;
+  }; path=/; max-age=${authenticated ? 60 * 60 * 24 * 7 : 0}; SameSite=Strict${secureFlag}`;
 
   // SEC-03: aqlan_access_token carries the real JWT so the backend /uploads/* auth middleware
   // (Program.cs) can validate it for <img src="/uploads/..."> requests. Browsers send cookies
   // automatically on same-origin requests, so images render without manual headers. Cleared on
   // logout. Note: this is NOT HttpOnly because the frontend still reads access_token from
   // localStorage for axios — the cookie is a SECONDARY copy for image requests only.
+  // NAV-CEPH-FIX (Part 2): Secure flag added on HTTPS so the cookie survives cross-origin-via-
+  // rewrite same-origin requests in production.
   if (authenticated && token) {
-    document.cookie = `aqlan_access_token=${token}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Strict`;
+    document.cookie = `aqlan_access_token=${token}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Strict${secureFlag}`;
   } else {
-    document.cookie = `aqlan_access_token=; path=/; max-age=0; SameSite=Strict`;
+    document.cookie = `aqlan_access_token=; path=/; max-age=0; SameSite=Strict${secureFlag}`;
   }
 }
 

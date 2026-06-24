@@ -89,9 +89,11 @@ export const WORKFLOW_LINKS = {
   }),
 
   /** قائمة الانتظار */
+  // NAV-CEPH-FIX (audit §7 checklist): /clinic-queue is now a redirect stub → point directly
+  // to the canonical workspace to avoid an extra redirect hop.
   clinicQueue: (permission = "clinic_queue.view"): WorkflowLink => ({
     label: "الانتظار",
-    href: "/clinic-queue",
+    href: "/daily-operations?tab=queue",
     icon: ClipboardList,
     permission,
     variant: "default",
@@ -107,9 +109,11 @@ export const WORKFLOW_LINKS = {
   }),
 
   /** رحلة المرضى */
+  // NAV-CEPH-FIX (audit §7 checklist): /patient-journey index is now a redirect stub → point
+  // directly to the canonical workspace to avoid an extra redirect hop.
   patientJourney: (permission = "patient_journey.view"): WorkflowLink => ({
     label: "رحلة المرضى",
-    href: "/patient-journey",
+    href: "/daily-operations",
     icon: Route,
     permission,
     variant: "default",
@@ -134,9 +138,11 @@ export const WORKFLOW_LINKS = {
   }),
 
   /** جاهز للدفع */
+  // NAV-CEPH-FIX (audit §7 checklist): /patient-journey index is now a redirect stub → point
+  // directly to the canonical workspace (checkout happens inside /daily-operations).
   checkout: (permission = "checkout.view"): WorkflowLink => ({
     label: "جاهز للدفع",
-    href: "/patient-journey",
+    href: "/daily-operations",
     icon: CreditCard,
     permission,
     variant: "accent",

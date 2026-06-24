@@ -11,12 +11,19 @@ import { useDoctors } from "@/hooks/useDoctors";
 import { useAuthStore } from "@/stores/authStore";
 import { cn, normalizePhone } from "@/lib/utils";
 
+// Optional fields that come from <select> elements send "" when unselected.
+// zod's .optional() only allows undefined, not "", so we accept "" explicitly
+// and strip it to undefined when building the API payload (see onSubmit).
+const optionalString = z.string().optional();
+const optionalEnum = (values: [string, ...string[]]) =>
+  z.union([z.enum(values), z.literal("")]).optional();
+
 const schema = z.object({
   firstName:   z.string().min(1, "الاسم الأول مطلوب"),
   middleName:  z.string().optional(),
   lastName:    z.string().min(1, "الاسم الأخير مطلوب"),
-  dateOfBirth: z.string().optional(),
-  gender:      z.enum(["Male", "Female"]).optional(),
+  dateOfBirth: optionalString,
+  gender:      optionalEnum(["Male", "Female"]),
   phone:       z.string()
     .optional()
     .refine((val) => !val || /^[0-9+\-\s]{7,15}$/.test(val), {
@@ -39,7 +46,7 @@ const schema = z.object({
   currentMedications: z.string().optional(),
   drugAllergies:      z.string().optional(),
   bleedingDisorders:  z.boolean(),
-  isPregnant:         z.enum(["Yes", "No", "N/A"]).optional(),
+  isPregnant:         optionalEnum(["Yes", "No", "N/A"]),
   tmjProblems:        z.boolean(),
   previousSurgeries:  z.string().optional(),
   medNotes:           z.string().optional(),
@@ -50,7 +57,7 @@ const schema = z.object({
   thumbSucking:       z.boolean(),
   tongueThrusing:     z.boolean(),
   dentalNotes:        z.string().optional(),
-  primaryDoctorId:    z.string().optional(),
+  primaryDoctorId:    optionalString,
 });
 type FormData = z.infer<typeof schema>;
 
@@ -181,7 +188,7 @@ export function PatientForm({ defaultValues, patientId }: Props) {
     try {
       const payload: CreatePatientRequest = {
         firstName: data.firstName, middleName: data.middleName, lastName: data.lastName,
-        dateOfBirth: data.dateOfBirth, gender: data.gender,
+        dateOfBirth: data.dateOfBirth || undefined, gender: data.gender || undefined,
         phone: data.phone?.trim() || undefined,
         email: data.email?.trim() || undefined,
         whatsApp: data.whatsApp?.trim() || undefined,
@@ -191,7 +198,7 @@ export function PatientForm({ defaultValues, patientId }: Props) {
         medicalHistory: {
           chronicDiseases: data.chronicDiseases, currentMedications: data.currentMedications,
           drugAllergies: data.drugAllergies, bleedingDisorders: data.bleedingDisorders,
-          isPregnant: data.isPregnant, tmjProblems: data.tmjProblems,
+          isPregnant: data.isPregnant || undefined, tmjProblems: data.tmjProblems,
           previousSurgeries: data.previousSurgeries, notes: data.medNotes,
         },
         dentalHistory: {

@@ -1,3 +1,4 @@
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -38,10 +39,28 @@ public sealed class RejectExpenseRequest
 [Authorize(Policy = "ReportsAccess")] // Admin + Accountant only
 public class OperationalExpensesController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution, FinanceSettingsReader financeSettings) : ControllerBase
 {
+    // FIN-PERM (Group B): the class-level ReportsAccess policy (Admin + Accountant;
+    // Reception excluded) is the coarse gate; the granular finance.expenses permission
+    // (RolePermissions, owner-configurable from Settings) is the real per-action gate.
+    // Admin always bypasses (see PermissionGuard). Accountant is seeded view/create/
+    // edit/approve but NOT delete (admin-only) — protects the posted ledger from
+    // accountant-driven history rewriting. Voucher PDF = view (matches InvoicesController
+    // .GetInvoicePdf mapping from #517). Approve/Reject = approve (Accountant allowed —
+    // owner can revoke from Settings if they want admin-only approval).
+    private Task<bool> CanAsync(string action) =>
+        PermissionGuard.HasAsync(db, currentUser, "finance.expenses", action);
+
+    private IActionResult Deny() =>
+        StatusCode(403, new { message = "غير مصرح لك بهذا الإجراء المالي" });
+
     /// <summary>سند صرف (quarter-A4) PDF for an operational expense.</summary>
     [HttpGet("{id:guid}/voucher/pdf")]
     public async Task<IActionResult> DownloadDisbursementVoucher(Guid id, [FromServices] IPdfService pdfService)
     {
+        // FIN-PERM: finance.expenses.view — a PDF is a rendering of the expense view
+        // (matches InvoicesController.GetInvoicePdf which uses finance.invoices.view).
+        if (!await CanAsync("view")) return Deny();
+
         var exists = await db.OperationalExpenses.AnyAsync(e => e.Id == id && e.IsActive);
         if (!exists)
             return NotFound(new { message = "المصروف غير موجود" });
@@ -60,6 +79,9 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateExpenseRequest req)
     {
+        // FIN-PERM: authorization FIRST — finance.expenses.create (Accountant allowed).
+        if (!await CanAsync("create")) return Deny();
+
         if (string.IsNullOrWhiteSpace(req.Title))
             return BadRequest(new { message = "عنوان المصروف مطلوب" });
 
@@ -252,6 +274,9 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
         [FromQuery] string? toDate = null,
         [FromQuery] string? approvalStatus = null)
     {
+        // FIN-PERM: finance.expenses.view.
+        if (!await CanAsync("view")) return Deny();
+
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
@@ -328,6 +353,9 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
     [HttpGet("pending")]
     public async Task<IActionResult> GetPending()
     {
+        // FIN-PERM: finance.expenses.view.
+        if (!await CanAsync("view")) return Deny();
+
         var expenses = await db.OperationalExpenses
             .Include(e => e.Supplier)
             .Where(e => e.IsActive && e.ApprovalStatus == ApprovalStatus.Pending)
@@ -356,6 +384,13 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
     [Authorize(Policy = "AdminAccess")]
     public async Task<IActionResult> Approve(Guid id, [FromBody] ApproveExpenseRequest req)
     {
+        // FIN-PERM: finance.expenses.approve — Accountant is seeded approve=true on
+        // finance.expenses (the seeded AdminAccess policy keeps the controller-level
+        // gate admin-only; the granular gate allows the owner to widen to Accountant
+        // by removing the [Authorize] attribute in a future change). The seeded
+        // approve=true preserves the accountant's ability to approve expenses.
+        if (!await CanAsync("approve")) return Deny();
+
         var userId = currentUser.UserId ?? Guid.Empty;
 
         // Blocker 2: Cash expense approval MUST require an open cashier session
@@ -483,6 +518,11 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
     [Authorize(Policy = "AdminAccess")]
     public async Task<IActionResult> Reject(Guid id, [FromBody] RejectExpenseRequest req)
     {
+        // FIN-PERM: finance.expenses.approve — rejection is the symmetric counterpart
+        // of approval (a pending financial action adjudicated). Accountant is seeded
+        // approve=true so is allowed; the AdminAccess attribute keeps the coarse gate.
+        if (!await CanAsync("approve")) return Deny();
+
         if (string.IsNullOrWhiteSpace(req.Reason))
             return BadRequest(new { message = "سبب الرفض مطلوب" });
 
@@ -522,6 +562,12 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        // FIN-PERM: finance.expenses.delete — Admin only per seed (Accountant is seeded
+        // delete=false). Protects posted-ledger history from accountant-driven edits;
+        // admin bypass still goes through the per-row IsAdmin check below for posted
+        // expenses (defense-in-depth on the reversal path).
+        if (!await CanAsync("delete")) return Deny();
+
         var expense = await db.OperationalExpenses.FindAsync(id);
         if (expense == null || !expense.IsActive)
             return NotFound(new { message = "المصروف غير موجود" });

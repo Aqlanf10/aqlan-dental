@@ -1,3 +1,4 @@
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -36,10 +37,27 @@ public sealed class PayBillInstallmentRequest
 [Authorize(Policy = "ReportsAccess")] // Admin + Accountant only
 public class SupplierBillsController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution) : ControllerBase
 {
+    // FIN-PERM (Group B): the class-level ReportsAccess policy (Admin + Accountant;
+    // Reception excluded) is the coarse gate; the granular finance.expenses permission
+    // (RolePermissions, owner-configurable from Settings) is the real per-action gate.
+    // Admin always bypasses (see PermissionGuard). Supplier bills are expenses per the
+    // plan §4-B2. Accountant is seeded view/create/edit/approve but NOT delete — so
+    // Cancel (soft-delete) is admin-only per seed. Paying a bill creates a payment
+    // (SupplierBillPayment + CashFlowTransaction + JournalEntry outflow) → maps to
+    // `create` (a financial write that posts to the GL). Statement/GetById = view.
+    private Task<bool> CanAsync(string action) =>
+        PermissionGuard.HasAsync(db, currentUser, "finance.expenses", action);
+
+    private IActionResult Deny() =>
+        StatusCode(403, new { message = "غير مصرح لك بهذا الإجراء المالي" });
+
     /// <summary>POST /api/supplier-bills — Register a new supplier bill (A/P entry).</summary>
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateSupplierBillRequest req)
     {
+        // FIN-PERM: authorization FIRST — finance.expenses.create.
+        if (!await CanAsync("create")) return Deny();
+
         if (string.IsNullOrWhiteSpace(req.Description))
             return BadRequest(new { message = "وصف الفاتورة مطلوب" });
 
@@ -153,6 +171,9 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
         [FromQuery] string? status = null,
         [FromQuery] bool? overdue = null)
     {
+        // FIN-PERM: finance.expenses.view.
+        if (!await CanAsync("view")) return Deny();
+
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
@@ -217,6 +238,9 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
+        // FIN-PERM: finance.expenses.view.
+        if (!await CanAsync("view")) return Deny();
+
         var bill = await db.SupplierBills
             .Include(b => b.Supplier)
             .Include(b => b.Payments.Where(p => p.IsActive))
@@ -259,6 +283,9 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
     [HttpGet("supplier/{supplierId:guid}/statement")]
     public async Task<IActionResult> GetSupplierStatement(Guid supplierId)
     {
+        // FIN-PERM: finance.expenses.view — statement is a read-only supplier ledger.
+        if (!await CanAsync("view")) return Deny();
+
         var supplier = await db.Suppliers.FirstOrDefaultAsync(s => s.Id == supplierId && s.IsActive);
         if (supplier == null) return NotFound(new { message = "المورد غير موجود" });
 
@@ -319,6 +346,11 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
     [HttpPost("{id:guid}/pay")]
     public async Task<IActionResult> Pay(Guid id, [FromBody] PayBillInstallmentRequest req)
     {
+        // FIN-PERM: finance.expenses.create — paying a supplier bill creates a payment
+        // record (SupplierBillPayment + CashFlowTransaction outflow + JournalEntry),
+        // posting to the GL. This is a financial write, not an approval adjudication.
+        if (!await CanAsync("create")) return Deny();
+
         if (req.Amount <= 0)
             return BadRequest(new { message = "يجب أن يكون مبلغ الدفعة أكبر من الصفر" });
 
@@ -500,6 +532,11 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
     [Authorize(Policy = "AdminAccess")]
     public async Task<IActionResult> Cancel(Guid id)
     {
+        // FIN-PERM: finance.expenses.delete — Admin only per seed (Accountant is seeded
+        // delete=false). The AdminAccess attribute is the coarse gate; the granular
+        // check is owner-configurable defense-in-depth.
+        if (!await CanAsync("delete")) return Deny();
+
         var bill = await db.SupplierBills.FindAsync(id);
         if (bill == null || !bill.IsActive)
             return NotFound(new { message = "الفاتورة غير موجودة" });

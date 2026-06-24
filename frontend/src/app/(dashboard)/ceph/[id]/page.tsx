@@ -4,11 +4,14 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   Brain, Calculator, Eye, EyeOff, Play, PlayCircle, ArrowRight,
-  Save, CheckCircle2, ChevronRight, Loader2, FileDown, Printer,
+  Save, CheckCircle2, ChevronRight, ChevronDown, Loader2, FileDown, Printer,
   Sun, Contrast, RotateCcw, ListChecks, ImageIcon, FileText, ScanLine, Target,
-  User, FolderOpen,
+  User, FolderOpen, History, Camera, Lock, X,
 } from "lucide-react";
-import type { CephAnalysis, CephLandmark, CephDiagnosis, AnalysisType } from "@/types/ceph";
+import type {
+  CephAnalysis, CephLandmark, CephDiagnosis, AnalysisType,
+  CephVersionListItem, CephVersionDetail,
+} from "@/types/ceph";
 import { ANALYSIS_GROUPS, ANALYSIS_TYPE_AR } from "@/types/ceph";
 import { buildMeasurementList, applyNormOverrides, type ApiNorm } from "@/lib/cephMath";
 import { CephCanvas, LANDMARK_DEFS, LANDMARK_ORDER, SIMULATION_SCENARIOS } from "@/components/ceph/CephCanvas";
@@ -63,6 +66,13 @@ export default function CephAnalysisPage() {
   // C-C: Arabic ceph PDF report (download / print)
   const [pdfBusy, setPdfBusy]         = useState<'download' | 'print' | null>(null);
   const [pdfError, setPdfError]       = useState<string | null>(null);
+  // C-B: analysis VERSION snapshots — list + detail viewer.
+  const [versions, setVersions]           = useState<CephVersionListItem[]>([]);
+  const [versionsOpen, setVersionsOpen]   = useState(false);
+  const [versionSaving, setVersionSaving] = useState(false);
+  const [versionError, setVersionError]   = useState<string | null>(null);
+  const [viewedVersion, setViewedVersion] = useState<CephVersionDetail | null>(null);
+  const [versionLoading, setVersionLoading] = useState(false);
 
   useEffect(() => {
     api.get<ApiNorm[]>("/api/ceph-norms")
@@ -89,6 +99,50 @@ export default function CephAnalysisPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [id]);
+
+  // C-B: load the list of saved version snapshots for this analysis.
+  // Best-effort — a missing list (e.g. 404 on a fresh DB before migration)
+  // silently keeps the toolbar button visible but empty.
+  const refreshVersions = useCallback(() => {
+    api.get<CephVersionListItem[]>(`/api/ceph/${id}/versions`)
+      .then(r => setVersions(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setVersions([]));
+  }, [id]);
+
+  useEffect(() => {
+    refreshVersions();
+  }, [refreshVersions]);
+
+  const handleSaveVersion = async () => {
+    const label = window.prompt("اسم النسخة (مثال: قبل العلاج، بعد 6 أشهر):", "");
+    if (!label || !label.trim()) return;
+    setVersionSaving(true);
+    setVersionError(null);
+    try {
+      await api.post(`/api/ceph/${id}/versions`, { label: label.trim() });
+      refreshVersions();
+    } catch (err) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setVersionError(msg ?? "تعذر حفظ النسخة");
+    } finally {
+      setVersionSaving(false);
+    }
+  };
+
+  const handleLoadVersion = async (versionId: string) => {
+    setVersionsOpen(false);
+    setVersionLoading(true);
+    setVersionError(null);
+    try {
+      const { data } = await api.get<CephVersionDetail>(`/api/ceph/${id}/versions/${versionId}`);
+      setViewedVersion(data);
+    } catch (err) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setVersionError(msg ?? "تعذر تحميل النسخة");
+    } finally {
+      setVersionLoading(false);
+    }
+  };
 
   const lmMap = useMemo(() => {
     const m: Record<string, CephLandmark> = {};
@@ -313,17 +367,31 @@ export default function CephAnalysisPage() {
             type="button"
             onClick={handleAiTrace}
             disabled={aiTracing || !analysis.xrayFileUrl}
-            title="إنشاء مسودة نقاط بالذكاء الاصطناعي ثم مراجعتها يدوياً"
+            title="مسودة نقاط بنموذج رؤية (Gemini Vision) — تتطلب مراجعة أخصائي التقويم وتحريك كل نقطة يدويًا قبل الحفظ"
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-violet-300 bg-violet-50 text-violet-800 hover:bg-violet-100 disabled:opacity-50 transition">
             {aiTracing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
             {aiTracing ? "جارٍ تحليل الصورة..." : "مسودة AI للنقاط"}
           </button>
 
+          {/* C-D: HONEST auto-trace placeholder. A specialized cephalometric
+              vision model (beyond the general Gemini draft above) is NOT yet
+              available. The button is disabled and labeled honestly per
+              CEPH-EPIC: «يتطلب نموذج رؤية — قريبًا». No fake behavior. */}
+          <button
+            type="button"
+            disabled
+            title="تتبع آلي متخصص — يتطلب نموذج رؤية سيفالومتري مخصصًا — قريبًا"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed">
+            <Lock className="w-3.5 h-3.5" />
+            تتبع آلي متخصص
+            <span className="text-[9px] font-normal opacity-70">قريبًا</span>
+          </button>
+
           <button onClick={handleTemplateSimulation} disabled={detecting}
-            title="قالب تجريبي لمواضع المعالم — ليس ذكاءً اصطناعيًا"
+            title="محاكاة (تجريبية) — قالب تدريبي لمواضع المعالم وليس ذكاءً اصطناعيًا حقيقيًا"
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 disabled:opacity-60 transition">
             {detecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
-            {detecting ? 'جارٍ التوليد...' : 'قالب تدريبي'}
+            {detecting ? 'جارٍ التوليد...' : 'محاكاة (تجريبية)'}
           </button>
 
           <button onClick={handleSaveAndCompute} disabled={saving || !landmarks.length}
@@ -338,6 +406,79 @@ export default function CephAnalysisPage() {
              <Calculator className="w-3.5 h-3.5" />}
             {saving ? 'جارٍ الحفظ...' : saveStatus === 'saved' ? 'تم الحفظ والحساب' : 'حفظ وحساب'}
           </button>
+
+          {/* C-B: save a named SNAPSHOT of the current analysis (landmarks +
+              measurements + diagnosis) for longitudinal progress tracking.
+              Disabled until the analysis has at least one landmark + computed
+              measurements AND there are no unsaved edits. */}
+          <button
+            type="button"
+            onClick={handleSaveVersion}
+            disabled={versionSaving || placedCount === 0 || isDirty || !analysis?.measurements?.length}
+            title={placedCount === 0 ? 'ضع المعالم واحفظها أولًا قبل حفظ نسخة'
+              : isDirty ? 'احفظ التحليل الحالي قبل إنشاء نسخة'
+              : !analysis?.measurements?.length ? 'احسب القياسات أولًا قبل حفظ نسخة'
+              : 'حفظ نسخة من التحليل الحالي (المعالم + القياسات + التشخيص) لتتبع التقدم'}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-teal-300 bg-teal-50 text-teal-800 hover:bg-teal-100 disabled:opacity-50 disabled:cursor-not-allowed transition">
+            {versionSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+            حفظ نسخة
+          </button>
+
+          {/* C-B: versions dropdown — list saved snapshots; click to view. */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setVersionsOpen(v => !v)}
+              title="النسخ المحفوظة لهذا التحليل"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition">
+              <History className="w-3.5 h-3.5" />
+              النسخ
+              {versions.length > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full bg-clinic-blue text-white text-[9px] font-bold">
+                  {versions.length}
+                </span>
+              )}
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {versionsOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setVersionsOpen(false)}
+                  aria-hidden="true"
+                />
+                <div className="absolute z-20 mt-1 end-0 min-w-[18rem] max-w-[24rem] rounded-md border border-gray-200 bg-white shadow-lg overflow-hidden">
+                  <div className="px-3 py-2 border-b border-gray-100 bg-gray-50 text-[11px] font-bold text-gray-700">
+                    النسخ المحفوظة ({versions.length})
+                  </div>
+                  <div className="max-h-72 overflow-y-auto">
+                    {versions.length === 0 ? (
+                      <div className="px-3 py-6 text-center text-xs text-gray-400">
+                        لا توجد نسخ محفوظة بعد.<br />
+                        استخدم زر «حفظ نسخة» لتسجيل حالة التحليل الحالية.
+                      </div>
+                    ) : (
+                      versions.map(v => (
+                        <button
+                          key={v.id}
+                          type="button"
+                          onClick={() => handleLoadVersion(v.id)}
+                          className="flex w-full items-center justify-between gap-2 px-3 py-2 text-xs hover:bg-gray-50 border-b border-gray-50 last:border-b-0 text-start">
+                          <div className="min-w-0 flex-1">
+                            <div className="font-semibold text-gray-800 truncate">{v.label}</div>
+                            <div className="text-[10px] text-gray-400">
+                              {formatArabicDate(v.snapshotDate)} · {new Date(v.createdAt).toLocaleString('ar', { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                          <ChevronRight className="w-3.5 h-3.5 text-gray-400 rtl:rotate-180 flex-shrink-0" />
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
 
           {/* The PDF is generated from SAVED data only — gate on a clean,
               computed state so a stale report can never be exported. */}
@@ -473,6 +614,73 @@ export default function CephAnalysisPage() {
         <div className="flex-shrink-0 mx-1 mb-2 flex items-start justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
           <span>فشل إنشاء تقرير PDF: {pdfError}</span>
           <button onClick={() => setPdfError(null)} className="text-red-500 hover:text-red-700 font-bold flex-shrink-0">✕</button>
+        </div>
+      )}
+      {versionError && (
+        <div className="flex-shrink-0 mx-1 mb-2 flex items-start justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          <span>{versionError}</span>
+          <button onClick={() => setVersionError(null)} className="text-red-500 hover:text-red-700 font-bold flex-shrink-0">✕</button>
+        </div>
+      )}
+
+      {/* C-B: version snapshot viewer modal. Read-only display of a saved
+          snapshot's measurements + diagnosis. The modal is dismissed by
+          clicking the backdrop or the close button; the live analysis state
+          on the canvas is untouched (the snapshot is immutable JSON). */}
+      {(viewedVersion || versionLoading) && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => { if (!versionLoading) setViewedVersion(null); }}
+        >
+          <div
+            className="relative w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-lg bg-white shadow-xl flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex flex-shrink-0 items-center justify-between border-b border-gray-200 px-4 py-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <History className="w-4 h-4 text-teal-600 flex-shrink-0" />
+                  <h3 className="truncate text-sm font-bold text-gray-900">
+                    {viewedVersion ? viewedVersion.label : "جارٍ التحميل..."}
+                  </h3>
+                </div>
+                {viewedVersion && (
+                  <p className="mt-0.5 text-[11px] text-gray-500">
+                    نسخة محفوظة · {formatArabicDate(viewedVersion.snapshotDate)} · {new Date(viewedVersion.createdAt).toLocaleString('ar', { dateStyle: 'medium', timeStyle: 'short' })}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewedVersion(null)}
+                disabled={versionLoading}
+                className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50"
+                title="إغلاق"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3">
+              {versionLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin text-clinic-blue" />
+                </div>
+              ) : viewedVersion ? (
+                <div className="space-y-3">
+                  <div className="rounded-md border border-teal-100 bg-teal-50 px-3 py-2 text-[11px] text-teal-800">
+                    هذه نسخة محفوظة من التحليل وقت حفظها — للقراءة فقط. القياسات والتشخيص المعروض هنا هي ما تم تسجيله في تلك اللحظة ولا تتأثر بالتعديلات اللاحقة على التحليل الحالي.
+                  </div>
+                  <AnalysisReport
+                    measurements={viewedVersion.measurements}
+                    diagnosis={viewedVersion.diagnosis ?? null}
+                    patientName={analysis.patientName}
+                    analysisDate={viewedVersion.snapshotDate}
+                    calibrated={pixelsPerMm !== null && pixelsPerMm > 0}
+                  />
+                </div>
+              ) : null}
+            </div>
+          </div>
         </div>
       )}
 

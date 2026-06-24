@@ -57,6 +57,7 @@ public static class StartupDatabaseMaintenance
         await EnsureOrthodonticAiLogsSchemaAsync(app);
         await EnsurePhotoAnalysisSchemaAsync(app);
         await EnsureCephAnalysisVersionsSchemaAsync(app);
+        await EnsurePaymentCurrencyColumnAsync(app);
 
         // ── Gated DB maintenance (ENABLE_STARTUP_DB_MAINTENANCE) ──────
         await RunGatedDbMaintenanceAsync(app, configuration);
@@ -4048,6 +4049,30 @@ public static class StartupDatabaseMaintenance
             hrLogger2.LogError(ex, "HOTFIX: Failed to ensure HR/Backup tables. HR and Backup endpoints may return 500!");
         }
 
+    }
+
+    /// <summary>
+    /// MULTI-CURRENCY: Idempotently adds the nullable Currency column to Payments
+    /// so patients can pay in SAR/USD in addition to YER. Mirrors the migration
+    /// 20260710000000_AddPaymentCurrency for partially-migrated DBs (C-08 pattern).
+    /// </summary>
+    private static async Task EnsurePaymentCurrencyColumnAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                ALTER TABLE "Payments" ADD COLUMN IF NOT EXISTS "Currency" character varying(3) NULL;
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "Payment Currency column hotfix failed (non-fatal)");
+        }
     }
 
 }

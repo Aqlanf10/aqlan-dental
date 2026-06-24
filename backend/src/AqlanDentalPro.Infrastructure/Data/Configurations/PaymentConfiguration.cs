@@ -41,6 +41,7 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
 
         // String constraints
         builder.Property(p => p.PaymentMethod).HasMaxLength(30);
+        builder.Property(p => p.Currency).HasMaxLength(3);
         builder.Property(p => p.ServiceDescription).HasMaxLength(500);
         builder.Property(p => p.Specialty).HasMaxLength(100);
         builder.Property(p => p.Notes).HasMaxLength(1000);

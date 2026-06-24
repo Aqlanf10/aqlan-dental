@@ -62,6 +62,7 @@ const registerPaymentSchema = z.object({
     .min(1, { message: "يرجى إدخال المبلغ" })
     .refine((v) => Number(v) > 0, { message: "المبلغ يجب أن يكون أكبر من صفر" }),
   paymentMethod: z.string().min(1, { message: "طريقة الدفع مطلوبة" }),
+  currency: z.enum(["YER", "SAR", "USD"]).optional(),
   notes: z.string().optional(),
 });
 type RegisterPaymentFormData = z.infer<typeof registerPaymentSchema>;
@@ -112,6 +113,7 @@ export function CollectionsTab() {
       contractId: "",
       amount: "",
       paymentMethod: "cash",
+      currency: "YER",
       notes: "",
     },
   });
@@ -187,6 +189,7 @@ export function CollectionsTab() {
         patientId: formData.patientId,
         amount: Number(formData.amount),
         paymentMethod: formData.paymentMethod,
+        currency: formData.currency ?? "YER",
         notes: formData.notes || undefined,
       };
       if (formData.invoiceId) payload.invoiceId = formData.invoiceId;
@@ -277,7 +280,10 @@ export function CollectionsTab() {
           columns={[
             { key: "paymentNumber", label: "رقم الإيصال", render: (r) => getReceiptNumber(r) },
             { key: "patientName", label: "المريض" },
-            { key: "amount", label: "المبلغ", render: (r) => formatYER(r.amount) },
+            { key: "amount", label: "المبلغ", render: (r) => {
+              const sym = r.currency === "SAR" ? "ر.س" : r.currency === "USD" ? "$" : "ر.ي";
+              return `${r.amount.toLocaleString("en-US")} ${sym}`;
+            } },
             { key: "paymentMethod", label: "طريقة الدفع", render: (r) => PAYMENT_METHODS.find((m) => m.value === r.paymentMethod)?.label ?? r.paymentMethod },
             { key: "paymentDate", label: "التاريخ", render: (r) => safeFormatDate(r.paymentDate) },
             { key: "isReversal", label: "عكسي", render: (r) => r.isReversal ? <span style={{ color: tokens.dangerBorder, fontWeight: 700 }}>نعم</span> : "—" },
@@ -405,6 +411,16 @@ export function CollectionsTab() {
             {errors.paymentMethod && (
               <p className="text-xs mt-1" style={{ color: tokens.dangerBorder }}>{errors.paymentMethod.message}</p>
             )}
+          </div>
+
+          {/* Currency — MULTI-CURRENCY: patients may pay in SAR/USD (ortho patients often pay SAR) */}
+          <div>
+            <label style={labelStyle}>العملة</label>
+            <select {...register("currency")} style={inputStyle}>
+              <option value="YER">ر.ي يمني</option>
+              <option value="SAR">ر.س سعودي</option>
+              <option value="USD">$ دولار</option>
+            </select>
           </div>
 
           {/* Notes */}

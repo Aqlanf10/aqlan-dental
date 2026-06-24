@@ -52,8 +52,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             Specialty = c.Specialty,
             TotalAmount = c.TotalAmount,
             DownPayment = c.DownPayment,
-            PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
-            RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
+            PaidAmount = c.Payments.Where(p => p.IsActive && (p.Currency == null || p.Currency == "YER")).Sum(p => p.Amount),
+            RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive && (p.Currency == null || p.Currency == "YER")).Sum(p => p.Amount),
             InstallmentsCount = c.InstallmentsCount,
             InstallmentAmount = c.InstallmentAmount,
             StartDate = c.StartDate?.ToString("yyyy-MM-dd"),
@@ -140,7 +140,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 c.StartDate,
                 c.InstallmentsCount,
                 c.InstallmentAmount,
-                PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount)
+                PaidAmount = c.Payments.Where(p => p.IsActive && (p.Currency == null || p.Currency == "YER")).Sum(p => p.Amount)
             })
             .ToListAsync();
 
@@ -255,7 +255,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
             // Server-side overpayment guard
             var alreadyPaid = await db.Payments
-                .Where(p => p.InvoiceId == invoice.Id && p.IsActive)
+                .Where(p => p.InvoiceId == invoice.Id && p.IsActive && (p.Currency == null || p.Currency == "YER"))
                 .SumAsync(p => (decimal?)p.Amount) ?? 0m;
             var remaining = invoice.TotalAmount - alreadyPaid;
             if (req.Amount > remaining)
@@ -286,6 +286,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 ContractId = req.ContractId,
                 InvoiceId = req.InvoiceId,
                 Amount = req.Amount,
+                Currency = req.Currency ?? "YER",
                 PaymentDate = ClinicTimeProvider.ClinicToday(),
                 PaymentMethod = storedPaymentMethod,
                 ServiceDescription = req.ServiceDescription,
@@ -307,32 +308,41 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 PrintedBy = currentUser.UserId
             });
 
-            // Auto-create central ledger cashflow transaction (Inflow)
-            var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
-            var cashflow = new CashFlowTransaction
+            // Auto-create central ledger cashflow transaction (Inflow) — YER ONLY.
+            // MULTI-CURRENCY: foreign-currency payments (SAR/USD) are recorded on the
+            // Payment row + Receipt, but do NOT create a CashFlowTransaction or update
+            // the YER treasury balance (mixing currencies would break the books). The
+            // owner tracks foreign payments separately via the payment list + receipts.
+            CashFlowTransaction? cashflow = null;
+            var isYer = string.IsNullOrEmpty(payment.Currency) || payment.Currency == "YER";
+            if (isYer)
             {
-                TransactionNumber = $"TX-{datePart}-IN-{payment.ReceiptNumber?[4..] ?? Guid.NewGuid().ToString()[..8]}",
-                Type = TransactionType.Inflow,
-                Category = FinancialCategory.PatientPayment,
-                Amount = payment.Amount,
-                PaymentMethod = storedPaymentMethod,
-                TransactionDate = payment.PaymentDate,
-                ReferenceId = payment.Id,
-                ReferenceNumber = payment.ReceiptNumber,
-                Description = $"تحصيل دفعة مريض - سند قبض {payment.ReceiptNumber}",
-                PerformedBy = userId,
-                BranchId = branchId,
-                CashierSessionId = activeSession.Id
-            };
-            db.CashFlowTransactions.Add(cashflow);
+                var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
+                cashflow = new CashFlowTransaction
+                {
+                    TransactionNumber = $"TX-{datePart}-IN-{payment.ReceiptNumber?[4..] ?? Guid.NewGuid().ToString()[..8]}",
+                    Type = TransactionType.Inflow,
+                    Category = FinancialCategory.PatientPayment,
+                    Amount = payment.Amount,
+                    PaymentMethod = storedPaymentMethod,
+                    TransactionDate = payment.PaymentDate,
+                    ReferenceId = payment.Id,
+                    ReferenceNumber = payment.ReceiptNumber,
+                    Description = $"تحصيل دفعة مريض - سند قبض {payment.ReceiptNumber}",
+                    PerformedBy = userId,
+                    BranchId = branchId,
+                    CashierSessionId = activeSession.Id
+                };
+                db.CashFlowTransactions.Add(cashflow);
 
-            // All entity mutations are inside the transaction started above
-            await UpdateTreasuryBalanceNoSaveAsync(payment.BranchId ?? Guid.Empty, payment.Amount, normalizedPaymentMethod);
-            await DualWritePaymentEntryAsync(payment, cashflow, invoice);
-            // CreateEntryAsync (inside DualWrite) calls SaveChangesAsync, which persists
-            // ALL tracked entities within the transaction (Payment, Receipt, CashFlow, Treasury, JE).
-            // The auto-post SaveChangesAsync inside DualWrite also happens within this tx.
-            // A final SaveChangesAsync ensures any remaining tracked changes are persisted.
+                // All entity mutations are inside the transaction started above
+                await UpdateTreasuryBalanceNoSaveAsync(payment.BranchId ?? Guid.Empty, payment.Amount, normalizedPaymentMethod);
+                await DualWritePaymentEntryAsync(payment, cashflow, invoice);
+                // CreateEntryAsync (inside DualWrite) calls SaveChangesAsync, which persists
+                // ALL tracked entities within the transaction (Payment, Receipt, CashFlow, Treasury, JE).
+                // The auto-post SaveChangesAsync inside DualWrite also happens within this tx.
+                // A final SaveChangesAsync ensures any remaining tracked changes are persisted.
+            }
             await db.SaveChangesAsync();
             if (useTx) await tx!.CommitAsync();
         }
@@ -396,7 +406,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         // Phase 0B: Validate that TotalAmount is not reduced below what's already been paid
         {
             var alreadyPaid = await db.Payments
-                .Where(p => p.ContractId == id && p.IsActive)
+                .Where(p => p.ContractId == id && p.IsActive && (p.Currency == null || p.Currency == "YER"))
                 .SumAsync(p => (decimal?)p.Amount) ?? 0m;
             if (req.TotalAmount < alreadyPaid)
                 throw new ArgumentException($"لا يمكن تقليل إجمالي العقد ({req.TotalAmount:N0} ر.ي) إلى أقل من المبلغ المدفوع فعلياً ({alreadyPaid:N0} ر.ي).");
@@ -567,14 +577,14 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         // count in the overall patient summary so the balance is accurate.
         // Each payment is counted exactly once via the direct Payments query.
         var totalPaid = await db.Payments
-            .Where(p => p.PatientId == patientId && p.IsActive)
+            .Where(p => p.PatientId == patientId && p.IsActive && (p.Currency == null || p.Currency == "YER"))
             .SumAsync(p => (decimal?)p.Amount) ?? 0m;
 
         var totalRemaining = Math.Max(0m, totalContracted - totalDiscounts - totalPaid);
 
         // ── Contracts list with per-contract paid/remaining computed in SQL ──
         // FIN-13: Project ContractStatementDto directly. The correlated subquery
-        // `c.Payments.Where(p => p.IsActive).Sum(p => p.Amount)` is translated to
+        // `c.Payments.Where(p => p.IsActive && (p.Currency == null || p.Currency == "YER")).Sum(p => p.Amount)` is translated to
         // `(SELECT COALESCE(SUM(p.Amount), 0) FROM Payments p WHERE p.ContractId = c.Id AND p.IsActive)`
         // — avoids loading any Payment rows into memory.
         var contracts = await db.Contracts
@@ -586,8 +596,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 Specialty       = c.Specialty,
                 TotalAmount     = c.TotalAmount,
                 DiscountAmount  = c.DiscountAmount,
-                PaidAmount      = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
-                RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
+                PaidAmount      = c.Payments.Where(p => p.IsActive && (p.Currency == null || p.Currency == "YER")).Sum(p => p.Amount),
+                RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive && (p.Currency == null || p.Currency == "YER")).Sum(p => p.Amount),
                 StartDate       = c.StartDate.HasValue ? c.StartDate.Value.ToString("yyyy-MM-dd") : null,
                 Status          = c.Status.ToString(),
                 InstallmentsCount  = c.InstallmentsCount,
@@ -603,7 +613,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         var recentPayments = await db.Payments
             .Include(p => p.Patient)
             .Include(p => p.Doctor)
-            .Where(p => p.PatientId == patientId && p.IsActive)
+            .Where(p => p.PatientId == patientId && p.IsActive && (p.Currency == null || p.Currency == "YER"))
             .OrderByDescending(p => p.PaymentDate).ThenByDescending(p => p.CreatedAt)
             .Take(20)
             .ToListAsync();
@@ -630,11 +640,11 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         var today = ClinicTimeProvider.ClinicToday();
         var monthStart = new DateOnly(today.Year, today.Month, 1);
 
-        var todayQuery = db.Payments.Where(p => p.PaymentDate == today && p.IsActive);
+        var todayQuery = db.Payments.Where(p => p.PaymentDate == today && p.IsActive && (p.Currency == null || p.Currency == "YER"));
         if (branchId.HasValue) todayQuery = todayQuery.Where(p => p.BranchId == branchId);
         var todayCollected = await todayQuery.SumAsync(p => (decimal?)p.Amount) ?? 0;
 
-        var monthQuery = db.Payments.Where(p => p.PaymentDate >= monthStart && p.IsActive);
+        var monthQuery = db.Payments.Where(p => p.PaymentDate >= monthStart && p.IsActive && (p.Currency == null || p.Currency == "YER"));
         if (branchId.HasValue) monthQuery = monthQuery.Where(p => p.BranchId == branchId);
         var monthCollected = await monthQuery.SumAsync(p => (decimal?)p.Amount) ?? 0;
 
@@ -642,7 +652,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         var contractQuery = db.Contracts.Include(c => c.Payments).Where(c => c.Status == ContractStatus.Active);
         if (branchId.HasValue) contractQuery = contractQuery.Where(c => c.Patient.BranchId == branchId);
         var contractOutstanding = await contractQuery
-            .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount))
+            .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive && (p.Currency == null || p.Currency == "YER")).Sum(p => p.Amount))
             .SumAsync(r => (decimal?)r) ?? 0;
 
         // Invoice-based outstanding (Issued invoices not fully paid)
@@ -991,7 +1001,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         // ── Combined totals ─────────────────────────────────────────────────
         var totalCost      = contractCost + invoiceCost;
         var totalPaid      = await db.Payments
-            .Where(p => p.PatientId == patientId && p.IsActive)
+            .Where(p => p.PatientId == patientId && p.IsActive && (p.Currency == null || p.Currency == "YER"))
             .SumAsync(p => (decimal?)p.Amount) ?? 0m;
         var outstanding    = Math.Max(0m, totalCost - totalPaid);
 
@@ -1012,7 +1022,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 c.InstallmentsCount,
                 c.InstallmentAmount,
                 c.DownPayment,
-                PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount)
+                PaidAmount = c.Payments.Where(p => p.IsActive && (p.Currency == null || p.Currency == "YER")).Sum(p => p.Amount)
             })
             .ToListAsync();
 
@@ -1027,7 +1037,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         var latestPayment = await db.Payments
             .Include(p => p.Patient)
             .Include(p => p.Doctor)
-            .Where(p => p.PatientId == patientId && p.IsActive)
+            .Where(p => p.PatientId == patientId && p.IsActive && (p.Currency == null || p.Currency == "YER"))
             .OrderByDescending(p => p.PaymentDate).ThenByDescending(p => p.CreatedAt)
             .FirstOrDefaultAsync();
 
@@ -1329,8 +1339,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         Specialty = c.Specialty,
         TotalAmount = c.TotalAmount,
         DownPayment = c.DownPayment,
-        PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
-        RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
+        PaidAmount = c.Payments.Where(p => p.IsActive && (p.Currency == null || p.Currency == "YER")).Sum(p => p.Amount),
+        RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive && (p.Currency == null || p.Currency == "YER")).Sum(p => p.Amount),
         InstallmentsCount = c.InstallmentsCount,
         InstallmentAmount = c.InstallmentAmount,
         StartDate = c.StartDate?.ToString("yyyy-MM-dd"),
@@ -1346,6 +1356,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         InvoiceId = p.InvoiceId,
         InvoiceNumber = p.Invoice?.InvoiceNumber,
         Amount = p.Amount,
+        Currency = p.Currency,
         PaymentDate = p.PaymentDate.ToString("yyyy-MM-dd"),
         PaymentMethod = p.PaymentMethod,
         ServiceDescription = p.ServiceDescription,
@@ -1442,7 +1453,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         var effectiveAmount = contract.TotalAmount - contract.DiscountAmount;
         var totalPaid = contract.Payments
-            .Where(p => p.IsActive)
+            .Where(p => p.IsActive && (p.Currency == null || p.Currency == "YER"))
             .Sum(p => p.Amount);
 
         if (contract.Status == ContractStatus.Active && totalPaid >= effectiveAmount && effectiveAmount > 0)

@@ -8,7 +8,7 @@
 
 ## التقنية الحالية
 
-- Frontend: Next.js 14 + TypeScript + Tailwind CSS
+- Frontend: Next.js 15 + TypeScript + Tailwind CSS
 - Backend: ASP.NET Core Web API .NET 8
 - Database: PostgreSQL
 - Deployment: Vercel + Railway

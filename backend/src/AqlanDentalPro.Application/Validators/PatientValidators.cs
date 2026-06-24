@@ -88,7 +88,7 @@ public sealed class UpdatePatientRequestValidator : AbstractValidator<UpdatePati
 public sealed class MedicalHistoryDtoValidator : AbstractValidator<MedicalHistoryDto>
 {
     private static readonly HashSet<string> ValidPregnancyValues = new(StringComparer.OrdinalIgnoreCase)
-        { "Yes", "No", "N/A", "نعم", "لا", "غير محدد" };
+        { "Yes", "No", "N/A", "نعم", "لا", "غير محدد", "yes", "no", "na" };
 
     public MedicalHistoryDtoValidator()
     {

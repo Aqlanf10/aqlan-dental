@@ -160,6 +160,7 @@ export function PatientForm({ defaultValues, patientId }: Props) {
   };
 
   const onSubmit = async (data: FormData) => {
+    console.log("[PatientForm] onSubmit called with:", { firstName: data.firstName, lastName: data.lastName, phone: data.phone, isPregnant: data.isPregnant, duplicateWarning });
     if (duplicateWarning && duplicateWarning.length > 0) {
       const hasPhoneOrNumberMatch = duplicateWarning.some(
         (m) => m.matchType === "phone" || m.matchType === "whatsapp" || m.matchType === "patientNumber"
@@ -253,7 +254,20 @@ export function PatientForm({ defaultValues, patientId }: Props) {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+    <form onSubmit={handleSubmit(onSubmit, (validationErrors) => {
+      // DIAGNOSTIC: surface silent RHF validation failures
+      console.error("[PatientForm] validation errors:", validationErrors);
+      const fields = Object.keys(validationErrors);
+      if (fields.length > 0) {
+        setServerError("تحقق من الحقول: " + fields.map(f => {
+          const labels: Record<string, string> = {
+            firstName: "الاسم الأول", lastName: "الاسم الأخير", phone: "الهاتف",
+            email: "البريد", whatsApp: "الواتساب", gender: "الجنس", isPregnant: "حالة الحمل",
+          };
+          return labels[f] || f;
+        }).join("، "));
+      }
+    })} className="space-y-6">
       {serverError && (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3.5 text-sm font-semibold animate-pulse">
           {serverError}

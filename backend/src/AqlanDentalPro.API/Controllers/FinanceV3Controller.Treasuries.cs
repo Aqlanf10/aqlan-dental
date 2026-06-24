@@ -134,25 +134,49 @@ public partial class FinanceV3Controller
             return BadRequest(new { message = "لم يتم تحديد فرع للمستخدم. لا توجد فروع نشطة في النظام." });
         var userId = currentUser.UserId ?? Guid.Empty;
 
-        var destTreasury = await db.Treasuries.FirstOrDefaultAsync(t => t.Id == req.DestinationTreasuryId && t.BranchId == branchId && t.IsActive);
-        if (destTreasury == null)
-            return BadRequest(new { message = "الخزنة المستهدفة غير موجودة أو غير تابعة للفرع" });
-
-        Treasury? sourceTreasury = null;
-        if (req.SourceTreasuryId.HasValue)
-        {
-            sourceTreasury = await db.Treasuries.FirstOrDefaultAsync(t => t.Id == req.SourceTreasuryId.Value && t.BranchId == branchId && t.IsActive);
-            if (sourceTreasury == null)
-                return BadRequest(new { message = "الخزنة المصدر غير موجودة أو غير تابعة للفرع" });
-            if (sourceTreasury.Balance < req.Amount)
-                return BadRequest(new { message = $"عذراً، رصيد الخزنة المصدر ({sourceTreasury.Balance:N0} ر.ي) أقل من مبلغ التحويل المطلوب ({req.Amount:N0} ر.ي)" });
-        }
+        // C-07 V3 FIX: Move the source treasury load + balance check INSIDE the transaction
+        // (with FOR UPDATE on PostgreSQL) so two concurrent transfers cannot both pass the
+        // balance check and then both deduct (which would drive Treasury.Balance negative).
+        // Previously the balance check was performed BEFORE BeginTransactionAsync, the
+        // advisory lock was on the transfer-number sequence (not on the source treasury row),
+        // and the deduction used tracked-entity mutation (no atomic conditional SQL).
+        // The legacy VaultTransfersController.Create path was already fixed (C-07); this V3
+        // path now mirrors that pattern.
 
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
             var lockKey = StableLockKeyHelper.VaultTransferNumber;
             await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            // Load destination treasury inside the tx (existence check, no balance mutation).
+            var destTreasury = await db.Treasuries.FirstOrDefaultAsync(t => t.Id == req.DestinationTreasuryId && t.BranchId == branchId && t.IsActive);
+            if (destTreasury == null)
+                return BadRequest(new { message = "الخزنة المستهدفة غير موجودة أو غير تابعة للفرع" });
+
+            // Load source treasury inside the tx with FOR UPDATE on PostgreSQL so the row is
+            // locked until commit. On InMemory (tests), this falls back to a plain load.
+            Treasury? sourceTreasury = null;
+            if (req.SourceTreasuryId.HasValue)
+            {
+                if (db.Database.IsRelational())
+                {
+                    // FOR UPDATE on the source treasury row (PostgreSQL). Acquired within the
+                    // advisory-lock transaction so concurrent transfers serialize on the row.
+                    await db.Database.ExecuteSqlRawAsync(
+                        "SELECT 1 FROM \"Treasuries\" WHERE \"Id\" = {0} FOR UPDATE",
+                        req.SourceTreasuryId.Value);
+                }
+
+                sourceTreasury = await db.Treasuries.FirstOrDefaultAsync(t => t.Id == req.SourceTreasuryId.Value && t.BranchId == branchId && t.IsActive);
+                if (sourceTreasury == null)
+                    return BadRequest(new { message = "الخزنة المصدر غير موجودة أو غير تابعة للفرع" });
+
+                // AUTHORITATIVE re-check inside the lock — concurrent transfer may have
+                // already deducted enough to make this transfer impossible.
+                if (sourceTreasury.Balance < req.Amount)
+                    return BadRequest(new { message = $"عذراً، رصيد الخزنة المصدر ({sourceTreasury.Balance:N0} ر.ي) أقل من مبلغ التحويل المطلوب ({req.Amount:N0} ر.ي)" });
+            }
 
             var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
             var prefix = $"TR-{datePart}-";
@@ -183,6 +207,9 @@ public partial class FinanceV3Controller
                 DepositSource = req.DepositSource
             };
 
+            // Deduct inside the tx. With xmin concurrency token on Treasury (DB-02) and the
+            // FOR UPDATE row lock above, a concurrent transfer that already mutated this row
+            // will trigger DbUpdateConcurrencyException, which we rethrow as 409.
             if (sourceTreasury != null) sourceTreasury.Balance -= req.Amount;
 
             db.VaultTransfers.Add(transfer);
@@ -191,6 +218,12 @@ public partial class FinanceV3Controller
 
             await audit.LogAsync(AuditAction.Create, "VaultTransfer", transfer.Id);
             return Ok(new { transfer.Id, transfer.TransferNumber, transfer.Amount, Status = transfer.Status.ToString(), message = "تم إنشاء طلب ترحيل السيولة بنجاح وهو قيد المراجعة والاستلام الفعلي" });
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // DB-02: xmin concurrency token on Treasury detected a concurrent edit.
+            await tx.RollbackAsync();
+            return Conflict(new { message = "تم تعديل رصيد الخزنة من قبل مستخدم آخر، يرجى التحديث والمحاولة مرة أخرى" });
         }
         catch { await tx.RollbackAsync(); throw; }
     }

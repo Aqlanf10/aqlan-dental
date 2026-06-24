@@ -18,7 +18,7 @@ The project must be completed on top of the existing GitHub codebase. Do not reb
 
 ### Frontend
 
-- Next.js 14
+- Next.js 15
 - TypeScript
 - Tailwind CSS
 - Zustand

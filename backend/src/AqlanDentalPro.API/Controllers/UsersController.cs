@@ -216,7 +216,12 @@ public class UsersController(
 
     /// <summary>قائمة المستخدمين للرسائل — تخضع لسياسة AdminOnly على مستوى المتحكم (الصلاحيات تُجمَع)</summary>
     [HttpGet("contacts")]
-    [Authorize]
+    // C-12 CLARIFICATION: The class-level [Authorize(Policy = "AdminOnly")] already
+    // protects this endpoint (ASP.NET Core combines class + method policies additively —
+    // ALL must pass). The original audit flagging "bare [Authorize]" was technically
+    // inaccurate because the class-level policy is in effect. The bare [Authorize] here
+    // is redundant (it adds nothing on top of AdminOnly) but not a security hole.
+    // Removing the redundant attribute for clarity; behavior unchanged.
     public async Task<IActionResult> GetContacts([FromServices] MessagingService messagingService)
     {
         // N+1 FIX: Single query with LeftJoin instead of 3 correlated subqueries per user

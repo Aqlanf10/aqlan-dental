@@ -48,4 +48,14 @@ public class ControllerAuthorizeAttributeTests
         ClassAuthorize(typeof(UsersController))
             .Should().Contain(a => a.Policy == "AdminOnly");
     }
+
+    [Fact]
+    public void UsersController_GetContacts_NoRedundantBareMethodAuthorize()
+    {
+        // C-12 follow-up: the original audit flagged GetContacts for "bare [Authorize]"
+        // but the class-level AdminOnly policy already covers it (additive authorization).
+        // The bare attribute was redundant/misleading and has been removed.
+        MethodAuthorize(typeof(UsersController), "GetContacts")
+            .Should().BeEmpty("the class-level AdminOnly policy is sufficient; no method-level [Authorize] is needed");
+    }
 }

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { OrthoVisit, CreateOrthoVisitRequest } from "@/types/ortho";
 import api from "@/lib/api";
+import { extractErrorMessage as extractApiError } from "@/lib/errors";
 import { formatArabicDate, localDateString } from "@/lib/utils";
 import {
   CalendarClock,
@@ -185,15 +186,7 @@ export function OrthoVisitTimeline({ caseId, visits: initialVisits, onVisitAdded
       setShowForm(false);
       setEditingVisitId(null);
     } catch (error: unknown) {
-      const message =
-        typeof error === "object"
-        && error !== null
-        && "response" in error
-        && typeof (error as { response?: { data?: { message?: string } } }).response?.data?.message === "string"
-          ? (error as { response: { data: { message: string } } }).response.data.message
-          : editingVisitId
-            ? "تعذر تحديث الزيارة"
-            : "تعذر تسجيل الزيارة";
+      const message = extractApiError(error, editingVisitId ? "تعذر تحديث الزيارة" : "تعذر تسجيل الزيارة");
       setFormError(message);
     } finally {
       setSaving(false);
@@ -342,9 +335,11 @@ export function OrthoVisitTimeline({ caseId, visits: initialVisits, onVisitAdded
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">نوع الزيارة</label>
               <select {...register("visitType")} className={inputCls}>
-                <option value="">اختر...</option>
-                <option value="activation">تنشيط</option>
+                {/* Backend requires VisitType (NotEmpty). Default to "review" (متابعة)
+                    — the most common visit type — so the form validates even if the
+                    user doesn't change this select. */}
                 <option value="review">متابعة</option>
+                <option value="activation">تنشيط</option>
                 <option value="bonding">تركيب</option>
                 <option value="debonding">فك</option>
                 <option value="retention">احتفاظ</option>

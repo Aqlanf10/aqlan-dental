@@ -290,6 +290,11 @@ public class TechnicalDebtCleanupTests
         var audit = new Mock<IAuditService>().Object;
         var logger = new Mock<ILogger<TreasuriesController>>().Object;
 
+        // FIN-PERM: grant Accountant finance.treasuries.view so the 403 under test comes
+        // from the branch guard (no branch assigned), not the granular permission gate.
+        db.RolePermissions.Add(new RolePermission { Role = "Accountant", Resource = "finance.treasuries", CanView = true });
+        await db.SaveChangesAsync();
+
         var controller = new TreasuriesController(db, nonAdminNoBranch, audit, logger);
 
         // Act
@@ -307,6 +312,11 @@ public class TechnicalDebtCleanupTests
         var nonAdminEmptyBranch = CreateNonAdminUserWithEmptyBranch();
         var audit = new Mock<IAuditService>().Object;
         var logger = new Mock<ILogger<TreasuriesController>>().Object;
+
+        // FIN-PERM: grant Accountant finance.treasuries.view so the 403 under test comes
+        // from the branch guard (Guid.Empty branch), not the granular permission gate.
+        db.RolePermissions.Add(new RolePermission { Role = "Accountant", Resource = "finance.treasuries", CanView = true });
+        await db.SaveChangesAsync();
 
         var controller = new TreasuriesController(db, nonAdminEmptyBranch, audit, logger);
 

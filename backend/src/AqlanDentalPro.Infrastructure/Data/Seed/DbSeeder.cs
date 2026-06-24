@@ -627,6 +627,14 @@ public static class DbSeeder
             ["finance.treasuries"]        = new() { ["Admin"] = (true, true, true, true, true, true),  ["Accountant"] = (true, true, true, false, false, false) },
             ["finance.expenses"]          = new() { ["Admin"] = (true, true, true, true, true, true),  ["Accountant"] = (true, true, true, false, false, true) },
             ["finance.commissions"]       = new() { ["Admin"] = (true, true, true, true, false, true),  ["Accountant"] = (true, true, true, false, false, true) },
+            // Group A (FIN-PERMS-A): tightening of FinanceAccess — Reception was too wide
+            // (could create/edit invoices+contracts via the coarse policy). Draft invoices
+            // for the journey are created via CheckoutService, so Reception does NOT need
+            // direct create/edit on InvoicesController. Issue/Cancel = approve (Accountant/
+            // Admin only). Reception stays view-only on invoices+contracts. (view,create,
+            // edit,delete,export,approve)
+            ["finance.invoices"]          = new() { ["Admin"] = (true, true, true, true, true, true),  ["Accountant"] = (true, true, true, false, true, true),  ["Reception"] = (true, false, false, false, false, false) },
+            ["finance.contracts"]         = new() { ["Admin"] = (true, true, true, true, true, true),  ["Accountant"] = (true, true, true, false, true, false), ["Reception"] = (true, false, false, false, false, false) },
         };
         foreach (var (resource, roles) in financeDefaults)
         {

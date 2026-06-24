@@ -39,7 +39,7 @@ const schema = z.object({
   currentMedications: z.string().optional(),
   drugAllergies:      z.string().optional(),
   bleedingDisorders:  z.boolean(),
-  isPregnant:         z.enum(["yes", "no", "na"]).optional(),
+  isPregnant:         z.enum(["Yes", "No", "N/A"]).optional(),
   tmjProblems:        z.boolean(),
   previousSurgeries:  z.string().optional(),
   medNotes:           z.string().optional(),
@@ -371,9 +371,13 @@ export function PatientForm({ defaultValues, patientId }: Props) {
         </Field>
         <Field label="حالة الحمل (للإناث)">
           <select {...register("isPregnant")} className={inputCls()}>
-            <option value="na">لا ينطبق</option>
-            <option value="no">لا يوجد حمل</option>
-            <option value="yes">يوجد حمل</option>
+            {/* Values must match the backend MedicalHistoryDtoValidator
+                ValidPregnancyValues set (Yes/No/N/A, case-insensitive).
+                Previously sent "na"/"yes"/"no" — "na" was rejected (no slash)
+                causing "خطأ" on patient create. Now sends "N/A"/"No"/"Yes". */}
+            <option value="N/A">لا ينطبق</option>
+            <option value="No">لا يوجد حمل</option>
+            <option value="Yes">يوجد حمل</option>
           </select>
         </Field>
         <div className="flex flex-col gap-3 md:col-span-2 pt-2">

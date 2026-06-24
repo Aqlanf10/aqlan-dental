@@ -51,7 +51,7 @@ export default function PatientEditPage() {
     currentMedications: patient.medicalHistory?.currentMedications,
     drugAllergies:      patient.medicalHistory?.drugAllergies,
     bleedingDisorders:  patient.medicalHistory?.bleedingDisorders ?? false,
-    isPregnant:         patient.medicalHistory?.isPregnant as "yes" | "no" | "na" | undefined,
+    isPregnant:         patient.medicalHistory?.isPregnant as "Yes" | "No" | "N/A" | undefined,
     tmjProblems:        patient.medicalHistory?.tmjProblems ?? false,
     previousSurgeries:  patient.medicalHistory?.previousSurgeries,
     medNotes:           patient.medicalHistory?.notes,

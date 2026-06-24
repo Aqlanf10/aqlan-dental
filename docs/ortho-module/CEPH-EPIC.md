@@ -2,8 +2,14 @@
 **WebCeph هو النموذج المستهدف** (FDA 510(k) K220903): تتبع آلي + Steiner/Ricketts/McNamara/Tweed + superimposition + VTO + تقارير. PixelCeph مرجع داعم للفكرة.
 المالك أكد: السيفالو أولوية مطلقة قبل بقية مراحل وحدة التقويم (P3+ مؤجلة حتى اكتمال السيفالو وتحليله وتقاريره).
 
+> **حالة الدفعات (تحديث Sprint 4 — PR #521 + PR #CEPH-CB-CD-COMPLETE):**
+> - **C-A ✅ مكتمل** (#521): المحاكاة التجريبية معلَّمة صراحةً ومُخفية افتراضيًا عبر `ceph.simulation_enabled=off`، وزر «تتبع آلي متخصص · قريبًا» صادق دون أي سلوك وهمي.
+> - **C-B ✅ مكتمل** (#521 + هذا PR): إصدارات التحليل (`CephAnalysisVersion` + هجرة + نقاط حفظ/قائمة/تفصيل) + محرك تشخيص معزَّز (Wits+ANB، مؤشرات قلع/جراحة، نمو) + **منزلق قبل/بعد للصور** (`CephImageSliderCompare`) + تراكب بنيوي SVG + مقارنة التحليل مع نسخة محفوظة (صفحة `/ceph/compare?baseId=&versionId=`).
+> - **C-C ✅ مكتمل**: تقرير PDF عربي بالتتبع والهوية من Settings (QuestPDF + خط Noto Naskh Arabic).
+> - **C-D ✅ مكتمل ومُتحقَّق منه**: مسودة تشخيص LLM حقيقية (Anthropic Claude + Gemini عبر `IAiDraftProvider`) بعبارة المراجعة الإلزامية + `OrthodonticAiLog` على كل محاولة (نجاح/فشل) + مفاتيح `ai.*` يديرها `AiSettingsController` ويقرؤها `CephAiDraftService.GetSettingsAsync()` + placeholder صادق «قريبًا».
+
 ## الموجود (لا يُعاد بناؤه)
-Canvas بـ24 معلمًا بألوان المجموعات + مستويات مرجعية | محرك هندسي مزدوج (cephMath.ts + CephService.cs) يحسب القياسات عبر **7 تحاليل: ستاينر/تويد/ماكنامارا/ريكتس/داونز/جاراباك/وتس** مع اختبارات | كيانات CephAnalysis/Landmark/Measurement/Diagnosis | تشخيص قاعدي (ANB مع Wits، النمط الرأسي، مؤشرات القلع/الجراحة) | معايرة مسطرة + zoom/pan | قيم معيارية في القاعدة (CephNorms) | تتبع AI حقيقي (Gemini Vision، مسودة غير محفوظة) + مسودة تشخيص LLM | تقرير PDF عربي بالتتبع والهوية | مقارنة قبل/بعد | صفحة تحليل حية.
+Canvas بـ24 معلمًا بألوان المجموعات + مستويات مرجعية | محرك هندسي مزدوج (cephMath.ts + CephService.cs) يحسب القياسات عبر **7 تحاليل: ستاينر/تويد/ماكنامارا/ريكتس/داونز/جاراباك/وتس** مع اختبارات | كيانات CephAnalysis/Landmark/Measurement/Diagnosis | تشخيص قاعدي (ANB مع Wits، النمط الرأسي، مؤشرات القلع/الجراحة) | معايرة مسطحة + zoom/pan | قيم معيارية في القاعدة (CephNorms) | تتبع AI حقيقي (Gemini Vision، مسودة غير محفوظة) + مسودة تشخيص LLM | تقرير PDF عربي بالتتبع والهوية | مقارنة قبل/بعد | صفحة تحليل حية.
 
 **جاراباك (مُضاف):** مضلّع بيورك (الزاوية السرجية N-S-Ar، المفصلية S-Ar-Go، الفكية Ar-Go-Me، مجموعها ≈396°) + نسبة الارتفاع الخلفي/الأمامي (S-Go ÷ N-Me %) لتقدير اتجاه النمو — يعمل دون معايرة لأنه نِسَب زوايا وأطوال.
 
@@ -26,10 +32,28 @@ Canvas بـ24 معلمًا بألوان المجموعات + مستويات مر
 ## خطة التنفيذ
 | دفعة | المحتوى | الحالة |
 |---|---|---|
-| **C-A** | إصلاح «AI الوهمي» (المحاكاة تُسمى محاكاة وتُخفى افتراضيًا) · معايرة مسطرة تفاعلية بنقطتين · zoom/pan للـcanvas · خطوط القياسات على الصورة · **جدول CephNorms في القاعدة** (mean/SD/تفسيرات، قابل للتهيئة، seeding بالقيم الدولية) بدل الثوابت المدفونة | 🔨 جارٍ |
-| **C-B** | إصدارات التحليل + مقارنة قبل/تقدم/بعد (انزلاق/تراكب) + تقوية محرك التشخيص (Wits مع ANB، مؤشرات قلع/جراحة، نمو) | ⬜ |
-| **C-C** | تقرير PDF عربي/إنجليزي: صورة بالتتبع المرسوم (SkiaSharp→QuestPDF) + جدول القياسات الملون + التفسير + توقيع | ⬜ |
-| **C-D** | AI حقيقي آمن: مسودة تشخيص LLM (Claude API) من البيانات المنظمة بعبارة المراجعة الإلزامية + OrthodonticAiLogs + مفاتيح إعدادات ai.* + نقطة auto-trace placeholder صادقة («يتطلب نموذج رؤية — قريبًا») | ⬜ |
+| **C-A** | إصلاح «AI الوهمي» (المحاكاة تُسمى محاكاة وتُخفى افتراضيًا) · معايرة مسطرة تفاعلية بنقطتين · zoom/pan للـcanvas · خطوط القياسات على الصورة · **جدول CephNorms في القاعدة** (mean/SD/تفسيرات، قابل للتهيئة، seeding بالقيم الدولية) بدل الثوابت المدفونة | ✅ مكتمل (#521) |
+| **C-B** | إصدارات التحليل + مقارنة قبل/تقدم/بعد (انزلاق/تراكب) + تقوية محرك التشخيص (Wits مع ANB، مؤشرات قلع/جراحة، نمو) | ✅ مكتمل (#521 + PR الحالي) |
+| **C-C** | تقرير PDF عربي/إنجليزي: صورة بالتتبع المرسوم (SkiaSharp→QuestPDF) + جدول القياسات الملون + التفسير + توقيع | ✅ مكتمل |
+| **C-D** | AI حقيقي آمن: مسودة تشخيص LLM (Claude API) من البيانات المنظمة بعبارة المراجعة الإلزامية + OrthodonticAiLogs + مفاتيح إعدادات ai.* + نقطة auto-trace placeholder صادقة («يتطلب نموذج رؤية — قريبًا») | ✅ مكتمل ومُتحقَّق منه |
+
+### تفاصيل تسليم كل دفعة
+
+- **C-A (#521):** زر المحاكاة relabeled «محاكاة (تجريبية)» + tooltip يوضّح أنها ليست AI، ومدخل الإعداد `ceph.simulation_enabled` افتراضُه `off` (مُثبَّت باختبار `Simulation_IsDisabledByDefault_PerCepEpicC_A`). زر «تتبع آلي متخصص · قريبًا» معطَّل صادق (Lock، `cursor-not-allowed`، لا onClick).
+- **C-B (#521 + PR الحالي):**
+  - كيان `CephAnalysisVersion` (LandmarksJson/MeasurementsJson/DiagnosisJson/SnapshotDate/CreatedByUserId) + هجرة idempotent `20260708000000_AddCephAnalysisVersions` + hotfix إقلاع.
+  - نقاط: `POST/GET /api/ceph/{id}/versions`، `GET /api/ceph/{id}/versions/{versionId}`، مع فرض `PatientAccessFilter` عبر `GetAnalysisAccessErrorAsync` + رسائل 404/400 عربية.
+  - الواجهة: «حفظ نسخة» + لوحة «النسخ» المنسدلة + عارض نسخة للقراءة فقط + زر «قارن» بجانب كل نسخة يفتح `/ceph/compare?baseId=&versionId=`.
+  - **منزلق صور الأشعة قبل/بعد** (جديد في هذا PR): `CephImageSliderCompare` — حاوية بصورتين متراصفتين، صورة «قبل» (base) في الطبقة العلوية مقصوصة إلى يمين المقبض، صورة «بعد» (target) في الطبقة السفلية كاملة. سحب المقبض يمينًا يكشف «قبل» ويسارًا يكشف «بعد» (RTL). دعم اللمس عبر Pointer Events + `touch-none`. بدون `crossOrigin` (تجنب تلوث canvas بلا داعٍ). رسالة عربية ودودة عند غياب إحدى الصورتين.
+  - صفحة المقارنة تدعم وضعين: `?baseId=&targetId=` (تحليلان، المنزلق + التراكب + جدول الخادم) و`?baseId=&versionId=` (نسخة محفوظة، التراكب + جدول يُحسب في المتصفح من قياسات التحليل مقابل قياسات النسخة).
+  - تقوية محرك التشخيص (Wits+ANB، استدعاء قلع/جراحة، نمو) مُنجزة في سبرنت سابق.
+- **C-C:** تقرير PDF عربي (QuestPDF + خط Noto Naskh Arabic) يرسم التتبّع التشريحي فوق الصورة + جدول قياسات ملوّن + الهوية من Settings + توقيع الطبيب — كان مكتملًا قبل Sprint 4.
+- **C-D (مُتحقَّق منه في هذا PR):**
+  - **مسودة تشخيص LLM**: `CephController.DraftDiagnosis` → `CephAiDraftService.GenerateDraftAsync` → `IAiDraftProvider.GenerateAsync`. مزودان مُنفَّذان: `AnthropicAiDraftProvider` (Claude، `x-api-key` header، `anthropic-version: 2023-06-01`) + Gemini provider. لا مزوّد وهمي.
+  - **عبارة المراجعة الإلزامية**: `DisclaimerAr` = «هذه مسودة مولّدة بالذكاء الاصطناعي — تتطلب مراجعة واعتماد أخصائي التقويم قبل أي استخدام سريري.» تظهر في: (1) الـsystem prompt كاختم حرفي للمسودة، (2) حقل `disclaimer` في الاستجابة، (3) الـfallback في `AnalysisReport.tsx` بالواجهة.
+  - **`OrthodonticAiLog`**: يُكتب في كل مسار — `WriteAuditAsync` على النجاح (bestEffort=false صارم) + على الفشل (bestEffort=true، يشمل disabled/provider_unsupported/api_key_missing/monthly_limit_reached/upstream failure). مُثبَّت باختبارات `CephAiDraftTests`.
+  - **مفاتيح `ai.*`**: `AiSettingsController` (GET/PUT/test-connection، `[Authorize(Policy="AdminOnly")]`) يدير `ai.ceph_draft_enabled`، `ai.provider`، `ai.model`، `ai.max_tokens`، `ai.temperature`، `ai.monthly_limit` + مخزن مفاتيح مشفّر (`AiApiKeyVault`). تُقرأ هذه المفاتيح فعليًا في `CephAiDraftService.GetSettingsAsync()` (مع defaults + clamps). مُثبَّت باختبار `Settings_DefaultsAndClamps_AreApplied`.
+  - **placeholder صادق**: زر «تتبع آلي متخصص · قريبًا» معطَّل (`disabled`، `cursor-not-allowed`)، لا onClick، لا endpoint وهمي — يصرّح بأن نموذج رؤية سيفالومتري مخصص غير متاح بعد.
 
 ## قواعد صارمة
 لا AI مزيف أبدًا (المحاكاة تُعلَّم بوضوح وللتجربة فقط) · كل مخرجات LLM مسودات بعبارة «تتطلب مراجعة واعتماد أخصائي التقويم» · القيم المعيارية دولية وقابلة للتهيئة من القاعدة · الطبيب يعدّل كل شيء يدويًا.

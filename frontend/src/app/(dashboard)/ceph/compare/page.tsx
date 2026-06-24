@@ -12,11 +12,21 @@ import {
   TrendingDown,
   Minus,
   AlertTriangle,
+  History,
 } from "lucide-react";
 import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
-import type { CephAnalysis, CephCompareResult, CephCompareRow, MeasurementSeverity } from "@/types/ceph";
+import { resolveImageUrl } from "@/hooks/useClinicBranding";
+import type {
+  CephAnalysis,
+  CephCompareResult,
+  CephCompareRow,
+  CephMeasurement,
+  CephVersionDetail,
+  MeasurementSeverity,
+} from "@/types/ceph";
 import { CephSuperimposeCanvas } from "@/components/ceph/CephSuperimposeCanvas";
+import { CephImageSliderCompare } from "@/components/ceph/CephImageSliderCompare";
 
 // ─── Labels ──────────────────────────────────────────────────────────────────
 
@@ -62,6 +72,57 @@ function fmtDelta(d: number | null, unit: string): string {
   return `${sign}${d.toFixed(1)}${unit}`;
 }
 
+// C-B: compute a client-side diff table when comparing the live analysis
+// against a saved VERSION snapshot (the backend CompareAsync requires two
+// analysis IDs, so we recompute the rows from the measurement lists). The
+// formula mirrors the server: improved = |target − normal| < |base − normal|.
+function buildVersionCompareRows(
+  base: CephMeasurement[],
+  target: CephMeasurement[],
+): CephCompareRow[] {
+  const baseMap = new Map(base.map(m => [m.name, m]));
+  const targetMap = new Map(target.map(m => [m.name, m]));
+  const names = new Set<string>([...baseMap.keys(), ...targetMap.keys()]);
+
+  const rows: CephCompareRow[] = [];
+  for (const name of names) {
+    const b = baseMap.get(name);
+    const t = targetMap.get(name);
+    const normal = b?.normal ?? t?.normal ?? 0;
+    const stdDev = b?.stdDev ?? t?.stdDev ?? 0;
+    const unit = (b?.unit ?? t?.unit ?? "°") as CephCompareRow["unit"];
+    const bv = b?.value ?? null;
+    const tv = t?.value ?? null;
+    const delta = bv !== null && tv !== null ? Math.round((tv - bv) * 100) / 100 : null;
+    let improved: boolean | null = null;
+    if (bv !== null && tv !== null) {
+      const beforeDist = Math.abs(bv - normal);
+      const afterDist = Math.abs(tv - normal);
+      improved = afterDist < beforeDist ? true
+        : afterDist > beforeDist ? false
+        : null;
+    }
+    rows.push({
+      measurementName: name,
+      nameAr: t?.nameAr ?? b?.nameAr ?? name,
+      analysisGroup: (t?.analysisGroup ?? b?.analysisGroup ?? null) as CephCompareRow["analysisGroup"],
+      unit,
+      baseValue: bv,
+      targetValue: tv,
+      delta,
+      normalValue: normal,
+      stdDeviation: stdDev,
+      baseClassification: (b?.severity ?? null) as MeasurementSeverity | null,
+      targetClassification: (t?.severity ?? null) as MeasurementSeverity | null,
+      improved,
+    });
+  }
+  rows.sort((a, b) =>
+    (a.analysisGroup ?? "zz").localeCompare(b.analysisGroup ?? "zz") ||
+    a.measurementName.localeCompare(b.measurementName));
+  return rows;
+}
+
 function SeverityBadge({ severity }: { severity: MeasurementSeverity | null }) {
   if (!severity) return <span className="text-xs text-gray-400">—</span>;
   return (
@@ -78,10 +139,20 @@ function ComparePageInner() {
   const params = useSearchParams();
   const baseId = params.get("baseId") ?? "";
   const targetId = params.get("targetId") ?? "";
+  const versionId = params.get("versionId") ?? "";
+
+  // C-B: two modes on this page:
+  //   • Analysis-vs-Analysis: ?baseId=&targetId= → server CompareAsync + slider
+  //     on the two radiographs.
+  //   • Analysis-vs-Version: ?baseId=&versionId= → fetch the saved version
+  //     snapshot for the structural superimposition + client-side diff rows.
+  //     The slider is hidden (the version shares the same radiograph as the
+  //     live analysis, so a before/after image wipe is meaningless here).
+  const isVersionMode = Boolean(baseId && versionId);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["ceph-compare", baseId, targetId],
-    enabled: Boolean(baseId && targetId),
+    enabled: Boolean(baseId && targetId) && !isVersionMode,
     retry: false,
     queryFn: async () => {
       const res = await api.get<CephCompareResult>(
@@ -100,20 +171,50 @@ function ComparePageInner() {
   });
   const targetAnalysis = useQuery({
     queryKey: ["ceph-analysis", targetId],
-    enabled: Boolean(targetId),
+    enabled: Boolean(targetId) && !isVersionMode,
     retry: false,
     queryFn: async () => (await api.get<CephAnalysis>(`/api/ceph/${encodeURIComponent(targetId)}`)).data,
   });
 
+  // C-B: version snapshot fetch (only in version mode).
+  const versionDetail = useQuery({
+    queryKey: ["ceph-version", baseId, versionId],
+    enabled: isVersionMode,
+    retry: false,
+    queryFn: async () =>
+      (await api.get<CephVersionDetail>(
+        `/api/ceph/${encodeURIComponent(baseId)}/versions/${encodeURIComponent(versionId)}`
+      )).data,
+  });
+
+  // C-B: client-side diff rows for the version comparison (mirrors the server
+  // CompareAsync formula). Recomputed whenever the base analysis or version
+  // snapshot lands.
+  const versionRows = useMemo<CephCompareRow[]>(() => {
+    if (!isVersionMode) return [];
+    const base = baseAnalysis.data?.measurements ?? [];
+    const target = versionDetail.data?.measurements ?? [];
+    if (base.length === 0 || target.length === 0) return [];
+    return buildVersionCompareRows(base, target);
+  }, [isVersionMode, baseAnalysis.data, versionDetail.data]);
+
+  // The unified row list shown in the table — server rows for analysis mode,
+  // client-computed rows for version mode. Wrapped in useMemo so the
+  // downstream summary/groups useMemo deps stay referentially stable.
+  const effectiveRows = useMemo<CephCompareRow[]>(
+    () => (isVersionMode ? versionRows : (data?.rows ?? [])),
+    [isVersionMode, versionRows, data],
+  );
+
   const summary = useMemo(() => {
     const s = { improved: 0, worsened: 0, unchanged: 0 };
-    for (const row of data?.rows ?? []) s[changeKind(row)] += 1;
+    for (const row of effectiveRows) s[changeKind(row)] += 1;
     return s;
-  }, [data]);
+  }, [effectiveRows]);
 
   const groups = useMemo(() => {
     const map = new Map<string, CephCompareRow[]>();
-    for (const row of data?.rows ?? []) {
+    for (const row of effectiveRows) {
       const key = row.analysisGroup ?? "other";
       const list = map.get(key) ?? [];
       list.push(row);
@@ -124,13 +225,43 @@ function ComparePageInner() {
       label: GROUP_AR[g] ?? "أخرى",
       rows: map.get(g)!,
     }));
-  }, [data]);
+  }, [effectiveRows]);
 
   const serverMessage =
     (error as { response?: { data?: { message?: string } } } | null)?.response?.data?.message;
 
+  // Resolve radiograph URLs for the before/after slider (analysis-vs-analysis
+  // mode only — version mode shares the same radiograph so the slider is
+  // hidden). crossOrigin is intentionally NOT set (CEPH-EPIC: avoid CORS
+  // tainting failures against the uploads host).
+  const baseImageUrl = baseAnalysis.data?.xrayFileUrl
+    ? resolveImageUrl(baseAnalysis.data.xrayFileUrl)
+    : "";
+  const targetImageUrl = targetAnalysis.data?.xrayFileUrl
+    ? resolveImageUrl(targetAnalysis.data.xrayFileUrl)
+    : "";
+
+  // The "target date" shown in the header — either the second analysis's date
+  // (analysis mode) or the saved version's snapshot date (version mode).
+  const targetDateLabel = isVersionMode
+    ? (versionDetail.data ? formatArabicDate(versionDetail.data.snapshotDate) : "")
+    : (data ? formatArabicDate(data.target.analysisDate) : "");
+  const baseDateLabel = isVersionMode
+    ? (baseAnalysis.data ? formatArabicDate(baseAnalysis.data.analysisDate) : "")
+    : (data ? formatArabicDate(data.base.analysisDate) : "");
+  const patientName = isVersionMode
+    ? (baseAnalysis.data?.patientName ?? "")
+    : (data?.patientName ?? "");
+
+  // Loading + error states for version mode.
+  const versionLoading = isVersionMode && versionDetail.isLoading;
+  const versionError = isVersionMode && versionDetail.error
+    ? ((versionDetail.error as { response?: { data?: { message?: string } } })
+        ?.response?.data?.message ?? "تعذر تحميل النسخة المحفوظة")
+    : null;
+
   // Missing params
-  if (!baseId || !targetId) {
+  if (!baseId || (!targetId && !versionId)) {
     return (
       <div className="space-y-5 max-w-5xl">
         <Breadcrumb />
@@ -138,7 +269,8 @@ function ComparePageInner() {
           <AlertTriangle className="w-12 h-12 mx-auto mb-3 opacity-30" />
           <p className="text-sm">لم يتم تحديد تحليلَين للمقارنة</p>
           <p className="text-xs mt-2 text-gray-300">
-            اختر «قارن» من قائمة التحاليل ثم «قارن مع هذا» على تحليل آخر لنفس الحالة
+            اختر «قارن» من قائمة التحاليل ثم «قارن مع هذا» على تحليل آخر لنفس الحالة،
+            أو «قارن مع نسخة» على نسخة محفوظة من التحليل
           </p>
           <Link href="/ceph" className="inline-block mt-4 text-sm text-clinic-blue hover:underline font-medium">
             العودة إلى قائمة التحاليل
@@ -155,31 +287,36 @@ function ComparePageInner() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <Link href="/ceph"
+          <Link href={baseId ? `/ceph/${baseId}` : "/ceph"}
             className="no-print p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500">
             <ArrowRight className="w-4 h-4" />
           </Link>
           <div>
-            <h1 className="text-2xl font-extrabold text-gray-900">مقارنة سيفالومترية</h1>
-            {data && <p className="text-sm text-gray-500 mt-0.5">{data.patientName}</p>}
+            <h1 className="text-2xl font-extrabold text-gray-900">
+              {isVersionMode ? "مقارنة التحليل مع نسخة محفوظة" : "مقارنة سيفالومترية"}
+            </h1>
+            {patientName && <p className="text-sm text-gray-500 mt-0.5">{patientName}</p>}
           </div>
         </div>
 
-        {data && (
+        {(data || isVersionMode) && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full font-medium">
-              قبل: {formatArabicDate(data.base.analysisDate)}
+              {isVersionMode ? "الحالي" : "قبل"}: {baseDateLabel}
             </span>
-            <span className="text-xs bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full font-medium">
-              بعد: {formatArabicDate(data.target.analysisDate)}
+            <span className="text-xs bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full font-medium flex items-center gap-1">
+              {isVersionMode && <History className="w-3 h-3" />}
+              {isVersionMode ? "النسخة" : "بعد"}: {targetDateLabel}
             </span>
-            <button
-              onClick={() => router.replace(`/ceph/compare?baseId=${targetId}&targetId=${baseId}`)}
-              className="no-print flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
-            >
-              <ArrowLeftRight className="w-3.5 h-3.5" />
-              تبديل
-            </button>
+            {!isVersionMode && (
+              <button
+                onClick={() => router.replace(`/ceph/compare?baseId=${targetId}&targetId=${baseId}`)}
+                className="no-print flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+              >
+                <ArrowLeftRight className="w-3.5 h-3.5" />
+                تبديل
+              </button>
+            )}
             <button
               onClick={() => printScreen()}
               className="no-print flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
@@ -191,35 +328,82 @@ function ComparePageInner() {
         )}
       </div>
 
-      {isLoading ? (
+      {/* Version-mode banner explaining what is being compared */}
+      {isVersionMode && versionDetail.data && (
+        <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-800 flex items-start gap-2">
+          <History className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <div>
+            تقارن هذه الصفحة حالة التحليل <b>الحالية</b> مع النسخة المحفوظة
+            «{versionDetail.data.label}» ({formatArabicDate(versionDetail.data.snapshotDate)}).
+            التراكب البنيوي يستخدم معالم النسخة كطرف «بعد»، وجدول القياسات يُحتسب في المتصفح
+            من قياسات التحليل الحالي مقابل قياسات النسخة المحفوظة.
+          </div>
+        </div>
+      )}
+
+      {versionLoading ? (
         <div className="space-y-3 animate-pulse">
+          <div className="h-64 bg-gray-100 rounded-xl" />
           <div className="grid grid-cols-3 gap-3">
             {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-20 bg-gray-100 rounded-xl" />)}
           </div>
           {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-12 bg-gray-100 rounded-xl" />)}
         </div>
-      ) : error ? (
+      ) : versionError ? (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          {versionError}
+        </div>
+      ) : isLoading && !isVersionMode ? (
+        <div className="space-y-3 animate-pulse">
+          <div className="h-64 bg-gray-100 rounded-xl" />
+          <div className="grid grid-cols-3 gap-3">
+            {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-20 bg-gray-100 rounded-xl" />)}
+          </div>
+          {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-12 bg-gray-100 rounded-xl" />)}
+        </div>
+      ) : error && !isVersionMode ? (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0" />
           {serverMessage ?? "تعذر تحميل بيانات المقارنة"}
         </div>
-      ) : !data || data.rows.length === 0 ? (
+      ) : effectiveRows.length === 0 ? (
         <div className="text-center py-20 text-gray-400">
           <Minus className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">لا توجد قياسات مشتركة بين التحليلَين للمقارنة</p>
+          <p className="text-sm">لا توجد قياسات مشتركة بين الطرفين للمقارنة</p>
         </div>
       ) : (
         <>
+          {/* C-B: before/after radiograph wipe slider (analysis-vs-analysis only). */}
+          {!isVersionMode && baseImageUrl && targetImageUrl && (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 avoid-break">
+              <h2 className="text-sm font-bold text-gray-700 mb-3">مقارنة صور الأشعة (قبل/بعد)</h2>
+              <CephImageSliderCompare
+                baseImageUrl={baseImageUrl}
+                targetImageUrl={targetImageUrl}
+                baseDate={formatArabicDate(data!.base.analysisDate)}
+                targetDate={formatArabicDate(data!.target.analysisDate)}
+              />
+            </div>
+          )}
+
           {/* Visual superimposition (cranial base, registered on SN) */}
-          {baseAnalysis.data && targetAnalysis.data &&
-           baseAnalysis.data.landmarks.length > 0 && targetAnalysis.data.landmarks.length > 0 && (
+          {baseAnalysis.data &&
+           (isVersionMode
+             ? versionDetail.data?.landmarks && versionDetail.data.landmarks.length > 0
+             : targetAnalysis.data && targetAnalysis.data.landmarks.length > 0) &&
+           baseAnalysis.data.landmarks.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 avoid-break">
               <h2 className="text-sm font-bold text-gray-700 mb-3">التراكب البنيوي (قاعدة الجمجمة)</h2>
               <CephSuperimposeCanvas
                 baseLandmarks={baseAnalysis.data.landmarks}
-                targetLandmarks={targetAnalysis.data.landmarks}
-                baseDate={formatArabicDate(data.base.analysisDate)}
-                targetDate={formatArabicDate(data.target.analysisDate)}
+                targetLandmarks={
+                  isVersionMode
+                    ? versionDetail.data!.landmarks
+                    : targetAnalysis.data!.landmarks
+                }
+                baseDate={baseDateLabel}
+                targetDate={targetDateLabel}
               />
             </div>
           )}
@@ -240,7 +424,9 @@ function ComparePageInner() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    {["القياس", "قبل", "بعد", "الفرق", "المعيار", "الحالة"].map((h) => (
+                    {["القياس", isVersionMode ? "الحالي" : "قبل",
+                      isVersionMode ? "النسخة" : "بعد",
+                      "الفرق", "المعيار", "الحالة"].map((h) => (
                       <th key={h} className="text-start px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">
                         {h}
                       </th>

@@ -11,52 +11,48 @@ import { useDoctors } from "@/hooks/useDoctors";
 import { useAuthStore } from "@/stores/authStore";
 import { cn, normalizePhone } from "@/lib/utils";
 
-// Optional fields from form inputs/selects often send "" (empty string) when
-// left blank — but zod's .optional() only allows undefined. Use these helpers
-// everywhere so "" is accepted at validation time, then stripped to undefined
-// when building the API payload (see onSubmit).
-const optionalString = z.union([z.string(), z.literal(undefined)]).optional();
-const optionalEnum = (values: [string, ...string[]]) =>
-  z.union([z.enum(values), z.literal(""), z.literal(undefined)]).optional();
-const optionalPhone = z.union([z.string(), z.literal(undefined)]).optional()
-  .refine((val: unknown) => !val || /^[0-9+\-\s]{7,15}$/.test(String(val)), {
-    message: "رقم الهاتف غير صحيح",
-  });
-const optionalEmail = z.union([z.string(), z.literal(undefined)]).optional()
-  .refine((val: unknown) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(val)), {
-    message: "البريد الإلكتروني غير صحيح",
-  });
+// Form inputs/selects send "" (empty string) for blank optional fields. zod's
+// .optional() only allows undefined, causing silent validation failures that
+// block form submit. Use z.any() for optional fields so validation never blocks
+// submit; the payload construction strips "" to undefined before the API call,
+// and the backend does its own validation (FluentValidation).
+const opt = z.any().optional();
 
 const schema = z.object({
   firstName:   z.string().min(1, "الاسم الأول مطلوب"),
-  middleName:  optionalString,
+  middleName:  opt,
   lastName:    z.string().min(1, "الاسم الأخير مطلوب"),
-  dateOfBirth: optionalString,
-  gender:      optionalEnum(["Male", "Female"]),
-  phone:       optionalPhone,
-  email:       optionalEmail,
-  whatsApp:    optionalPhone,
-  address:     optionalString,
-  occupation:  optionalString,
-  referralSource: optionalString,
-  chronicDiseases:    optionalString,
-  currentMedications: optionalString,
-  drugAllergies:      optionalString,
+  dateOfBirth: opt,
+  gender:      opt,
+  phone:       opt,
+  email:       opt,
+  whatsApp:    opt,
+  address:     opt,
+  occupation:  opt,
+  referralSource: opt,
+  chronicDiseases:    opt,
+  currentMedications: opt,
+  drugAllergies:      opt,
   bleedingDisorders:  z.boolean(),
-  isPregnant:         optionalEnum(["Yes", "No", "N/A"]),
+  isPregnant:         opt,
   tmjProblems:        z.boolean(),
-  previousSurgeries:  optionalString,
-  medNotes:           optionalString,
-  chiefComplaint:     optionalString,
-  previousTreatments: optionalString,
+  previousSurgeries:  opt,
+  medNotes:           opt,
+  chiefComplaint:     opt,
+  previousTreatments: opt,
   mouthBreathing:     z.boolean(),
   bruxism:            z.boolean(),
   thumbSucking:       z.boolean(),
   tongueThrusing:     z.boolean(),
-  dentalNotes:        optionalString,
-  primaryDoctorId:    optionalString,
+  dentalNotes:        opt,
+  primaryDoctorId:    opt,
 });
 type FormData = z.infer<typeof schema>;
+
+// Helper: extract a string error message from RHF's error object (z.any() fields
+// produce FieldError | Merge types, so coerce to string).
+const err = (e: { message?: unknown } | undefined): string | undefined =>
+  e && typeof e.message === "string" ? e.message : undefined;
 
 interface DuplicateMatch {
   id: string;
@@ -326,14 +322,14 @@ export function PatientForm({ defaultValues, patientId }: Props) {
 
       {/* 1. Basic Information Panel */}
       <FormPanel title="البيانات الأساسية" description="أدخل الاسم الشخصي للمريض وتاريخ الميلاد والبيانات الجندرية">
-        <Field label="الاسم الأول" required error={errors.firstName?.message}>
-          <input {...register("firstName")} className={inputCls(errors.firstName?.message)} placeholder="الاسم الأول" onChange={(e) => { register("firstName").onChange(e); handleFieldChange(); }} />
+        <Field label="الاسم الأول" required error={err(errors.firstName)}>
+          <input {...register("firstName")} className={inputCls(err(errors.firstName))} placeholder="الاسم الأول" onChange={(e) => { register("firstName").onChange(e); handleFieldChange(); }} />
         </Field>
-        <Field label="اسم الأب والعائلة الوسطى" error={errors.middleName?.message}>
+        <Field label="اسم الأب والعائلة الوسطى" error={err(errors.middleName)}>
           <input {...register("middleName")} className={inputCls()} placeholder="اسم الأب (اختياري)" />
         </Field>
-        <Field label="اللقب / الاسم الأخير" required error={errors.lastName?.message}>
-          <input {...register("lastName")} className={inputCls(errors.lastName?.message)} placeholder="اسم العائلة" onChange={(e) => { register("lastName").onChange(e); handleFieldChange(); }} />
+        <Field label="اللقب / الاسم الأخير" required error={err(errors.lastName)}>
+          <input {...register("lastName")} className={inputCls(err(errors.lastName))} placeholder="اسم العائلة" onChange={(e) => { register("lastName").onChange(e); handleFieldChange(); }} />
         </Field>
         <Field label="تاريخ الميلاد">
           <input {...register("dateOfBirth")} type="date" className={inputCls()} onChange={(e) => { register("dateOfBirth").onChange(e); handleFieldChange(); }} />
@@ -349,14 +345,14 @@ export function PatientForm({ defaultValues, patientId }: Props) {
 
       {/* 2. Contact Information Panel */}
       <FormPanel title="بيانات الاتصال" description="وسائل التواصل الهاتفي والإلكتروني لتنسيق المواعيد والتنبيهات">
-        <Field label="رقم الهاتف الأساسي" error={errors.phone?.message}>
-          <input {...register("phone")} className={inputCls(errors.phone?.message)} placeholder="7XXXXXXXX" dir="ltr" onChange={(e) => { register("phone").onChange(e); handleFieldChange(); }} />
+        <Field label="رقم الهاتف الأساسي" error={err(errors.phone)}>
+          <input {...register("phone")} className={inputCls(err(errors.phone))} placeholder="7XXXXXXXX" dir="ltr" onChange={(e) => { register("phone").onChange(e); handleFieldChange(); }} />
         </Field>
-        <Field label="رقم الواتساب" error={errors.whatsApp?.message}>
-          <input {...register("whatsApp")} className={inputCls(errors.whatsApp?.message)} placeholder="7XXXXXXXX" dir="ltr" onChange={(e) => { register("whatsApp").onChange(e); handleFieldChange(); }} />
+        <Field label="رقم الواتساب" error={err(errors.whatsApp)}>
+          <input {...register("whatsApp")} className={inputCls(err(errors.whatsApp))} placeholder="7XXXXXXXX" dir="ltr" onChange={(e) => { register("whatsApp").onChange(e); handleFieldChange(); }} />
         </Field>
-        <Field label="البريد الإلكتروني" error={errors.email?.message}>
-          <input {...register("email")} type="email" className={inputCls(errors.email?.message)} placeholder="example@email.com" dir="ltr" />
+        <Field label="البريد الإلكتروني" error={err(errors.email)}>
+          <input {...register("email")} type="email" className={inputCls(err(errors.email))} placeholder="example@email.com" dir="ltr" />
         </Field>
       </FormPanel>
 

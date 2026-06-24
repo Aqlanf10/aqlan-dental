@@ -19,8 +19,8 @@ const inputCls =
 
 function resolveImageUrl(url: string) {
   if (url.startsWith("http") || url.startsWith("data:")) return url;
-  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
-  return apiBase ? `${apiBase}${url.startsWith("/") ? "" : "/"}${url}` : url;
+  // NAV-CEPH-FIX (Part 2): relative path → Next.js rewrite proxies /uploads/* same-origin.
+  return url;
 }
 
 function photoLabel(photo: OrthoPhoto) {

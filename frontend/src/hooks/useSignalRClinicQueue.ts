@@ -5,9 +5,12 @@ import { HubConnectionBuilder, type HubConnection, LogLevel } from "@microsoft/s
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/authStore";
 
-const HUB_URL = process.env.NEXT_PUBLIC_API_URL
-  ? `${process.env.NEXT_PUBLIC_API_URL}/hubs/messaging`
-  : "/hubs/messaging";
+// NAV-CEPH-FIX (Part 2): relative hub URL → the Next.js rewrite proxies /hubs/* to the backend
+// (same-origin). Same-origin SignalR connections carry the aqlan_access_token cookie if needed,
+// avoid cross-origin WebSocket complications in production (Vercel→Railway), and work identically
+// in dev (the rewrite points to localhost:5000). @microsoft/signalr resolves relative URLs
+// against the page origin, so this is equivalent to `${window.location.origin}/hubs/messaging`.
+const HUB_URL = "/hubs/messaging";
 
 /**
  * Hook لإدارة اتصال SignalR لأحداث الطابور والعيادة.

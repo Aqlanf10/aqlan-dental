@@ -29,11 +29,25 @@ export interface ClinicBranding {
 
 // ─── URL resolver ─────────────────────────────────────────────────────────────
 
+/**
+ * Resolve a relative upload URL (e.g. "/uploads/ceph/x.png") to a value the
+ * browser can render in an `<img src=...>`.
+ *
+ * NAV-CEPH-FIX (Part 2): Returns the relative path as-is so the request stays
+ * same-origin. The Next.js rewrite in `next.config.mjs` proxies `/uploads/*` to
+ * the backend, which means the browser's `aqlan_access_token` cookie
+ * (SameSite=Strict) travels with the request and the backend's /uploads auth
+ * middleware (SEC-03) accepts it. Previously this prefixed `${NEXT_PUBLIC_API_URL}`
+ * (the cross-origin backend base) → the cookie was not sent → 401 → broken ceph
+ * X-rays and clinical photos in production (Vercel → Railway).
+ *
+ * Absolute URLs (http://, https://) are returned unchanged — they're already
+ * fully qualified (e.g. R2 / S3 object URLs).
+ */
 export function resolveImageUrl(url: string | null | undefined): string {
   if (!url || url.trim() === "") return "";
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
-  return `${apiBase}${url}`;
+  return url;  // relative — Next.js rewrite proxies /uploads/* (same-origin → cookie travels)
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────

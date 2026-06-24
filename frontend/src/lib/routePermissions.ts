@@ -29,7 +29,11 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { path: '/sms', allowedRoles: ['Admin', 'Reception'] },
   
   // Finance - Admin and Accountant only
-  { path: '/finance-v3', allowedRoles: ['Admin', 'Accountant', 'Reception'] },
+  // NAV-CEPH-FIX (audit §4 — Finance): Reception removed — page guard returns AccessDenied for
+  // Reception (page.tsx:78,103-105 checks Admin || Accountant only), so allowing Reception here
+  // was a dead-end loop (sidebar → routePermissions allow → AccessDenied → /daily-operations).
+  // Now Reception is cleanly redirected by the layout's route guard instead.
+  { path: '/finance-v3', allowedRoles: ['Admin', 'Accountant'] },
   
   // Inventory - Admin only
   { path: '/inventory', allowedRoles: ['Admin'] },

@@ -4,11 +4,13 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { HubConnectionBuilder, HubConnection, LogLevel } from "@microsoft/signalr";
 import { useQueryClient } from "@tanstack/react-query";
 
-const HUB_URL = process.env.NEXT_PUBLIC_PORTAL_API_URL
-  ? `${process.env.NEXT_PUBLIC_PORTAL_API_URL}/hubs/messaging`
-  : process.env.NEXT_PUBLIC_API_URL
-    ? `${process.env.NEXT_PUBLIC_API_URL}/hubs/messaging`
-    : "/hubs/messaging";
+// NAV-CEPH-FIX (Part 2): relative hub URL → the Next.js rewrite proxies /hubs/* to the backend
+// (same-origin). The patient-portal SignalR connection passes the JWT via accessTokenFactory
+// (not cookies), so cross-origin auth wasn't the issue — but a relative URL still avoids
+// cross-origin WebSocket handshake complications in production (Vercel → Railway) and works
+// identically in dev (the rewrite points to localhost:5000). @microsoft/signalr resolves
+// relative URLs against the page origin.
+const HUB_URL = "/hubs/messaging";
 
 /**
  * Hook لإدارة اتصال SignalR لبوابة المريض.

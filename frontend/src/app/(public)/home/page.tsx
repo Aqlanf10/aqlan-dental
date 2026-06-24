@@ -90,12 +90,12 @@ export default function PublicHomePage() {
   // Safe accessor with fallback
   const get = (key: string): string => s[key] ?? FALLBACK[key] ?? "";
 
-  // Resolve image URL: if relative (from backend /uploads), prepend API base
+  // Resolve image URL: if relative (from backend /uploads), keep relative — the Next.js rewrite
+  // proxies /uploads/* same-origin (NAV-CEPH-FIX Part 2).
   const resolveImg = (url: string | null | undefined): string | null => {
     if (!url || url.trim() === "") return null;
     if (url.startsWith("http")) return url;
-    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
-    return `${apiBase}${url}`;
+    return url;
   };
 
   const heroImgUrl = resolveImg(get("heroImageUrl"));

@@ -1267,11 +1267,8 @@ export function ImagesRadiographsPanel({
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Lab Order Panel — creates a real lab order via /api/lab-orders (createLabOrderMutation
-   in doctor-clinic/page.tsx). FE-14: the previous 'TODO: Connect to lab order API when
-   backend is ready' comment and the 'سيتم حفظ طلب المختبر كملاحظة سريرية' info note
-   were STALE and misleading — the backend IS ready and the mutation DOES create a real
-   lab order. Fixed the messaging.
+   Lab Order Panel — creates a real lab order via /api/lab-orders
+   (createLabOrderMutation in doctor-clinic/page.tsx).
    ═══════════════════════════════════════════════════════════════════════════ */
 export interface LabOrderPanelData {
   labWorkType: string;

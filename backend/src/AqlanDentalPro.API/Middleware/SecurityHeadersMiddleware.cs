@@ -10,7 +10,7 @@ public class SecurityHeadersMiddleware
 
     public SecurityHeadersMiddleware(RequestDelegate next) => _next = next;
 
-    public async Task InvokeAsync(HttpContext context)
+    public async Task InvokeAsync(HttpContext context, IWebHostEnvironment env)
     {
         // Prevent clickjacking — allow same-origin only
         context.Response.Headers["X-Frame-Options"] = "SAMEORIGIN";
@@ -22,15 +22,29 @@ public class SecurityHeadersMiddleware
         // Referrer Policy — send origin only on cross-origin requests
         context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
 
-        // Content Security Policy — allow same-origin + common CDNs
+        // Content Security Policy.
+        // SEC (audit §5.10): the API serves only JSON responses and uploaded files in
+        // production (Swagger UI — the only backend-served HTML with inline scripts — is
+        // disabled in Production, see Program.cs). So in production we DROP 'unsafe-inline'
+        // and 'unsafe-eval' from script-src entirely. Non-production keeps them so Swagger UI
+        // still works. (The Next.js app is served by Vercel with its own headers and is not
+        // affected by this backend CSP.) 'unsafe-inline' is retained for style-src only —
+        // inline styles cannot execute script, and Swagger/ASP.NET error pages rely on them.
+        var scriptSrc = env.IsProduction()
+            ? "script-src 'self' https://www.google.com https://www.gstatic.com; "
+            : "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.google.com https://www.gstatic.com; ";
+
         context.Response.Headers["Content-Security-Policy"] =
             "default-src 'self'; " +
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.google.com https://www.gstatic.com; " +
+            scriptSrc +
             "frame-src https://www.google.com; " +
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
             "font-src 'self' https://fonts.gstatic.com; " +
             "img-src 'self' data: blob:; " +
-            "connect-src 'self' https://www.google.com;";
+            "connect-src 'self' https://www.google.com; " +
+            "object-src 'none'; " +        // no plugins/embeds
+            "base-uri 'self'; " +          // block <base> tag injection
+            "frame-ancestors 'self';";     // modern clickjacking guard (complements X-Frame-Options)
 
         // Permissions Policy — restrict browser features
         context.Response.Headers["Permissions-Policy"] =

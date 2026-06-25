@@ -7,6 +7,7 @@ import {
   Save, CheckCircle2, ChevronRight, ChevronDown, Loader2, FileDown, Printer,
   Sun, Contrast, RotateCcw, ListChecks, ImageIcon, FileText, ScanLine, Target,
   User, FolderOpen, History, Camera, Lock, X, ArrowLeftRight, ShieldCheck,
+  AlertTriangle,
 } from "lucide-react";
 import type {
   CephAnalysis, CephLandmark, CephDiagnosis, AnalysisType,
@@ -17,7 +18,11 @@ import { buildMeasurementList, applyNormOverrides, type ApiNorm } from "@/lib/ce
 import { CephCanvas, LANDMARK_DEFS, LANDMARK_ORDER, SIMULATION_SCENARIOS } from "@/components/ceph/CephCanvas";
 import { AnalysisReport } from "@/components/ceph/AnalysisReport";
 import { CephReadinessBadge } from "@/components/ceph/CephReadinessBadge";
-import { cephReadinessFromAnalysis } from "@/lib/cephReadiness";
+import { CephQualityPanel } from "@/components/ceph/CephQualityPanel";
+import {
+  cephReadinessFromAnalysis,
+  computeCephQuality,
+} from "@/lib/cephReadiness";
 import api from "@/lib/api";
 import { resolveImageUrl } from "@/hooks/useClinicBranding";
 import { downloadPdfFromApi, printPdfFromApi } from "@/lib/pdfDownload";
@@ -182,6 +187,25 @@ export default function CephAnalysisPage() {
   const readiness = useMemo(
     () => analysis ? cephReadinessFromAnalysis(analysis, isDirty) : null,
     [analysis, isDirty],
+  );
+
+  // Audit §12: advisory data-quality signals computed from the LIVE canvas
+  // state (landmarks + calibration) plus the saved measurement count. Drives
+  // the warnings banner and the per-landmark low-confidence highlight. These
+  // are advisory only — they never weaken the approval/PDF gate above.
+  const quality = useMemo(
+    () =>
+      computeCephQuality({
+        pixelsPerMm,
+        landmarks,
+        measurementCount: analysis?.measurements?.length ?? 0,
+        isDirty,
+      }),
+    [pixelsPerMm, landmarks, analysis?.measurements?.length, isDirty],
+  );
+  const lowConfidenceSet = useMemo(
+    () => new Set(quality.lowConfidenceKeys),
+    [quality.lowConfidenceKeys],
   );
 
   const handleLandmarksChange = useCallback((lm: CephLandmark[]) => {
@@ -655,6 +679,12 @@ export default function CephAnalysisPage() {
         </div>
       )}
 
+      {/* Audit §12: data-quality warnings (calibration, low-confidence AI
+          points, incomplete landmarks, unsaved edits, stale measurements). */}
+      <div className="flex-shrink-0 px-1 pt-2">
+        <CephQualityPanel quality={quality} />
+      </div>
+
       {/* Honest-simulation banners */}
       {simNotice && (
         <div className="flex-shrink-0 mx-1 mb-2 flex items-start justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -812,6 +842,15 @@ export default function CephAnalysisPage() {
                   const def = LANDMARK_DEFS[key];
                   const placed = lmMap[key];
                   const isSelected = selectedKey === key;
+                  // Audit §12: per-landmark quality. AI-placed points stay a
+                  // "مسودة" (draft) until reviewed; a confidence below the
+                  // threshold (or unknown) is flagged with a warning style.
+                  const isAi = Boolean(placed?.isAiPlaced);
+                  const isLowConfidence = isAi && lowConfidenceSet.has(key);
+                  const confidencePct =
+                    typeof placed?.confidence === "number"
+                      ? Math.round(placed.confidence * 100)
+                      : null;
                   return (
                     <button
                       key={key}
@@ -821,7 +860,9 @@ export default function CephAnalysisPage() {
                         "mb-0.5 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-[11px] transition",
                         isSelected
                           ? "bg-blue-50 text-clinic-blue ring-1 ring-blue-200"
-                          : "text-gray-600 hover:bg-gray-50",
+                          : isLowConfidence
+                            ? "text-amber-800 ring-1 ring-amber-200 hover:bg-amber-50"
+                            : "text-gray-600 hover:bg-gray-50",
                       )}
                     >
                       <span
@@ -833,10 +874,44 @@ export default function CephAnalysisPage() {
                       />
                       <span className="w-7 flex-shrink-0 font-mono text-[10px] font-bold text-gray-500">{key}</span>
                       <span className="min-w-0 flex-1 truncate">{def?.nameAr}</span>
-                      {placed?.isAiPlaced && (
-                        <span className="rounded bg-violet-50 px-1 text-[8px] font-bold text-violet-600">AI</span>
+                      {isAi ? (
+                        <span
+                          title={
+                            isLowConfidence
+                              ? `نقطة AI بثقة منخفضة${confidencePct !== null ? ` (${confidencePct}%)` : " (غير معروفة)"} — راجعها يدويًا`
+                              : `نقطة AI (مسودة) — راجعها يدويًا${confidencePct !== null ? ` · الثقة ${confidencePct}%` : ""}`
+                          }
+                          className={cn(
+                            "inline-flex flex-shrink-0 items-center gap-0.5 rounded px-1 text-[8px] font-bold",
+                            isLowConfidence
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-violet-50 text-violet-600",
+                          )}
+                        >
+                          {isLowConfidence && <AlertTriangle className="h-2.5 w-2.5" />}
+                          AI · مسودة
+                          {confidencePct !== null && (
+                            <span className="font-mono">{confidencePct}%</span>
+                          )}
+                        </span>
+                      ) : (
+                        placed && (
+                          <span
+                            title="نقطة موضوعة يدويًا"
+                            className="rounded bg-emerald-50 px-1 text-[8px] font-bold text-emerald-600"
+                          >
+                            يدوي
+                          </span>
+                        )
                       )}
-                      {placed && <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-emerald-500" />}
+                      {placed && (
+                        <CheckCircle2
+                          className={cn(
+                            "h-3.5 w-3.5 flex-shrink-0",
+                            isLowConfidence ? "text-amber-500" : "text-emerald-500",
+                          )}
+                        />
+                      )}
                     </button>
                   );
                 })}

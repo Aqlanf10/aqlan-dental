@@ -2,7 +2,12 @@ import { describe, it, expect } from "vitest";
 import {
   computeCephReadiness,
   cephReadinessFromAnalysis,
+  computeCephQuality,
+  isCalibrationValid,
+  lowConfidenceLandmarks,
+  LOW_CONFIDENCE_THRESHOLD,
   type CephReadinessInput,
+  type CephQualityLandmark,
 } from "@/lib/cephReadiness";
 import type { CephAnalysis } from "@/types/ceph";
 
@@ -111,5 +116,159 @@ describe("cephReadinessFromAnalysis", () => {
 
   it("treats a dirty canvas as not ready", () => {
     expect(cephReadinessFromAnalysis(base, true).ready).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Data-quality signals (audit §12)
+// ---------------------------------------------------------------------------
+
+describe("isCalibrationValid", () => {
+  it("accepts a finite, positive number", () => {
+    expect(isCalibrationValid(12.5)).toBe(true);
+  });
+  it("rejects null / undefined / zero / negative / NaN", () => {
+    expect(isCalibrationValid(null)).toBe(false);
+    expect(isCalibrationValid(undefined)).toBe(false);
+    expect(isCalibrationValid(0)).toBe(false);
+    expect(isCalibrationValid(-3)).toBe(false);
+    expect(isCalibrationValid(Number.NaN)).toBe(false);
+    expect(isCalibrationValid(Number.POSITIVE_INFINITY)).toBe(false);
+  });
+});
+
+describe("lowConfidenceLandmarks", () => {
+  const lm = (over: Partial<CephQualityLandmark>): CephQualityLandmark => ({
+    key: "S",
+    isAiPlaced: false,
+    confidence: 1,
+    ...over,
+  });
+
+  it("uses a 0..1 threshold of 0.7 by default", () => {
+    expect(LOW_CONFIDENCE_THRESHOLD).toBe(0.7);
+  });
+
+  it("flags AI landmarks below the threshold", () => {
+    const keys = lowConfidenceLandmarks([
+      lm({ key: "S", isAiPlaced: true, confidence: 0.55 }),
+      lm({ key: "N", isAiPlaced: true, confidence: 0.95 }),
+    ]);
+    expect(keys).toEqual(["S"]);
+  });
+
+  it("never flags a manually-placed landmark, even at low confidence", () => {
+    const keys = lowConfidenceLandmarks([
+      lm({ key: "A", isAiPlaced: false, confidence: 0.1 }),
+    ]);
+    expect(keys).toEqual([]);
+  });
+
+  it("treats an AI landmark with unknown confidence as low-confidence", () => {
+    const keys = lowConfidenceLandmarks([
+      lm({ key: "B", isAiPlaced: true, confidence: undefined }),
+    ]);
+    expect(keys).toEqual(["B"]);
+  });
+
+  it("does not flag an AI landmark exactly at the threshold", () => {
+    const keys = lowConfidenceLandmarks([
+      lm({ key: "Po", isAiPlaced: true, confidence: 0.7 }),
+    ]);
+    expect(keys).toEqual([]);
+  });
+});
+
+describe("computeCephQuality", () => {
+  const aiLow = (key: string): CephQualityLandmark => ({
+    key,
+    isAiPlaced: true,
+    confidence: 0.4,
+  });
+  const manual = (key: string): CephQualityLandmark => ({
+    key,
+    isAiPlaced: false,
+    confidence: 1,
+  });
+  const fullManualSet = Array.from({ length: 24 }, (_, i) => manual(`L${i}`));
+
+  it("reports no warnings for a complete, calibrated, computed, clean analysis", () => {
+    const q = computeCephQuality({
+      pixelsPerMm: 12.5,
+      landmarks: fullManualSet,
+      measurementCount: 10,
+      isDirty: false,
+    });
+    expect(q.hasWarnings).toBe(false);
+    expect(q.warnings).toHaveLength(0);
+    expect(q.calibrationValid).toBe(true);
+    expect(q.lowConfidenceKeys).toEqual([]);
+  });
+
+  it("warns about missing/invalid calibration", () => {
+    const q = computeCephQuality({
+      pixelsPerMm: null,
+      landmarks: fullManualSet,
+      measurementCount: 10,
+      isDirty: false,
+    });
+    expect(q.calibrationValid).toBe(false);
+    expect(q.warnings.some((w) => w.key === "calibration")).toBe(true);
+    expect(q.hasWarnings).toBe(true);
+  });
+
+  it("warns about low-confidence AI landmarks and lists their keys", () => {
+    const q = computeCephQuality({
+      pixelsPerMm: 12.5,
+      landmarks: [...fullManualSet.slice(0, 22), aiLow("S"), aiLow("N")],
+      measurementCount: 10,
+      isDirty: false,
+    });
+    const w = q.warnings.find((x) => x.key === "lowConfidence");
+    expect(w).toBeDefined();
+    expect(q.lowConfidenceKeys).toEqual(["S", "N"]);
+    expect(w?.message).toContain("S");
+    expect(w?.message).toContain("N");
+  });
+
+  it("warns when fewer than 24 landmarks are placed", () => {
+    const q = computeCephQuality({
+      pixelsPerMm: 12.5,
+      landmarks: fullManualSet.slice(0, 20),
+      measurementCount: 10,
+      isDirty: false,
+    });
+    const w = q.warnings.find((x) => x.key === "incompleteLandmarks");
+    expect(w).toBeDefined();
+    expect(w?.message).toContain("20/24");
+  });
+
+  it("warns about unsaved edits when dirty", () => {
+    const q = computeCephQuality({
+      pixelsPerMm: 12.5,
+      landmarks: fullManualSet,
+      measurementCount: 10,
+      isDirty: true,
+    });
+    expect(q.warnings[0]?.key).toBe("unsavedEdits");
+  });
+
+  it("flags stale measurements only on a clean record with points but no measurements", () => {
+    const clean = computeCephQuality({
+      pixelsPerMm: 12.5,
+      landmarks: fullManualSet,
+      measurementCount: 0,
+      isDirty: false,
+    });
+    expect(clean.warnings.some((w) => w.key === "staleMeasurements")).toBe(true);
+
+    // When dirty, the unsaved-edits warning subsumes the stale hint.
+    const dirty = computeCephQuality({
+      pixelsPerMm: 12.5,
+      landmarks: fullManualSet,
+      measurementCount: 0,
+      isDirty: true,
+    });
+    expect(dirty.warnings.some((w) => w.key === "staleMeasurements")).toBe(false);
   });
 });

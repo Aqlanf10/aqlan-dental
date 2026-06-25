@@ -112,7 +112,8 @@ public class AiSettingsController(
         }
         catch (InvalidOperationException ex)
         {
-            return Ok(new { ok = false, message = ex.Message });
+            logger.LogWarning(ex, "AI settings test: secret resolution failed for provider {Provider}", settings.Provider);
+            return Ok(new { ok = false, message = "تعذّر التحقق من إعدادات المزود. تأكد من المفتاح والإعدادات، وراجع سجل الخادم للتفاصيل." });
         }
 
         if (string.IsNullOrWhiteSpace(resolvedSecret))

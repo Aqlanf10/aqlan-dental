@@ -133,7 +133,9 @@ public class LabOrdersController(
     IServiceScopeFactory scopeFactory,
     ILogger<LabOrdersController> logger,
     IPatientAccessService patientAccess,
-    IAuditService audit) : ControllerBase
+    IAuditService audit,
+    // Sprint 12 — read/query logic extracted to LabOrderQueryService.
+    LabOrderQueryService queryService) : ControllerBase
 {
     // CLIN-01: Per-patient access check for actions where patientId is in body or inferred.
     private async Task<IActionResult?> DenyIfDoctorCannotAccess(Guid patientId)
@@ -209,32 +211,9 @@ public class LabOrdersController(
         return AllowedTransitions.TryGetValue(fromStatus, out var allowed) && allowed.Contains(toStatus);
     }
 
-    /// <summary>Shared projection shape for lab order list responses (Sprint 2).</summary>
-    private static readonly Func<LabOrder, object> LabOrderProjection = l => new
-    {
-        l.Id,
-        l.OrderNumber,
-        l.PatientId,
-        PatientName = l.Patient.FirstName + " " + l.Patient.LastName,
-        PatientNumber = l.Patient.PatientNumber,
-        OrthoCaseNumber = l.OrthoCase != null ? l.OrthoCase.CaseNumber : null,
-        l.ApplianceType,
-        l.LabName,
-        SentDate = l.SentDate != null ? l.SentDate.Value.ToString("yyyy-MM-dd") : null,
-        ExpectedDate = l.ExpectedDate != null ? l.ExpectedDate.Value.ToString("yyyy-MM-dd") : null,
-        ReceivedDate = l.ReceivedDate != null ? l.ReceivedDate.Value.ToString("yyyy-MM-dd") : null,
-        DeliveredDate = l.DeliveredDate != null ? l.DeliveredDate.Value.ToString("yyyy-MM-dd") : null,
-        l.Status,
-        l.Priority,
-        l.Cost,
-        DoctorName = l.Doctor != null ? l.Doctor.Name : null,
-        // Sprint 2 — new fields
-        l.Shade,
-        l.RestorationType,
-        l.VisitId,
-        l.CancellationReason,
-        CreatedAt = l.CreatedAt.ToString("yyyy-MM-dd")
-    };
+    // Sprint 12 — LabOrderProjection (previously a shared list-response shape) was
+    // removed: it was dead code (no callers) and the live list endpoints each had
+    // their own inline projection. Those projections now live in LabOrderQueryService.
 
     [HttpGet]
     public async Task<IActionResult> GetAll(
@@ -245,51 +224,10 @@ public class LabOrdersController(
     {
         if (!await CanAsync("view")) return Forbid();
 
+        // pageSize clamping stays in the controller so the response envelope carries
+        // the same clamped value the query was actually paged with (behavior preserved).
         pageSize = Math.Max(1, Math.Min(pageSize, 100));
-        var query = db.LabOrders
-            .Include(l => l.Patient)
-            .Include(l => l.OrthoCase)
-            .Include(l => l.Doctor)
-            .Include(l => l.Lab)
-            .AsQueryable();
-
-        if (patientId.HasValue)  query = query.Where(l => l.PatientId == patientId.Value);
-        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(l => l.Status == status);
-
-        var total = await query.CountAsync();
-        var orders = await query
-            .OrderByDescending(l => l.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .Select(l => new
-            {
-                l.Id,
-                l.OrderNumber,
-                l.PatientId,
-                PatientName = l.Patient.FirstName + " " + l.Patient.LastName,
-                PatientNumber = l.Patient.PatientNumber,
-                OrthoCaseNumber = l.OrthoCase != null ? l.OrthoCase.CaseNumber : null,
-                l.ApplianceType,
-                l.LabName,
-                LabEntityName = l.Lab != null ? l.Lab.Name : null,
-                l.LabId,
-                SentDate = l.SentDate != null ? l.SentDate.Value.ToString("yyyy-MM-dd") : null,
-                ExpectedDate = l.ExpectedDate != null ? l.ExpectedDate.Value.ToString("yyyy-MM-dd") : null,
-                ReceivedDate = l.ReceivedDate != null ? l.ReceivedDate.Value.ToString("yyyy-MM-dd") : null,
-                DeliveredDate = l.DeliveredDate != null ? l.DeliveredDate.Value.ToString("yyyy-MM-dd") : null,
-                l.Status,
-                l.Priority,
-                l.Cost,
-                DoctorName = l.Doctor != null ? l.Doctor.Name : null,
-                // Sprint 2 — new fields
-                l.Shade,
-                l.RestorationType,
-                l.VisitId,
-                l.CancellationReason,
-                CreatedAt = l.CreatedAt.ToString("yyyy-MM-dd")
-            })
-            .ToListAsync();
-
+        var (orders, total) = await queryService.GetAllAsync(patientId, status, page, pageSize);
         return Ok(new { data = orders, total, page, pageSize });
     }
 
@@ -298,8 +236,7 @@ public class LabOrdersController(
     {
         if (!await CanAsync("view")) return Forbid();
 
-        var count = await db.LabOrders
-            .CountAsync(l => l.Status == "sent" || l.Status == "manufacturing" || l.Status == "tryIn" || l.Status == "remake");
+        var count = await queryService.GetPendingCountAsync();
         return Ok(new { count });
     }
 
@@ -310,36 +247,7 @@ public class LabOrdersController(
     {
         if (!await CanAsync("view")) return Forbid();
 
-        var today = ClinicTimeProvider.ClinicToday();
-        var orders = await db.LabOrders
-            .Include(l => l.Patient)
-            .Include(l => l.Doctor)
-            .Where(l => l.SentDate == today || l.ExpectedDate == today || l.ReceivedDate == today || l.DeliveredDate == today)
-            .OrderByDescending(l => l.CreatedAt)
-            .Select(l => new
-            {
-                l.Id,
-                l.OrderNumber,
-                l.PatientId,
-                PatientName = l.Patient.FirstName + " " + l.Patient.LastName,
-                PatientNumber = l.Patient.PatientNumber,
-                l.ApplianceType,
-                l.LabName,
-                SentDate = l.SentDate != null ? l.SentDate.Value.ToString("yyyy-MM-dd") : null,
-                ExpectedDate = l.ExpectedDate != null ? l.ExpectedDate.Value.ToString("yyyy-MM-dd") : null,
-                ReceivedDate = l.ReceivedDate != null ? l.ReceivedDate.Value.ToString("yyyy-MM-dd") : null,
-                DeliveredDate = l.DeliveredDate != null ? l.DeliveredDate.Value.ToString("yyyy-MM-dd") : null,
-                l.Status,
-                l.Priority,
-                l.Cost,
-                DoctorName = l.Doctor != null ? l.Doctor.Name : null,
-                l.Shade,
-                l.RestorationType,
-                l.VisitId,
-                l.CancellationReason,
-                CreatedAt = l.CreatedAt.ToString("yyyy-MM-dd")
-            })
-            .ToListAsync();
+        var orders = await queryService.GetTodayAsync();
         return Ok(new { data = orders });
     }
 
@@ -350,35 +258,7 @@ public class LabOrdersController(
     {
         if (!await CanAsync("view")) return Forbid();
 
-        var orders = await db.LabOrders
-            .Include(l => l.Patient)
-            .Include(l => l.Doctor)
-            .Where(l => l.Status == "ready" || l.Status == "received")
-            .OrderByDescending(l => l.CreatedAt)
-            .Select(l => new
-            {
-                l.Id,
-                l.OrderNumber,
-                l.PatientId,
-                PatientName = l.Patient.FirstName + " " + l.Patient.LastName,
-                PatientNumber = l.Patient.PatientNumber,
-                l.ApplianceType,
-                l.LabName,
-                SentDate = l.SentDate != null ? l.SentDate.Value.ToString("yyyy-MM-dd") : null,
-                ExpectedDate = l.ExpectedDate != null ? l.ExpectedDate.Value.ToString("yyyy-MM-dd") : null,
-                ReceivedDate = l.ReceivedDate != null ? l.ReceivedDate.Value.ToString("yyyy-MM-dd") : null,
-                DeliveredDate = l.DeliveredDate != null ? l.DeliveredDate.Value.ToString("yyyy-MM-dd") : null,
-                l.Status,
-                l.Priority,
-                l.Cost,
-                DoctorName = l.Doctor != null ? l.Doctor.Name : null,
-                l.Shade,
-                l.RestorationType,
-                l.VisitId,
-                l.CancellationReason,
-                CreatedAt = l.CreatedAt.ToString("yyyy-MM-dd")
-            })
-            .ToListAsync();
+        var orders = await queryService.GetReadyAsync();
         return Ok(new { data = orders });
     }
 
@@ -389,42 +269,7 @@ public class LabOrdersController(
     {
         if (!await CanAsync("view")) return Forbid();
 
-        var today = ClinicTimeProvider.ClinicToday();
-        var orders = await db.LabOrders
-            .Include(l => l.Patient)
-            .Include(l => l.Doctor)
-            .Include(l => l.Lab)
-            .Where(l => l.ExpectedDate != null
-                && l.ExpectedDate < today
-                && l.Status != "delivered"
-                && l.Status != "cancelled")
-            .OrderBy(l => l.ExpectedDate)
-            .Select(l => new
-            {
-                l.Id,
-                l.OrderNumber,
-                l.PatientId,
-                PatientName = l.Patient.FirstName + " " + l.Patient.LastName,
-                PatientNumber = l.Patient.PatientNumber,
-                l.ApplianceType,
-                l.LabName,
-                LabEntityName = l.Lab != null ? l.Lab.Name : null,
-                l.LabId,
-                SentDate = l.SentDate != null ? l.SentDate.Value.ToString("yyyy-MM-dd") : null,
-                ExpectedDate = l.ExpectedDate != null ? l.ExpectedDate.Value.ToString("yyyy-MM-dd") : null,
-                ReceivedDate = l.ReceivedDate != null ? l.ReceivedDate.Value.ToString("yyyy-MM-dd") : null,
-                DeliveredDate = l.DeliveredDate != null ? l.DeliveredDate.Value.ToString("yyyy-MM-dd") : null,
-                l.Status,
-                l.Priority,
-                l.Cost,
-                l.TotalCost,
-                DoctorName = l.Doctor != null ? l.Doctor.Name : null,
-                l.Shade,
-                l.RestorationType,
-                DaysOverdue = l.ExpectedDate != null ? (int)(today.DayNumber - l.ExpectedDate.Value.DayNumber) : 0,
-                CreatedAt = l.CreatedAt.ToString("yyyy-MM-dd")
-            })
-            .ToListAsync();
+        var orders = await queryService.GetOverdueAsync();
         return Ok(new { data = orders, count = orders.Count });
     }
 
@@ -435,37 +280,7 @@ public class LabOrdersController(
     {
         if (!await CanAsync("view")) return Forbid();
 
-        var orders = await db.LabOrders
-            .Include(l => l.Patient)
-            .Include(l => l.Doctor)
-            .Include(l => l.Lab)
-            .Where(l => l.Status == "received")
-            .OrderBy(l => l.ReceivedDate)
-            .Select(l => new
-            {
-                l.Id,
-                l.OrderNumber,
-                l.PatientId,
-                PatientName = l.Patient.FirstName + " " + l.Patient.LastName,
-                PatientNumber = l.Patient.PatientNumber,
-                l.ApplianceType,
-                l.LabName,
-                LabEntityName = l.Lab != null ? l.Lab.Name : null,
-                l.LabId,
-                SentDate = l.SentDate != null ? l.SentDate.Value.ToString("yyyy-MM-dd") : null,
-                ExpectedDate = l.ExpectedDate != null ? l.ExpectedDate.Value.ToString("yyyy-MM-dd") : null,
-                ReceivedDate = l.ReceivedDate != null ? l.ReceivedDate.Value.ToString("yyyy-MM-dd") : null,
-                DeliveredDate = l.DeliveredDate != null ? l.DeliveredDate.Value.ToString("yyyy-MM-dd") : null,
-                l.Status,
-                l.Priority,
-                l.Cost,
-                l.TotalCost,
-                DoctorName = l.Doctor != null ? l.Doctor.Name : null,
-                l.Shade,
-                l.RestorationType,
-                CreatedAt = l.CreatedAt.ToString("yyyy-MM-dd")
-            })
-            .ToListAsync();
+        var orders = await queryService.GetReadyForDeliveryAsync();
         return Ok(new { data = orders, count = orders.Count });
     }
 
@@ -474,26 +289,13 @@ public class LabOrdersController(
     {
         if (!await CanAsync("view")) return Forbid();
 
-        LabOrder? order;
+        // Sprint 12: query + projection extracted to LabOrderQueryService.GetByIdAsync.
+        // The schema-mismatch fallback runs inside the service; unexpected exceptions
+        // propagate up to this try-catch so we return the same Arabic 500 as before.
+        LabOrderDetailDto? dto;
         try
         {
-            order = await db.LabOrders
-                .Include(l => l.Patient)
-                .Include(l => l.OrthoCase)
-                .Include(l => l.Doctor)
-                .Include(l => l.Lab)
-                .Include(l => l.Items).ThenInclude(i => i.WorkType)
-                .FirstOrDefaultAsync(l => l.Id == id);
-        }
-        catch (Exception ex) when (IsMissingTableOrColumnError(ex))
-        {
-            logger.LogWarning(ex, "LabOrderItems/WorkType query failed (schema mismatch) — falling back to query without Items for lab order {OrderId}. Error: {ErrorMsg}", id, ex.InnerException?.Message ?? ex.Message);
-            order = await db.LabOrders
-                .Include(l => l.Patient)
-                .Include(l => l.OrthoCase)
-                .Include(l => l.Doctor)
-                .Include(l => l.Lab)
-                .FirstOrDefaultAsync(l => l.Id == id);
+            dto = await queryService.GetByIdAsync(id);
         }
         catch (Exception ex)
         {
@@ -501,56 +303,14 @@ public class LabOrdersController(
             return StatusCode(500, new { message = "حدث خطأ أثناء تحميل أمر المختبر" });
         }
 
-        if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
+        if (dto is null) return NotFound(new { message = "طلب المختبر غير موجود" });
 
-        // CLIN-01: per-patient check after loading the entity.
-        var denied = await DenyIfDoctorCannotAccess(order.PatientId);
+        // CLIN-01: per-patient check after loading the entity (PatientId is exposed
+        // on the DTO for exactly this authorization gate).
+        var denied = await DenyIfDoctorCannotAccess(dto.PatientId);
         if (denied is not null) return denied;
 
-        return Ok(new
-        {
-            order.Id,
-            order.OrderNumber,
-            order.PatientId,
-            PatientName = order.Patient.FirstName + " " + order.Patient.LastName,
-            PatientNumber = order.Patient.PatientNumber,
-            OrthoCaseNumber = order.OrthoCase?.CaseNumber,
-            order.ApplianceType,
-            order.LabName,
-            LabEntityName = order.Lab?.Name,
-            order.LabId,
-            SentDate = order.SentDate?.ToString("yyyy-MM-dd"),
-            ExpectedDate = order.ExpectedDate?.ToString("yyyy-MM-dd"),
-            ReceivedDate = order.ReceivedDate?.ToString("yyyy-MM-dd"),
-            DeliveredDate = order.DeliveredDate?.ToString("yyyy-MM-dd"),
-            order.Status,
-            order.Priority,
-            order.Instructions,
-            order.Cost,
-            order.TotalCost,
-            DoctorName = order.Doctor?.Name,
-            order.Shade,
-            order.RestorationType,
-            order.VisitId,
-            order.CancellationReason,
-            CreatedAt = order.CreatedAt.ToString("yyyy-MM-dd"),
-            // Lab Sprint 3 — order items
-            Items = order.Items.Select(i => new
-            {
-                i.Id,
-                i.WorkTypeId,
-                WorkTypeName = i.WorkType != null ? i.WorkType.Name : null,
-                i.ToothNumber,
-                i.Arch,
-                i.Shade,
-                i.RestorationType,
-                i.UnitsCount,
-                i.UnitPrice,
-                i.TotalPrice,
-                i.Instructions,
-                i.SortOrder
-            }).OrderBy(i => i.SortOrder)
-        });
+        return Ok(dto);
     }
 
     [HttpPost]
@@ -1209,21 +969,10 @@ public class LabOrdersController(
     {
         if (!await CanAsync("view")) return Forbid();
 
-        var order = await db.LabOrders.FindAsync(id);
-        if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
-
-        var history = await db.LabOrderStatusHistories
-            .Include(h => h.ChangedByUser)
-            .Where(h => h.LabOrderId == id)
-            .OrderByDescending(h => h.CreatedAt)
-            .Select(h => new
-            {
-                h.Id, h.FromStatus, h.ToStatus,
-                ChangedByName = h.ChangedByUser != null ? h.ChangedByUser.Username : null,
-                h.Reason,
-                CreatedAt = h.CreatedAt.ToString("yyyy-MM-dd HH:mm")
-            })
-            .ToListAsync();
+        // Sprint 12: query extracted to LabOrderQueryService. Service returns null
+        // if the order itself doesn't exist (preserving the original 404 path).
+        var history = await queryService.GetHistoryAsync(id);
+        if (history is null) return NotFound(new { message = "طلب المختبر غير موجود" });
         return Ok(new { data = history });
     }
 
@@ -1233,17 +982,9 @@ public class LabOrdersController(
     {
         if (!await CanAsync("view")) return Forbid();
 
-        var attachments = await db.LabOrderAttachments
-            .Where(a => a.LabOrderId == id)
-            .OrderByDescending(a => a.CreatedAt)
-            .Select(a => new
-            {
-                a.Id, a.FileName, a.ContentType, a.FileSize, a.Category,
-                a.LabOrderItemId, a.StoragePath,
-                UploadedByName = a.UploadedByUser != null ? a.UploadedByUser.Username : null,
-                CreatedAt = a.CreatedAt.ToString("yyyy-MM-dd HH:mm")
-            })
-            .ToListAsync();
+        // Sprint 12: query extracted to LabOrderQueryService. Original behavior
+        // (no existence check — empty list if no attachments) preserved.
+        var attachments = await queryService.GetAttachmentsAsync(id);
         return Ok(new { data = attachments });
     }
 

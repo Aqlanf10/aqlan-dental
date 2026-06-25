@@ -3,6 +3,7 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -83,13 +84,20 @@ internal static class LabOrdersTestData
         var scopeFactoryMock = new Mock<IServiceScopeFactory>();
         var logger = new Mock<ILogger<LabOrdersController>>().Object;
 
+        // Sprint 12 — LabOrderQueryService is now a constructor parameter. Build a
+        // real instance against the same in-memory db + a query-service logger.
+        // The 403 path under test never reaches the query service, but the param
+        // is required by the constructor signature.
+        var queryService = new LabOrderQueryService(db, new Mock<ILogger<LabOrderQueryService>>().Object);
+
         return new LabOrdersController(
             db,
             currentUserMock.Object,
             scopeFactoryMock.Object,
             logger,
             patientAccessMock.Object,
-            auditMock.Object);
+            auditMock.Object,
+            queryService);
     }
 
     /// <summary>

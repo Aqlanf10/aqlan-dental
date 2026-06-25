@@ -70,6 +70,10 @@ public static class ServiceRegistrationConfiguration
         // Concrete classes (no interface) — matches existing DashboardService / OrthoService pattern.
         services.AddScoped<PatientJourneyService>();
         services.AddScoped<CheckoutService>();
+
+        // Sprint 12: READ-side query service extracted from LabOrdersController.
+        // Concrete class (no interface) — matches PatientJourneyService / DashboardService pattern.
+        services.AddScoped<LabOrderQueryService>();
         services.AddHttpClient(); // Register IHttpClientFactory for PatientPortalService
         services.AddHttpClient("RemoteClinicalImage", client =>
         {

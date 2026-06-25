@@ -44,7 +44,7 @@ public class CephVersionsTests : IDisposable
         currentUser.Setup(u => u.UserId).Returns(Guid.NewGuid());
         currentUser.Setup(u => u.IsAdmin).Returns(true);
         _service = new CephService(_db, currentUser.Object, new Mock<ILogger<CephService>>().Object);
-        _controller = new CephController(_service, _db, _patientAccess.Object);
+        _controller = new CephController(_service, _db, _patientAccess.Object, currentUser.Object);
     }
 
     public void Dispose() => _db.Dispose();

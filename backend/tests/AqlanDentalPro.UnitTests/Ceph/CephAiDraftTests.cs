@@ -483,7 +483,8 @@ public class CephAiDraftTests
                 new AqlanDentalPro.Application.Services.CephService(
                     db, user.Object, new Mock<ILogger<AqlanDentalPro.Application.Services.CephService>>().Object),
                 db,
-                patientAccess.Object);
+                patientAccess.Object,
+                user.Object);
 
             var result = await controller.DraftDiagnosis(
                 Guid.NewGuid(), aiService,
@@ -509,7 +510,8 @@ public class CephAiDraftTests
             new AqlanDentalPro.Application.Services.CephService(
                 db, user.Object, new Mock<ILogger<AqlanDentalPro.Application.Services.CephService>>().Object),
             db,
-            patientAccess.Object);
+            patientAccess.Object,
+            user.Object);
 
         var result = await controller.DraftDiagnosis(
             analysisId, aiService,

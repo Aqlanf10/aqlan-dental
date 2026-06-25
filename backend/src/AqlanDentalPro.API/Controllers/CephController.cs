@@ -15,7 +15,8 @@ namespace AqlanDentalPro.API.Controllers;
 public class CephController(
     CephService service,
     AppDbContext db,
-    IPatientAccessService patientAccess) : ControllerBase
+    IPatientAccessService patientAccess,
+    ICurrentUserService currentUser) : ControllerBase
 {
     // GET /api/ceph                          — all analyses
     // GET /api/ceph?orthoCaseId={id}         — filtered by ortho case
@@ -265,6 +266,43 @@ public class CephController(
         }
     }
 
+    // POST /api/ceph/{id}/approve — clinical approval gate (CEPH-EPIC).
+    // Only the doctor ASSIGNED to the analysis's patient OR an Admin may approve.
+    // GetAnalysisAccessErrorAsync already rejects a doctor who is not assigned
+    // (and 404s a missing analysis); the extra IsDoctor/IsAdmin guard rejects
+    // non-doctor staff (e.g. reception) who otherwise have full patient access.
+    // Sets IsApproved=true so the final PDF report can be issued. Idempotent.
+    [HttpPost("{id:guid}/approve")]
+    public async Task<IActionResult> Approve(Guid id, [FromBody] ApproveCephAnalysisRequest? req)
+    {
+        var accessError = await GetAnalysisAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        if (!currentUser.IsAdmin && !patientAccess.IsDoctor)
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new { message = "لا يُسمح إلا للطبيب المعالج أو المدير باعتماد التحليل" });
+
+        var analysis = await db.CephAnalyses
+            .FirstOrDefaultAsync(x => x.Id == id && x.IsActive);
+        if (analysis is null)
+            return NotFound(new { message = "تحليل السيفالومتري غير موجود" });
+
+        if (analysis.IsApproved)
+        {
+            var detailAlready = await service.GetByIdAsync(id);
+            return Ok(new { message = "التحليل معتمد مسبقاً", analysis = detailAlready });
+        }
+
+        analysis.IsApproved = true;
+        analysis.ApprovedByUserId = currentUser.UserId;
+        analysis.ApprovedAt = DateTime.UtcNow;
+        analysis.ApprovalNotes = string.IsNullOrWhiteSpace(req?.Notes) ? null : req!.Notes!.Trim();
+        await db.SaveChangesAsync();
+
+        var detail = await service.GetByIdAsync(id);
+        return Ok(new { message = "تم اعتماد التحليل بنجاح", analysis = detail });
+    }
+
     // GET /api/ceph/{id}/report/pdf — C-C Arabic cephalometric PDF report
     [HttpGet("{id:guid}/report/pdf")]
     public async Task<IActionResult> GetReportPdf(
@@ -274,6 +312,16 @@ public class CephController(
     {
         var accessError = await GetAnalysisAccessErrorAsync(id);
         if (accessError is not null) return accessError;
+
+        // Clinical approval gate: the final report cannot be issued until an
+        // authorized doctor/admin approves the analysis (CEPH-EPIC).
+        var isApproved = await db.CephAnalyses
+            .AsNoTracking()
+            .Where(x => x.Id == id && x.IsActive)
+            .Select(x => (bool?)x.IsApproved)
+            .FirstOrDefaultAsync();
+        if (isApproved != true)
+            return BadRequest(new { message = "لا يمكن إصدار التقرير النهائي قبل اعتماد الطبيب للتحليل" });
 
         try
         {

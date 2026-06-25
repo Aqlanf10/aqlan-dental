@@ -29,7 +29,7 @@ public class CephPatientAccessTests : IDisposable
             _db,
             currentUser.Object,
             new Mock<ILogger<CephService>>().Object);
-        _controller = new CephController(service, _db, _patientAccess.Object);
+        _controller = new CephController(service, _db, _patientAccess.Object, currentUser.Object);
     }
 
     public void Dispose() => _db.Dispose();

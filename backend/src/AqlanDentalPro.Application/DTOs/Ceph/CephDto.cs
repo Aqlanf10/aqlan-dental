@@ -78,6 +78,20 @@ public class CephAnalysisDetailDto
     public List<CephLandmarkDto> Landmarks { get; set; } = [];
     public List<CephMeasurementDto> Measurements { get; set; } = [];
     public CephDiagnosisDto? Diagnosis { get; set; }
+
+    // ── Clinical approval gate (CEPH-EPIC) ────────────────────────────────────
+    // The final PDF report is blocked until IsApproved is true.
+    public bool IsApproved { get; set; }
+    public Guid? ApprovedByUserId { get; set; }
+    public string? ApprovedByName { get; set; }
+    public string? ApprovedAt { get; set; }
+    public string? ApprovalNotes { get; set; }
+}
+
+/// <summary>Request body for POST /api/ceph/{id}/approve — optional notes.</summary>
+public class ApproveCephAnalysisRequest
+{
+    public string? Notes { get; set; }
 }
 
 public class CreateCephAnalysisRequest

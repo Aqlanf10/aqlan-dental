@@ -59,7 +59,18 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (a is null) return null;
-        return MapDetail(a);
+        var detail = MapDetail(a);
+
+        // Resolve the approver's display name for the UI (best-effort, non-fatal).
+        if (a.ApprovedByUserId is Guid approverId)
+        {
+            detail.ApprovedByName = await db.Users
+                .Where(u => u.Id == approverId)
+                .Select(u => u.Doctor != null ? u.Doctor.Name : u.Username)
+                .FirstOrDefaultAsync();
+        }
+
+        return detail;
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1095,6 +1106,10 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
             AiAssisted   = a.AiAssisted,
             DoctorId     = a.DoctorId,
             Notes        = a.Notes,
+            IsApproved       = a.IsApproved,
+            ApprovedByUserId = a.ApprovedByUserId,
+            ApprovedAt       = a.ApprovedAt?.ToString("yyyy-MM-dd HH:mm"),
+            ApprovalNotes    = a.ApprovalNotes,
             PixelsPerMm  = pixelsPerMm,
             ImageWidth   = imageWidth,
             ImageHeight  = imageHeight,

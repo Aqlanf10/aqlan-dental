@@ -8,23 +8,8 @@ import { DashboardCharts } from "@/components/dashboard/DashboardCharts";
 import { TodaySchedule } from "@/components/dashboard/TodaySchedule";
 import type { DashboardStats } from "@/types/dashboard";
 import api from "@/lib/api";
-
-/* ZIP-matched card style */
-const cardStyle: React.CSSProperties = {
-  background: "#fff",
-  borderRadius: 12,
-  padding: 20,
-  boxShadow: "0 1px 3px rgba(13,33,55,0.06), 0 1px 10px rgba(13,33,55,0.04)",
-  border: "1px solid #e8f0f9",
-};
-
-const cardNoPadStyle: React.CSSProperties = {
-  background: "#fff",
-  borderRadius: 12,
-  boxShadow: "0 1px 3px rgba(13,33,55,0.06), 0 1px 10px rgba(13,33,55,0.04)",
-  border: "1px solid #e8f0f9",
-  overflow: "hidden",
-};
+/* ZIP-matched card styles — shared constants (identical pixels) */
+import { cardStyle, cardNoPadStyle } from "@/components/ui/cardStyles";
 
 interface RecentPatient {
   id: string;

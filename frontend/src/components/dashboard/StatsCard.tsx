@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LucideIcon } from "lucide-react";
+import { cardStyle as baseCardStyle } from "@/components/ui/cardStyles";
 
 interface StatsCardProps {
   title: string;
@@ -42,11 +43,7 @@ export function StatsCard({ title, value, icon: Icon, color, description, href }
   );
 
   const cardStyle: React.CSSProperties = {
-    background: "#fff",
-    borderRadius: 12,
-    padding: 20,
-    boxShadow: "0 1px 3px rgba(13,33,55,0.06), 0 1px 10px rgba(13,33,55,0.04)",
-    border: "1px solid #e8f0f9",
+    ...baseCardStyle,
     display: "flex",
     alignItems: "flex-start",
     justifyContent: "space-between",

@@ -21,6 +21,7 @@ public partial class FinanceV3Controller
         [FromQuery] string? from,
         [FromQuery] string? to)
     {
+        if (!await CanAsync("finance.commissions", "view")) return Deny();
         // Blocker: Branch isolation guard for non-admin users
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
@@ -185,6 +186,7 @@ public partial class FinanceV3Controller
         [FromQuery] string? from,
         [FromQuery] string? to)
     {
+        if (!await CanAsync("finance.commissions", "view")) return Deny();
         // Branch isolation guard for non-admin users
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });

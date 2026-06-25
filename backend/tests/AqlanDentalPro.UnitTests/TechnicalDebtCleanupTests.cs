@@ -412,6 +412,10 @@ public class TechnicalDebtCleanupTests
         var financeService = new Mock<IFinanceService>().Object;
         var audit = new Mock<IAuditService>().Object;
 
+        // FIN-PERM (Sprint 3): grant finance.expenses so the 403 under test comes from the
+        // branch guard (no/empty branch), not the new granular permission gate.
+        db.RolePermissions.Add(new RolePermission { Role = "Accountant", Resource = "finance.expenses", CanView = true, CanCreate = true, CanEdit = true, CanApprove = true, CanDelete = true });
+        await db.SaveChangesAsync();
         var controller = new FinanceV3SuppliersController(db, financeService, nonAdminNoBranch, audit);
 
         var request = new CreateCreditNoteRequest
@@ -464,6 +468,10 @@ public class TechnicalDebtCleanupTests
         var financeService = new Mock<IFinanceService>().Object;
         var audit = new Mock<IAuditService>().Object;
 
+        // FIN-PERM (Sprint 3): grant finance.expenses so the 403 under test comes from the
+        // branch guard (no/empty branch), not the new granular permission gate.
+        db.RolePermissions.Add(new RolePermission { Role = "Accountant", Resource = "finance.expenses", CanView = true, CanCreate = true, CanEdit = true, CanApprove = true, CanDelete = true });
+        await db.SaveChangesAsync();
         var controller = new FinanceV3SuppliersController(db, financeService, nonAdminEmptyBranch, audit);
 
         var request = new CreateCreditNoteRequest

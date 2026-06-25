@@ -19,6 +19,7 @@ public partial class FinanceV3Controller
     [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> CreateTreasury([FromBody] CreateTreasuryRequest req)
     {
+        if (!await CanAsync("finance.treasuries", "create")) return Deny();
         if (string.IsNullOrWhiteSpace(req.Name))
             return BadRequest(new { message = "اسم الخزنة/الحساب مطلوب" });
         if (!Enum.TryParse<TreasuryType>(req.Type, true, out var type))
@@ -123,6 +124,7 @@ public partial class FinanceV3Controller
     [Authorize(Policy = "FinanceWrite")]
     public async Task<IActionResult> CreateVaultTransfer([FromBody] CreateTransferRequest req)
     {
+        if (!await CanAsync("finance.treasuries", "create")) return Deny();
         if (req.Amount <= 0)
             return BadRequest(new { message = "يجب أن يكون مبلغ التحويل أكبر من الصفر" });
         // Sprint 1: Admin branchId fallback
@@ -242,6 +244,7 @@ public partial class FinanceV3Controller
     [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> RecalculateTreasuryBalance(Guid id)
     {
+        if (!await CanAsync("finance.treasuries", "edit")) return Deny();
         var treasury = await db.Treasuries.FindAsync(id);
         if (treasury == null || !treasury.IsActive)
             return NotFound(new { message = "الخزنة غير موجودة" });

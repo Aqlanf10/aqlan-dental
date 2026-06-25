@@ -4,13 +4,19 @@ import Link from "next/link";
 import {
   AlertTriangle,
   ArrowRight,
+  CalendarClock,
   CheckCircle2,
   FileText,
   Plus,
   ScanLine,
   Target,
 } from "lucide-react";
-import { cn, formatArabicDate, formatYemeniRiyal } from "@/lib/utils";
+import {
+  cn,
+  formatArabicDate,
+  formatYemeniRiyal,
+  localDateString,
+} from "@/lib/utils";
 import { financeV3ContractsUrl } from "@/lib/financeRoutes";
 import {
   useCaseCephAnalyses,
@@ -152,6 +158,37 @@ export function OrthoOverviewTab({
   const { data: overview } = useOrthoOverview(caseId);
   const { data: diagnosis } = useDiagnosis(caseId);
 
+  // Sprint 16 — next adjustment / missed visit follow-up badges.
+  // The overview already carries `latestVisitDate` + `nextAppointmentDate`
+  // (set on the latest OrthoVisit by the orthodontist at each visit). We
+  // surface them as badges at the top of the overview so the doctor can see
+  // at a glance whether the case is on schedule or overdue for an adjustment.
+  //
+  // `today` uses `localDateString()` (not toISOString) — Yemen is UTC+3 and
+  // toISOString shifts to the next day after 21:00 local, per CLAUDE.md trap.
+  const today = localDateString();
+  const nextAppt = overview?.nextAppointmentDate ?? null;
+  const latestVisitDate = overview?.latestVisitDate ?? null;
+  // Days between today and the planned next-appointment date (negative = upcoming, positive = overdue).
+  const nextApptDiffDays = nextAppt
+    ? Math.floor(
+        (new Date(today).getTime() - new Date(nextAppt).getTime()) /
+          (1000 * 60 * 60 * 24),
+      )
+    : null;
+  const nextApptOverdue = nextApptDiffDays != null && nextApptDiffDays > 0;
+  // Missed visit: planned next appointment is more than 7 days past today AND
+  // no newer visit has been recorded since the latest visit (i.e. the latest
+  // visit is still the latest — automatically true because `latestVisitDate`
+  // is the max VisitDate, so if nextAppt > latestVisitDate and today >
+  // nextAppt + 7, the patient has missed their adjustment).
+  const missedVisit =
+    nextAppt != null &&
+    latestVisitDate != null &&
+    nextApptDiffDays != null &&
+    nextApptDiffDays > 7 &&
+    latestVisitDate <= nextAppt;
+
   const readiness = [
     {
       label: "الفحص السريري",
@@ -202,6 +239,34 @@ export function OrthoOverviewTab({
   return (
     <div className="grid gap-5 lg:grid-cols-[1.35fr_0.65fr]">
       <div className="space-y-5">
+        {/* Sprint 16 — Next adjustment / missed visit follow-up badges */}
+        {nextAppt && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
+                nextApptOverdue
+                  ? "bg-amber-50 text-amber-800 ring-1 ring-amber-200"
+                  : "bg-clinic-blue-50 text-clinic-blue",
+              )}
+            >
+              <CalendarClock className="h-3.5 w-3.5" />
+              الضبط التالي: {formatArabicDate(nextAppt)}
+              {nextApptOverdue && nextApptDiffDays != null && (
+                <span className="font-bold">
+                  · متأخر {nextApptDiffDays} يوم
+                </span>
+              )}
+            </span>
+            {missedVisit && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 ring-1 ring-red-200">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                زيارة تقويم متأخرة
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Stats grid */}
         <div className="grid gap-3 md:grid-cols-5">
           {[

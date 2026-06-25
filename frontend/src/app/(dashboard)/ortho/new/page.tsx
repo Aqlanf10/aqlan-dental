@@ -5,13 +5,14 @@ import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Save, ArrowRight } from "lucide-react";
+import { Save } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
 import type { CreateOrthoCaseRequest } from "@/types/ortho";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
 import api from "@/lib/api";
 import { useDoctors } from "@/hooks/useDoctors";
 import { cn, localDateString } from "@/lib/utils";
+import { rtlArrowBack as RtlArrowBack } from "@/lib/rtlIcons";
 
 interface Doctor { id: string; name: string; color?: string; }
 
@@ -81,7 +82,7 @@ function NewOrthoContent() {
       </div>
       <div className="flex items-center gap-3">
         <Link href="/ortho" className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500">
-          <ArrowRight className="w-4 h-4" />
+          <RtlArrowBack className="w-4 h-4" />
         </Link>
         <h1 className="text-2xl font-extrabold text-gray-900">إنشاء حالة تقويمية جديدة</h1>
       </div>

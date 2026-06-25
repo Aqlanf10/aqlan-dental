@@ -873,17 +873,36 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         var isPartialRefund = refundAmount < payment.Amount;
 
-        // Phase 0B: Prevent double-refund — check if a refund already exists for this payment
-        var existingRefund = await db.Payments
-            .AnyAsync(p => p.IsActive && p.Amount < 0
+        // Sprint 14: Strengthened idempotency guard.
+        //
+        // The original Phase 0B guard only blocked an EXACT duplicate full refund
+        // (`Amount == -payment.Amount` with `ServiceDescription` starting `"استرداد:"`).
+        // That left two real holes:
+        //   1. A partial refund (`"استرداد جزئي ..."`) was never matched, so a user could
+        //      issue partial refunds repeatedly and exceed the original payment amount.
+        //   2. A full refund issued after a prior partial refund was NOT blocked (the
+        //      prior partial refund has `Amount != -payment.Amount`), so a 10,000 payment
+        //      refunded 5,000 then 10,000 would total 15,000 of refunds on a 10,000 payment.
+        //
+        // The new guard sums ALL prior refunds against this payment (both full and partial,
+        // matched by the existing (PatientId, ContractId, InvoiceId, ServiceDescription prefix)
+        // heuristic) and rejects when the cumulative refund + new refund would exceed the
+        // original payment amount. The error message retains the `استرداد هذه الدفعة مسبقاً`
+        // substring so the existing Phase 0B test (`RefundPaymentAsync_DoubleRefund_ThrowsArgumentException`)
+        // and any UI string-match against it keep working.
+        var priorRefundedTotal = await db.Payments
+            .Where(p => p.IsActive && p.Amount < 0
                 && p.ServiceDescription != null
-                && p.ServiceDescription.StartsWith("استرداد:")
+                && (p.ServiceDescription.StartsWith("استرداد:") || p.ServiceDescription.StartsWith("استرداد جزئي"))
                 && p.ContractId == payment.ContractId
                 && p.InvoiceId == payment.InvoiceId
-                && p.PatientId == payment.PatientId
-                && p.Amount == -payment.Amount);
-        if (existingRefund)
-            throw new ArgumentException("تم استرداد هذه الدفعة مسبقاً. لا يمكن استرداد نفس الدفعة مرتين.");
+                && p.PatientId == payment.PatientId)
+            .SumAsync(p => (decimal?)(-p.Amount)) ?? 0m;
+
+        if (priorRefundedTotal > 0m && refundAmount + priorRefundedTotal > payment.Amount)
+            throw new ArgumentException(
+                "تم استرداد هذه الدفعة مسبقاً أو أن مجموع المبالغ المستردة يتجاوز مبلغ الدفعة الأصلية. " +
+                "لا يمكن استرداد نفس الدفعة مرتين أو تجاوز قيمتها الأصلية.");
 
         // Require active open cashier session for refund payouts
         var userId = currentUser.UserId ?? Guid.Empty;
@@ -971,9 +990,127 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             catch (Exception ex) { logger.LogWarning(ex, "Failed to reconcile contract {ContractId} after refund", payment.ContractId); }
         }
 
+        // Sprint 14: Best-effort audit-log warning that commission may need manual adjustment.
+        //
+        // Audit finding: "Refund does not automatically reverse commission or clearly audit it."
+        //
+        // Why we don't auto-reverse: commission recognition has two designed tracks
+        // (see CLAUDE.md):
+        //   - Accrual mode (`CommissionRecognitionMode != OnPaymentCollection`): commission is
+        //     recognized on invoice issuance. The OnPaymentCollection trigger above does NOT
+        //     touch accrual-mode line items, so Approved/Paid commissions on accrual-mode
+        //     services are NOT reversed by this refund. Auto-reversing them here would break
+        //     accounting (Paid commissions have already been disbursed via DoctorCommissionPayment
+        //     + Treasury outflow + JournalEntry — reversing requires reversal entries, treasury
+        //     top-ups, and possibly already-closed cashier sessions).
+        //   - OnPaymentCollection mode: commission IS re-proportioned by the trigger above based
+        //     on the new (lower) collected total — that's the correct behavior and we leave it alone.
+        //
+        // The safe, accounting-preserving action is to write a clear Arabic audit-log entry
+        // flagging that manual review may be needed for Approved/Paid accrual-mode commissions
+        // tied to this invoice/contract. The owner / accountant can then decide per-case whether
+        // to issue a manual commission adjustment (via the existing Unlock → Recalculate flow).
+        //
+        // This is best-effort: the refund transaction has already committed, so an audit-write
+        // failure here must NOT roll back the refund. We log + swallow.
+        try
+        {
+            await LogCommissionAdjustmentWarningAsync(payment, refund, refundAmount, isPartialRefund);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "Sprint 14: Failed to write commission-adjustment audit warning for refund {RefundId} of payment {PaymentId}",
+                refund.Id, payment.Id);
+        }
+
         await db.Entry(refund).Reference(p => p.Patient).LoadAsync();
         await db.Entry(refund).Reference(p => p.Doctor).LoadAsync();
         return MapPayment(refund);
+    }
+
+    /// <summary>
+    /// Sprint 14: Writes an Arabic audit-log entry warning that a refund may require manual
+    /// commission adjustment. See `RefundPaymentAsync` for the rationale (no auto-reversal).
+    ///
+    /// Uses a distinct resource name (`"PaymentRefund.CommissionAdjustment"`) so finance
+    /// managers can filter the audit log for refund-driven commission warnings separately
+    /// from the primary refund audit (resource `"PaymentRefund"`, written by the controller).
+    ///
+    /// The payload snapshots whether any OnPaymentCollection commission line items were in
+    /// Approved or Paid status at refund time — that's the risky case where
+    /// `TriggerOnPaymentCommissionsAsync` (called above) silently re-proportions the
+    /// commission via the dual-write path, and where accrual-mode Approved/Paid commissions
+    /// are NOT touched at all. Finance staff can use this flag to prioritize which refunds
+    /// to review first.
+    /// </summary>
+    private async Task LogCommissionAdjustmentWarningAsync(
+        Payment originalPayment, Payment refundPayment, decimal refundAmount, bool isPartialRefund)
+    {
+        // Snapshot OnPaymentCollection commission line items BEFORE writing the audit, so the
+        // accountant sees the state of commissions AT REFUND TIME (not after the trigger above
+        // already re-proportioned them). For accrual-mode services we don't snapshot per-line
+        // — there can be many, and the message is the same ("manual review required") — but we
+        // do flag the high-risk case where any OnPaymentCollection item was Approved/Paid.
+        var hasApprovedOrPaidOnPaymentCollection = false;
+        var onPaymentCollectionItemsAffected = 0;
+        if (originalPayment.InvoiceId.HasValue)
+        {
+            var affectedItems = await db.InvoiceLineItems
+                .Include(i => i.Service)
+                .Where(i => i.InvoiceId == originalPayment.InvoiceId.Value
+                         && i.IsActive
+                         && i.Service != null
+                         && i.Service.CommissionRecognitionMode == CommissionRecognitionMode.OnPaymentCollection)
+                .ToListAsync();
+            onPaymentCollectionItemsAffected = affectedItems.Count;
+            hasApprovedOrPaidOnPaymentCollection = affectedItems
+                .Any(i => i.CommissionStatus == CommissionStatus.Approved
+                       || i.CommissionStatus == CommissionStatus.Paid);
+        }
+
+        // Two warning variants — both must mention "العمولات" so finance staff can grep the
+        // audit log. The high-risk variant (Approved/Paid commissions exist) is more urgent.
+        string baseWarning = isPartialRefund
+            ? "تم استرداد جزء من دفعة مرتبطة بفاتورة/عقد قد يحتوي على بنود عمولات. "
+            : "تم استرداد دفعة كاملة مرتبطة بفاتورة/عقد قد يحتوي على بنود عمولات. ";
+
+        const string autoReverseNote =
+            "العمولات المستحقة على نمط التحصيل (OnPaymentCollection) تُعيد الاحتساب النسبي تلقائياً، " +
+            "لكن العمولات المعتمدة أو المدفوعة على نمط الاستحقاق (Accrual) لا تُعكس تلقائياً. " +
+            "لم يتم تنفيذ العكس التلقائي للعمولات بعد الاسترداد تجنبًا لاختلال المحاسبة التاريخية. " +
+            "يجب على المحاسب/المالك مراجعة بنود العمولات لهذه الفاتورة وتعديلها يدوياً إن لزم.";
+
+        var warning = hasApprovedOrPaidOnPaymentCollection
+            ? "تحذير عالي الخطورة: " + baseWarning + "يوجد بنود عمولات معتمدة أو مدفوعة على نمط التحصيل قد تتأثر. " + autoReverseNote
+            : baseWarning + autoReverseNote;
+
+        var payload = new
+        {
+            warning,
+            originalPaymentId                       = originalPayment.Id,
+            refundPaymentId                         = refundPayment.Id,
+            invoiceId                               = originalPayment.InvoiceId,
+            contractId                              = originalPayment.ContractId,
+            doctorId                                = originalPayment.DoctorId,
+            patientId                               = originalPayment.PatientId,
+            originalAmount                          = originalPayment.Amount,
+            refundAmount,
+            isPartialRefund,
+            reason                                  = refundPayment.Notes,
+            hasApprovedOrPaidOnPaymentCollection,
+            onPaymentCollectionItemsAffected,
+        };
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            UserId     = currentUser.UserId,
+            Action     = AuditAction.Refund,
+            Resource   = "PaymentRefund.CommissionAdjustment",
+            ResourceId = refundPayment.Id,
+            NewData    = System.Text.Json.JsonSerializer.SerializeToDocument(payload),
+        });
+        await db.SaveChangesAsync();
     }
 
     public async Task<PatientFinanceSummaryDto> GetPatientFinanceSummaryAsync(Guid patientId)

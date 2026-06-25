@@ -128,7 +128,7 @@ const NAV: NavEntry[] = [
   { href: "/reports",        label: "التقارير",         icon: BarChart2,       roles: ["Admin","Accountant"],                                         section: "تقارير" },
 
   // ── الإدارة ───────────────────────────────────────────────────────────────
-  { href: "/doctors",        label: "الأطباء",          icon: UserRound,       roles: ["Admin"],                                                      section: "الإدارة" },
+  { href: "/doctors",        label: "إدارة الأطباء",     icon: UserRound,       roles: ["Admin"],                                                      section: "الإدارة" },
   { href: "/employees",      label: "الموظفين",         icon: UserCog,         roles: ["Admin"] },
   {
     kind: "group",

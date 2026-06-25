@@ -1,18 +1,13 @@
-import axios, { type InternalAxiosRequestConfig } from "axios";
+import { type InternalAxiosRequestConfig } from "axios";
 import { usePatientAuthStore } from "@/stores/patientAuthStore";
+import { createApiClient } from "@/lib/apiClient";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
-
-export const portalApi = axios.create({
-  baseURL: API_URL,
-  // SEC-10: required so the HttpOnly `portal_refresh` cookie is sent on every
-  // request AND received from Set-Cookie responses (login/refresh/logout).
-  withCredentials: true,
-  headers: {
-    "Content-Type": "application/json",
-    "Accept-Language": "ar",
-  },
-});
+// Sprint 13: base URL + common headers + withCredentials are now sourced from the
+// shared `apiClient.ts` factory. The portal auth interceptors (JWT in localStorage
+// `portal_token`, refresh via `/api/portal/auth/refresh-token` using the HttpOnly
+// `portal_refresh` cookie, MUST_CHANGE_PASSWORD 403 handling, redirect → `/portal/login`)
+// remain owned by this file — see apiClient.ts for why the two clients are NOT merged.
+export const portalApi = createApiClient();
 
 // Inject portal token on every request
 portalApi.interceptors.request.use((config) => {

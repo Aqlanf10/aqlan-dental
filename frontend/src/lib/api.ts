@@ -1,25 +1,15 @@
-import axios from "axios";
+import { createApiClient } from "@/lib/apiClient";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+// Sprint 13: base URL + common headers + withCredentials are now sourced from the
+// shared `apiClient.ts` factory. The staff auth interceptors (JWT in localStorage
+// `access_token`, refresh via `/api/auth/refresh-token`, redirect → `/login`)
+// remain owned by this file — see apiClient.ts for why the two clients are NOT merged.
+export const api = createApiClient();
 
-export const api = axios.create({
-  baseURL: API_URL,
-  withCredentials: true,
-  headers: {
-    "Content-Type": "application/json",
-    "Accept-Language": "ar",
-  },
-});
-
-// Raw axios instance without interceptors — used for refresh-token to avoid deadlock (F1 FIX)
-const apiRaw = axios.create({
-  baseURL: API_URL,
-  withCredentials: true,
-  headers: {
-    "Content-Type": "application/json",
-    "Accept-Language": "ar",
-  },
-});
+// Raw axios instance without interceptors — used for refresh-token to avoid deadlock (F1 FIX).
+// `createApiClient()` returns a fresh instance with no interceptors attached, which is exactly
+// what we need here: if the refresh call itself returns 401, using `api` would queue it forever.
+const apiRaw = createApiClient();
 
 // Inject access token on every request
 api.interceptors.request.use((config) => {

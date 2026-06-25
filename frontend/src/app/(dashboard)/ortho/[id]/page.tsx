@@ -5,7 +5,6 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   Activity,
-  ArrowRight,
   Calendar,
   Camera,
   FileText,
@@ -27,6 +26,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { cn, formatArabicDate, formatYemeniRiyal } from "@/lib/utils";
+import { rtlArrowBack as RtlArrowBack } from "@/lib/rtlIcons";
 import {
   useOrthoCase,
   useOrthoOverview,
@@ -127,7 +127,7 @@ export default function OrthoCaseDetailPage() {
           href="/ortho"
           className="inline-flex items-center gap-1 hover:text-clinic-blue"
         >
-          <ArrowRight className="h-4 w-4" /> التقويم
+          <RtlArrowBack className="h-4 w-4" /> التقويم
         </Link>
         <span>/</span>
         <span className="font-medium text-gray-900">

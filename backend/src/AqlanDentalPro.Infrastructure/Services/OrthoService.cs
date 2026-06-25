@@ -224,6 +224,11 @@ public class OrthoService(AppDbContext db, ICurrentUserService currentUser)
         // screen. Both rows are persisted by the same SaveChangesAsync call below
         // — if either fails, neither is committed (atomic).
         //
+        // Sprint 16 audit verification (SPRINT-15-16-17): confirmed this method
+        // creates a linked Visit with OrthoCaseId set (see `OrthoCaseId = caseId`
+        // on the new Visit below) — i.e. OrthoVisit ↔ Visit sync is wired up.
+        // No behavior change required; this comment is the audit confirmation.
+        //
         // Idempotent by VisitDate: if a Visit already exists for this OrthoCase
         // on the same calendar day (e.g. a back-to-back POST or a same-day edit),
         // we link to it and refresh the mirrored ortho fields instead of inserting

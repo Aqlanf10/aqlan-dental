@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useDoctors } from "@/hooks/useDoctors";
 import {
-  ChevronRight, ChevronLeft, CalendarDays, List, Calendar,
+  CalendarDays, List, Calendar,
   LayoutGrid,
 } from "lucide-react";
 import { DaySchedule } from "@/components/appointments/DaySchedule";
@@ -11,6 +11,7 @@ import { WeekCalendar } from "@/components/appointments/WeekCalendar";
 import { MonthCalendar } from "@/components/appointments/MonthCalendar";
 import { UpcomingWidget } from "@/components/appointments/UpcomingWidget";
 import { formatArabicDate, cn } from "@/lib/utils";
+import { rtlBackIcon as RtlBackIcon, rtlNextIcon as RtlNextIcon } from "@/lib/rtlIcons";
 import { NAVY, BLUE } from "../_lib/constants";
 
 interface Doctor { id: string; name: string; color?: string; specialty?: string; }
@@ -47,7 +48,7 @@ export default function AppointmentsView() {
       <div className="flex-shrink-0 flex items-center gap-3 px-3 py-2 border-b" style={{ borderColor: "#f1f5f9", background: "#fff" }}>
         {/* Date nav */}
         <button onClick={navigatePrev} className="p-1.5 rounded-lg hover:bg-gray-100 transition" style={{ color: "#64748b" }}>
-          <ChevronRight className="w-4 h-4" />
+          <RtlBackIcon className="w-4 h-4" />
         </button>
         <div className="flex items-center gap-2">
           <CalendarDays className="w-4 h-4 flex-shrink-0" style={{ color: BLUE }} />
@@ -57,7 +58,7 @@ export default function AppointmentsView() {
           {isToday && view !== "month" && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: BLUE + "15", color: BLUE }}>اليوم</span>}
         </div>
         <button onClick={navigateNext} className="p-1.5 rounded-lg hover:bg-gray-100 transition" style={{ color: "#64748b" }}>
-          <ChevronLeft className="w-4 h-4" />
+          <RtlNextIcon className="w-4 h-4" />
         </button>
         <input type="date" value={date} onChange={e => setDate(e.target.value)}
           className="text-xs border rounded-lg px-2 py-1 outline-none" style={{ color: NAVY }} />

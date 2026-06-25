@@ -2,7 +2,7 @@
 import { printScreen } from "@/lib/printUtils";
 import { useState } from "react";
 import Link from "next/link";
-import { ChevronRight, ChevronLeft, CalendarDays, Plus, LayoutGrid, List, Calendar, Stethoscope, Printer } from "lucide-react";
+import { CalendarDays, Plus, LayoutGrid, List, Calendar, Stethoscope, Printer } from "lucide-react";
 import { DaySchedule } from "@/components/appointments/DaySchedule";
 import { WeekCalendar } from "@/components/appointments/WeekCalendar";
 import { MonthCalendar } from "@/components/appointments/MonthCalendar";
@@ -10,6 +10,7 @@ import { UpcomingWidget } from "@/components/appointments/UpcomingWidget";
 import { formatArabicDate, cn } from "@/lib/utils";
 import { useDoctors } from "@/hooks/useDoctors";
 import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
+import { rtlBackIcon as RtlBackIcon, rtlNextIcon as RtlNextIcon } from "@/lib/rtlIcons";
 
 // FE-13: Removed local Doctor interface + useEffect+useState+api.get pattern.
 // useDoctors() provides the same data with staleTime: 60s (cached across the app).
@@ -180,7 +181,7 @@ export default function AppointmentsPage() {
             className="p-1.5 rounded-lg hover:bg-gray-100 transition text-gray-500"
             aria-label="السابق"
           >
-            <ChevronRight className="w-5 h-5" />
+            <RtlBackIcon className="w-5 h-5" />
           </button>
 
           <div className="flex-1 flex items-center gap-3">
@@ -209,7 +210,7 @@ export default function AppointmentsPage() {
             className="p-1.5 rounded-lg hover:bg-gray-100 transition text-gray-500"
             aria-label="التالي"
           >
-            <ChevronLeft className="w-5 h-5" />
+            <RtlNextIcon className="w-5 h-5" />
           </button>
 
           {(!isToday || view === "month") && (

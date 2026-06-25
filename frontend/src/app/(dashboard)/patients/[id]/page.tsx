@@ -20,6 +20,7 @@ import api from "@/lib/api";
 import { cn, GENDER_LABELS, formatArabicDate, formatPhoneForWhatsApp } from "@/lib/utils";
 import { isClinicalRole, isAccountantRole, canViewPatientFinance } from "@/lib/roles";
 import { financeV3ContractsUrl } from "@/lib/financeRoutes";
+import { rtlArrowBack as RtlArrowBack } from "@/lib/rtlIcons";
 import { isGuid } from "@/lib/patientRouting";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
@@ -553,7 +554,11 @@ export default function PatientProfilePage() {
           <AlertTriangle className="w-8 h-8 text-red-400" />
         </div>
         <p className="text-slate-600 font-medium">{error ?? "المريض غير موجود"}</p>
-        <Link href="/patients" className="text-sm text-blue-600 hover:underline">← العودة للمرضى</Link>
+        {/* Sprint 17 — RTL icon: back arrow points RIGHT in Arabic RTL. The old
+            `←` Unicode glyph pointed left (LTR convention) — wrong direction. */}
+        <Link href="/patients" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline">
+          <RtlArrowBack className="w-4 h-4" /> العودة للمرضى
+        </Link>
       </div>
     </div>
   );

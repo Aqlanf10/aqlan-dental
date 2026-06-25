@@ -212,7 +212,7 @@ public class BackupController(AppDbContext db, IWebHostEnvironment env) : Contro
             record.ErrorMessage = ex.Message?.Length > 500 ? ex.Message[..500] : ex.Message;
             await db.SaveChangesAsync();
 
-            return StatusCode(500, new { message = "فشل النسخ الاحتياطي", error = ex.Message });
+            return StatusCode(500, new { message = "فشل النسخ الاحتياطي. راجع سجل النسخ الاحتياطية لمعرفة التفاصيل." });
         }
     }
 
@@ -251,7 +251,7 @@ public class BackupController(AppDbContext db, IWebHostEnvironment env) : Contro
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "فشل فك تشفير النسخة الاحتياطية — تحقق من BACKUP_ENCRYPTION_KEY", error = ex.Message });
+                return StatusCode(500, new { message = "فشل فك تشفير النسخة الاحتياطية — تحقق من إعداد BACKUP_ENCRYPTION_KEY" });
             }
         }
         else
@@ -314,7 +314,7 @@ public class BackupController(AppDbContext db, IWebHostEnvironment env) : Contro
         }
         catch (JsonException ex)
         {
-            return BadRequest(new { message = "ملف النسخة الاحتياطية تالف", error = ex.Message });
+            return BadRequest(new { message = "ملف النسخة الاحتياطية تالف أو غير صالح" });
         }
     }
 

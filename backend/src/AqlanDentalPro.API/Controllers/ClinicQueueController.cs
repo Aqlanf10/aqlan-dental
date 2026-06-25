@@ -881,7 +881,7 @@ public class ClinicQueueController(
                 catch (Exception ex)
                 {
                     logger.LogWarning(ex, "Failed to send SMS to patient {PatientId}", patient.Id);
-                    results.Add(new { channel = "sms", status = "failed", error = ex.Message });
+                    results.Add(new { channel = "sms", status = "failed", error = "تعذّر إرسال الرسالة النصية" });
                 }
             }
             else
@@ -907,7 +907,7 @@ public class ClinicQueueController(
                 catch (Exception ex)
                 {
                     logger.LogWarning(ex, "Failed to send WhatsApp to patient {PatientId}", patient.Id);
-                    results.Add(new { channel = "whatsapp", status = "failed", error = ex.Message });
+                    results.Add(new { channel = "whatsapp", status = "failed", error = "تعذّر إرسال رسالة واتساب" });
                 }
             }
             else

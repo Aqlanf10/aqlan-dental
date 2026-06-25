@@ -121,4 +121,41 @@ public class TreasuryConcurrencyTests : IClassFixture<TestWebAppFactory>, IAsync
         finalBalance.Should().Be(OpeningBalance,
             "equal concurrent inflows and outflows must net to the opening balance exactly");
     }
+
+    [Fact]
+    public async Task ConcurrentDecrements_WithBlockingDefault_NeverGoNegative()
+    {
+        // Block-by-default (Sprint 2): fire more concurrent outflows than the balance can cover.
+        // The atomic conditional UPDATE must let exactly OpeningBalance/amount succeed and reject
+        // the rest — the balance must never go below zero even under contention.
+        const decimal amount = 10_000m;
+        var attempts = (int)(OpeningBalance / amount) + 5; // 5 more than can be funded
+
+        var outcomes = await Task.WhenAll(Enumerable.Range(0, attempts).Select(_ => Task.Run(async () =>
+        {
+            using var scope = _factory.Services.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<ITreasuryResolutionService>();
+            try
+            {
+                await svc.DecrementTreasuryBalanceAsync(_branchId, "cash", amount);
+                return true; // succeeded
+            }
+            catch (ArgumentException)
+            {
+                return false; // blocked — insufficient balance
+            }
+        })));
+
+        await using var db = await _factory.CreateDbContextAsync();
+        var finalBalance = await db.Treasuries
+            .Where(t => t.Id == _treasuryId)
+            .Select(t => t.Balance)
+            .SingleAsync();
+
+        finalBalance.Should().BeGreaterThanOrEqualTo(0m, "the atomic block must never allow a negative balance");
+        finalBalance.Should().Be(OpeningBalance - outcomes.Count(ok => ok) * amount,
+            "the balance must reflect exactly the operations that were allowed");
+        outcomes.Count(ok => ok).Should().Be((int)(OpeningBalance / amount),
+            "exactly the affordable number of outflows may succeed; the rest are blocked");
+    }
 }

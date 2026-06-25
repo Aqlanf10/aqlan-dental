@@ -108,22 +108,17 @@ public class TreasuryResolutionService(
             throw new ArgumentException("مبلغ الصرف يجب أن يكون أكبر من الصفر.");
 
         var treasury = await ResolveTreasuryAsync(branchId, paymentMethod, cashierSessionId, ct);
+        var blocked = await IsNegativeBalanceBlockedAsync(ct);
 
-        if (treasury.Balance - amount < 0)
-        {
-            // Configurable guard (Settings key below, value "true" to enforce).
-            // Default is warn-only so existing deployments with unseeded opening
-            // balances keep working until the accountant enables enforcement.
-            if (await IsNegativeBalanceBlockedAsync(ct))
-                throw new ArgumentException(
-                    $"عذراً، رصيد الخزينة «{treasury.Name}» غير كافٍ لهذه العملية. الرصيد الحالي: {treasury.Balance:N0} والمطلوب: {amount:N0}. يمكن للإدارة تعديل هذا الإعداد من إعدادات النظام.");
-
+        // When enforcement is OFF (Admin opt-out), keep the legacy warn-only behavior. The
+        // actual block, when enforcement is ON, is applied atomically inside
+        // MutateTreasuryBalanceAsync so concurrent outflows can't bypass it.
+        if (!blocked && treasury.Balance - amount < 0)
             logger.LogWarning(
-                "Treasury {TreasuryId} ({Name}) balance going NEGATIVE: balance {Balance} - outflow {Amount}. Enable setting '{SettingKey}' to block this.",
+                "Treasury {TreasuryId} ({Name}) balance going NEGATIVE: balance {Balance} - outflow {Amount}. Set '{SettingKey}' to true to block this.",
                 treasury.Id, treasury.Name, treasury.Balance, amount, PreventNegativeBalanceSettingKey);
-        }
 
-        await MutateTreasuryBalanceAsync(treasury, -amount, ct);
+        await MutateTreasuryBalanceAsync(treasury, -amount, enforceNonNegative: blocked, ct);
 
         logger.LogInformation(
             "Treasury {TreasuryId} ({Type}) decremented by {Amount} for {PaymentMethod} outflow",
@@ -144,7 +139,7 @@ public class TreasuryResolutionService(
             throw new ArgumentException("مبلغ الإضافة يجب أن يكون أكبر من الصفر.");
 
         var treasury = await ResolveTreasuryAsync(branchId, paymentMethod, null, ct);
-        await MutateTreasuryBalanceAsync(treasury, amount, ct);
+        await MutateTreasuryBalanceAsync(treasury, amount, enforceNonNegative: false, ct);
 
         logger.LogInformation(
             "Treasury {TreasuryId} ({Type}) incremented by {Amount} for {PaymentMethod} reversal",
@@ -167,7 +162,7 @@ public class TreasuryResolutionService(
         if (treasury == null || !treasury.IsActive)
             throw new ArgumentException("عذراً، الخزينة الأصلية غير موجودة أو غير مفعلة. لا يمكن عكس القيد المالي — تواصل مع المحاسب.");
 
-        await MutateTreasuryBalanceAsync(treasury, amount, ct);
+        await MutateTreasuryBalanceAsync(treasury, amount, enforceNonNegative: false, ct);
 
         logger.LogInformation(
             "Treasury {TreasuryId} ({Type}) incremented by {Amount} via exact TreasuryId for reversal",
@@ -189,7 +184,15 @@ public class TreasuryResolutionService(
             .Where(s => s.Key == PreventNegativeBalanceSettingKey)
             .Select(s => s.Value)
             .FirstOrDefaultAsync(ct);
-        return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) || value == "1";
+
+        // Audit §5.2: BLOCK BY DEFAULT. A missing/empty value enforces the guard so a clinic
+        // can never silently overdraft its treasury. Only an explicit opt-out
+        // ("false"/"0"/"off"/"no") set by the Admin from Settings disables it (warn-only).
+        if (string.IsNullOrWhiteSpace(value)) return true;
+        return !(string.Equals(value, "false", StringComparison.OrdinalIgnoreCase)
+                 || value == "0"
+                 || string.Equals(value, "off", StringComparison.OrdinalIgnoreCase)
+                 || string.Equals(value, "no", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsBankPaymentMethod(string? paymentMethod)
@@ -205,7 +208,7 @@ public class TreasuryResolutionService(
     /// same treasury cannot lose updates. Falls back to in-memory mutation for newly-added rows
     /// and the InMemory provider (unit tests). Runs inside the caller's transaction.
     /// </summary>
-    private async Task MutateTreasuryBalanceAsync(Treasury treasury, decimal delta, CancellationToken ct)
+    private async Task MutateTreasuryBalanceAsync(Treasury treasury, decimal delta, bool enforceNonNegative, CancellationToken ct)
     {
         var entry = db.Entry(treasury);
 
@@ -214,19 +217,38 @@ public class TreasuryResolutionService(
         // In both cases mutate in memory and let the caller's SaveChanges insert/persist it.
         if (entry.State == EntityState.Added || !db.Database.IsRelational())
         {
+            if (enforceNonNegative && treasury.Balance + delta < 0)
+                throw InsufficientTreasuryBalance(treasury.Name, treasury.Balance, -delta);
             treasury.Balance += delta;
             return;
         }
 
-        // Existing row on a relational store (PostgreSQL/Railway): apply the delta as one
-        // atomic set-based UPDATE so the read-and-write happen together under a row-level lock.
-        // This removes the lost-update window the previous read-modify-write had under concurrent
-        // treasury operations, and avoids spurious xmin concurrency failures (the update bypasses
-        // the change tracker). It participates in the caller's transaction, so it commits/rolls
-        // back together with the Payment/Expense/Journal/CashFlow writes.
-        await db.Treasuries
-            .Where(t => t.Id == treasury.Id)
-            .ExecuteUpdateAsync(s => s.SetProperty(t => t.Balance, t => t.Balance + delta), ct);
+        if (enforceNonNegative)
+        {
+            // Atomic block (audit §5.2 + §5.1): apply the delta ONLY if the balance stays >= 0.
+            // The guard and the write are a single statement under a row-level lock, so two
+            // concurrent outflows cannot both pass an in-memory check and overdraw the treasury.
+            var rows = await db.Treasuries
+                .Where(t => t.Id == treasury.Id && t.Balance + delta >= 0)
+                .ExecuteUpdateAsync(s => s.SetProperty(t => t.Balance, t => t.Balance + delta), ct);
+            if (rows == 0)
+            {
+                var current = await db.Treasuries
+                    .Where(t => t.Id == treasury.Id)
+                    .Select(t => t.Balance)
+                    .FirstOrDefaultAsync(ct);
+                throw InsufficientTreasuryBalance(treasury.Name, current, -delta);
+            }
+        }
+        else
+        {
+            // Existing row on a relational store: apply the delta as one atomic set-based UPDATE
+            // so the read-and-write happen together under a row-level lock. Removes the lost-update
+            // window and avoids spurious xmin concurrency failures (bypasses the change tracker).
+            await db.Treasuries
+                .Where(t => t.Id == treasury.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(t => t.Balance, t => t.Balance + delta), ct);
+        }
 
         // Reflect the new value on the tracked entity for in-request reads, but mark it
         // unmodified so the caller's SaveChanges does not re-issue a stale read-modify-write
@@ -234,4 +256,7 @@ public class TreasuryResolutionService(
         treasury.Balance += delta;
         entry.Property(t => t.Balance).IsModified = false;
     }
+
+    private static ArgumentException InsufficientTreasuryBalance(string treasuryName, decimal currentBalance, decimal requiredAmount) =>
+        new($"عذراً، رصيد الخزينة «{treasuryName}» غير كافٍ لهذه العملية. الرصيد الحالي: {currentBalance:N0} والمطلوب: {requiredAmount:N0}. يمكن للإدارة تعديل هذا الإعداد من إعدادات النظام.");
 }

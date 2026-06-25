@@ -200,15 +200,38 @@ public class TreasuryResolutionService(
     }
 
     /// <summary>
-    /// Mutates treasury balance atomically. Uses raw SQL on relational DB for concurrency safety.
-    /// Falls back to in-memory mutation for InMemory provider (test scenarios).
-    /// Does NOT call SaveChangesAsync.
+    /// Mutates treasury balance. On a relational store the increment is applied as a single
+    /// set-based UPDATE (<c>Balance = Balance + delta</c>) so concurrent outflows/inflows on the
+    /// same treasury cannot lose updates. Falls back to in-memory mutation for newly-added rows
+    /// and the InMemory provider (unit tests). Runs inside the caller's transaction.
     /// </summary>
     private async Task MutateTreasuryBalanceAsync(Treasury treasury, decimal delta, CancellationToken ct)
     {
-        // Direct balance update (no raw SQL). ExecuteSqlRawAsync inside a transaction
-        // causes DbContext concurrency issues ("A second operation was started on this
-        // context instance"). The caller's transaction provides atomicity guarantees.
+        var entry = db.Entry(treasury);
+
+        // A newly auto-created treasury is not yet inserted, so a set-based UPDATE would match
+        // zero rows; and the InMemory provider (unit tests) does not support ExecuteUpdateAsync.
+        // In both cases mutate in memory and let the caller's SaveChanges insert/persist it.
+        if (entry.State == EntityState.Added || !db.Database.IsRelational())
+        {
+            treasury.Balance += delta;
+            return;
+        }
+
+        // Existing row on a relational store (PostgreSQL/Railway): apply the delta as one
+        // atomic set-based UPDATE so the read-and-write happen together under a row-level lock.
+        // This removes the lost-update window the previous read-modify-write had under concurrent
+        // treasury operations, and avoids spurious xmin concurrency failures (the update bypasses
+        // the change tracker). It participates in the caller's transaction, so it commits/rolls
+        // back together with the Payment/Expense/Journal/CashFlow writes.
+        await db.Treasuries
+            .Where(t => t.Id == treasury.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.Balance, t => t.Balance + delta), ct);
+
+        // Reflect the new value on the tracked entity for in-request reads, but mark it
+        // unmodified so the caller's SaveChanges does not re-issue a stale read-modify-write
+        // (which would double-apply the delta and trip the xmin concurrency token).
         treasury.Balance += delta;
+        entry.Property(t => t.Balance).IsModified = false;
     }
 }

@@ -20,6 +20,14 @@ public static class FinanceSettingsKeys
     /// <summary>Expenses above this amount (YER) require managerial approval before posting.</summary>
     public const string ExpenseApprovalThreshold = "finance.expenses.approval_threshold";
 
+    // ── Treasury safety ──────────────────────────────────────────────────────
+    /// <summary>
+    /// When "true" (default), outflows that would drive a treasury balance below zero are
+    /// blocked. Admin can set "false" to fall back to warn-only. Must match
+    /// TreasuryResolutionService.PreventNegativeBalanceSettingKey.
+    /// </summary>
+    public const string PreventNegativeTreasuryBalance = "finance.prevent_negative_treasury_balance";
+
     // ── Cashier sessions ────────────────────────────────────────────────────
     public const string CashierDefaultOpeningBalance = "finance.cashier_session.default_opening_balance";
 
@@ -45,6 +53,7 @@ public static class FinanceSettingsKeys
         [DefaultConsultationFee]              = "5000",
         [MaxDiscountPercentage]               = "100",   // 100 = no restriction (current behavior)
         [ExpenseApprovalThreshold]            = "50000", // preserves the previous hardcoded 50,000 YER threshold
+        [PreventNegativeTreasuryBalance]      = "true",  // block overdrafts by default (audit §5.2); Admin may set "false"
         [CashierDefaultOpeningBalance]        = "0",
         [PaymentMethodsDefaultVisibility]     = "all",   // informational — all active methods are shown
         [CommissionDefaultRecognitionMode]    = "OnPaymentCollection",

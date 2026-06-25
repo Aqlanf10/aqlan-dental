@@ -14,11 +14,10 @@ namespace AqlanDentalPro.UnitTests.Finance;
 /// Tests for the configurable negative-treasury-balance guard in
 /// TreasuryResolutionService.DecrementTreasuryBalanceAsync.
 ///
-/// Default behavior (setting absent or "false"): warn-only — the outflow
-/// proceeds even if the balance goes negative, preserving the behavior of
-/// existing deployments. When the setting
-/// "finance.prevent_negative_treasury_balance" is "true"/"1", outflows that
-/// would drive the balance negative are rejected with an Arabic error.
+/// Default behavior (setting absent/empty or "true"/"1"): BLOCK (audit §5.2) —
+/// an outflow that would drive the balance negative is rejected with an Arabic
+/// error, so a clinic can never silently overdraft its treasury. Only an explicit
+/// Admin opt-out ("false"/"0"/"off"/"no") falls back to legacy warn-only behavior.
 /// </summary>
 public class TreasuryNegativeBalanceGuardTests
 {
@@ -62,19 +61,33 @@ public class TreasuryNegativeBalanceGuardTests
         treasury.Balance.Should().Be(600m);
     }
 
-    [Fact]
-    public async Task Decrement_GoingNegative_DefaultSetting_Allows()
+    [Theory]
+    [InlineData(null)]   // no setting row at all
+    [InlineData("")]     // empty value row
+    public async Task Decrement_GoingNegative_DefaultOrEmpty_Blocks(string? settingValue)
     {
         await using var db = CreateDb();
         var branchId = await SeedTreasuryAsync(db, balance: 100m);
+        if (settingValue is not null)
+        {
+            db.Settings.Add(new Setting
+            {
+                Key = TreasuryResolutionService.PreventNegativeBalanceSettingKey,
+                Value = settingValue,
+                Category = "finance"
+            });
+            await db.SaveChangesAsync();
+        }
         var service = CreateService(db);
 
-        // No setting row at all → warn-only, outflow proceeds (legacy behavior).
-        await service.DecrementTreasuryBalanceAsync(branchId, "cash", 250m);
-        await db.SaveChangesAsync();
+        // BLOCK BY DEFAULT (audit §5.2): absent or empty setting enforces the guard.
+        var act = () => service.DecrementTreasuryBalanceAsync(branchId, "cash", 250m);
+
+        var ex = await act.Should().ThrowAsync<ArgumentException>();
+        ex.Which.Message.Should().Contain("غير كافٍ");
 
         var treasury = await db.Treasuries.SingleAsync();
-        treasury.Balance.Should().Be(-150m);
+        treasury.Balance.Should().Be(100m, "balance must not change when the default guard rejects the outflow");
     }
 
     [Theory]
@@ -106,8 +119,10 @@ public class TreasuryNegativeBalanceGuardTests
 
     [Theory]
     [InlineData("false")]
+    [InlineData("FALSE")]
     [InlineData("0")]
-    [InlineData("")]
+    [InlineData("off")]
+    [InlineData("no")]
     public async Task Decrement_GoingNegative_WithEnforcementDisabled_Allows(string settingValue)
     {
         await using var db = CreateDb();

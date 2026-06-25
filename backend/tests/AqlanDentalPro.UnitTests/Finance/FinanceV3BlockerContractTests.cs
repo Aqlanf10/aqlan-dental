@@ -74,6 +74,11 @@ public class FinanceV3BlockerContractTests
 
     private static (JournalEntryService jeService, TreasuryResolutionService treasuryService) CreateServices(AppDbContext db)
     {
+        // These tests exercise salary/advance decrement mechanics and intentionally drive the
+        // treasury negative from a zero balance, so opt out of the block-by-default guard
+        // (Sprint 2) — they verify journal/cashflow records, not balance enforcement.
+        db.Settings.Add(new Setting { Key = TreasuryResolutionService.PreventNegativeBalanceSettingKey, Value = "false", Category = "finance" });
+        db.SaveChanges();
         var jeService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
         var treasuryService = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
         return (jeService, treasuryService);

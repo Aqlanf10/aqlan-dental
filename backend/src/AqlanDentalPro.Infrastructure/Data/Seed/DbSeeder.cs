@@ -703,7 +703,10 @@ public static class DbSeeder
     /// </summary>
     private static async Task SeedFinanceSettingsAsync(AppDbContext context)
     {
-        const string sentinelKey = "finance.settings.seeded.v1";
+        // v2 (Sprint 2): bumped so existing databases pick up the newly-added
+        // finance.prevent_negative_treasury_balance key. Still INSERT-ONLY — owner-customized
+        // values are never overwritten (only missing keys are added).
+        const string sentinelKey = "finance.settings.seeded.v2";
         const string category = "finance";
 
         // Already-done fast path: sentinel exists → nothing to do.

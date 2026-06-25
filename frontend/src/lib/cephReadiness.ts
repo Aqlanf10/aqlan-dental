@@ -96,3 +96,164 @@ export function cephReadinessFromAnalysis(
     isDirty,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Cephalometric DATA-QUALITY signals (audit §12)
+// ---------------------------------------------------------------------------
+// Before layering more AI on top of the ceph workflow, the doctor needs the
+// quality of the *underlying* data surfaced honestly: how confident the AI was
+// in each placed landmark, whether the mm-per-pixel calibration is actually
+// valid, whether the landmark set is complete, and whether the saved
+// measurements still reflect the points on the canvas. These are warnings, not
+// gates — the Sprint 6 approval/PDF gate (computeCephReadiness) stays the hard
+// line. This block only adds advisory signals.
+
+/**
+ * Confidence is stored on a 0..1 scale (the backend clamps the AI provider's
+ * value to [0,1], and the canvas renders it as `confidence * 100`%). An AI-
+ * placed landmark below this threshold is flagged as low-confidence and should
+ * be re-checked manually before the analysis is trusted.
+ */
+export const LOW_CONFIDENCE_THRESHOLD = 0.7;
+
+/** Severity of a quality warning — drives the banner colour, not a hard gate. */
+export type CephQualitySeverity = "warning" | "info";
+
+export interface CephQualityWarning {
+  /** Stable identifier for keys/testing. */
+  key:
+    | "calibration"
+    | "lowConfidence"
+    | "incompleteLandmarks"
+    | "unsavedEdits"
+    | "staleMeasurements";
+  severity: CephQualitySeverity;
+  /** Arabic, RTL message shown to the doctor. */
+  message: string;
+}
+
+/** Minimal landmark shape the quality computation needs. */
+export interface CephQualityLandmark {
+  key?: string;
+  isAiPlaced?: boolean;
+  confidence?: number | null;
+}
+
+export interface CephQualityInput {
+  /** Calibration value (pixels per mm) from the SAVED record or live edit. */
+  pixelsPerMm?: number | null;
+  /** The current landmark set (live canvas state is fine). */
+  landmarks: CephQualityLandmark[];
+  /** Count of SAVED computed measurements. */
+  measurementCount: number;
+  /** Unsaved landmark/calibration edits pending a "save & compute". */
+  isDirty?: boolean;
+}
+
+export interface CephQualityReport {
+  /** True when there is at least one warning-severity signal. */
+  hasWarnings: boolean;
+  /** All signals (warnings + info), ordered most-actionable first. */
+  warnings: CephQualityWarning[];
+  /** Keys of AI landmarks whose confidence is below the threshold. */
+  lowConfidenceKeys: string[];
+  /** Whether the saved calibration is present and a positive, finite number. */
+  calibrationValid: boolean;
+}
+
+/**
+ * A calibration value is only valid when it is a finite, strictly-positive
+ * number. `null`/`undefined`/`0`/negative/NaN all mean "not calibrated", in
+ * which case linear (mm) measurements cannot be trusted.
+ */
+export function isCalibrationValid(pixelsPerMm?: number | null): boolean {
+  return typeof pixelsPerMm === "number" && Number.isFinite(pixelsPerMm) && pixelsPerMm > 0;
+}
+
+/**
+ * Returns the keys of AI-placed landmarks whose confidence is below
+ * LOW_CONFIDENCE_THRESHOLD. A manually-placed landmark is never low-confidence
+ * (the doctor placed it). An AI landmark with no confidence value is treated as
+ * low-confidence — an unknown confidence is not a trustworthy one.
+ */
+export function lowConfidenceLandmarks(
+  landmarks: CephQualityLandmark[],
+  threshold: number = LOW_CONFIDENCE_THRESHOLD,
+): string[] {
+  return (landmarks ?? [])
+    .filter(
+      (l) =>
+        l.isAiPlaced === true &&
+        (typeof l.confidence !== "number" || l.confidence < threshold),
+    )
+    .map((l, i) => l.key ?? `#${i}`);
+}
+
+/**
+ * Computes the advisory data-quality report. Order of warnings mirrors the
+ * readiness reason priority: unsaved edits first (they make everything below
+ * stale), then calibration, then low-confidence AI points, then incomplete
+ * landmarks, then a stale-measurements hint.
+ */
+export function computeCephQuality(input: CephQualityInput): CephQualityReport {
+  const dirty = Boolean(input.isDirty);
+  const landmarks = input.landmarks ?? [];
+  const placed = landmarks.length;
+  const calibrationValid = isCalibrationValid(input.pixelsPerMm);
+  const lowConfidenceKeys = lowConfidenceLandmarks(landmarks);
+
+  const warnings: CephQualityWarning[] = [];
+
+  if (dirty) {
+    warnings.push({
+      key: "unsavedEdits",
+      severity: "warning",
+      message:
+        "لديك تعديلات غير محفوظة على النقاط أو المعايرة — اضغط «حفظ وحساب» حتى تعكس القياسات الوضع الحالي.",
+    });
+  }
+
+  if (!calibrationValid) {
+    warnings.push({
+      key: "calibration",
+      severity: "warning",
+      message:
+        "المعايرة (بكسل/مم) غير محفوظة أو غير صالحة — قد تكون القياسات الخطية بالمليمتر غير دقيقة حتى تُعايَر الصورة.",
+    });
+  }
+
+  if (lowConfidenceKeys.length > 0) {
+    warnings.push({
+      key: "lowConfidence",
+      severity: "warning",
+      message: `توجد ${lowConfidenceKeys.length} نقطة موضوعة بالذكاء الاصطناعي بثقة منخفضة (${lowConfidenceKeys.join("، ")}) — راجعها يدويًا قبل اعتماد التحليل.`,
+    });
+  }
+
+  if (placed < REQUIRED_LANDMARKS) {
+    warnings.push({
+      key: "incompleteLandmarks",
+      severity: "warning",
+      message: `النقاط غير مكتملة (${placed}/${REQUIRED_LANDMARKS}) — أكمل وضع جميع النقاط قبل الاعتماد على القياسات.`,
+    });
+  }
+
+  // Stale measurements: points exist but no saved measurements were computed
+  // from them. (When dirty, the unsaved-edits warning already covers this, so
+  // we only surface this distinct hint on a clean record.)
+  if (!dirty && placed > 0 && input.measurementCount === 0) {
+    warnings.push({
+      key: "staleMeasurements",
+      severity: "info",
+      message:
+        "لا توجد قياسات محفوظة لهذه النقاط بعد — اضغط «حفظ وحساب» لإعادة حساب القياسات.",
+    });
+  }
+
+  return {
+    hasWarnings: warnings.some((w) => w.severity === "warning"),
+    warnings,
+    lowConfidenceKeys,
+    calibrationValid,
+  };
+}

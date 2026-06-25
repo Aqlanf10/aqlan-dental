@@ -1,3 +1,4 @@
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -28,8 +29,17 @@ public sealed class ApproveAdvanceRequest
 [ApiController]
 [Route("api/advances")]
 [Authorize(Policy = "ReportsAccess")]
-public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution, ILogger<AdvancePaymentController> logger) : ControllerBase
+public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution, ICurrentUserService currentUser, ILogger<AdvancePaymentController> logger) : ControllerBase
 {
+    // FIN-PERM (Group B): the class-level ReportsAccess policy is the coarse gate;
+    // the granular finance.expenses permission (employee advances are outflows) is the
+    // real per-action gate. Most actions are also AdminOnly; Admin bypasses CanAsync.
+    private Task<bool> CanAsync(string action) =>
+        PermissionGuard.HasAsync(db, currentUser, "finance.expenses", action);
+
+    private IActionResult Deny() =>
+        StatusCode(403, new { message = "غير مصرح لك بهذا الإجراء المالي" });
+
     /// <summary>
     /// Get advance payment records with filters
     /// </summary>
@@ -41,6 +51,7 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
+        if (!await CanAsync("view")) return Deny();
         try
         {
         if (page < 1) page = 1;
@@ -99,6 +110,7 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
     [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> Create([FromBody] CreateAdvancePaymentRequest req)
     {
+        if (!await CanAsync("create")) return Deny();
         if (req.Amount <= 0)
             return BadRequest(new { message = "مبلغ السلفة يجب أن يكون أكبر من صفر" });
 
@@ -144,6 +156,7 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
     [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> Approve(Guid id, [FromBody] ApproveAdvanceRequest req)
     {
+        if (!await CanAsync("approve")) return Deny();
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         var userIdGuid = Guid.TryParse(userId, out var uidParsed) ? uidParsed : Guid.Empty;
 
@@ -298,6 +311,7 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
     [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        if (!await CanAsync("delete")) return Deny();
         var advance = await db.AdvancePayments.FindAsync(id);
         if (advance is null)
             return NotFound(new { message = "طلب السلفة غير موجود" });
@@ -321,6 +335,7 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
     [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> ReverseAdvance(Guid id, [FromBody] ReverseAdvanceRequest req)
     {
+        if (!await CanAsync("approve")) return Deny();
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         var performedBy = Guid.TryParse(userId, out var uid) ? uid : Guid.Empty;
 

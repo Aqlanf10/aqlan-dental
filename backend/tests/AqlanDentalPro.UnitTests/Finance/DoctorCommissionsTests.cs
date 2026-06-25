@@ -35,6 +35,20 @@ public class DoctorCommissionsTests
     private static FinanceV3Controller BuildFinanceV3Controller(AppDbContext db, ICurrentUserService? currentUser = null)
     {
         currentUser ??= CreateAdminUser();
+        // FIN-PERM: the DoctorCommissions endpoints now enforce finance.commissions.view.
+        // Non-admin (Accountant) tests must seed the RolePermission so they exercise their
+        // real intent (branch isolation) and not the new authz gate. Admin bypasses anyway.
+        if (currentUser.Role == UserRole.Accountant
+            && !db.RolePermissions.Any(p => p.Role == "Accountant" && p.Resource == "finance.commissions"))
+        {
+            db.RolePermissions.Add(new RolePermission
+            {
+                Role = "Accountant", Resource = "finance.commissions",
+                CanView = true, CanCreate = true, CanEdit = true,
+                CanApprove = true, CanDelete = true, CanExport = true
+            });
+            db.SaveChanges();
+        }
         var notifications = new Mock<INotificationService>().Object;
         var commissionService = new Mock<ICommissionService>().Object;
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);

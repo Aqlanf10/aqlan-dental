@@ -1,3 +1,4 @@
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.DTOs.Finance;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
@@ -117,6 +118,18 @@ public partial class FinanceV3Controller(
     ITreasuryResolutionService treasuryResolution,
     ILogger<FinanceV3Controller> logger) : ControllerBase
 {
+    // FIN-PERM (Group B): the class-level ReportsAccess policy is the coarse gate; the
+    // granular per-action gate uses the area-specific finance.* resource key (RolePermissions,
+    // owner-configurable from Settings). Admin always bypasses (PermissionGuard). The resource
+    // varies by endpoint area (payments/invoices/expenses/reports/treasuries/cashier_session/
+    // commissions), so callers pass the resource explicitly. This helper is in the main partial
+    // and is visible to all FinanceV3Controller partials.
+    private Task<bool> CanAsync(string resource, string action) =>
+        PermissionGuard.HasAsync(db, currentUser, resource, action);
+
+    private IActionResult Deny() =>
+        StatusCode(403, new { message = "غير مصرح لك بهذا الإجراء المالي" });
+
     // ─── Write Endpoints (Finance V3) ─────────────────────────────────────
 
     /// <summary>
@@ -127,6 +140,7 @@ public partial class FinanceV3Controller(
     [Authorize(Policy = "FinanceWrite")]
     public async Task<IActionResult> CreatePayment([FromBody] CreatePaymentRequest req)
     {
+        if (!await CanAsync("finance.payments", "create")) return Deny();
         // Sprint 1: Admin branchId fallback — if admin has no branch assigned,
         // use the first active branch instead of rejecting with BadRequest.
         var branchId = await ResolveBranchIdAsync();
@@ -197,6 +211,7 @@ public partial class FinanceV3Controller(
     [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> DeletePayment(Guid id)
     {
+        if (!await CanAsync("finance.payments", "delete")) return Deny();
         var payment = await financeService.GetPaymentByIdAsync(id);
         var deleted = await financeService.DeletePaymentAsync(id);
         if (deleted && payment != null)
@@ -215,6 +230,7 @@ public partial class FinanceV3Controller(
     [Authorize(Policy = "FinanceWrite")]
     public async Task<IActionResult> CancelInvoice(Guid id, [FromBody] CancelInvoiceRequest? req = null)
     {
+        if (!await CanAsync("finance.invoices", "edit")) return Deny();
         var invoice = await db.Invoices
             .Include(i => i.Payments)
             .FirstOrDefaultAsync(i => i.Id == id);
@@ -292,6 +308,7 @@ public partial class FinanceV3Controller(
     [Authorize(Policy = "FinanceWrite")]
     public async Task<IActionResult> CreateExpense([FromBody] CreateExpenseRequest req)
     {
+        if (!await CanAsync("finance.expenses", "create")) return Deny();
         // Delegate to the existing OperationalExpensesController logic via service resolution
         // We replicate the core logic here to keep it under V3 authorization policy
         if (string.IsNullOrWhiteSpace(req.Title))
@@ -461,6 +478,7 @@ public partial class FinanceV3Controller(
     [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> ApproveExpense(Guid id, [FromBody] ApproveExpenseRequest req)
     {
+        if (!await CanAsync("finance.expenses", "approve")) return Deny();
         var userId = currentUser.UserId ?? Guid.Empty;
         var expenseSnapshot = await db.OperationalExpenses.AsNoTracking().FirstOrDefaultAsync(e => e.Id == id && e.IsActive);
         if (expenseSnapshot == null) return NotFound(new { message = "المصروف غير موجود" });
@@ -576,6 +594,7 @@ public partial class FinanceV3Controller(
     [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> RejectExpense(Guid id, [FromBody] RejectExpenseRequest req)
     {
+        if (!await CanAsync("finance.expenses", "approve")) return Deny();
         if (string.IsNullOrWhiteSpace(req.Reason)) return BadRequest(new { message = "سبب الرفض مطلوب" });
 
         // Same row-lock pattern as ApproveExpense: without it, a concurrent approve
@@ -617,6 +636,7 @@ public partial class FinanceV3Controller(
     [Authorize(Policy = "FinanceWrite")]
     public async Task<IActionResult> DeleteExpense(Guid id)
     {
+        if (!await CanAsync("finance.expenses", "delete")) return Deny();
         var expense = await db.OperationalExpenses.FindAsync(id);
         if (expense == null || !expense.IsActive) return NotFound(new { message = "المصروف غير موجود" });
 
@@ -775,6 +795,7 @@ public partial class FinanceV3Controller(
     [Authorize(Policy = "FinanceWrite")]
     public async Task<IActionResult> CreateSupplierBill([FromBody] CreateSupplierBillRequest req)
     {
+        if (!await CanAsync("finance.expenses", "create")) return Deny();
         if (string.IsNullOrWhiteSpace(req.Description)) return BadRequest(new { message = "وصف الفاتورة مطلوب" });
         if (req.TotalAmount <= 0) return BadRequest(new { message = "يجب أن يكون إجمالي الفاتورة أكبر من الصفر" });
 
@@ -844,6 +865,7 @@ public partial class FinanceV3Controller(
     [Authorize(Policy = "FinanceWrite")]
     public async Task<IActionResult> PaySupplierBill(Guid id, [FromBody] PayBillInstallmentRequest req)
     {
+        if (!await CanAsync("finance.expenses", "approve")) return Deny();
         if (req.Amount <= 0) return BadRequest(new { message = "يجب أن يكون مبلغ الدفعة أكبر من الصفر" });
 
         var billSnapshot = await db.SupplierBills.AsNoTracking().FirstOrDefaultAsync(b => b.Id == id && b.IsActive);

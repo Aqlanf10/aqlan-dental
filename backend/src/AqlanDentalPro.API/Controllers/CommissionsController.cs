@@ -1,5 +1,7 @@
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.DTOs.Commission;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -9,14 +11,25 @@ namespace AqlanDentalPro.API.Controllers;
 [Route("api/commissions")]
 [Authorize(Policy = "CommissionView")]
 public class CommissionsController(
+    AppDbContext db,
     ICommissionService commissionService,
     ICurrentUserService currentUser) : ControllerBase
 {
+    // FIN-PERM (Group B): the class-level CommissionView policy is the coarse gate;
+    // the granular finance.commissions permission (RolePermissions, owner-configurable
+    // from Settings) is the real per-action gate. Admin always bypasses (PermissionGuard).
+    private Task<bool> CanAsync(string action) =>
+        PermissionGuard.HasAsync(db, currentUser, "finance.commissions", action);
+
+    private IActionResult Deny() =>
+        StatusCode(403, new { message = "غير مصرح لك بهذا الإجراء المالي" });
+
     // ── Line item commission ──────────────────────────────────────────────────
 
     [HttpGet("line-items/{lineItemId:guid}")]
     public async Task<IActionResult> GetLineItem(Guid lineItemId)
     {
+        if (!await CanAsync("view")) return Deny();
         var result = await commissionService.GetLineItemCommissionAsync(lineItemId);
         return result == null ? NotFound() : Ok(result);
     }
@@ -24,6 +37,7 @@ public class CommissionsController(
     [HttpGet("invoices/{invoiceId:guid}")]
     public async Task<IActionResult> GetInvoiceCommissions(Guid invoiceId)
     {
+        if (!await CanAsync("view")) return Deny();
         var result = await commissionService.GetInvoiceCommissionsAsync(invoiceId);
         return Ok(result);
     }
@@ -32,6 +46,7 @@ public class CommissionsController(
     [Authorize(Policy = "CommissionEdit")]
     public async Task<IActionResult> Recalculate(Guid lineItemId)
     {
+        if (!await CanAsync("edit")) return Deny();
         var result = await commissionService.RecalculateAsync(lineItemId);
         return result == null ? NotFound() : Ok(result);
     }
@@ -40,6 +55,7 @@ public class CommissionsController(
     [Authorize(Policy = "CommissionEdit")]
     public async Task<IActionResult> UpdateCosts(Guid lineItemId, [FromBody] UpdateLineItemCommissionRequest req)
     {
+        if (!await CanAsync("edit")) return Deny();
         var userId = currentUser.UserId;
         if (userId == null) return Unauthorized();
 
@@ -62,6 +78,7 @@ public class CommissionsController(
     [Authorize(Policy = "CommissionApprove")]
     public async Task<IActionResult> Approve(Guid lineItemId, [FromBody] ApproveCommissionRequest req)
     {
+        if (!await CanAsync("approve")) return Deny();
         var userId = currentUser.UserId;
         if (userId == null) return Unauthorized();
 
@@ -80,6 +97,7 @@ public class CommissionsController(
     [Authorize(Policy = "CommissionApprove")]
     public async Task<IActionResult> Unlock(Guid lineItemId)
     {
+        if (!await CanAsync("approve")) return Deny();
         var userId = currentUser.UserId;
         if (userId == null) return Unauthorized();
 
@@ -98,6 +116,7 @@ public class CommissionsController(
     [Authorize(Policy = "CommissionEdit")]
     public async Task<IActionResult> AutoFill(Guid lineItemId)
     {
+        if (!await CanAsync("edit")) return Deny();
         await commissionService.AutoFillFromServiceAsync(lineItemId);
         var result = await commissionService.GetLineItemCommissionAsync(lineItemId);
         return result == null ? NotFound() : Ok(result);
@@ -115,6 +134,7 @@ public class CommissionsController(
         [FromQuery] string? commissionStatus,
         [FromQuery] string? paymentStatus)
     {
+        if (!await CanAsync("view")) return Deny();
         if (!DateOnly.TryParse(from, out var fromDate))
             return BadRequest(new { message = "تاريخ البداية غير صالح" });
         if (!DateOnly.TryParse(to, out var toDate))
@@ -141,6 +161,7 @@ public class CommissionsController(
     [Authorize(Policy = "CommissionPay")]
     public async Task<IActionResult> RecordPayment([FromBody] RecordCommissionPaymentRequest req)
     {
+        if (!await CanAsync("create")) return Deny();
         var userId = currentUser.UserId;
         if (userId == null) return Unauthorized();
 
@@ -158,6 +179,7 @@ public class CommissionsController(
     [HttpGet("payments")]
     public async Task<IActionResult> GetPayments([FromQuery] Guid? doctorId)
     {
+        if (!await CanAsync("view")) return Deny();
         var result = await commissionService.GetPaymentsAsync(doctorId);
         return Ok(result);
     }
@@ -167,6 +189,7 @@ public class CommissionsController(
     [HttpGet("services/{serviceId:guid}/defaults")]
     public async Task<IActionResult> GetServiceDefaults(Guid serviceId)
     {
+        if (!await CanAsync("view")) return Deny();
         var result = await commissionService.GetServiceDefaultsAsync(serviceId);
         return result == null ? NotFound() : Ok(result);
     }

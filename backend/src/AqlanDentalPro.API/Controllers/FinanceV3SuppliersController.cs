@@ -1,3 +1,4 @@
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.DTOs.Finance;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
@@ -38,6 +39,15 @@ public class FinanceV3SuppliersController(
     ICurrentUserService currentUser,
     IAuditService audit) : ControllerBase
 {
+    // FIN-PERM (Group B): the class-level FinanceAccess policy is the coarse gate;
+    // the granular finance.expenses permission (supplier bills are payables/outflows)
+    // is the real per-action gate. Admin always bypasses (PermissionGuard).
+    private Task<bool> CanAsync(string action) =>
+        PermissionGuard.HasAsync(db, currentUser, "finance.expenses", action);
+
+    private IActionResult Deny() =>
+        StatusCode(403, new { message = "غير مصرح لك بهذا الإجراء المالي" });
+
     // ─── 1. GET /api/finance-v3/suppliers — جلب جميع الموردين والمعامل مع أرصدتهم ──
     /// <summary>Returns paginated list of suppliers with balance info for Finance V3.</summary>
     [HttpGet]
@@ -46,6 +56,7 @@ public class FinanceV3SuppliersController(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 30)
     {
+        if (!await CanAsync("view")) return Deny();
         // Branch isolation guard - Admin can see all branches
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
@@ -89,6 +100,7 @@ public class FinanceV3SuppliersController(
     [HttpPost]
     public async Task<IActionResult> CreateSupplier([FromBody] CreateFinanceV3SupplierRequest req)
     {
+        if (!await CanAsync("create")) return Deny();
         if (string.IsNullOrWhiteSpace(req.Name))
             return BadRequest(new { message = "اسم المورد مطلوب" });
 
@@ -114,6 +126,7 @@ public class FinanceV3SuppliersController(
     [HttpGet("{supplierId:guid}/bills")]
     public async Task<IActionResult> GetSupplierBills(Guid supplierId)
     {
+        if (!await CanAsync("view")) return Deny();
         var supplier = await db.Suppliers.FirstOrDefaultAsync(s => s.Id == supplierId && s.IsActive);
         if (supplier == null)
             return NotFound(new { message = "المورد غير موجود" });
@@ -164,6 +177,7 @@ public class FinanceV3SuppliersController(
     [Authorize(Policy = "FinanceWrite")]
     public async Task<IActionResult> CreateSupplierBill(Guid supplierId, [FromBody] CreateSupplierBillRequestDto req)
     {
+        if (!await CanAsync("create")) return Deny();
         var supplier = await db.Suppliers.FirstOrDefaultAsync(s => s.Id == supplierId && s.IsActive);
         if (supplier == null)
             return NotFound(new { message = "المورد غير موجود" });
@@ -260,6 +274,7 @@ public class FinanceV3SuppliersController(
     [Authorize(Policy = "FinanceWrite")]
     public async Task<IActionResult> PayBill(Guid billId, [FromBody] PaySupplierBillRequest request)
     {
+        if (!await CanAsync("approve")) return Deny();
         var userId = currentUser.UserId ?? Guid.Empty;
 
         await financeService.PaySupplierBillAsync(billId, request, userId);
@@ -279,6 +294,7 @@ public class FinanceV3SuppliersController(
     [HttpGet("/api/finance-v3/credit-notes")]
     public async Task<IActionResult> GetCreditNotes([FromQuery] Guid? invoiceId)
     {
+        if (!await CanAsync("view")) return Deny();
         var query = db.CreditNotes
             .Include(cn => cn.Invoice)
             .Include(cn => cn.Patient)
@@ -315,6 +331,7 @@ public class FinanceV3SuppliersController(
     [Authorize(Policy = "FinanceWrite")]
     public async Task<IActionResult> CreateCreditNote([FromBody] CreateCreditNoteRequest request)
     {
+        if (!await CanAsync("edit")) return Deny();
         if (request.Amount <= 0)
             return BadRequest(new { message = "يجب أن يكون مبلغ الإشعار الدائن أكبر من الصفر" });
 
@@ -368,6 +385,7 @@ public class FinanceV3SuppliersController(
     [Authorize(Policy = "FinanceWrite")]
     public async Task<IActionResult> ProcessRefund(Guid creditNoteId, [FromBody] ProcessRefundRequest request)
     {
+        if (!await CanAsync("approve")) return Deny();
         var userId = currentUser.UserId ?? Guid.Empty;
 
         await financeService.ProcessRefundAsync(creditNoteId, request, userId);

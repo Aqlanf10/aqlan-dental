@@ -102,7 +102,14 @@ public class CommissionsRouteGuardTests
         currentUserMock.Setup(u => u.Role).Returns(UserRole.Admin);
         currentUserMock.Setup(u => u.IsAuthenticated).Returns(true);
 
-        var controller = new CommissionsController(commissionMock.Object, currentUserMock.Object);
+        // FIN-PERM: CommissionsController now takes AppDbContext first (for PermissionGuard).
+        // This test uses an Admin user (above), so the granular guard always bypasses;
+        // an empty in-memory DB is sufficient — no RolePermission seeding required.
+        var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options);
+
+        var controller = new CommissionsController(db, commissionMock.Object, currentUserMock.Object);
         return (controller, commissionMock, currentUserMock);
     }
 

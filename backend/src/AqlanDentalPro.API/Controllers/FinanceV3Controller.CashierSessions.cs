@@ -24,6 +24,7 @@ public partial class FinanceV3Controller
     [HttpGet("cashier-sessions/active")]
     public async Task<IActionResult> GetActiveCashierSessionV3()
     {
+        if (!await CanAsync("finance.cashier_session", "view")) return Deny();
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         var cashierId = Guid.TryParse(userId, out var uid) ? uid : Guid.Empty;
 
@@ -120,6 +121,7 @@ public partial class FinanceV3Controller
     [Authorize(Policy = "CashierAccess")]
     public async Task<IActionResult> CloseCashierSession([FromBody] CloseSessionRequest req)
     {
+        if (!await CanAsync("finance.cashier_session", "create")) return Deny();
         // Sprint 1: Admin branchId fallback
         var branchId = await ResolveBranchIdAsync();
         if (branchId == Guid.Empty)
@@ -322,6 +324,7 @@ public partial class FinanceV3Controller
     [Authorize(Policy = "ReportsAccess")]
     public async Task<IActionResult> ReconcileCashierSession(Guid id, [FromBody] string? notes)
     {
+        if (!await CanAsync("finance.cashier_session", "approve")) return Deny();
         var session = await db.CashierSessions.FindAsync(id);
         if (session == null || !session.IsActive)
             return NotFound(new { message = "الوردية غير موجودة" });

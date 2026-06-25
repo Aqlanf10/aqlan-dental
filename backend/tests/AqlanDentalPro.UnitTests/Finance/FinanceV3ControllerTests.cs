@@ -118,13 +118,18 @@ public class FinanceV3ControllerTests
 
     private static AdvancePaymentController BuildAdvancePaymentController(
         AppDbContext db, IAuditService? audit = null,
-        IJournalEntryService? jeService = null, ITreasuryResolutionService? treasuryResolution = null)
+        IJournalEntryService? jeService = null, ITreasuryResolutionService? treasuryResolution = null,
+        ICurrentUserService? currentUser = null)
     {
+        // FIN-PERM: AdvancePaymentController now takes ICurrentUserService for PermissionGuard.
+        // Default to an Admin user so the granular finance.expenses guard always bypasses
+        // (these tests assert business logic, not the new authz gate).
+        currentUser ??= CreateAdminUser();
         audit ??= new Mock<IAuditService>().Object;
         jeService ??= new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
         treasuryResolution ??= new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
         var logger = new Mock<ILogger<AdvancePaymentController>>().Object;
-        return new AdvancePaymentController(db, audit, jeService, treasuryResolution, logger);
+        return new AdvancePaymentController(db, audit, jeService, treasuryResolution, currentUser, logger);
     }
 
     private static SalaryController BuildSalaryController(

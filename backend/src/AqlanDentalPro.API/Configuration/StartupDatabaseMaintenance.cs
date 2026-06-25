@@ -57,6 +57,7 @@ public static class StartupDatabaseMaintenance
         await EnsureOrthodonticAiLogsSchemaAsync(app);
         await EnsurePhotoAnalysisSchemaAsync(app);
         await EnsureCephAnalysisVersionsSchemaAsync(app);
+        await EnsureCephApprovalColumnsAsync(app);
         await EnsurePaymentCurrencyColumnAsync(app);
 
         // ── Gated DB maintenance (ENABLE_STARTUP_DB_MAINTENANCE) ──────
@@ -1636,6 +1637,39 @@ public static class StartupDatabaseMaintenance
         {
             app.Services.GetRequiredService<ILogger<Program>>()
                 .LogWarning(ex, "CephAnalysisVersions schema hotfix failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// CEPH-EPIC clinical approval gate (Sprint 6): adds the approval columns to
+    /// the "CephAnalyses" table on existing databases. Fresh databases already
+    /// get these from the EF model baseline. Idempotent (ADD COLUMN IF NOT
+    /// EXISTS) so it runs safely on every startup. Existing analyses are NOT
+    /// auto-approved — IsApproved defaults to false.
+    /// </summary>
+    private static async Task EnsureCephApprovalColumnsAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                DO $$ BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'CephAnalyses') THEN
+                        ALTER TABLE "CephAnalyses" ADD COLUMN IF NOT EXISTS "IsApproved" boolean NOT NULL DEFAULT false;
+                        ALTER TABLE "CephAnalyses" ADD COLUMN IF NOT EXISTS "ApprovedByUserId" uuid NULL;
+                        ALTER TABLE "CephAnalyses" ADD COLUMN IF NOT EXISTS "ApprovedAt" timestamp with time zone NULL;
+                        ALTER TABLE "CephAnalyses" ADD COLUMN IF NOT EXISTS "ApprovalNotes" text NULL;
+                    END IF;
+                END $$;
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "CephAnalyses approval-columns hotfix failed (non-fatal)");
         }
     }
 

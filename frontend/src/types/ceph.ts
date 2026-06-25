@@ -156,6 +156,13 @@ export interface CephAnalysis {
   landmarks: CephLandmark[];
   measurements: CephMeasurement[];
   diagnosis?: CephDiagnosis;
+  // ── Clinical approval gate (CEPH-EPIC) ─────────────────────────────────────
+  // The final PDF report is blocked until `isApproved` is true.
+  isApproved: boolean;
+  approvedByUserId?: string | null;
+  approvedByName?: string | null;
+  approvedAt?: string | null;
+  approvalNotes?: string | null;
 }
 
 // ---------------------------------------------------------------------------

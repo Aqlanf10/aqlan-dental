@@ -6,7 +6,7 @@ import {
   Brain, Calculator, Eye, EyeOff, Play, PlayCircle, ArrowRight,
   Save, CheckCircle2, ChevronRight, ChevronDown, Loader2, FileDown, Printer,
   Sun, Contrast, RotateCcw, ListChecks, ImageIcon, FileText, ScanLine, Target,
-  User, FolderOpen, History, Camera, Lock, X, ArrowLeftRight,
+  User, FolderOpen, History, Camera, Lock, X, ArrowLeftRight, ShieldCheck,
 } from "lucide-react";
 import type {
   CephAnalysis, CephLandmark, CephDiagnosis, AnalysisType,
@@ -66,6 +66,10 @@ export default function CephAnalysisPage() {
   // C-C: Arabic ceph PDF report (download / print)
   const [pdfBusy, setPdfBusy]         = useState<'download' | 'print' | null>(null);
   const [pdfError, setPdfError]       = useState<string | null>(null);
+  // CEPH-EPIC: clinical approval gate — the final report is blocked until an
+  // authorized doctor/admin approves the analysis.
+  const [approving, setApproving]     = useState(false);
+  const [approveError, setApproveError] = useState<string | null>(null);
   // C-B: analysis VERSION snapshots — list + detail viewer.
   const [versions, setVersions]           = useState<CephVersionListItem[]>([]);
   const [versionsOpen, setVersionsOpen]   = useState(false);
@@ -309,6 +313,28 @@ export default function CephAnalysisPage() {
     }
   };
 
+  const handleApprove = async () => {
+    setApproving(true);
+    setApproveError(null);
+    try {
+      const res = await api.post(`/api/ceph/${id}/approve`, {});
+      // The endpoint returns the refreshed analysis; fall back to a local flag flip.
+      const updated = res.data?.analysis as CephAnalysis | undefined;
+      if (updated) {
+        setAnalysis(updated);
+        setDiagnosis(updated.diagnosis ?? null);
+      } else {
+        setAnalysis((prev) => (prev ? { ...prev, isApproved: true } : prev));
+      }
+    } catch (err) {
+      const message =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setApproveError(message ?? 'تعذر اعتماد التحليل');
+    } finally {
+      setApproving(false);
+    }
+  };
+
   const handleDiagnosisChange = async (partial: Partial<CephDiagnosis>) => {
     const updated: CephDiagnosis = {
       ...diagnosis,
@@ -496,11 +522,37 @@ export default function CephAnalysisPage() {
             )}
           </div>
 
+          {/* CEPH-EPIC clinical approval gate. The final report cannot be
+              issued until an authorized doctor/admin approves the analysis. */}
+          {analysis?.isApproved ? (
+            <span
+              title={analysis.approvedByName
+                ? `اعتمده ${analysis.approvedByName}${analysis.approvedAt ? ` — ${analysis.approvedAt}` : ''}`
+                : 'تم اعتماد التحليل'}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-green-200 bg-green-50 text-green-700">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              تم اعتماد التحليل
+              {analysis.approvedByName ? ` — ${analysis.approvedByName}` : ''}
+            </span>
+          ) : (
+            <button onClick={handleApprove}
+              disabled={approving || placedCount === 0 || isDirty || !analysis?.measurements?.length}
+              title={placedCount === 0 || isDirty || !analysis?.measurements?.length
+                ? 'ضع المعالم واحسب القياسات واحفظها أولًا ثم اعتمد التحليل'
+                : 'اعتماد التحليل لإتاحة إصدار التقرير النهائي'}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed transition">
+              {approving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+              اعتماد التحليل
+            </button>
+          )}
+
           {/* The PDF is generated from SAVED data only — gate on a clean,
-              computed state so a stale report can never be exported. */}
+              computed state so a stale report can never be exported. The final
+              report is additionally blocked until the analysis is approved. */}
           <button onClick={() => handleReportPdf('download')}
-            disabled={placedCount === 0 || isDirty || !analysis?.measurements?.length || pdfBusy !== null}
-            title={placedCount === 0 ? 'ضع المعالم واحسب القياسات أولًا لإنشاء التقرير'
+            disabled={!analysis?.isApproved || placedCount === 0 || isDirty || !analysis?.measurements?.length || pdfBusy !== null}
+            title={!analysis?.isApproved ? 'لا يمكن إصدار التقرير النهائي قبل اعتماد الطبيب للتحليل'
+              : placedCount === 0 ? 'ضع المعالم واحسب القياسات أولًا لإنشاء التقرير'
               : isDirty || !analysis?.measurements?.length ? 'اضغط «احسب» لحفظ المعالم والقياسات قبل إصدار التقرير'
               : 'تحميل تقرير التحليل السيفالومتري PDF'}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition">
@@ -509,8 +561,9 @@ export default function CephAnalysisPage() {
           </button>
 
           <button onClick={() => handleReportPdf('print')}
-            disabled={placedCount === 0 || isDirty || !analysis?.measurements?.length || pdfBusy !== null}
-            title={placedCount === 0 ? 'ضع المعالم واحسب القياسات أولًا لإنشاء التقرير'
+            disabled={!analysis?.isApproved || placedCount === 0 || isDirty || !analysis?.measurements?.length || pdfBusy !== null}
+            title={!analysis?.isApproved ? 'لا يمكن إصدار التقرير النهائي قبل اعتماد الطبيب للتحليل'
+              : placedCount === 0 ? 'ضع المعالم واحسب القياسات أولًا لإنشاء التقرير'
               : isDirty || !analysis?.measurements?.length ? 'اضغط «احسب» لحفظ المعالم والقياسات قبل إصدار التقرير'
               : 'طباعة تقرير التحليل السيفالومتري'}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition">
@@ -624,6 +677,18 @@ export default function CephAnalysisPage() {
         <div className="flex-shrink-0 mx-1 mb-2 flex items-start justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
           <span>{aiTraceError}</span>
           <button onClick={() => setAiTraceError(null)} className="font-bold text-red-500 hover:text-red-700">✕</button>
+        </div>
+      )}
+      {approveError && (
+        <div className="flex-shrink-0 mx-1 mb-2 flex items-start justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          <span>{approveError}</span>
+          <button onClick={() => setApproveError(null)} className="text-red-500 hover:text-red-700 font-bold flex-shrink-0">✕</button>
+        </div>
+      )}
+      {analysis && !analysis.isApproved && (
+        <div className="flex-shrink-0 mx-1 mb-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <Lock className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+          <span>لا يمكن إصدار التقرير النهائي قبل اعتماد الطبيب للتحليل</span>
         </div>
       )}
       {pdfError && (

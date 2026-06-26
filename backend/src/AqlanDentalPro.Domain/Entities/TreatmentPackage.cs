@@ -26,4 +26,12 @@ public class TreatmentPackage : BaseEntity
 
     /// <summary>Soft-active flag (true = available for new appointments).</summary>
     public bool IsActive { get; set; } = true;
+
+    /// <summary>
+    /// YOLO-S2: Services included in this package (TreatmentPackageService link table).
+    /// Each link carries a Quantity (default 1) and an optional OverridePrice that
+    /// wins over ClinicService.DefaultPrice when computing the package total. The
+    /// catalog is read-only at the contract level — pricing is computed on read.
+    /// </summary>
+    public ICollection<TreatmentPackageService> Services { get; set; } = [];
 }

@@ -1,12 +1,14 @@
 "use client";
-import { useEffect, useState } from "react";
-import { Plus, Edit3, Power, PowerOff, X, Save, Package, Trash2 } from "lucide-react";
+import { Fragment, useEffect, useState } from "react";
+import { Plus, Edit3, Power, PowerOff, X, Save, Package, Trash2, ChevronUp, Layers } from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type {
   TreatmentPackage,
+  TreatmentPackageService,
   CreateTreatmentPackageRequest,
+  UpsertPackageServiceRequest,
 } from "@/types/appointment";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -44,6 +46,15 @@ export default function TreatmentPackagesPage() {
   const [formError, setFormError] = useState("");
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
+
+  // YOLO-S2: per-row expandable services-management panel state.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [servicesByPkg, setServicesByPkg] = useState<Record<string, TreatmentPackageService[]>>({});
+  const [servicesLoading, setServicesLoading] = useState<string | null>(null);
+  const [activeServices, setActiveServices] = useState<{ id: string; arabicName: string; code: string; defaultPrice: number }[]>([]);
+  const [newPkgService, setNewPkgService] = useState<{ serviceId: string; quantity: number; overridePrice: string }>({ serviceId: "", quantity: 1, overridePrice: "" });
+  const [pkgServiceError, setPkgServiceError] = useState("");
+  const [pkgServiceSaving, setPkgServiceSaving] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -157,6 +168,90 @@ export default function TreatmentPackagesPage() {
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       alert(msg ?? "فشل حذف الباقة");
+    }
+  };
+
+  // ─── YOLO-S2: Package ↔ Service link management ──────────────────────────────
+
+  const loadActiveServices = async () => {
+    if (activeServices.length > 0) return;
+    try {
+      const r = await api.get<{ id: string; arabicName: string; code: string; defaultPrice: number }[]>(
+        "/api/settings/services/active"
+      );
+      setActiveServices(r.data ?? []);
+    } catch {
+      // best-effort — the dropdown will just be empty
+    }
+  };
+
+  const loadPackageServices = async (pkgId: string) => {
+    setServicesLoading(pkgId);
+    try {
+      const r = await api.get<TreatmentPackage>(`/api/treatment-packages/${pkgId}`);
+      setServicesByPkg((prev) => ({ ...prev, [pkgId]: r.data?.services ?? [] }));
+    } catch {
+      setServicesByPkg((prev) => ({ ...prev, [pkgId]: [] }));
+    } finally {
+      setServicesLoading(null);
+    }
+  };
+
+  const handleToggleExpand = async (pkgId: string) => {
+    if (expandedId === pkgId) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(pkgId);
+    setPkgServiceError("");
+    setNewPkgService({ serviceId: "", quantity: 1, overridePrice: "" });
+    await loadActiveServices();
+    await loadPackageServices(pkgId);
+  };
+
+  const handleAddServiceToPackage = async (pkgId: string) => {
+    if (!newPkgService.serviceId) {
+      setPkgServiceError("اختر الخدمة أولاً");
+      return;
+    }
+    if (newPkgService.quantity < 1) {
+      setPkgServiceError("الكمية يجب أن تكون 1 على الأقل");
+      return;
+    }
+    const override = newPkgService.overridePrice.trim()
+      ? parseFloat(newPkgService.overridePrice)
+      : null;
+    if (override != null && (isNaN(override) || override < 0)) {
+      setPkgServiceError("سعر التغطية يجب أن يكون رقمًا موجبًا");
+      return;
+    }
+    setPkgServiceSaving(true);
+    setPkgServiceError("");
+    try {
+      const payload: UpsertPackageServiceRequest = {
+        clinicServiceId: newPkgService.serviceId,
+        quantity: newPkgService.quantity,
+        overridePrice: override,
+      };
+      await api.post(`/api/treatment-packages/${pkgId}/services`, payload);
+      setNewPkgService({ serviceId: "", quantity: 1, overridePrice: "" });
+      await loadPackageServices(pkgId);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setPkgServiceError(msg ?? "فشل إضافة الخدمة إلى الباقة");
+    } finally {
+      setPkgServiceSaving(false);
+    }
+  };
+
+  const handleRemoveServiceFromPackage = async (pkgId: string, serviceId: string) => {
+    if (!confirm("هل أنت متأكد من إزالة هذه الخدمة من الباقة؟")) return;
+    try {
+      await api.delete(`/api/treatment-packages/${pkgId}/services/${serviceId}`);
+      await loadPackageServices(pkgId);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      alert(msg ?? "فشل إزالة الخدمة");
     }
   };
 
@@ -375,73 +470,233 @@ export default function TreatmentPackagesPage() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {packages.map((p) => (
-                <tr key={p.id} className="hover:bg-gray-50 transition">
-                  <td className="px-4 py-3">
-                    <div className="font-medium text-gray-900">{p.name}</div>
-                    {p.description && (
-                      <div className="text-xs text-gray-400 mt-0.5 line-clamp-1">
-                        {p.description}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-gray-700" dir="ltr">
-                    {p.totalPrice.toLocaleString("en-US")}
-                  </td>
-                  <td className="px-4 py-3 text-gray-700">{p.sessionCount}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className="w-5 h-5 rounded-md border border-gray-200"
-                        style={{ backgroundColor: p.color ?? "#cccccc" }}
-                      />
-                      <span className="text-xs font-mono text-gray-500" dir="ltr">
-                        {p.color ?? "—"}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={cn(
-                        "text-xs px-2 py-0.5 rounded-full font-medium",
-                        p.isActive
-                          ? "bg-green-50 text-green-700"
-                          : "bg-gray-100 text-gray-500"
+                <Fragment key={p.id}>
+                  <tr className="hover:bg-gray-50 transition">
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-gray-900">{p.name}</div>
+                      {p.description && (
+                        <div className="text-xs text-gray-400 mt-0.5 line-clamp-1">
+                          {p.description}
+                        </div>
                       )}
-                    >
-                      {p.isActive ? "نشط" : "معطّل"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleOpenEdit(p)}
-                        title="تعديل الباقة"
-                        className="text-gray-400 hover:text-clinic-blue transition p-1"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleToggle(p)}
-                        disabled={togglingId === p.id}
-                        title={p.isActive ? "تعطيل الباقة" : "تفعيل الباقة"}
-                        className="text-gray-400 hover:text-gray-700 transition p-1 disabled:opacity-50"
-                      >
-                        {p.isActive ? (
-                          <PowerOff className="w-4 h-4" />
-                        ) : (
-                          <Power className="w-4 h-4 text-green-600" />
+                    </td>
+                    <td className="px-4 py-3 font-mono text-gray-700" dir="ltr">
+                      {p.totalPrice.toLocaleString("en-US")}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">{p.sessionCount}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className="w-5 h-5 rounded-md border border-gray-200"
+                          style={{ backgroundColor: p.color ?? "#cccccc" }}
+                        />
+                        <span className="text-xs font-mono text-gray-500" dir="ltr">
+                          {p.color ?? "—"}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={cn(
+                          "text-xs px-2 py-0.5 rounded-full font-medium",
+                          p.isActive
+                            ? "bg-green-50 text-green-700"
+                            : "bg-gray-100 text-gray-500"
                         )}
-                      </button>
-                      <button
-                        onClick={() => handleDelete(p)}
-                        title="حذف الباقة"
-                        className="text-gray-400 hover:text-red-600 transition p-1"
                       >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                        {p.isActive ? "نشط" : "معطّل"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleToggleExpand(p.id)}
+                          title={expandedId === p.id ? "إخفاء خدمات الباقة" : "إدارة خدمات الباقة"}
+                          className={cn(
+                            "text-gray-400 hover:text-clinic-blue transition p-1",
+                            expandedId === p.id && "text-clinic-blue"
+                          )}
+                        >
+                          {expandedId === p.id ? (
+                            <ChevronUp className="w-4 h-4" />
+                          ) : (
+                            <Layers className="w-4 h-4" />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleOpenEdit(p)}
+                          title="تعديل الباقة"
+                          className="text-gray-400 hover:text-clinic-blue transition p-1"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleToggle(p)}
+                          disabled={togglingId === p.id}
+                          title={p.isActive ? "تعطيل الباقة" : "تفعيل الباقة"}
+                          className="text-gray-400 hover:text-gray-700 transition p-1 disabled:opacity-50"
+                        >
+                          {p.isActive ? (
+                            <PowerOff className="w-4 h-4" />
+                          ) : (
+                            <Power className="w-4 h-4 text-green-600" />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleDelete(p)}
+                          title="حذف الباقة"
+                          className="text-gray-400 hover:text-red-600 transition p-1"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {/* YOLO-S2: Expandable Package ↔ Service management panel */}
+                  {expandedId === p.id && (
+                    <tr className="bg-gray-50/60">
+                      <td colSpan={6} className="px-6 py-4">
+                        <div className="border border-gray-200 rounded-lg bg-white p-4 space-y-3">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <h4 className="text-sm font-bold text-gray-800">
+                              خدمات الباقة — <span className="text-clinic-blue">{p.name}</span>
+                            </h4>
+                            <div className="flex items-center gap-3 text-xs text-gray-500">
+                              <span>{(servicesByPkg[p.id] ?? []).length} خدمة</span>
+                              {(servicesByPkg[p.id] ?? []).length > 0 && (
+                                <span>
+                                  إجمالي محسوب:{" "}
+                                  <span className="font-mono font-medium text-gray-700">
+                                    {(servicesByPkg[p.id] ?? []).reduce((sum, s) => sum + (s.lineTotal ?? 0), 0).toLocaleString("en-US")}
+                                  </span>{" "}
+                                  ر.ي
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <p className="text-xs text-gray-500">
+                            السعر الإجمالي للباقة ({p.totalPrice.toLocaleString("en-US")} ر.ي) يُعبّأ يدويًا عند إنشاء الباقة.
+                            الإجمالي المحسوب أعلاه لمحة فقط من مجموع أسعار الخدمات المضافة.
+                          </p>
+
+                          {pkgServiceError && (
+                            <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{pkgServiceError}</p>
+                          )}
+
+                          {/* Existing services list */}
+                          {servicesLoading === p.id ? (
+                            <div className="text-xs text-gray-400 py-3 text-center">جارٍ التحميل...</div>
+                          ) : (servicesByPkg[p.id] ?? []).length === 0 ? (
+                            <div className="text-xs text-gray-400 py-3 text-center bg-gray-50 rounded-lg">
+                              لا توجد خدمات مضافة إلى هذه الباقة بعد
+                            </div>
+                          ) : (
+                            <ul className="divide-y divide-gray-100 border border-gray-200 rounded-lg">
+                              {(servicesByPkg[p.id] ?? []).map((s) => (
+                                <li key={s.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      {s.serviceColor && (
+                                        <span
+                                          className="w-3 h-3 rounded-full border border-gray-200 flex-shrink-0"
+                                          style={{ backgroundColor: s.serviceColor }}
+                                        />
+                                      )}
+                                      <span className="text-sm font-medium text-gray-800 truncate">
+                                        {s.serviceArabicName}
+                                      </span>
+                                      {s.serviceCode && (
+                                        <span className="text-xs font-mono text-gray-400" dir="ltr">
+                                          {s.serviceCode}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-xs text-gray-500 mt-0.5">
+                                      الكمية: <span className="font-mono">{s.quantity}</span>
+                                      <span className="mx-2">·</span>
+                                      سعر الوحدة:{" "}
+                                      <span className="font-mono" dir="ltr">
+                                        {s.overridePrice != null
+                                          ? `${s.overridePrice.toLocaleString("en-US")} (تغطية)`
+                                          : s.effectiveUnitPrice.toLocaleString("en-US")}
+                                      </span>
+                                      <span className="mx-2">·</span>
+                                      الإجمالي:{" "}
+                                      <span className="font-mono font-medium text-gray-700" dir="ltr">
+                                        {s.lineTotal.toLocaleString("en-US")} ر.ي
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <button
+                                    onClick={() => handleRemoveServiceFromPackage(p.id, s.clinicServiceId)}
+                                    title="إزالة الخدمة من الباقة"
+                                    className="text-gray-400 hover:text-red-600 transition p-1"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+
+                          {/* Add new service to package */}
+                          <div className="grid grid-cols-1 md:grid-cols-12 gap-2 pt-1">
+                            <div className="md:col-span-6">
+                              <label className="block text-xs font-medium text-gray-600 mb-1">الخدمة</label>
+                              <select
+                                value={newPkgService.serviceId}
+                                onChange={(e) => setNewPkgService((prev) => ({ ...prev, serviceId: e.target.value }))}
+                                className={inputCls}
+                              >
+                                <option value="">اختر الخدمة...</option>
+                                {activeServices.map((s) => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.arabicName} ({s.code}) — {s.defaultPrice.toLocaleString("en-US")} ر.ي
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-xs font-medium text-gray-600 mb-1">الكمية</label>
+                              <input
+                                type="number"
+                                min={1}
+                                value={newPkgService.quantity}
+                                onChange={(e) => setNewPkgService((prev) => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))}
+                                className={inputCls}
+                                dir="ltr"
+                              />
+                            </div>
+                            <div className="md:col-span-3">
+                              <label className="block text-xs font-medium text-gray-600 mb-1">سعر تغطية (اختياري)</label>
+                              <input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={newPkgService.overridePrice}
+                                onChange={(e) => setNewPkgService((prev) => ({ ...prev, overridePrice: e.target.value }))}
+                                className={inputCls}
+                                dir="ltr"
+                                placeholder="افتراضي = سعر الخدمة"
+                              />
+                            </div>
+                            <div className="md:col-span-1 flex items-end">
+                              <button
+                                type="button"
+                                onClick={() => handleAddServiceToPackage(p.id)}
+                                disabled={pkgServiceSaving}
+                                className="w-full flex items-center justify-center gap-1 px-2 py-2 text-xs font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
+                                title="إضافة الخدمة"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -451,8 +706,8 @@ export default function TreatmentPackagesPage() {
       {/* Info box */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-xs text-blue-800">
         <p>
-          💡 الباقات كتالوج بسيط لاستخدامه عند إنشاء المواعيد. اختيار باقة يعبّئ نوع الموعد من اسمها ويستخدم
-          لونها على التقويم. التكامل مع العقود والأقساط سيُضاف في Sprint 2.
+          💡 الباقات كتالوج يُربط بالمواعيد والعقود. اختيار باقة يعبّئ نوع الموعد من اسمها ويستخدم
+          لونها على التقويم. أضف خدمات الباقة من زر الطبقات في كل صف لإدارة محتواها وسعر التغطية لكل خدمة.
         </p>
       </div>
     </div>

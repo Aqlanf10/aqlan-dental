@@ -21,6 +21,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         var query = db.Contracts
             .Include(c => c.Patient)
             .Include(c => c.Payments)
+            .Include(c => c.Package) // YOLO-S2: package name + color for display
             .AsQueryable();
 
         if (branchId.HasValue) query = query.Where(c => c.Patient.BranchId == branchId.Value);
@@ -42,6 +43,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             .Include(c => c.Patient)
             .Include(c => c.Payments)
                 .ThenInclude(p => p.Doctor)
+            .Include(c => c.Package) // YOLO-S2: package name + color for display
             .FirstOrDefaultAsync(c => c.Id == id);
 
         if (c == null) return null;
@@ -53,6 +55,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             PatientName = c.Patient.FirstName + " " + c.Patient.LastName,
             PatientNumber = c.Patient.PatientNumber,
             Specialty = c.Specialty,
+            Currency = NormalizeCurrency(c.Currency),
             TotalAmount = c.TotalAmount,
             DownPayment = c.DownPayment,
             PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
@@ -64,7 +67,11 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             DiscountAmount = c.DiscountAmount,
             DiscountReason = c.DiscountReason,
             Notes = c.Notes,
-            Payments = c.Payments.OrderByDescending(p => p.PaymentDate).Select(MapPayment).ToList()
+            Payments = c.Payments.OrderByDescending(p => p.PaymentDate).Select(MapPayment).ToList(),
+            // YOLO-S2: package link
+            PackageId = c.PackageId,
+            PackageName = c.Package?.Name,
+            PackageColor = c.Package?.Color,
         };
 
         return dto;
@@ -72,6 +79,17 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
     public async Task<ContractDetailDto> CreateContractAsync(CreateContractRequest req)
     {
+        // YOLO-S2: validate the optional package link if provided. Resolves Guid.Empty to null
+        // so the caller can send an empty Guid to mean "no package" without a separate flag.
+        Guid? packageId = req.PackageId;
+        if (packageId == Guid.Empty) packageId = null;
+        if (packageId.HasValue)
+        {
+            var pkgExists = await db.TreatmentPackages.AnyAsync(p => p.Id == packageId.Value && p.IsActive);
+            if (!pkgExists)
+                throw new ArgumentException("الباقة المحددة غير موجودة أو معطّلة");
+        }
+
         var contract = new Contract
         {
             PatientId = req.PatientId,
@@ -87,7 +105,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             DiscountReason = req.DiscountReason,
             Status = ContractStatus.Active,
             Notes = req.Notes,
-            CreatedBy = currentUser.UserId
+            CreatedBy = currentUser.UserId,
+            PackageId = packageId, // YOLO-S2
         };
 
         db.Contracts.Add(contract);
@@ -439,6 +458,20 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         contract.DiscountReason   = req.DiscountReason;
         contract.Notes            = req.Notes;
         contract.UpdatedAt        = DateTime.UtcNow;
+
+        // YOLO-S2: update the package link. Resolve Guid.Empty → null ("clear").
+        // null on the request body leaves the existing value unchanged (PATCH semantics).
+        if (req.PackageId.HasValue)
+        {
+            var newPkgId = req.PackageId.Value == Guid.Empty ? null : (Guid?)req.PackageId.Value;
+            if (newPkgId.HasValue && newPkgId != contract.PackageId)
+            {
+                var pkgExists = await db.TreatmentPackages.AnyAsync(p => p.Id == newPkgId.Value && p.IsActive);
+                if (!pkgExists)
+                    throw new ArgumentException("الباقة المحددة غير موجودة أو معطّلة");
+            }
+            contract.PackageId = newPkgId;
+        }
 
         await db.SaveChangesAsync();
         return await GetContractByIdAsync(id);
@@ -1506,7 +1539,11 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         InstallmentsCount = c.InstallmentsCount,
         InstallmentAmount = c.InstallmentAmount,
         StartDate = c.StartDate?.ToString("yyyy-MM-dd"),
-        Status = c.Status.ToString()
+        Status = c.Status.ToString(),
+        // YOLO-S2: package link (display-only — pricing still driven by TotalAmount)
+        PackageId = c.PackageId,
+        PackageName = c.Package?.Name,
+        PackageColor = c.Package?.Color,
     };
 
     private static PaymentDto MapPayment(Payment p) => new()

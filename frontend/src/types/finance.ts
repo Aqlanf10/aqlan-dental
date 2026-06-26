@@ -22,6 +22,12 @@ export interface Contract {
   discountReason?: string;
   notes?: string;
   payments?: Payment[];
+  /** YOLO-S2: optional link to a TreatmentPackage. Null = standalone contract. */
+  packageId?: string | null;
+  /** YOLO-S2: snapshot of the package name (display convenience). */
+  packageName?: string | null;
+  /** YOLO-S2: snapshot of the package color (calendar/queue display). */
+  packageColor?: string | null;
 }
 
 export interface Payment {

@@ -58,6 +58,10 @@ export function CreateContractModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  // YOLO-S2: optional TreatmentPackage link.
+  const [packages, setPackages] = useState<{ id: string; name: string; totalPrice: number; color?: string | null }[]>([]);
+  const [packageId, setPackageId] = useState("");
+
   useEffect(() => {
     if (open) {
       setSelectedPatientId(initialPatientId ?? "");
@@ -70,9 +74,20 @@ export function CreateContractModal({
       setDiscountReason("");
       setStartDate(localDateString());
       setNotes("");
+      setPackageId("");
       setError("");
     }
   }, [open, initialPatientId, initialPatientName]);
+
+  // YOLO-S2: load active packages when the modal opens.
+  useEffect(() => {
+    if (!open) return;
+    api.get<{ id: string; name: string; totalPrice: number; color?: string | null }[]>(
+      "/api/treatment-packages?activeOnly=true"
+    )
+      .then((r) => setPackages(r.data ?? []))
+      .catch(() => setPackages([]));
+  }, [open]);
 
   const netAmount = totalAmount - discountAmount - downPayment;
   const calculatedInstallment = installmentsCount > 0 && netAmount > 0
@@ -112,6 +127,8 @@ export function CreateContractModal({
         discountAmount,
         discountReason: discountReason || null,
         notes: notes || null,
+        // YOLO-S2: optional TreatmentPackage link (display-only — pricing is still driven by TotalAmount).
+        packageId: packageId || null,
       };
       await api.post("/api/contracts", payload);
       toast.success("تم إنشاء العقد بنجاح");
@@ -162,6 +179,35 @@ export function CreateContractModal({
               <option value="general">طب أسنان عام</option>
               <option value="surgery">جراحة فم وزراعة</option>
               <option value="other">أخرى</option>
+            </select>
+          </div>
+
+          {/* YOLO-S2: optional TreatmentPackage link */}
+          <div>
+            <label style={labelStyle}>باقة العلاج (اختياري)</label>
+            <select
+              value={packageId}
+              onChange={(e) => {
+                const val = e.target.value;
+                setPackageId(val);
+                // Auto-fill the total amount from the package's TotalPrice when the user picks one
+                // (the admin can still override the value afterward). This is a convenience,
+                // not a binding — the contract stores its own TotalAmount.
+                if (val) {
+                  const pkg = packages.find((p) => p.id === val);
+                  if (pkg && totalAmount === 0) {
+                    setTotalAmount(pkg.totalPrice);
+                  }
+                }
+              }}
+              style={inputStyle}
+            >
+              <option value="">بدون باقة (عقد مستقل)</option>
+              {packages.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} — {p.totalPrice.toLocaleString("en-US")} ر.ي
+                </option>
+              ))}
             </select>
           </div>
 
@@ -397,6 +443,24 @@ export function ContractsTab({ patientId, patientName }: ContractsTabProps) {
           columns={[
             { key: "contractNumber", label: "رقم العقد" },
             { key: "patientName", label: "المريض" },
+            {
+              key: "packageName",
+              label: "الباقة",
+              render: (r) =>
+                r.packageName ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    {r.packageColor && (
+                      <span
+                        className="w-2.5 h-2.5 rounded-full border border-gray-200"
+                        style={{ backgroundColor: r.packageColor }}
+                      />
+                    )}
+                    <span>{r.packageName}</span>
+                  </span>
+                ) : (
+                  "—"
+                ),
+            },
             { key: "totalAmount", label: "الإجمالي", render: (r) => formatYER(r.totalAmount) },
             { key: "paidAmount", label: "المدفوع", render: (r) => formatYER(r.paidAmount) },
             {

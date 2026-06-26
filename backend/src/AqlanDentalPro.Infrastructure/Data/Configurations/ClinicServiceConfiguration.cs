@@ -35,6 +35,10 @@ public class ClinicServiceConfiguration : IEntityTypeConfiguration<ClinicService
         builder.Property(s => s.DefaultPrice)
             .HasPrecision(12, 2);
 
+        // YOLO-S2: Color (hex string, nullable) — for calendar + queue display.
+        builder.Property(s => s.Color)
+            .HasMaxLength(20);
+
         // Unique code index
         builder.HasIndex(s => s.Code)
             .IsUnique();

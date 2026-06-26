@@ -20,6 +20,16 @@ public class Contract : BaseEntity
     public string? Notes { get; set; }
     public Guid? CreatedBy { get; set; }
 
+    /// <summary>
+    /// YOLO-S2: Optional link to a TreatmentPackage (e.g. "باقة تبييض كاملة") that this
+    /// contract fulfills. Nullable + ON DELETE SET NULL so deleting a package never
+    /// silently drops historical contract references. The package is catalog metadata
+    /// only — pricing on the contract is still driven by TotalAmount. Reception can
+    /// use this to pre-fill the package's color/name on the calendar.
+    /// </summary>
+    public Guid? PackageId { get; set; }
+    public TreatmentPackage? Package { get; set; }
+
     public Patient Patient { get; set; } = null!;
     public ICollection<Payment> Payments { get; set; } = [];
 }

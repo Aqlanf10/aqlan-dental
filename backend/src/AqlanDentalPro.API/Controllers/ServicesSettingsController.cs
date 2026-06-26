@@ -99,6 +99,12 @@ public class ServicesSettingsController(AppDbContext db, FinanceSettingsReader f
         var defaultBaseRule = req.CommissionBaseRule
             ?? await financeSettings.GetEnumAsync(FinanceSettingsKeys.CommissionDefaultBaseRule, CommissionBaseRule.AfterDiscountAndCosts);
 
+        // YOLO-S2: Color (optional hex string for calendar/queue display).
+        // Normalize to trimmed lowercase hex or null; reject malformed values.
+        var normalizedColor = NormalizeColor(req.Color);
+        if (normalizedColor == "__invalid__")
+            return BadRequest(new { message = "اللون يجب أن يكون بصيغة hex مثل #3b82f6" });
+
         var service = new ClinicService
         {
             ArabicName = req.ArabicName.Trim(),
@@ -115,6 +121,7 @@ public class ServicesSettingsController(AppDbContext db, FinanceSettingsReader f
             ShowInReception = req.ShowInReception ?? true,
             ShowInTreatmentPlan = req.ShowInTreatmentPlan ?? true,
             SortOrder = req.SortOrder ?? 0,
+            Color = normalizedColor,
             DefaultMaterialCost = req.DefaultMaterialCost ?? 0,
             DefaultMaterialCostType = req.DefaultMaterialCostType ?? MaterialCostType.FixedAmount,
             DefaultLabCost = req.DefaultLabCost ?? 0,
@@ -161,6 +168,15 @@ public class ServicesSettingsController(AppDbContext db, FinanceSettingsReader f
         if (req.ShowInReception != null) service.ShowInReception = req.ShowInReception.Value;
         if (req.ShowInTreatmentPlan != null) service.ShowInTreatmentPlan = req.ShowInTreatmentPlan.Value;
         if (req.SortOrder != null) service.SortOrder = req.SortOrder.Value;
+
+        // YOLO-S2: Color — nullable + hex validation. A null clears the color.
+        if (req.Color != null)
+        {
+            var normalizedColor = NormalizeColor(req.Color);
+            if (normalizedColor == "__invalid__")
+                return BadRequest(new { message = "اللون يجب أن يكون بصيغة hex مثل #3b82f6" });
+            service.Color = normalizedColor;
+        }
 
         // Commission defaults — always update if provided
         if (req.DefaultMaterialCost != null) service.DefaultMaterialCost = req.DefaultMaterialCost.Value;
@@ -233,6 +249,7 @@ public class ServicesSettingsController(AppDbContext db, FinanceSettingsReader f
         s.ShowInTreatmentPlan,
         s.IsActive,
         s.SortOrder,
+        s.Color,
         s.DefaultMaterialCost,
         DefaultMaterialCostType = s.DefaultMaterialCostType.ToString(),
         s.DefaultLabCost,
@@ -242,6 +259,21 @@ public class ServicesSettingsController(AppDbContext db, FinanceSettingsReader f
         s.CreatedAt,
         s.UpdatedAt
     };
+
+    /// <summary>
+    /// YOLO-S2: Normalize a hex color input. Accepts "#3b82f6", "3b82f6", or empty.
+    /// Returns trimmed lowercase "#3b82f6" form, null when input is empty, or the
+    /// sentinel "__invalid__" when the input is non-empty but not a valid 6-digit hex.
+    /// Mirrors the validator regex used for TreatmentPackage.Color.
+    /// </summary>
+    private static string? NormalizeColor(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var trimmed = raw.Trim();
+        if (!System.Text.RegularExpressions.Regex.IsMatch(trimmed, @"^#?[0-9A-Fa-f]{6}$"))
+            return "__invalid__";
+        return (trimmed.StartsWith("#") ? trimmed : "#" + trimmed).ToLowerInvariant();
+    }
 }
 
 // ─── Request DTOs ────────────────────────────────────────────────────────────
@@ -262,6 +294,8 @@ public class CreateClinicServiceRequest
     public bool? ShowInReception { get; set; }
     public bool? ShowInTreatmentPlan { get; set; }
     public int? SortOrder { get; set; }
+    /// <summary>YOLO-S2: optional hex color (e.g. "#3b82f6") for calendar/queue display.</summary>
+    public string? Color { get; set; }
     // Commission defaults
     public decimal? DefaultMaterialCost { get; set; }
     public MaterialCostType? DefaultMaterialCostType { get; set; }
@@ -287,6 +321,8 @@ public class UpdateClinicServiceRequest
     public bool? ShowInReception { get; set; }
     public bool? ShowInTreatmentPlan { get; set; }
     public int? SortOrder { get; set; }
+    /// <summary>YOLO-S2: optional hex color. Pass null to clear, empty string is treated as null.</summary>
+    public string? Color { get; set; }
     // Commission defaults
     public decimal? DefaultMaterialCost { get; set; }
     public MaterialCostType? DefaultMaterialCostType { get; set; }

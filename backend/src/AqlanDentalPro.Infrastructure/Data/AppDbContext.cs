@@ -102,6 +102,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     // YOLO-S1 — Treatment Packages (catalog for appointment + ortho contracts later)
     public DbSet<TreatmentPackage> TreatmentPackages => Set<TreatmentPackage>();
 
+    // YOLO-S2 — Service catalog bindings:
+    //   - TreatmentPackageService: package ↔ service link (Quantity + OverridePrice)
+    //   - ServiceConsumable: service ↔ inventory item link (Quantity + Notes)
+    public DbSet<TreatmentPackageService> TreatmentPackageServices => Set<TreatmentPackageService>();
+    public DbSet<ServiceConsumable> ServiceConsumables => Set<ServiceConsumable>();
+
     // Lab Sprint 2 — Lab Management Foundation
     public DbSet<Lab> Labs => Set<Lab>();
     public DbSet<LabWorkType> LabWorkTypes => Set<LabWorkType>();

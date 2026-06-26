@@ -50,12 +50,39 @@ public class TreatmentPackagesController(AppDbContext db, ILogger<TreatmentPacka
         return Ok(items);
     }
 
-    /// <summary>Get a single package by id.</summary>
+    /// <summary>Get a single package by id (includes the services list).</summary>
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
-        var p = await db.TreatmentPackages.FirstOrDefaultAsync(x => x.Id == id);
+        var p = await db.TreatmentPackages
+            .FirstOrDefaultAsync(x => x.Id == id);
         if (p is null) return NotFound(new { message = "الباقة غير موجودة" });
+
+        // YOLO-S2: load the package → service links with the service catalog
+        // (IgnoreQueryFilters on the service side so a deactivated service is
+        // still visible inside a package — the catalog link survives service
+        // deactivation; only an explicit service hard-delete would orphan it,
+        // and the FK is RESTRICT to prevent that).
+        var services = await (
+            from link in db.TreatmentPackageServices.Where(l => l.PackageId == id)
+            join svc in db.ClinicServices.IgnoreQueryFilters() on link.ClinicServiceId equals svc.Id
+            select new TreatmentPackageServiceDto
+            {
+                Id = link.Id,
+                PackageId = link.PackageId,
+                ClinicServiceId = link.ClinicServiceId,
+                ServiceArabicName = svc.ArabicName,
+                ServiceEnglishName = svc.EnglishName,
+                ServiceCode = svc.Code,
+                ServiceColor = svc.Color,
+                Quantity = link.Quantity,
+                OverridePrice = link.OverridePrice,
+                EffectiveUnitPrice = link.OverridePrice ?? svc.DefaultPrice,
+                LineTotal = (link.OverridePrice ?? svc.DefaultPrice) * link.Quantity,
+                CreatedAt = link.CreatedAt,
+                UpdatedAt = link.UpdatedAt,
+            }
+        ).OrderBy(s => s.ServiceArabicName).ToListAsync();
 
         return Ok(new TreatmentPackageDto
         {
@@ -68,6 +95,8 @@ public class TreatmentPackagesController(AppDbContext db, ILogger<TreatmentPacka
             IsActive = p.IsActive,
             CreatedAt = p.CreatedAt,
             UpdatedAt = p.UpdatedAt,
+            Services = services,
+            ComputedTotal = services.Sum(s => s.LineTotal),
         });
     }
 
@@ -163,6 +192,106 @@ public class TreatmentPackagesController(AppDbContext db, ILogger<TreatmentPacka
         logger.LogInformation("TreatmentPackage soft-deleted: {Id} — {Name}", pkg.Id, pkg.Name);
 
         return Ok(new { message = "تم حذف الباقة بنجاح" });
+    }
+
+    // ─── YOLO-S2: Package ↔ Service link management ──────────────────────────
+
+    /// <summary>
+    /// Add a service to a package, or — if the (package, service) link already exists —
+    /// bump its Quantity by req.Quantity (idempotent upsert via the unique index).
+    /// Admin only. YOLO-S2.
+    /// </summary>
+    [HttpPost("{id:guid}/services")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> AddService(Guid id, [FromBody] UpsertPackageServiceRequest req)
+    {
+        var pkg = await db.TreatmentPackages.FirstOrDefaultAsync(x => x.Id == id);
+        if (pkg is null) return NotFound(new { message = "الباقة غير موجودة" });
+
+        if (req.ClinicServiceId == Guid.Empty)
+            return BadRequest(new { message = "معرّف الخدمة مطلوب" });
+        if (req.Quantity < 1)
+            return BadRequest(new { message = "الكمية يجب أن تكون 1 على الأقل" });
+
+        var serviceExists = await db.ClinicServices.IgnoreQueryFilters()
+            .AnyAsync(s => s.Id == req.ClinicServiceId);
+        if (!serviceExists)
+            return BadRequest(new { message = "الخدمة غير موجودة" });
+
+        // Idempotent upsert: if the (package, service) link already exists, bump quantity.
+        var existing = await db.TreatmentPackageServices
+            .FirstOrDefaultAsync(l => l.PackageId == id && l.ClinicServiceId == req.ClinicServiceId);
+        if (existing is not null)
+        {
+            existing.Quantity += req.Quantity;
+            if (req.OverridePrice.HasValue) existing.OverridePrice = req.OverridePrice;
+            await db.SaveChangesAsync();
+            logger.LogInformation("PackageService link updated: pkg={PkgId} svc={SvcId} qty={Qty}",
+                id, req.ClinicServiceId, existing.Quantity);
+        }
+        else
+        {
+            var link = new TreatmentPackageService
+            {
+                PackageId = id,
+                ClinicServiceId = req.ClinicServiceId,
+                Quantity = req.Quantity,
+                OverridePrice = req.OverridePrice,
+            };
+            db.TreatmentPackageServices.Add(link);
+            await db.SaveChangesAsync();
+            logger.LogInformation("PackageService link created: pkg={PkgId} svc={SvcId} qty={Qty}",
+                id, req.ClinicServiceId, req.Quantity);
+        }
+
+        // Re-return the updated package (matches GetById payload) so the UI can refresh.
+        return await GetById(id);
+    }
+
+    /// <summary>
+    /// Update the Quantity / OverridePrice of an existing package↔service link.
+    /// Admin only. YOLO-S2.
+    /// </summary>
+    [HttpPut("{id:guid}/services/{serviceId:guid}")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> UpdateService(Guid id, Guid serviceId, [FromBody] UpsertPackageServiceRequest req)
+    {
+        var link = await db.TreatmentPackageServices
+            .FirstOrDefaultAsync(l => l.PackageId == id && l.ClinicServiceId == serviceId);
+        if (link is null) return NotFound(new { message = "الخدمة غير مضافة إلى هذه الباقة" });
+
+        if (req.Quantity < 1)
+            return BadRequest(new { message = "الكمية يجب أن تكون 1 على الأقل" });
+
+        link.Quantity = req.Quantity;
+        link.OverridePrice = req.OverridePrice; // null clears the override
+        await db.SaveChangesAsync();
+
+        logger.LogInformation("PackageService link updated: pkg={PkgId} svc={SvcId} qty={Qty} override={Override}",
+            id, serviceId, req.Quantity, req.OverridePrice);
+
+        return await GetById(id);
+    }
+
+    /// <summary>
+    /// Hard-remove a service from a package (drops the link row). Admin only. YOLO-S2.
+    /// Hard-delete on the link is safe — it carries no historical financial data
+    /// (contracts snapshot TotalAmount; they don't read package contents at billing time).
+    /// </summary>
+    [HttpDelete("{id:guid}/services/{serviceId:guid}")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> RemoveService(Guid id, Guid serviceId)
+    {
+        var link = await db.TreatmentPackageServices
+            .FirstOrDefaultAsync(l => l.PackageId == id && l.ClinicServiceId == serviceId);
+        if (link is null) return NotFound(new { message = "الخدمة غير مضافة إلى هذه الباقة" });
+
+        db.TreatmentPackageServices.Remove(link);
+        await db.SaveChangesAsync();
+
+        logger.LogInformation("PackageService link removed: pkg={PkgId} svc={SvcId}", id, serviceId);
+
+        return await GetById(id);
     }
 }
 

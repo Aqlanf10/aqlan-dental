@@ -33,10 +33,22 @@ public class ContractConfiguration : IEntityTypeConfiguration<Contract>
         builder.HasIndex(c => c.Status);
         builder.HasIndex(c => c.CreatedBy);
 
+        // YOLO-S2: PackageId lookup index (nullable FK to TreatmentPackages).
+        // The FK itself (ON DELETE SET NULL) is created by migration 20260713000000.
+        builder.HasIndex(c => c.PackageId)
+            .HasDatabaseName("IX_Contracts_PackageId");
+
         // Relationships
         builder.HasOne(c => c.Patient)
             .WithMany(p => p.Contracts)
             .HasForeignKey(c => c.PatientId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        // YOLO-S2: Contract → TreatmentPackage (optional). ON DELETE SET NULL —
+        // matches the migration; never block package deletion on historical contracts.
+        builder.HasOne(c => c.Package)
+            .WithMany()
+            .HasForeignKey(c => c.PackageId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

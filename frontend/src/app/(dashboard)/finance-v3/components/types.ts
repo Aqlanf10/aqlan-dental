@@ -170,6 +170,10 @@ export interface ContractListItem {
   status: string;
   startDate: string;
   isOverdue: boolean;
+  /** YOLO-S2: optional TreatmentPackage link (display-only). */
+  packageId?: string | null;
+  packageName?: string | null;
+  packageColor?: string | null;
 }
 
 /* ── Cashier Sessions ───────────────────────────────────────────────────────────── */

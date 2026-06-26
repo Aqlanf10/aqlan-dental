@@ -15,4 +15,11 @@ public class CreateContractRequest
     public decimal DiscountAmount { get; set; } = 0;
     public string? DiscountReason { get; set; }
     public string? Notes { get; set; }
+
+    /// <summary>
+    /// YOLO-S2: Optional link to a TreatmentPackage (e.g. "باقة تبييض كاملة") that this
+    /// contract fulfills. Null = standalone contract. Pricing is still driven by
+    /// TotalAmount; the package is catalog metadata for display + calendar tagging.
+    /// </summary>
+    public Guid? PackageId { get; set; }
 }

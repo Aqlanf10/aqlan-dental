@@ -59,6 +59,7 @@ public static class StartupDatabaseMaintenance
         await EnsureCephAnalysisVersionsSchemaAsync(app);
         await EnsureCephApprovalColumnsAsync(app);
         await EnsurePaymentCurrencyColumnAsync(app);
+        await EnsureMultiCurrencyColumnsAsync(app);
 
         // ── Gated DB maintenance (ENABLE_STARTUP_DB_MAINTENANCE) ──────
         await RunGatedDbMaintenanceAsync(app, configuration);
@@ -4106,6 +4107,59 @@ public static class StartupDatabaseMaintenance
         {
             app.Services.GetRequiredService<ILogger<Program>>()
                 .LogWarning(ex, "Payment Currency column hotfix failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// MULTI-CURRENCY (FIX): idempotently adds the remaining multi-currency columns and
+    /// indexes that migration 20260711000000_AddFinanceAccountCurrencyAndTreasuryCurrency
+    /// introduces, for databases where that migration did not apply cleanly (the historical
+    /// migration chain is known-broken — see CLAUDE.md). EF SELECTs every mapped column, so a
+    /// missing Treasury/CashFlow/Invoice/Contract "Currency" column makes ANY query loading
+    /// those entities throw "column does not exist" — which breaks finance pages and the
+    /// cashier open/close flow (it resolves a treasury filtered by Currency and writes a
+    /// CashFlowTransaction). All statements use ADD COLUMN IF NOT EXISTS so this is a no-op
+    /// once the columns are present. Does NOT touch the migration baseline (C-08 pattern).
+    /// </summary>
+    private static async Task EnsureMultiCurrencyColumnsAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                ALTER TABLE "Payments"
+                    ADD COLUMN IF NOT EXISTS "Currency" character varying(3) NULL,
+                    ADD COLUMN IF NOT EXISTS "AccountCurrency" character varying(3) NOT NULL DEFAULT 'YER',
+                    ADD COLUMN IF NOT EXISTS "ExchangeRateToAccountCurrency" numeric(18,6) NOT NULL DEFAULT 1,
+                    ADD COLUMN IF NOT EXISTS "AppliedAmount" numeric(12,2) NOT NULL DEFAULT 0,
+                    ADD COLUMN IF NOT EXISTS "ExchangeRateSource" character varying(50);
+
+                ALTER TABLE "Contracts"            ADD COLUMN IF NOT EXISTS "Currency" character varying(3) NOT NULL DEFAULT 'YER';
+                ALTER TABLE "Invoices"             ADD COLUMN IF NOT EXISTS "Currency" character varying(3) NOT NULL DEFAULT 'YER';
+                ALTER TABLE "Treasuries"           ADD COLUMN IF NOT EXISTS "Currency" character varying(3) NOT NULL DEFAULT 'YER';
+                ALTER TABLE "CashFlowTransactions" ADD COLUMN IF NOT EXISTS "Currency" character varying(3) NOT NULL DEFAULT 'YER';
+
+                -- Backfill any pre-existing NULL/empty currency to the base YER so reads are consistent.
+                UPDATE "Treasuries"           SET "Currency" = 'YER' WHERE "Currency" IS NULL OR "Currency" = '';
+                UPDATE "CashFlowTransactions" SET "Currency" = 'YER' WHERE "Currency" IS NULL OR "Currency" = '';
+
+                -- Treasury uniqueness now includes currency (one drawer/account per currency).
+                DROP INDEX IF EXISTS "IX_Treasuries_BranchId_Type_Name_Unique";
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_Treasuries_BranchId_Type_Currency_Name_Unique"
+                    ON "Treasuries" ("BranchId", "Type", "Currency", "Name") WHERE "IsActive" = true;
+                CREATE INDEX IF NOT EXISTS "IX_Treasuries_BranchId_Type_Currency"
+                    ON "Treasuries" ("BranchId", "Type", "Currency");
+                CREATE INDEX IF NOT EXISTS "IX_CashFlowTransactions_BranchId_Currency_TransactionDate"
+                    ON "CashFlowTransactions" ("BranchId", "Currency", "TransactionDate");
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "Multi-currency columns hotfix failed (non-fatal)");
         }
     }
 

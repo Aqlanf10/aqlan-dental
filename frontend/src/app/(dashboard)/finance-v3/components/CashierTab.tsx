@@ -152,6 +152,12 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
         </div>
       } />
 
+      {/* Clarify Cash box (drawer/shift) vs Treasuries (persistent accounts) */}
+      <div className="rounded-lg border p-3 text-xs leading-relaxed" style={{ backgroundColor: tokens.infoBg, borderColor: tokens.border, color: tokens.textSecondary }}>
+        <span className="font-bold">الصندوق</span> هو درج الكاش اليومي الذي تُفتح عليه <span className="font-bold">الوردية</span> (شيفت العمل) ويُحصَّل فيه النقد بالريال اليمني.
+        أمّا <span className="font-bold">الخزائن</span> (تبويب «الخزائن») فهي الأرصدة الدائمة — درج كاش وحساب بنكي — ولكل عملة (YER / SAR / USD) خزينة مستقلة.
+      </div>
+
       {/* Current session info */}
       {openSession && (
         <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.successBg, borderColor: tokens.successBorder }}>

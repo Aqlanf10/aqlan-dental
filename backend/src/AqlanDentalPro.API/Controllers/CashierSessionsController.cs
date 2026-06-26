@@ -12,15 +12,15 @@ namespace AqlanDentalPro.API.Controllers;
 
 public sealed class OpenSessionRequest
 {
-    public decimal OpeningBalance { get; init; } // مبلغ العهدة الافتتاحية
+    public decimal OpeningBalance { get; init; } // ظ…ط¨ظ„ط؛ ط§ظ„ط¹ظ‡ط¯ط© ط§ظ„ط§ظپطھطھط§ط­ظٹط©
     public string? Notes { get; init; }
 }
 
 public sealed class CloseSessionRequest
 {
-    public decimal ActualClosingCash { get; init; } // النقد الفعلي بالدرج
-    public decimal ActualClosingCard { get; init; } // نقاط البيع الفعلية
-    public decimal ActualClosingBank { get; init; } // التحويل البنكي الفعلي
+    public decimal ActualClosingCash { get; init; } // ط§ظ„ظ†ظ‚ط¯ ط§ظ„ظپط¹ظ„ظٹ ط¨ط§ظ„ط¯ط±ط¬
+    public decimal ActualClosingCard { get; init; } // ظ†ظ‚ط§ط· ط§ظ„ط¨ظٹط¹ ط§ظ„ظپط¹ظ„ظٹط©
+    public decimal ActualClosingBank { get; init; } // ط§ظ„طھط­ظˆظٹظ„ ط§ظ„ط¨ظ†ظƒظٹ ط§ظ„ظپط¹ظ„ظٹ
     public string? Notes { get; init; }
 
     // FIN-03: When |ShortageOrSurplus| exceeds the threshold, a manager (Admin/Accountant)
@@ -143,7 +143,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 Notes = req.Notes?.Trim(),
                 // Explicitly resolve and set the cash vault TreasuryId when opening
                 // the session so all subsequent cash movements tied to this session are routed
-                // to the same treasury. OpeningBalance is a drawer-reconciliation seed only — it
+                // to the same treasury. OpeningBalance is a drawer-reconciliation seed only â€” it
                 // does NOT adjust Treasury.Balance. Treasury.Balance reflects actual cash
                 // movements (CashFlowTransaction outflows/inflows), not the cashier's opening
                 // float. Double-counting would occur if we also incremented Treasury.Balance by
@@ -187,7 +187,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         // FIN-01 FIX: Wrap close in a transaction + advisory lock + re-check, mirroring OpenSession.
         // Previously the method loaded the session with Status==Open, mutated in memory, and called
         // SaveChangesAsync once with no transaction/lock. Two concurrent close requests both passed
-        // the Open check and both saved — the second won, corrupting reconciliation.
+        // the Open check and both saved â€” the second won, corrupting reconciliation.
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
@@ -209,7 +209,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
 
             // Use CashFlowTransactions as the reconciled source for session financial movement.
             // This replaces the old Payment-based calculation which did NOT subtract
-            // refunds, operational expenses, or other outflows — causing drawer overstatement.
+            // refunds, operational expenses, or other outflows â€” causing drawer overstatement.
             var sessionTransactions = await db.CashFlowTransactions
                 .Where(t => t.CashierSessionId == session.Id && t.IsActive)
                 .ToListAsync();
@@ -253,10 +253,10 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 t.CashierSessionId = session.Id;
                 // Phase 0B: Log warning for heuristically-linked transactions.
                 // This linking is based on PerformedBy + CreatedAt matching, which is
-                // imprecise — transactions created by another user on behalf of this
+                // imprecise â€” transactions created by another user on behalf of this
                 // cashier, or system-generated transactions, may be missed or incorrectly linked.
                 logger.LogWarning("Phase 0B: Heuristically linking unlinked CashFlowTransaction {TxId} to session {SessionId}. " +
-                    "This transaction was not linked at creation time — investigate if this occurs frequently.",
+                    "This transaction was not linked at creation time â€” investigate if this occurs frequently.",
                     t.Id, session.Id);
             }
 
@@ -306,7 +306,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                     });
                 }
 
-                // Manager approved — record in audit log.
+                // Manager approved â€” record in audit log.
                 logger.LogWarning(
                     "FIN-03: Cashier session {SessionId} closed with manager override. Variance={Variance}, Threshold={Threshold}, ApprovedBy={UserId} ({Role})",
                     session.Id, variance, threshold, currentUser.UserId, currentUser.Role);
@@ -315,7 +315,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
             await db.SaveChangesAsync();
             await tx.CommitAsync();
 
-            // H3: Audit logging for session close (outside tx — non-fatal if it fails)
+            // H3: Audit logging for session close (outside tx â€” non-fatal if it fails)
             await audit.LogAsync(AuditAction.Update, "CashierSession", session.Id,
                 details: $"Session closed, surplus/shortage: {session.ShortageOrSurplus}");
 
@@ -397,12 +397,12 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     /// </summary>
     private async Task<Guid> ResolveSessionTreasuryIdAsync(Guid branchId)
     {
-        var treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, "cash", null);
+        var treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, "cash", null, null);
         return treasury.Id;
     }
 
     /// <summary>
-    /// GET /api/cashier-sessions/daily-summary — Operational KPIs for Reception daily checkout.
+    /// GET /api/cashier-sessions/daily-summary â€” Operational KPIs for Reception daily checkout.
     /// FinanceAccess (Admin, Reception, Accountant). Excludes deep report fields (commissions, journal health).
     /// </summary>
     [HttpGet("daily-summary")]
@@ -527,7 +527,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         foreach (var line in sessionJournalLines)
         {
             var tType = treasuryTypes.GetValueOrDefault(line.AccountId);
-            var isCash = tType == TreasuryType.Vault || tType == null; // Vault or unknown → cash
+            var isCash = tType == TreasuryType.Vault || tType == null; // Vault or unknown â†’ cash
             var isBank = tType == TreasuryType.Bank;                       // bank account
 
             if (line.Debit > 0) // Inflow
@@ -643,7 +643,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         return Ok(new { data = sessions, total, page, pageSize });
     }
 
-    // ─── H13: Cashier Session Detail Endpoint ───────────────────────────────
+    // â”€â”€â”€ H13: Cashier Session Detail Endpoint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetSessionDetail(Guid id)
     {
@@ -704,7 +704,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     {
         if (!await CanAsync("approve")) return Deny();
         // FIN-02 FIX: Wrap reconcile in a transaction + lock + re-check. Previously the method
-        // only checked Status != Closed before mutating to Reconciled — two concurrent reconcile
+        // only checked Status != Closed before mutating to Reconciled â€” two concurrent reconcile
         // calls both saw Closed and both set Reconciled.
         await using var tx = await db.Database.BeginTransactionAsync();
         try
@@ -739,7 +739,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
             await db.SaveChangesAsync();
             await tx.CommitAsync();
 
-            // H3: Audit logging for session reconciliation (outside tx — non-fatal if it fails)
+            // H3: Audit logging for session reconciliation (outside tx â€” non-fatal if it fails)
             await audit.LogAsync(AuditAction.Update, "CashierSession", id,
                 details: "Session reconciled");
 

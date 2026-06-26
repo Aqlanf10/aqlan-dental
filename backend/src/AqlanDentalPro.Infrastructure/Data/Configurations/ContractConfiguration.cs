@@ -24,6 +24,7 @@ public class ContractConfiguration : IEntityTypeConfiguration<Contract>
 
         // String constraints
         builder.Property(c => c.Specialty).HasMaxLength(100);
+        builder.Property(c => c.Currency).HasMaxLength(3).HasDefaultValue("YER");
         builder.Property(c => c.DiscountReason).HasMaxLength(300);
         builder.Property(c => c.Notes).HasMaxLength(1000);
 

@@ -41,9 +41,9 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
     // Reception excluded) is the coarse gate; the granular finance.expenses permission
     // (RolePermissions, owner-configurable from Settings) is the real per-action gate.
     // Admin always bypasses (see PermissionGuard). Supplier bills are expenses per the
-    // plan §4-B2. Accountant is seeded view/create/edit/approve but NOT delete — so
+    // plan آ§4-B2. Accountant is seeded view/create/edit/approve but NOT delete â€” so
     // Cancel (soft-delete) is admin-only per seed. Paying a bill creates a payment
-    // (SupplierBillPayment + CashFlowTransaction + JournalEntry outflow) → maps to
+    // (SupplierBillPayment + CashFlowTransaction + JournalEntry outflow) â†’ maps to
     // `create` (a financial write that posts to the GL). Statement/GetById = view.
     private Task<bool> CanAsync(string action) =>
         PermissionGuard.HasAsync(db, currentUser, "finance.expenses", action);
@@ -51,11 +51,11 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
     private IActionResult Deny() =>
         StatusCode(403, new { message = "غير مصرح لك بهذا الإجراء المالي" });
 
-    /// <summary>POST /api/supplier-bills — Register a new supplier bill (A/P entry).</summary>
+    /// <summary>POST /api/supplier-bills â€” Register a new supplier bill (A/P entry).</summary>
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateSupplierBillRequest req)
     {
-        // FIN-PERM: authorization FIRST — finance.expenses.create.
+        // FIN-PERM: authorization FIRST â€” finance.expenses.create.
         if (!await CanAsync("create")) return Deny();
 
         if (string.IsNullOrWhiteSpace(req.Description))
@@ -162,7 +162,7 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
         }
     }
 
-    /// <summary>GET /api/supplier-bills — List all supplier bills with filtering.</summary>
+    /// <summary>GET /api/supplier-bills â€” List all supplier bills with filtering.</summary>
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
@@ -234,7 +234,7 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
         return Ok(new { data = bills, total, page, pageSize, overdueCount, totalUnpaid });
     }
 
-    /// <summary>GET /api/supplier-bills/{id} — Get bill details with payment history.</summary>
+    /// <summary>GET /api/supplier-bills/{id} â€” Get bill details with payment history.</summary>
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
@@ -279,11 +279,11 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
         });
     }
 
-    /// <summary>GET /api/supplier-bills/supplier/{supplierId}/statement — Supplier ledger statement.</summary>
+    /// <summary>GET /api/supplier-bills/supplier/{supplierId}/statement â€” Supplier ledger statement.</summary>
     [HttpGet("supplier/{supplierId:guid}/statement")]
     public async Task<IActionResult> GetSupplierStatement(Guid supplierId)
     {
-        // FIN-PERM: finance.expenses.view — statement is a read-only supplier ledger.
+        // FIN-PERM: finance.expenses.view â€” statement is a read-only supplier ledger.
         if (!await CanAsync("view")) return Deny();
 
         var supplier = await db.Suppliers.FirstOrDefaultAsync(s => s.Id == supplierId && s.IsActive);
@@ -341,12 +341,12 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
         });
     }
 
-    /// <summary>POST /api/supplier-bills/{id}/pay — Record an installment payment for a bill.
+    /// <summary>POST /api/supplier-bills/{id}/pay â€” Record an installment payment for a bill.
     /// Dual-writes CashFlowTransaction + JournalEntry atomically.</summary>
     [HttpPost("{id:guid}/pay")]
     public async Task<IActionResult> Pay(Guid id, [FromBody] PayBillInstallmentRequest req)
     {
-        // FIN-PERM: finance.expenses.create — paying a supplier bill creates a payment
+        // FIN-PERM: finance.expenses.create â€” paying a supplier bill creates a payment
         // record (SupplierBillPayment + CashFlowTransaction outflow + JournalEntry),
         // posting to the GL. This is a financial write, not an approval adjudication.
         if (!await CanAsync("create")) return Deny();
@@ -390,7 +390,7 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
         Treasury treasury;
         try
         {
-            treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, req.PaymentMethod, activeSession?.Id);
+            treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, req.PaymentMethod, null, activeSession?.Id);
         }
         catch (ArgumentException ex)
         {
@@ -469,7 +469,7 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
             };
             db.SupplierBillPayments.Add(payment);
 
-            // Dual-write: JournalEntry (canonical) — Debit AccountsPayable / Credit Treasury
+            // Dual-write: JournalEntry (canonical) â€” Debit AccountsPayable / Credit Treasury
             var je = await journalEntryService.CreateEntryAsync(
                 documentType: FinancialDocumentType.SupplierPayment,
                 financialDocumentId: payment.Id,
@@ -488,7 +488,7 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
             je.PostedAt = DateTime.UtcNow;
 
             // Blocker 1: Atomically decrement Treasury.Balance for the supplier outflow
-            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, req.PaymentMethod, req.Amount, activeSession?.Id);
+            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, req.PaymentMethod, req.Amount, null, activeSession?.Id);
 
             // Update bill paid amount and status
             bill.PaidAmount += req.Amount;
@@ -527,12 +527,12 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
         }
     }
 
-    /// <summary>DELETE /api/supplier-bills/{id} — Cancel a bill (soft delete).</summary>
+    /// <summary>DELETE /api/supplier-bills/{id} â€” Cancel a bill (soft delete).</summary>
     [HttpDelete("{id:guid}")]
     [Authorize(Policy = "AdminAccess")]
     public async Task<IActionResult> Cancel(Guid id)
     {
-        // FIN-PERM: finance.expenses.delete — Admin only per seed (Accountant is seeded
+        // FIN-PERM: finance.expenses.delete â€” Admin only per seed (Accountant is seeded
         // delete=false). The AdminAccess attribute is the coarse gate; the granular
         // check is owner-configurable defense-in-depth.
         if (!await CanAsync("delete")) return Deny();

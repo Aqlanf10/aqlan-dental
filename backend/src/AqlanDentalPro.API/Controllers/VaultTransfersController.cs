@@ -48,11 +48,11 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
     // FIN-PERM: the class-level FinanceAccess policy (Admin + Reception + Accountant)
     // is the coarse gate; the granular finance.treasuries permission (RolePermissions,
     // owner-configurable from Settings) is the real per-action gate for vault transfers
-    // too — transfers move money between treasuries, so they share the treasury permission
+    // too â€” transfers move money between treasuries, so they share the treasury permission
     // key. Admin always bypasses (see PermissionGuard). Reception is NOT seeded for
-    // finance.treasuries → auto-denied. Accountant has view+create+edit (no approve).
+    // finance.treasuries â†’ auto-denied. Accountant has view+create+edit (no approve).
     // Approve/Reject endpoints are also guarded by [Authorize(Roles="Admin,Accountant")]
-    // — the granular approve gate below is defense-in-depth for the action permission.
+    // â€” the granular approve gate below is defense-in-depth for the action permission.
     private Task<bool> CanAsync(string action) =>
         PermissionGuard.HasAsync(db, currentUser, "finance.treasuries", action);
 
@@ -65,7 +65,7 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
-        // FIN-PERM: finance.treasuries.view (Reception auto-denied — no seeded row).
+        // FIN-PERM: finance.treasuries.view (Reception auto-denied â€” no seeded row).
         if (!await CanAsync("view")) return Deny();
 
         if (page < 1) page = 1;
@@ -110,7 +110,7 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
                 DestinationTreasuryName = t.DestinationTreasury.Name,
                 t.Amount,
                 t.TransferDate,
-                // FIN-18 FIX: Null-safe access — PerformedByUser could be null if user was soft-deleted
+                // FIN-18 FIX: Null-safe access â€” PerformedByUser could be null if user was soft-deleted
                 PerformedBy = t.PerformedByUser != null ? t.PerformedByUser.Username : "",
                 ApprovedBy = t.ApprovedByUser != null ? t.ApprovedByUser.Username : null,
                 t.ApprovalDate,
@@ -127,7 +127,7 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateTransferRequest req)
     {
-        // FIN-PERM: finance.treasuries.create (Reception auto-denied — no seeded row).
+        // FIN-PERM: finance.treasuries.create (Reception auto-denied â€” no seeded row).
         if (!await CanAsync("create")) return Deny();
 
         if (req.Amount <= 0)
@@ -150,14 +150,14 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
         // FIN-05 FIX: The source treasury existence + balance check MUST happen inside the
         // transaction with a row lock. Previously the check was at line 135 BEFORE
         // BeginTransactionAsync (line 140), and the advisory lock (line 144) was on the
-        // transfer-number sequence — NOT on the source treasury row. Two concurrent transfers
+        // transfer-number sequence â€” NOT on the source treasury row. Two concurrent transfers
         // from the same source both passed the balance check, both entered the tx, both
         // deducted via tracked-entity mutation (no atomic SQL, no FOR UPDATE), and the
         // treasury balance could go negative.
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
-            // Lock on the transfer-number sequence (existing behavior — preserves order).
+            // Lock on the transfer-number sequence (existing behavior â€” preserves order).
             var lockKey = StableLockKeyHelper.VaultTransferNumber;
             await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
 
@@ -170,7 +170,7 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
                 if (db.Database.IsRelational())
                 {
                     // FOR UPDATE on the source treasury row (PostgreSQL). On InMemory (tests),
-                    // this is skipped — the advisory lock above provides serialization there.
+                    // this is skipped â€” the advisory lock above provides serialization there.
                     await db.Database.ExecuteSqlRawAsync(
                         "SELECT 1 FROM \"Treasuries\" WHERE \"Id\" = {0} FOR UPDATE",
                         req.SourceTreasuryId.Value);
@@ -181,6 +181,9 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
                     .FirstOrDefaultAsync(t => t.Id == req.SourceTreasuryId.Value && t.BranchId == branchId && t.IsActive);
                 if (sourceTreasury == null)
                     return BadRequest(new { message = "الخزنة المصدر غير موجودة أو غير تابعة للفرع" });
+
+                if (!string.Equals(sourceTreasury.Currency, destTreasury.Currency, StringComparison.OrdinalIgnoreCase))
+                    return BadRequest(new { message = "لا يمكن التحويل المباشر بين خزائن بعملات مختلفة. استخدم عملية مصارفة مستقلة بسعر صرف موثق." });
 
                 if (sourceTreasury.Balance < req.Amount)
                     return BadRequest(new { message = $"عذراً، رصيد الخزنة المصدر ({sourceTreasury.Balance:N0} ر.ي) أقل من مبلغ التحويل المطلوب ({req.Amount:N0} ر.ي)" });
@@ -260,7 +263,7 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
     [Authorize(Roles = "Admin,Accountant")] // Only Admin or Accountant can reconcile and approve receipt of funds
     public async Task<IActionResult> Approve(Guid id, [FromBody] ApproveTransferRequest? approveReq = null)
     {
-        // FIN-PERM: finance.treasuries.approve — confirming receipt of funds is a
+        // FIN-PERM: finance.treasuries.approve â€” confirming receipt of funds is a
         // sensitive financial reconciliation (posts JE; credits destination). The
         // [Authorize(Roles="Admin,Accountant")] attribute enforces role scope; the
         // granular permission gate below additionally honors owner-revoked approve.
@@ -279,7 +282,7 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
         if (transfer.Status != TransferStatus.Pending)
             return BadRequest(new { message = "يمكن قبول طلبات التحويل المعلقة فقط" });
 
-        // Blocker 4: Branch isolation — non-admin users MUST have a valid branch assignment
+        // Blocker 4: Branch isolation â€” non-admin users MUST have a valid branch assignment
         if (!currentUser.IsAdmin)
         {
             if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
@@ -289,6 +292,9 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
             if (destBranchId != currentUser.BranchId.Value)
                 return StatusCode(403, new { message = "ليس لديك صلاحية الموافقة على تحويلات فرع آخر" });
         }
+
+        if (transfer.SourceTreasury != null && !string.Equals(transfer.SourceTreasury.Currency, transfer.DestinationTreasury.Currency, StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "لا يمكن اعتماد تحويل بين خزائن بعملات مختلفة. استخدم عملية مصارفة مستقلة بسعر صرف موثق." });
 
         // Add funds to destination treasury balance
         transfer.DestinationTreasury.Balance += transfer.Amount;
@@ -308,6 +314,7 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
             Type = TransactionType.Inflow, // internally treated as inflow to the target vault
             Category = FinancialCategory.InternalTransfer,
             Amount = transfer.Amount,
+            Currency = transfer.DestinationTreasury.Currency,
             PaymentMethod = transfer.DestinationTreasury.Type == TreasuryType.Bank ? "bank" : "cash",
             TransactionDate = ClinicTimeProvider.ClinicToday(),
             ReferenceId = transfer.Id,
@@ -329,6 +336,7 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
                 Type = TransactionType.Outflow,
                 Category = FinancialCategory.InternalTransfer,
                 Amount = transfer.Amount,
+                Currency = transfer.SourceTreasury.Currency,
                 PaymentMethod = transfer.SourceTreasury.Type == TreasuryType.Bank ? "bank" : "cash",
                 TransactionDate = ClinicTimeProvider.ClinicToday(),
                 ReferenceId = transfer.Id,
@@ -398,7 +406,7 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
             }
             else
             {
-                // Blocker 5: Internal vault transfer JE — Debit Destination / Credit Source
+                // Blocker 5: Internal vault transfer JE â€” Debit Destination / Credit Source
                 // This is NOT revenue; it's a transfer between two treasury accounts.
                 var sourceTreasuryId = transfer.SourceTreasuryId.Value;
                 var destTreasuryId = transfer.DestinationTreasuryId;
@@ -453,7 +461,7 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
     [Authorize(Roles = "Admin,Accountant")]
     public async Task<IActionResult> Reject(Guid id, [FromBody] RejectTransferRequest req)
     {
-        // FIN-PERM: finance.treasuries.approve — rejecting a pending transfer restores
+        // FIN-PERM: finance.treasuries.approve â€” rejecting a pending transfer restores
         // the locked funds to the source treasury; treat as the same approve scope.
         if (!await CanAsync("approve")) return Deny();
 
@@ -473,7 +481,7 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
         if (transfer.Status != TransferStatus.Pending)
             return BadRequest(new { message = "يمكن رفض طلبات التحويل المعلقة فقط" });
 
-        // Blocker 4: Branch isolation — non-admin users MUST have a valid branch assignment
+        // Blocker 4: Branch isolation â€” non-admin users MUST have a valid branch assignment
         if (!currentUser.IsAdmin)
         {
             if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)

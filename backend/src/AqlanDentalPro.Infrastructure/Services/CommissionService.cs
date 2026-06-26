@@ -15,7 +15,7 @@ public class CommissionService(
     ITreasuryResolutionService treasuryResolution,
     ILogger<CommissionService> logger) : ICommissionService
 {
-    // ── Line item commission ──────────────────────────────────────────────────
+    // â”€â”€ Line item commission â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     public async Task<LineItemCommissionDto?> GetLineItemCommissionAsync(Guid lineItemId)
     {
@@ -126,7 +126,7 @@ public class CommissionService(
         return MapLineItem(item);
     }
 
-    // ── Report ────────────────────────────────────────────────────────────────
+    // â”€â”€ Report â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     public async Task<CommissionReportResponse> GetReportAsync(
         DateOnly from, DateOnly to,
@@ -206,7 +206,7 @@ public class CommissionService(
         return new CommissionReportResponse(summary, rows);
     }
 
-    // ── Commission payment disbursement ───────────────────────────────────────
+    // â”€â”€ Commission payment disbursement â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     public async Task<DoctorCommissionPaymentDto> RecordPaymentAsync(
         RecordCommissionPaymentRequest req, Guid recordedBy)
@@ -217,7 +217,7 @@ public class CommissionService(
         var doctor = await db.Doctors.FindAsync(req.DoctorId)
             ?? throw new ArgumentException("الطبيب غير موجود");
 
-        // FIX: Determine valid BranchId from doctor — never write Guid.Empty
+        // FIX: Determine valid BranchId from doctor â€” never write Guid.Empty
         var branchId = doctor.BranchId ?? Guid.Empty;
         if (branchId == Guid.Empty)
         {
@@ -248,7 +248,7 @@ public class CommissionService(
         Treasury treasury;
         try
         {
-            treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, paymentMethod, activeSession?.Id);
+            treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, paymentMethod, null, activeSession?.Id);
         }
         catch (ArgumentException ex)
         {
@@ -318,7 +318,7 @@ public class CommissionService(
 
             db.DoctorCommissionPayments.Add(payment);
 
-            // Dual-write: CashFlowTransaction (transitional) — BranchId now resolved correctly
+            // Dual-write: CashFlowTransaction (transitional) â€” BranchId now resolved correctly
             var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
             var nextSeq = await db.CashFlowTransactions.CountAsync(t => t.Category == FinancialCategory.DoctorCommission) + 1;
             var cashflow = new CashFlowTransaction
@@ -339,7 +339,7 @@ public class CommissionService(
             };
             db.CashFlowTransactions.Add(cashflow);
 
-            // Dual-write: JournalEntry (canonical) — Debit Expense / Credit Treasury
+            // Dual-write: JournalEntry (canonical) â€” Debit Expense / Credit Treasury
             var je = await journalEntryService.CreateEntryAsync(
                 documentType: FinancialDocumentType.CommissionPayment,
                 financialDocumentId: payment.Id,
@@ -358,7 +358,7 @@ public class CommissionService(
             je.PostedAt = DateTime.UtcNow;
 
             // Blocker 1: Atomically decrement Treasury.Balance for the commission outflow
-            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, paymentMethod, req.Amount, activeSession?.Id);
+            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, paymentMethod, req.Amount, null, activeSession?.Id);
 
             // Mark specified line items as Paid
             if (req.LineItemIds is { Count: > 0 })
@@ -421,7 +421,7 @@ public class CommissionService(
             CreatedAt: p.CreatedAt)).ToList();
     }
 
-    // ── Service commission defaults ───────────────────────────────────────────
+    // â”€â”€ Service commission defaults â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     public async Task<ServiceCommissionDefaultsDto?> GetServiceDefaultsAsync(Guid serviceId)
     {
@@ -459,7 +459,7 @@ public class CommissionService(
         return MapServiceDefaults(svc);
     }
 
-    // ── Auto-fill from service defaults ──────────────────────────────────────
+    // â”€â”€ Auto-fill from service defaults â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     public async Task AutoFillFromServiceAsync(Guid lineItemId)
     {
@@ -501,7 +501,7 @@ public class CommissionService(
         {
             var labOrder = await db.LabOrders.FindAsync(item.LabOrderId.Value);
             // CLIN-08 FIX: Prefer TotalCost (includes items + remake) over Cost (snapshot that may be stale).
-            // Previously read only Cost, which LabOrdersController.Update never re-syncs — so a lab order
+            // Previously read only Cost, which LabOrdersController.Update never re-syncs â€” so a lab order
             // whose TotalCost grew via remakes would still report the old Cost to commission calculations,
             // inflating the doctor's commission (lab cost is a deduction from NetCommissionableAmount).
             if (labOrder != null)
@@ -514,7 +514,7 @@ public class CommissionService(
         await db.SaveChangesAsync();
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private async Task<InvoiceLineItem?> LoadLineItemAsync(Guid id) =>
         await db.InvoiceLineItems
@@ -691,7 +691,7 @@ public class CommissionService(
     {
         // FIN-14 FIX: Removed the try/catch that swallowed audit-log failures. For financial mutations
         // (commission approve/unlock/payment), audit failures should propagate and roll back the caller's
-        // transaction — not be silently logged as a warning. A missing audit entry for a commission
+        // transaction â€” not be silently logged as a warning. A missing audit entry for a commission
         // approval is a compliance gap that enables plausible deniability.
         var auditAction = action.Contains("Approve") ? AuditAction.Approve : AuditAction.Update;
         db.AuditLogs.Add(new AuditLog
@@ -705,5 +705,5 @@ public class CommissionService(
         await db.SaveChangesAsync();
     }
 
-    // StableGuidToLong moved to StableLockKeyHelper — shared across all finance services.
+    // StableGuidToLong moved to StableLockKeyHelper â€” shared across all finance services.
 }

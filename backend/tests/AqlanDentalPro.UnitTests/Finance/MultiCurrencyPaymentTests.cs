@@ -183,22 +183,27 @@ public class MultiCurrencyPaymentTests
             PatientId = patient.Id,
             Amount = 300m,
             PaymentMethod = "cash",
-            Currency = "SAR"
+            Currency = "SAR",
+            AccountCurrency = "SAR"
         });
 
         dto.Should().NotBeNull();
         dto.Currency.Should().Be("SAR");
+        dto.AccountCurrency.Should().Be("SAR");
+        dto.AppliedAmount.Should().Be(300m);
 
         // Verify it was actually persisted to the database.
         var payment = await db.Payments.FindAsync(dto.Id);
         payment.Should().NotBeNull();
         payment!.Currency.Should().Be("SAR");
 
-        // MULTI-CURRENCY: foreign payments must NOT create a CashFlowTransaction
-        // (they're excluded from YER treasury/cashflow totals).
+        // MULTI-CURRENCY: foreign payments create a CashFlowTransaction in their
+        // physical currency, but never mix with the YER drawer.
         var cashflow = await db.CashFlowTransactions
             .FirstOrDefaultAsync(c => c.ReferenceId == dto.Id);
-        cashflow.Should().BeNull("foreign-currency payments must not create a CashFlowTransaction");
+        cashflow.Should().NotBeNull("foreign-currency payments must be tracked in the matching currency treasury");
+        cashflow!.Currency.Should().Be("SAR");
+        cashflow.Amount.Should().Be(300m);
     }
 
     // ─── Test 2: null Currency defaults to "YER" ──────────────────────────────
@@ -287,14 +292,20 @@ public class MultiCurrencyPaymentTests
             PatientId = patient.Id,
             Amount = 3_000m,
             PaymentMethod = "cash",
-            Currency = "SAR"
+            Currency = "SAR",
+            AccountCurrency = "SAR"
         });
 
-        // The treasury for this branch (Vault type since cash) should hold 5,000 — NOT 8,000.
+        // The YER treasury for this branch should hold 5,000 — NOT 8,000.
         var treasury = await db.Treasuries
-            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == TreasuryType.Vault && t.IsActive);
-        treasury.Should().NotBeNull("a vault treasury should have been auto-created for the cash payment");
+            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == TreasuryType.Vault && t.Currency == "YER" && t.IsActive);
+        treasury.Should().NotBeNull("a YER vault treasury should have been auto-created for the cash payment");
         treasury!.Balance.Should().Be(5_000m, "SAR 3,000 must be excluded from YER treasury balance — no mixing currencies");
+
+        var sarTreasury = await db.Treasuries
+            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == TreasuryType.Vault && t.Currency == "SAR" && t.IsActive);
+        sarTreasury.Should().NotBeNull("a separate SAR vault treasury should track physical SAR cash");
+        sarTreasury!.Balance.Should().Be(3_000m);
 
         // Also verify the total via a direct Payment sum filtered to YER only.
         var yerSum = await db.Payments
@@ -328,7 +339,8 @@ public class MultiCurrencyPaymentTests
             PatientId = patient.Id,
             Amount = 3_000m,
             PaymentMethod = "cash",
-            Currency = "SAR"
+            Currency = "SAR",
+            AccountCurrency = "SAR"
         });
 
         // Today's USD payment — must NOT count toward todayCollected.
@@ -337,7 +349,8 @@ public class MultiCurrencyPaymentTests
             PatientId = patient.Id,
             Amount = 100m,
             PaymentMethod = "cash",
-            Currency = "USD"
+            Currency = "USD",
+            AccountCurrency = "USD"
         });
 
         var summary = await service.GetSummaryAsync();

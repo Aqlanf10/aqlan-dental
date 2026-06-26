@@ -29,16 +29,20 @@ public class TreasuryResolutionService(
     public async Task<Treasury> ResolveTreasuryAsync(
         Guid branchId,
         string? paymentMethod,
+        string? currency = null,
         Guid? cashierSessionId = null,
         CancellationToken ct = default)
     {
         if (branchId == Guid.Empty)
             throw new ArgumentException("عذراً، الفرع غير محدد. لا يمكن تحديد الخزينة.");
 
+        var normalizedCurrency = NormalizeCurrency(currency);
         var isBankPayment = IsBankPaymentMethod(paymentMethod);
 
         // For cash payments with a CashierSession, try to use the session's treasury first
-        if (!isBankPayment && cashierSessionId.HasValue)
+        // only for the base YER drawer. Foreign cash must have its own currency treasury,
+        // otherwise the session's YER drawer would mix currencies.
+        if (!isBankPayment && normalizedCurrency == "YER" && cashierSessionId.HasValue)
         {
             var session = await db.CashierSessions.FindAsync(new object[] { cashierSessionId.Value }, ct);
             if (session != null && session.IsActive)
@@ -59,7 +63,7 @@ public class TreasuryResolutionService(
 
         // Phase 6: Lookup by BranchId + Type instead of hardcoded name.
         var treasury = await db.Treasuries
-            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == treasuryType && t.IsActive, ct);
+            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == treasuryType && t.Currency == normalizedCurrency && t.IsActive, ct);
 
         if (treasury == null)
         {
@@ -68,6 +72,7 @@ public class TreasuryResolutionService(
                 .Where(e => e.State == EntityState.Added
                     && e.Entity.BranchId == branchId
                     && e.Entity.Type == treasuryType
+                    && e.Entity.Currency == normalizedCurrency
                     && e.Entity.IsActive)
                 .Select(e => e.Entity)
                 .FirstOrDefault();
@@ -76,11 +81,14 @@ public class TreasuryResolutionService(
         if (treasury == null)
         {
             // Auto-create the treasury for the branch (same behavior as FinanceService)
-            var defaultName = isBankPayment ? DefaultBankName : DefaultVaultName;
+            var defaultName = normalizedCurrency == "YER"
+                ? (isBankPayment ? DefaultBankName : DefaultVaultName)
+                : $"{(isBankPayment ? DefaultBankName : DefaultVaultName)} - {normalizedCurrency}";
             treasury = new Treasury
             {
                 Name = defaultName,
                 Type = treasuryType,
+                Currency = normalizedCurrency,
                 Balance = 0,
                 BranchId = branchId,
                 IsActive = true
@@ -93,11 +101,19 @@ public class TreasuryResolutionService(
         return treasury;
     }
 
+    public Task<Treasury> ResolveTreasuryAsync(
+        Guid branchId,
+        string? paymentMethod,
+        Guid? cashierSessionId,
+        CancellationToken ct = default)
+        => ResolveTreasuryAsync(branchId, paymentMethod, currency: null, cashierSessionId, ct);
+
     /// <inheritdoc />
     public async Task DecrementTreasuryBalanceAsync(
         Guid branchId,
         string? paymentMethod,
         decimal amount,
+        string? currency = null,
         Guid? cashierSessionId = null,
         CancellationToken ct = default)
     {
@@ -107,7 +123,8 @@ public class TreasuryResolutionService(
         if (amount <= 0)
             throw new ArgumentException("مبلغ الصرف يجب أن يكون أكبر من الصفر.");
 
-        var treasury = await ResolveTreasuryAsync(branchId, paymentMethod, cashierSessionId, ct);
+        var normalizedCurrency = NormalizeCurrency(currency);
+        var treasury = await ResolveTreasuryAsync(branchId, paymentMethod, normalizedCurrency, cashierSessionId, ct);
         var blocked = await IsNegativeBalanceBlockedAsync(ct);
 
         // When enforcement is OFF (Admin opt-out), keep the legacy warn-only behavior. The
@@ -125,11 +142,20 @@ public class TreasuryResolutionService(
             treasury.Id, treasury.Type, amount, paymentMethod);
     }
 
+    public Task DecrementTreasuryBalanceAsync(
+        Guid branchId,
+        string? paymentMethod,
+        decimal amount,
+        Guid? cashierSessionId,
+        CancellationToken ct = default)
+        => DecrementTreasuryBalanceAsync(branchId, paymentMethod, amount, currency: null, cashierSessionId, ct);
+
     /// <inheritdoc />
     public async Task IncrementTreasuryBalanceAsync(
         Guid branchId,
         string? paymentMethod,
         decimal amount,
+        string? currency = null,
         CancellationToken ct = default)
     {
         if (branchId == Guid.Empty)
@@ -138,7 +164,8 @@ public class TreasuryResolutionService(
         if (amount <= 0)
             throw new ArgumentException("مبلغ الإضافة يجب أن يكون أكبر من الصفر.");
 
-        var treasury = await ResolveTreasuryAsync(branchId, paymentMethod, null, ct);
+        var normalizedCurrency = NormalizeCurrency(currency);
+        var treasury = await ResolveTreasuryAsync(branchId, paymentMethod, normalizedCurrency, null, ct);
         await MutateTreasuryBalanceAsync(treasury, amount, enforceNonNegative: false, ct);
 
         logger.LogInformation(
@@ -200,6 +227,14 @@ public class TreasuryResolutionService(
         return string.Equals(paymentMethod, "card", StringComparison.OrdinalIgnoreCase)
             || string.Equals(paymentMethod, "bank_transfer", StringComparison.OrdinalIgnoreCase)
             || string.Equals(paymentMethod, "bank", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeCurrency(string? currency)
+    {
+        var code = string.IsNullOrWhiteSpace(currency) ? "YER" : currency.Trim().ToUpperInvariant();
+        return code is "YER" or "SAR" or "USD"
+            ? code
+            : throw new ArgumentException("العملة يجب أن تكون YER أو SAR أو USD");
     }
 
     /// <summary>

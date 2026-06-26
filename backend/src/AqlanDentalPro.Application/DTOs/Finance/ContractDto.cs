@@ -7,6 +7,7 @@ public class ContractListDto
     public string PatientName { get; set; } = string.Empty;
     public string PatientNumber { get; set; } = string.Empty;
     public string? Specialty { get; set; }
+    public string Currency { get; set; } = "YER";
     public decimal TotalAmount { get; set; }
     public decimal DownPayment { get; set; }
     public decimal PaidAmount { get; set; }
@@ -44,6 +45,7 @@ public class ContractStatementDto
 {
     public Guid Id { get; set; }
     public string? Specialty { get; set; }
+    public string Currency { get; set; } = "YER";
     public decimal TotalAmount { get; set; }
     public decimal DiscountAmount { get; set; }
     public decimal PaidAmount { get; set; }
@@ -62,6 +64,7 @@ public class OverdueContractDto
     public string PatientNumber { get; set; } = string.Empty;
     public string? Phone { get; set; }
     public string? Specialty { get; set; }
+    public string Currency { get; set; } = "YER";
     public decimal TotalAmount { get; set; }
     public decimal PaidAmount { get; set; }
     public decimal OverdueAmount { get; set; }

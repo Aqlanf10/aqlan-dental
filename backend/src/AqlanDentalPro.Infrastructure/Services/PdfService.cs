@@ -235,6 +235,80 @@ public class PdfService : IPdfService
         return await Task.Run(() => new DisbursementVoucherDocument(model, identity).GeneratePdf());
     }
 
+    public async Task<byte[]> GenerateCashFlowDisbursementVoucherAsync(Guid cashFlowTransactionId)
+    {
+        var transaction = await _db.CashFlowTransactions
+            .FirstOrDefaultAsync(t => t.Id == cashFlowTransactionId && t.IsActive);
+
+        if (transaction == null)
+            throw new ArgumentException("حركة الصرف غير موجودة");
+
+        if (transaction.Type != TransactionType.Outflow)
+            throw new ArgumentException("يمكن طباعة سند صرف للحركات الخارجة فقط");
+
+        EnsureFontsRegistered();
+
+        var identity = await FinanceClinicIdentity.ResolveAsync(_db);
+        var model = new DisbursementVoucherModel
+        {
+            VoucherNumber = string.IsNullOrWhiteSpace(transaction.ReferenceNumber)
+                ? transaction.TransactionNumber
+                : transaction.ReferenceNumber,
+            Date = transaction.TransactionDate,
+            CategoryLabel = CashFlowCategoryLabel(transaction.Category),
+            PayeeName = CashFlowPayeeLabel(transaction),
+            Amount = transaction.Amount,
+            Currency = string.IsNullOrWhiteSpace(transaction.Currency) ? "YER" : transaction.Currency,
+            Description = transaction.Description,
+            PaymentMethod = transaction.PaymentMethod,
+            Notes = transaction.IsReversal ? "قيد عكسي" : null,
+        };
+
+        return await Task.Run(() => new DisbursementVoucherDocument(model, identity).GeneratePdf());
+    }
+
+    public async Task<byte[]> GenerateJournalEntryDisbursementVoucherAsync(Guid journalEntryId)
+    {
+        var entry = await _db.JournalEntries
+            .Include(e => e.Lines)
+            .FirstOrDefaultAsync(e => e.Id == journalEntryId && e.IsActive);
+
+        if (entry == null)
+            throw new ArgumentException("القيد غير موجود");
+
+        if (!entry.IsPosted)
+            throw new ArgumentException("لا يمكن طباعة سند صرف لقيد غير مرحّل");
+
+        var treasuryCreditLines = entry.Lines
+            .Where(l => l.AccountType == JournalAccountType.Treasury && l.Credit > 0)
+            .ToList();
+
+        if (treasuryCreditLines.Count == 0)
+            throw new ArgumentException("هذا القيد لا يمثل صرفاً من خزينة");
+
+        var amount = treasuryCreditLines.Sum(l => l.Credit);
+        var treasuryId = treasuryCreditLines.First().AccountId;
+        var treasury = await _db.Treasuries.FirstOrDefaultAsync(t => t.Id == treasuryId);
+
+        EnsureFontsRegistered();
+
+        var identity = await FinanceClinicIdentity.ResolveAsync(_db);
+        var model = new DisbursementVoucherModel
+        {
+            VoucherNumber = entry.EntryNumber,
+            Date = entry.EntryDate,
+            CategoryLabel = JournalDocumentLabel(entry.FinancialDocumentType),
+            PayeeName = JournalPayeeLabel(entry.FinancialDocumentType),
+            Amount = amount,
+            Currency = treasury?.Currency ?? "YER",
+            Description = entry.Description,
+            PaymentMethod = treasury?.Type == TreasuryType.Bank ? "bank" : "cash",
+            Notes = entry.IsReversal ? "قيد عكسي" : null,
+        };
+
+        return await Task.Run(() => new DisbursementVoucherDocument(model, identity).GeneratePdf());
+    }
+
     private static string ExpenseCategoryLabel(ExpenseCategory category) => category switch
     {
         ExpenseCategory.Rent => "إيجار",
@@ -248,5 +322,57 @@ public class PdfService : IPdfService
         ExpenseCategory.Taxes => "ضرائب ورسوم",
         ExpenseCategory.Miscellaneous => "نثريات",
         _ => category.ToString(),
+    };
+
+    private static string CashFlowCategoryLabel(FinancialCategory category) => category switch
+    {
+        FinancialCategory.SupplierPayment => "دفعة مورد",
+        FinancialCategory.SalaryPayment => "صرف راتب",
+        FinancialCategory.DoctorCommission => "صرف عمولة طبيب",
+        FinancialCategory.OperationalExpense => "مصروف تشغيلي",
+        FinancialCategory.Refund => "استرداد دفعة مريض",
+        FinancialCategory.GeneralCost => "تكلفة عامة",
+        FinancialCategory.InternalTransfer => "تحويل خزينة",
+        FinancialCategory.SalaryAdvance => "سلفة موظف",
+        FinancialCategory.Reversal => "قيد عكسي",
+        _ => category.ToString(),
+    };
+
+    private static string CashFlowPayeeLabel(Domain.Entities.CashFlowTransaction transaction) => transaction.Category switch
+    {
+        FinancialCategory.SupplierPayment => "المورد",
+        FinancialCategory.SalaryPayment => "الموظف",
+        FinancialCategory.DoctorCommission => "الطبيب",
+        FinancialCategory.OperationalExpense => "المستفيد من المصروف",
+        FinancialCategory.Refund => "المريض",
+        FinancialCategory.SalaryAdvance => "الموظف",
+        FinancialCategory.InternalTransfer => "الخزينة الوجهة",
+        _ => string.IsNullOrWhiteSpace(transaction.ReferenceNumber) ? "المستفيد" : transaction.ReferenceNumber,
+    };
+
+    private static string JournalDocumentLabel(FinancialDocumentType documentType) => documentType switch
+    {
+        FinancialDocumentType.Expense => "مصروف تشغيلي",
+        FinancialDocumentType.SalaryPayment => "صرف راتب",
+        FinancialDocumentType.CommissionPayment => "صرف عمولة طبيب",
+        FinancialDocumentType.SupplierPayment => "دفعة مورد",
+        FinancialDocumentType.AdvancePayment => "سلفة موظف",
+        FinancialDocumentType.Refund => "استرداد دفعة مريض",
+        FinancialDocumentType.CreditNoteRefund => "استرداد إشعار دائن",
+        FinancialDocumentType.VaultTransfer => "تحويل خزينة",
+        _ => documentType.ToString(),
+    };
+
+    private static string JournalPayeeLabel(FinancialDocumentType documentType) => documentType switch
+    {
+        FinancialDocumentType.SupplierPayment => "المورد",
+        FinancialDocumentType.SalaryPayment => "الموظف",
+        FinancialDocumentType.CommissionPayment => "الطبيب",
+        FinancialDocumentType.Expense => "المستفيد من المصروف",
+        FinancialDocumentType.Refund => "المريض",
+        FinancialDocumentType.CreditNoteRefund => "المريض",
+        FinancialDocumentType.AdvancePayment => "الموظف",
+        FinancialDocumentType.VaultTransfer => "الخزينة الوجهة",
+        _ => "المستفيد",
     };
 }

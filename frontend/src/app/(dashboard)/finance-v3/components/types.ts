@@ -127,6 +127,10 @@ export interface PaymentListItem {
   patientNumber: string;
   amount: number;
   currency?: string | null;
+  accountCurrency?: string | null;
+  exchangeRateToAccountCurrency?: number;
+  appliedAmount?: number;
+  exchangeRateSource?: string | null;
   paymentMethod: string;
   paymentDate: string;
   invoiceId: string | null;
@@ -145,6 +149,9 @@ export interface RegisterPaymentRequest {
   amount: number;
   paymentMethod: string;
   currency?: string | null;
+  accountCurrency?: string | null;
+  exchangeRateToAccountCurrency?: number | null;
+  exchangeRateSource?: string | null;
   notes?: string;
 }
 
@@ -198,6 +205,7 @@ export interface Treasury {
   id: string;
   name: string;
   type: string;
+  currency: "YER" | "SAR" | "USD";
   balance: number;
   branchId: string;
 }
@@ -205,6 +213,7 @@ export interface Treasury {
 export interface CreateTreasuryRequest {
   name: string;
   type: string;
+  currency?: "YER" | "SAR" | "USD";
   openingBalance: number;
   branchId?: string;
 }

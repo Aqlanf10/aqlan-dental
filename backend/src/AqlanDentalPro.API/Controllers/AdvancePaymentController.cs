@@ -160,7 +160,7 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         var userIdGuid = Guid.TryParse(userId, out var uidParsed) ? uidParsed : Guid.Empty;
 
-        // Rejection path — state-only, no transaction needed
+        // Rejection path â€” state-only, no transaction needed
         if (!req.Approve)
         {
             var advance = await db.AdvancePayments.FindAsync(id);
@@ -179,7 +179,7 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
             return Ok(new { message = "تم رفض السلفة", Status = advance.Status.ToString() });
         }
 
-        // ── Approval path — fully atomic ──────────────────────────────
+        // â”€â”€ Approval path â€” fully atomic â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
@@ -232,7 +232,7 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
             Treasury treasury;
             try
             {
-                treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, paymentMethod, activeSession.Id);
+                treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, paymentMethod, null, activeSession.Id);
             }
             catch (ArgumentException ex)
             {
@@ -283,7 +283,7 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
             je.PostedAt = DateTime.UtcNow;
 
             // 4. Atomically decrement Treasury.Balance
-            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, paymentMethod, advance.Amount, activeSession.Id);
+            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, paymentMethod, advance.Amount, null, activeSession.Id);
 
             // 5. Save all changes atomically
             await db.SaveChangesAsync();
@@ -328,7 +328,7 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
     }
 
     /// <summary>
-    /// POST /api/advances/{id}/reverse — Reverse an approved advance with dual-write CashFlow + JournalEntry reversal.
+    /// POST /api/advances/{id}/reverse â€” Reverse an approved advance with dual-write CashFlow + JournalEntry reversal.
     /// Admin-only. Pessimistic locking, double-restore prevention, session guard.
     /// </summary>
     [HttpPost("{id:guid}/reverse")]

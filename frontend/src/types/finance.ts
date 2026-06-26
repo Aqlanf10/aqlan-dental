@@ -32,6 +32,11 @@ export interface Payment {
   invoiceId?: string;
   invoiceNumber?: string;
   amount: number;
+  currency?: string | null;
+  accountCurrency?: string | null;
+  exchangeRateToAccountCurrency?: number;
+  appliedAmount?: number;
+  exchangeRateSource?: string | null;
   paymentDate: string;
   paymentMethod?: string;
   serviceDescription?: string;
@@ -61,6 +66,10 @@ export interface CreatePaymentRequest {
   contractId?: string;
   invoiceId?: string;
   amount: number;
+  currency?: string;
+  accountCurrency?: string;
+  exchangeRateToAccountCurrency?: number;
+  exchangeRateSource?: string;
   paymentMethod?: string;
   serviceDescription?: string;
   specialty?: string;
@@ -70,6 +79,10 @@ export interface CreatePaymentRequest {
 
 export interface UpdatePaymentRequest {
   amount?: number;
+  currency?: string;
+  accountCurrency?: string;
+  exchangeRateToAccountCurrency?: number;
+  exchangeRateSource?: string;
   paymentDate?: string;
   paymentMethod?: string;
   serviceDescription?: string;

@@ -17,6 +17,10 @@ public sealed class CreateContractRequestValidator : AbstractValidator<CreateCon
         RuleFor(x => x.TotalAmount)
             .GreaterThan(0).WithMessage("المبلغ الإجمالي يجب أن يكون أكبر من صفر");
 
+        RuleFor(x => x.Currency)
+            .Must(c => c == null || c == "YER" || c == "SAR" || c == "USD")
+            .WithMessage("عملة العقد يجب أن تكون YER أو SAR أو USD");
+
         RuleFor(x => x.DownPayment)
             .GreaterThanOrEqualTo(0).WithMessage("الدفعة الأولى يجب أن تكون صفراً أو أكثر")
             .LessThanOrEqualTo(x => x.TotalAmount).WithMessage("الدفعة الأولى يجب ألا تتجاوز المبلغ الإجمالي");
@@ -54,6 +58,15 @@ public sealed class CreatePaymentRequestValidator : AbstractValidator<CreatePaym
         RuleFor(x => x.Currency)
             .Must(c => c == null || c == "YER" || c == "SAR" || c == "USD")
             .WithMessage("العملة يجب أن تكون YER أو SAR أو USD");
+
+        RuleFor(x => x.AccountCurrency)
+            .Must(c => c == null || c == "YER" || c == "SAR" || c == "USD")
+            .WithMessage("عملة الحساب يجب أن تكون YER أو SAR أو USD");
+
+        RuleFor(x => x.ExchangeRateToAccountCurrency)
+            .GreaterThan(0).WithMessage("سعر الصرف يجب أن يكون أكبر من صفر")
+            .When(x => x.ExchangeRateToAccountCurrency.HasValue);
+
 
         RuleFor(x => x.ServiceDescription)
             .MaximumLength(500).WithMessage("وصف الخدمة يجب ألا يتجاوز 500 حرف")
@@ -105,6 +118,10 @@ public sealed class UpdateContractRequestValidator : AbstractValidator<UpdateCon
 
         RuleFor(x => x.TotalAmount)
             .GreaterThanOrEqualTo(0).WithMessage("إجمالي العقد يجب أن يكون صفراً أو أكثر");
+
+        RuleFor(x => x.Currency)
+            .Must(c => c == null || c == "YER" || c == "SAR" || c == "USD")
+            .WithMessage("عملة العقد يجب أن تكون YER أو SAR أو USD");
 
         RuleFor(x => x.InstallmentsCount)
             .InclusiveBetween(0, 60).WithMessage("عدد الأقساط يجب أن يكون بين 0 و60");

@@ -291,6 +291,10 @@ export function useCreatePayment() {
     mutationFn: async (body: {
       patientId: string;
       amount: number;
+      currency?: string;
+      accountCurrency?: string;
+      exchangeRateToAccountCurrency?: number;
+      exchangeRateSource?: string;
       paymentMethod?: string;
       contractId?: string;
       invoiceId?: string;

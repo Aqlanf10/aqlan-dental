@@ -5,6 +5,7 @@ public class CreateContractRequest
     public Guid PatientId { get; set; }
     public string? Specialty { get; set; }
     public Guid? RelatedCaseId { get; set; }
+    public string? Currency { get; set; } = "YER";
     public decimal TotalAmount { get; set; }
     public decimal DownPayment { get; set; } = 0;
     public string? DownPaymentMethod { get; set; } = "cash"; // Sprint Patient-Finance-Ledger: was hardcoded "cash"

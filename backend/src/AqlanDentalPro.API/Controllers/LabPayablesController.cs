@@ -177,7 +177,7 @@ public class LabPayablesController(
             Treasury treasury;
             try
             {
-                treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, "cash", activeSession.Id);
+                treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, "cash", null, activeSession.Id);
             }
             catch (ArgumentException ex)
             {
@@ -236,14 +236,14 @@ public class LabPayablesController(
             je.PostedAt = DateTime.UtcNow;
 
             // Decrement Treasury Balance
-            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, "cash", req.Amount, activeSession.Id);
+            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, "cash", req.Amount, null, activeSession.Id);
 
             await db.SaveChangesAsync();
             await tx.CommitAsync();
 
             await audit.LogAsync(AuditAction.Update, "LabPayable", payable.Id,
                 details: $"Payment recorded: amount={req.Amount:N0}, treasury={treasury?.Name}, session={activeSession?.Id}");
-            logger.LogInformation("LabPayable payment recorded securely: {Id} — {Amount}", id, req.Amount);
+            logger.LogInformation("LabPayable payment recorded securely: {Id} â€” {Amount}", id, req.Amount);
 
             return Ok(new
             {
@@ -265,4 +265,3 @@ public class LabPayablesController(
         }
     }
 }
-

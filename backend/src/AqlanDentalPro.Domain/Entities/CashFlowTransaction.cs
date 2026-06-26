@@ -17,8 +17,11 @@ public class CashFlowTransaction : BaseEntity
     /// <summary>Bookkeeping category of this transaction.</summary>
     public FinancialCategory Category { get; set; }
 
-    /// <summary>Transaction amount in YER.</summary>
+    /// <summary>Transaction amount in the original transaction currency.</summary>
     public decimal Amount { get; set; }
+
+    /// <summary>ISO currency code of Amount (YER, SAR, USD).</summary>
+    public string Currency { get; set; } = "YER";
 
     /// <summary>Method used: cash, card, or bank_transfer.</summary>
     public string PaymentMethod { get; set; } = "cash";

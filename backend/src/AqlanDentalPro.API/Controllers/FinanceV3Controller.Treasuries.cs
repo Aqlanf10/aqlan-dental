@@ -12,7 +12,7 @@ namespace AqlanDentalPro.API.Controllers;
 public partial class FinanceV3Controller
 {
     /// <summary>
-    /// POST /api/finance-v3/treasuries — Create a treasury account (Admin only).
+    /// POST /api/finance-v3/treasuries â€” Create a treasury account (Admin only).
     /// Reuses logic from TreasuriesController.Create.
     /// </summary>
     [HttpPost("treasuries")]
@@ -27,6 +27,8 @@ public partial class FinanceV3Controller
         if (req.OpeningBalance < 0)
             return BadRequest(new { message = "رصيد البداية لا يمكن أن يكون سالباً" });
 
+        var currency = NormalizeTreasuryCurrency(req.Currency);
+
         // Sprint 1: Admin branchId fallback
         var branchId = await ResolveBranchIdAsync();
         if (branchId == Guid.Empty)
@@ -36,6 +38,7 @@ public partial class FinanceV3Controller
         {
             Name = req.Name.Trim(),
             Type = type,
+            Currency = currency,
             Balance = req.OpeningBalance,
             BranchId = branchId,
             IsActive = true
@@ -51,6 +54,7 @@ public partial class FinanceV3Controller
                 Type = TransactionType.Inflow,
                 Category = FinancialCategory.InternalTransfer,
                 Amount = req.OpeningBalance,
+                Currency = currency,
                 PaymentMethod = type == TreasuryType.Bank ? "bank" : "cash",
                 TransactionDate = ClinicTimeProvider.ClinicToday(),
                 ReferenceId = treasury.Id,
@@ -63,7 +67,7 @@ public partial class FinanceV3Controller
 
             // Fix: Create JournalEntry manually with IsPosted = true from the start.
             // This avoids the double-save problem where CreateEntryAsync calls SaveChanges
-            // with IsPosted=false, then IsPosted=true is set and saved again — if the second
+            // with IsPosted=false, then IsPosted=true is set and saved again â€” if the second
             // save fails, the entry remains unposted, meaning the opening balance is in
             // CashFlowTransaction but not in JournalLine. By creating everything in memory
             // and saving once, we ensure atomicity.
@@ -117,7 +121,7 @@ public partial class FinanceV3Controller
         return Ok(new { treasury.Id, treasury.Name, Type = treasury.Type.ToString(), treasury.Balance, message = "تم إنشاء الخزنة/الحساب المالي بنجاح" });
     }
     /// <summary>
-    /// POST /api/finance-v3/vault-transfers — Create a vault transfer.
+    /// POST /api/finance-v3/vault-transfers â€” Create a vault transfer.
     /// Reuses logic from VaultTransfersController.Create.
     /// </summary>
     [HttpPost("vault-transfers")]
@@ -174,7 +178,10 @@ public partial class FinanceV3Controller
                 if (sourceTreasury == null)
                     return BadRequest(new { message = "الخزنة المصدر غير موجودة أو غير تابعة للفرع" });
 
-                // AUTHORITATIVE re-check inside the lock — concurrent transfer may have
+                if (!string.Equals(sourceTreasury.Currency, destTreasury.Currency, StringComparison.OrdinalIgnoreCase))
+                    return BadRequest(new { message = "لا يمكن التحويل المباشر بين خزائن بعملات مختلفة. استخدم عملية مصارفة مستقلة بسعر صرف موثق." });
+
+                // AUTHORITATIVE re-check inside the lock â€” concurrent transfer may have
                 // already deducted enough to make this transfer impossible.
                 if (sourceTreasury.Balance < req.Amount)
                     return BadRequest(new { message = $"عذراً، رصيد الخزنة المصدر ({sourceTreasury.Balance:N0} ر.ي) أقل من مبلغ التحويل المطلوب ({req.Amount:N0} ر.ي)" });
@@ -230,7 +237,7 @@ public partial class FinanceV3Controller
         catch { await tx.RollbackAsync(); throw; }
     }
     /// <summary>
-    /// POST /api/finance-v3/treasuries/{id}/recalculate — Recalculate treasury balance (Admin only).
+    /// POST /api/finance-v3/treasuries/{id}/recalculate â€” Recalculate treasury balance (Admin only).
     /// Migration C: Balance now recalculated from JournalLine (Treasury account type)
     /// instead of CashFlowTransaction. Treasury balance = SUM(Debit) - SUM(Credit)
     /// for all posted JournalLines where AccountType == Treasury and AccountId matches.
@@ -312,5 +319,13 @@ public partial class FinanceV3Controller
         await audit.LogAsync(AuditAction.Update, "Treasury", id, details: $"Recalculated via V3 (JournalLine): old={oldBalance}, new={calculatedBalance}, drift={drift}, openingFallback={openingBalanceFromCashFlow}");
 
         return Ok(new { treasury.Id, treasury.Name, OldBalance = oldBalance, NewBalance = calculatedBalance, Drift = drift, DriftDetected = drift != 0, OpeningFallback = openingBalanceFromCashFlow, message = drift != 0 ? $"تم إعادة حساب الرصيد. تم اكتشاف انحراف بمبلغ {drift:N0} ر.ي" : "تم إعادة حساب الرصيد. لا يوجد انحراف" });
+    }
+
+    private static string NormalizeTreasuryCurrency(string? currency)
+    {
+        var code = string.IsNullOrWhiteSpace(currency) ? "YER" : currency.Trim().ToUpperInvariant();
+        return code is "YER" or "SAR" or "USD"
+            ? code
+            : throw new ArgumentException("العملة يجب أن تكون YER أو SAR أو USD");
     }
 }

@@ -14,6 +14,7 @@ public sealed class DisbursementVoucherModel
     public string CategoryLabel { get; init; } = string.Empty;
     public string PayeeName { get; init; } = string.Empty;
     public decimal Amount { get; init; }
+    public string Currency { get; init; } = "YER";
     public string Description { get; init; } = string.Empty;
     public string PaymentMethod { get; init; } = string.Empty;
     public string? Notes { get; init; }
@@ -104,7 +105,7 @@ public class DisbursementVoucherDocument(DisbursementVoucherModel Model, Finance
             column.Item().AlignCenter().Background("#fdecec").Border(1).BorderColor(Accent).Padding(6).Column(box =>
             {
                 box.Item().Text("المبلغ المصروف").AlignCenter().FontSize(7).FontColor(Colors.Grey.Darken2);
-                box.Item().Text($"{Model.Amount:N0} ر.ي").AlignCenter().Bold().FontSize(16).FontColor(Accent);
+                box.Item().Text($"{Model.Amount:N0} {Model.Currency}").AlignCenter().Bold().FontSize(16).FontColor(Accent);
             });
 
             if (!string.IsNullOrWhiteSpace(Model.Notes))

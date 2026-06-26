@@ -543,6 +543,12 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<int>("Category")
                         .HasColumnType("integer");
 
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("YER");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -604,6 +610,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("BranchId");
+
+                    b.HasIndex("BranchId", "Currency", "TransactionDate");
 
                     b.HasIndex("CashierSessionId");
 
@@ -1432,6 +1440,12 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.Property<Guid?>("CreatedBy")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("YER");
 
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
@@ -2647,6 +2661,12 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.Property<Guid?>("CreatedBy")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("YER");
 
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
@@ -5261,6 +5281,16 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasPrecision(12, 2)
                         .HasColumnType("numeric(12,2)");
 
+                    b.Property<string>("AccountCurrency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("YER");
+
+                    b.Property<decimal>("AppliedAmount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
                     b.Property<Guid?>("BranchId")
                         .HasColumnType("uuid");
 
@@ -5282,6 +5312,14 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.Property<Guid?>("DoctorId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("ExchangeRateSource")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<decimal>("ExchangeRateToAccountCurrency")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)");
 
                     b.Property<Guid?>("InvoiceId")
                         .HasColumnType("uuid");
@@ -6834,6 +6872,12 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("YER");
+
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -6863,11 +6907,11 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.HasIndex("BranchId");
 
-                    b.HasIndex("BranchId", "Type");
+                    b.HasIndex("BranchId", "Type", "Currency");
 
-                    b.HasIndex("BranchId", "Type", "Name")
+                    b.HasIndex("BranchId", "Type", "Currency", "Name")
                         .IsUnique()
-                        .HasDatabaseName("IX_Treasuries_BranchId_Type_Name_Unique")
+                        .HasDatabaseName("IX_Treasuries_BranchId_Type_Currency_Name_Unique")
                         .HasFilter("\"IsActive\" = true");
 
                     b.ToTable("Treasuries");

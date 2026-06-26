@@ -63,6 +63,8 @@ const registerPaymentSchema = z.object({
     .refine((v) => Number(v) > 0, { message: "المبلغ يجب أن يكون أكبر من صفر" }),
   paymentMethod: z.string().min(1, { message: "طريقة الدفع مطلوبة" }),
   currency: z.enum(["YER", "SAR", "USD"]).optional(),
+  accountCurrency: z.enum(["YER", "SAR", "USD"]).optional(),
+  exchangeRateToAccountCurrency: z.string().optional(),
   notes: z.string().optional(),
 });
 type RegisterPaymentFormData = z.infer<typeof registerPaymentSchema>;
@@ -114,6 +116,8 @@ export function CollectionsTab() {
       amount: "",
       paymentMethod: "cash",
       currency: "YER",
+      accountCurrency: "YER",
+      exchangeRateToAccountCurrency: "",
       notes: "",
     },
   });
@@ -190,6 +194,11 @@ export function CollectionsTab() {
         amount: Number(formData.amount),
         paymentMethod: formData.paymentMethod,
         currency: formData.currency ?? "YER",
+        accountCurrency: formData.accountCurrency ?? "YER",
+        exchangeRateToAccountCurrency: formData.exchangeRateToAccountCurrency
+          ? Number(formData.exchangeRateToAccountCurrency)
+          : null,
+        exchangeRateSource: formData.exchangeRateToAccountCurrency ? "manual" : null,
         notes: formData.notes || undefined,
       };
       if (formData.invoiceId) payload.invoiceId = formData.invoiceId;
@@ -421,6 +430,31 @@ export function CollectionsTab() {
               <option value="SAR">ر.س سعودي</option>
               <option value="USD">$ دولار</option>
             </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>عملة حساب المريض</label>
+            <select {...register("accountCurrency")} style={inputStyle}>
+              <option value="YER">حساب بالريال اليمني</option>
+              <option value="SAR">حساب بالسعودي</option>
+              <option value="USD">حساب بالدولار</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>سعر الصرف للحساب</label>
+            <input
+              {...register("exchangeRateToAccountCurrency")}
+              type="number"
+              min="0"
+              step="0.000001"
+              dir="ltr"
+              placeholder="مثال: 665 عند دفع سعودي لحساب يمني"
+              style={inputStyle}
+            />
+            <p className="text-[11px] mt-1" style={{ color: tokens.textTertiary }}>
+              اتركه فارغاً لاستخدام آخر سعر معتمد من إعدادات المالية.
+            </p>
           </div>
 
           {/* Notes */}

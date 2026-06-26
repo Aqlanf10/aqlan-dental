@@ -38,10 +38,14 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
 
         // Decimal precision for Amount
         builder.Property(p => p.Amount).HasPrecision(12, 2);
+        builder.Property(p => p.AppliedAmount).HasPrecision(12, 2);
+        builder.Property(p => p.ExchangeRateToAccountCurrency).HasPrecision(18, 6);
 
         // String constraints
         builder.Property(p => p.PaymentMethod).HasMaxLength(30);
         builder.Property(p => p.Currency).HasMaxLength(3);
+        builder.Property(p => p.AccountCurrency).HasMaxLength(3).HasDefaultValue("YER");
+        builder.Property(p => p.ExchangeRateSource).HasMaxLength(50);
         builder.Property(p => p.ServiceDescription).HasMaxLength(500);
         builder.Property(p => p.Specialty).HasMaxLength(100);
         builder.Property(p => p.Notes).HasMaxLength(1000);

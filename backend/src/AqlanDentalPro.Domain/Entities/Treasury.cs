@@ -5,7 +5,7 @@ namespace AqlanDentalPro.Domain.Entities;
 
 /// <summary>
 /// Represents a physical cash vault or a bank account for Dr. Aqlan Dental Center.
-/// Tracks current liquidity balances in YER (Yemeni Rials).
+/// Tracks current liquidity balances per currency.
 /// </summary>
 public class Treasury : BaseEntity, ISoftDeletable
 {
@@ -15,7 +15,10 @@ public class Treasury : BaseEntity, ISoftDeletable
     /// <summary>Type of the treasury: Vault or Bank.</summary>
     public TreasuryType Type { get; set; }
 
-    /// <summary>Current balance in Yemeni Riyals (YER).</summary>
+    /// <summary>ISO currency code of this treasury balance (YER, SAR, USD).</summary>
+    public string Currency { get; set; } = "YER";
+
+    /// <summary>Current balance in the treasury currency.</summary>
     public decimal Balance { get; set; }
 
     /// <summary>Branch ID where the treasury belongs.</summary>

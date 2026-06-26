@@ -72,10 +72,13 @@ export function QuickPaymentModal({
   item: TodayJourneyItem | null;
   summary: DailyJourneySummary | null;
   isPending: boolean;
-  onConfirm: (amount: number, method: string, desc: string, notes: string, referenceNumber?: string) => void;
+  onConfirm: (amount: number, method: string, desc: string, notes: string, referenceNumber?: string, currency?: string, accountCurrency?: string, exchangeRateToAccountCurrency?: number) => void;
 }) {
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("cash");
+  const [currency, setCurrency] = useState("YER");
+  const [accountCurrency, setAccountCurrency] = useState("YER");
+  const [exchangeRate, setExchangeRate] = useState("");
   const [desc, setDesc] = useState("");
   const [notes, setNotes] = useState("");
   const [voucherType, setVoucherType] = useState<"consultation" | "procedure">("consultation");
@@ -104,8 +107,17 @@ export function QuickPaymentModal({
     }
     setReferenceError("");
     const voucherPrefix = voucherType === "consultation" ? "[سند معاينة] " : "[إجراءات شغل/خدمة مقدمة] ";
-    onConfirm(num, method, desc ? voucherPrefix + desc : voucherPrefix.trim(), notes, requiresRef ? referenceNumber.trim() : undefined);
-    setAmount(""); setMethod("cash"); setDesc(""); setNotes(""); setVoucherType("consultation");
+    onConfirm(
+      num,
+      method,
+      desc ? voucherPrefix + desc : voucherPrefix.trim(),
+      notes,
+      requiresRef ? referenceNumber.trim() : undefined,
+      currency,
+      accountCurrency,
+      exchangeRate ? Number(exchangeRate) : undefined,
+    );
+    setAmount(""); setMethod("cash"); setCurrency("YER"); setAccountCurrency("YER"); setExchangeRate(""); setDesc(""); setNotes(""); setVoucherType("consultation");
     setReferenceNumber(""); setReferenceError("");
   };
 
@@ -210,6 +222,28 @@ export function QuickPaymentModal({
                 الكل ({fmtRial(outstanding)})
               </button>
             )}
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>عملة الدفع</label>
+            <select value={currency} onChange={e => setCurrency(e.target.value)} className={inputCls()}>
+              <option value="YER">يمني</option>
+              <option value="SAR">سعودي</option>
+              <option value="USD">دولار</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>عملة الحساب</label>
+            <select value={accountCurrency} onChange={e => setAccountCurrency(e.target.value)} className={inputCls()}>
+              <option value="YER">يمني</option>
+              <option value="SAR">سعودي</option>
+              <option value="USD">دولار</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>الصرف</label>
+            <input type="number" value={exchangeRate} onChange={e => setExchangeRate(e.target.value)} placeholder="تلقائي" min="0" step="0.000001" dir="ltr" className={inputCls()} />
           </div>
         </div>
         <div>
@@ -1420,6 +1454,7 @@ export function DirectPaymentModal({
   onConfirm: (data: {
     patientId: string; patientName: string;
     amount: number; paymentMethod: string;
+    currency?: string; accountCurrency?: string; exchangeRateToAccountCurrency?: number;
     serviceDescription: string; notes: string;
     referenceNumber?: string;
   }) => void;
@@ -1429,6 +1464,9 @@ export function DirectPaymentModal({
   // Payment form state
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("cash");
+  const [currency, setCurrency] = useState("YER");
+  const [accountCurrency, setAccountCurrency] = useState("YER");
+  const [exchangeRate, setExchangeRate] = useState("");
   const [desc, setDesc] = useState("");
   const [notes, setNotes] = useState("");
   const [voucherType, setVoucherType] = useState<"consultation" | "procedure">("consultation");
@@ -1445,7 +1483,7 @@ export function DirectPaymentModal({
   useEffect(() => {
     if (!open) {
       setSelectedPatient(null);
-      setAmount(""); setMethod("cash"); setDesc(""); setNotes(""); setVoucherType("consultation");
+      setAmount(""); setMethod("cash"); setCurrency("YER"); setAccountCurrency("YER"); setExchangeRate(""); setDesc(""); setNotes(""); setVoucherType("consultation");
       setReferenceNumber(""); setReferenceError("");
     }
   }, [open]);
@@ -1466,6 +1504,9 @@ export function DirectPaymentModal({
       patientName: selectedPatient.name,
       amount: num,
       paymentMethod: method,
+      currency,
+      accountCurrency,
+      exchangeRateToAccountCurrency: exchangeRate ? Number(exchangeRate) : undefined,
       serviceDescription: desc ? voucherPrefix + desc : voucherPrefix.trim(),
       notes: notes,
       referenceNumber: requiresRef ? referenceNumber.trim() : undefined,
@@ -1553,11 +1594,33 @@ export function DirectPaymentModal({
           </div>
 
           {/* Amount */}
-          <div>
-            <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>المبلغ *</label>
+                  <div>
+                    <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>المبلغ *</label>
             <input type="number" value={amount} onChange={e => setAmount(e.target.value)}
               placeholder="0" className={inputCls()} min={0} step={0.01} dir="ltr" />
-          </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>عملة الدفع</label>
+                      <select value={currency} onChange={e => setCurrency(e.target.value)} className={inputCls()}>
+                        <option value="YER">يمني</option>
+                        <option value="SAR">سعودي</option>
+                        <option value="USD">دولار</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>عملة الحساب</label>
+                      <select value={accountCurrency} onChange={e => setAccountCurrency(e.target.value)} className={inputCls()}>
+                        <option value="YER">يمني</option>
+                        <option value="SAR">سعودي</option>
+                        <option value="USD">دولار</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>الصرف</label>
+                      <input type="number" value={exchangeRate} onChange={e => setExchangeRate(e.target.value)} placeholder="تلقائي" min="0" step="0.000001" dir="ltr" className={inputCls()} />
+                    </div>
+                  </div>
 
           {/* Payment Method */}
           <div>

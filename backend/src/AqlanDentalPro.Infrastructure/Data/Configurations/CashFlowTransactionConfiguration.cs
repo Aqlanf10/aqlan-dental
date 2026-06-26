@@ -13,6 +13,7 @@ public class CashFlowTransactionConfiguration : IEntityTypeConfiguration<CashFlo
 
         // Decimal precision for Amount
         builder.Property(t => t.Amount).HasPrecision(12, 2);
+        builder.Property(t => t.Currency).HasMaxLength(3).HasDefaultValue("YER");
 
         // String constraints
         builder.Property(t => t.TransactionNumber).HasMaxLength(100);
@@ -30,6 +31,7 @@ public class CashFlowTransactionConfiguration : IEntityTypeConfiguration<CashFlo
         builder.HasIndex(t => t.Category);
         builder.HasIndex(t => t.Type);
         builder.HasIndex(t => t.IsActive);
+        builder.HasIndex(t => new { t.BranchId, t.Currency, t.TransactionDate });
 
         // Finance V3: Treasury FK and index
         builder.HasIndex(t => t.TreasuryId);

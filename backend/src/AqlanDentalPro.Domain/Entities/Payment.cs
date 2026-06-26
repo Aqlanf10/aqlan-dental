@@ -10,12 +10,20 @@ public class Payment : BaseEntity
     public Guid PatientId { get; set; }
     public decimal Amount { get; set; }
 
-    /// <summary>ISO 4217 currency code of the payment amount (YER, SAR, USD).
-    /// Null = YER (legacy/default). Treasury/dashboard YER sums filter YER-only
-    /// (Currency == null || Currency == "YER") to avoid mixing currencies.
-    /// Foreign-currency payments are recorded + shown on receipts but excluded
-    /// from YER totals — no exchange rates; the owner tracks them separately.</summary>
+    /// <summary>ISO 4217 currency code of the physical amount received (YER, SAR, USD).</summary>
     public string? Currency { get; set; }
+
+    /// <summary>Currency of the patient account/invoice/contract that this payment is applied to.</summary>
+    public string AccountCurrency { get; set; } = "YER";
+
+    /// <summary>Exchange rate from Currency to AccountCurrency captured at payment time.</summary>
+    public decimal ExchangeRateToAccountCurrency { get; set; } = 1m;
+
+    /// <summary>Amount applied to the patient balance in AccountCurrency.</summary>
+    public decimal AppliedAmount { get; set; }
+
+    /// <summary>Optional source label for the exchange rate snapshot (manual, settings, ai_suggested).</summary>
+    public string? ExchangeRateSource { get; set; }
     public DateOnly PaymentDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
     public string? PaymentMethod { get; set; }
     public string? Specialty { get; set; }

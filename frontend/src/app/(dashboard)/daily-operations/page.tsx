@@ -709,13 +709,17 @@ export default function DailyOperationsPage() {
     setConfirmDialogOpen(false);
   }, [selectedItem, confirmDialogType, updateStatusMutation, cancelQueueMutation, completeVisitMutation, pushUndoAction]);
 
-  const handlePaymentConfirm = useCallback(async (amount: number, method: string, desc: string, notes: string, referenceNumber?: string) => {
+  const handlePaymentConfirm = useCallback(async (amount: number, method: string, desc: string, notes: string, referenceNumber?: string, currency?: string, accountCurrency?: string, exchangeRateToAccountCurrency?: number) => {
     if (!selectedItem) return;
     try {
       const result = await createPaymentMutation.mutateAsync({
         patientId: selectedItem.patientId,
         amount,
         paymentMethod: method,
+        currency: currency ?? "YER",
+        accountCurrency: accountCurrency ?? "YER",
+        exchangeRateToAccountCurrency,
+        exchangeRateSource: exchangeRateToAccountCurrency ? "manual" : undefined,
         serviceDescription: desc || undefined,
         doctorId: selectedItem.doctorId,
         notes: notes || undefined,
@@ -901,6 +905,7 @@ export default function DailyOperationsPage() {
   const handleDirectPaymentConfirm = useCallback(async (data: {
     patientId: string; patientName: string;
     amount: number; paymentMethod: string;
+    currency?: string; accountCurrency?: string; exchangeRateToAccountCurrency?: number;
     serviceDescription: string; notes: string;
     referenceNumber?: string;
   }) => {
@@ -909,6 +914,10 @@ export default function DailyOperationsPage() {
         patientId: data.patientId,
         amount: data.amount,
         paymentMethod: data.paymentMethod,
+        currency: data.currency ?? "YER",
+        accountCurrency: data.accountCurrency ?? "YER",
+        exchangeRateToAccountCurrency: data.exchangeRateToAccountCurrency,
+        exchangeRateSource: data.exchangeRateToAccountCurrency ? "manual" : undefined,
         serviceDescription: data.serviceDescription || undefined,
         notes: data.notes || undefined,
         referenceNumber: data.referenceNumber || undefined,

@@ -20,6 +20,9 @@ public class Invoice : BaseEntity
     /// <summary>Auto-generated invoice number (e.g. INV-20260531-001).</summary>
     public string InvoiceNumber { get; set; } = string.Empty;
 
+    /// <summary>Currency of the invoice account amount (YER, SAR, USD).</summary>
+    public string Currency { get; set; } = "YER";
+
     /// <summary>Current lifecycle status of the invoice.</summary>
     public InvoiceStatus Status { get; set; } = InvoiceStatus.Draft;
 

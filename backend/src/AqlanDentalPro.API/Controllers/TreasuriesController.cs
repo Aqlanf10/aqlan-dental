@@ -14,6 +14,7 @@ public sealed class CreateTreasuryRequest
 {
     public string Name { get; init; } = string.Empty;
     public string Type { get; init; } = "Vault"; // Vault or Bank
+    public string? Currency { get; init; } = "YER";
     public decimal OpeningBalance { get; init; }
 }
 
@@ -60,6 +61,7 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
                 t.Id,
                 t.Name,
                 Type = t.Type.ToString(),
+                t.Currency,
                 TypeArabic = t.Type == TreasuryType.Bank ? "حساب بنكي" : "خزنة مادية",
                 t.Balance,
                 t.BranchId
@@ -88,6 +90,8 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
         if (req.OpeningBalance < 0)
             return BadRequest(new { message = "رصيد البداية لا يمكن أن يكون سالباً" });
 
+        var currency = NormalizeCurrency(req.Currency);
+
         var branchId = currentUser.BranchId;
         if (branchId == null || branchId == Guid.Empty)
             return BadRequest(new { message = "عذراً، يجب تحديد الفرع قبل إنشاء خزنة/حساب مالي." });
@@ -96,6 +100,7 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
         {
             Name = req.Name.Trim(),
             Type = type,
+            Currency = currency,
             Balance = req.OpeningBalance,
             BranchId = branchId.Value,
             IsActive = true
@@ -113,6 +118,7 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
                 Type = TransactionType.Inflow,
                 Category = FinancialCategory.InternalTransfer,
                 Amount = req.OpeningBalance,
+                Currency = currency,
                 PaymentMethod = type == TreasuryType.Bank ? "bank" : "cash",
                 TransactionDate = ClinicTimeProvider.ClinicToday(),
                 ReferenceId = treasury.Id,
@@ -166,6 +172,7 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
             .Where(t => t.IsActive
                 && t.Type == TransactionType.Inflow
                 && t.BranchId == treasury.BranchId
+                && t.Currency == treasury.Currency
                 && applicableMethods.Contains(t.PaymentMethod.ToLower()))
             .SumAsync(t => (decimal?)t.Amount) ?? 0m;
 
@@ -174,6 +181,7 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
             .Where(t => t.IsActive
                 && t.Type == TransactionType.Outflow
                 && t.BranchId == treasury.BranchId
+                && t.Currency == treasury.Currency
                 && applicableMethods.Contains(t.PaymentMethod.ToLower()))
             .SumAsync(t => (decimal?)t.Amount) ?? 0m;
 
@@ -241,6 +249,7 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
         var query = db.CashFlowTransactions
             .Where(t => t.IsActive
                 && t.BranchId == treasury.BranchId
+                && t.Currency == treasury.Currency
                 && applicableMethods.Contains(t.PaymentMethod.ToLower()));
 
         var total = await query.CountAsync();
@@ -257,6 +266,7 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
                 Type = t.Type.ToString(),
                 Category = t.Category.ToString(),
                 t.Amount,
+                t.Currency,
                 t.PaymentMethod,
                 t.TransactionDate,
                 t.ReferenceNumber,
@@ -267,5 +277,13 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
             .ToListAsync();
 
         return Ok(new { data = transactions, total, page, pageSize });
+    }
+
+    private static string NormalizeCurrency(string? currency)
+    {
+        var code = string.IsNullOrWhiteSpace(currency) ? "YER" : currency.Trim().ToUpperInvariant();
+        return code is "YER" or "SAR" or "USD"
+            ? code
+            : throw new ArgumentException("العملة يجب أن تكون YER أو SAR أو USD");
     }
 }

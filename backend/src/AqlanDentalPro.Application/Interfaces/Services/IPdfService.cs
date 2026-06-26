@@ -25,4 +25,16 @@ public interface IPdfService
     /// operational expense. Returns PDF bytes.
     /// </summary>
     Task<byte[]> GenerateExpenseDisbursementVoucherAsync(Guid expenseId);
+
+    /// <summary>
+    /// Generates a quarter-A4 disbursement voucher for any posted outflow cash-flow
+    /// transaction. Returns PDF bytes.
+    /// </summary>
+    Task<byte[]> GenerateCashFlowDisbursementVoucherAsync(Guid cashFlowTransactionId);
+
+    /// <summary>
+    /// Generates a quarter-A4 disbursement voucher from a posted JournalEntry that
+    /// credits a treasury account. Returns PDF bytes.
+    /// </summary>
+    Task<byte[]> GenerateJournalEntryDisbursementVoucherAsync(Guid journalEntryId);
 }

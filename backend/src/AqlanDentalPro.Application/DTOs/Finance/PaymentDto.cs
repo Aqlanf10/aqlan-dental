@@ -10,6 +10,10 @@ public class PaymentDto
     public string? InvoiceNumber { get; set; }
     public decimal Amount { get; set; }
     public string? Currency { get; set; }
+    public string AccountCurrency { get; set; } = "YER";
+    public decimal ExchangeRateToAccountCurrency { get; set; } = 1m;
+    public decimal AppliedAmount { get; set; }
+    public string? ExchangeRateSource { get; set; }
     public string PaymentDate { get; set; } = string.Empty;
     public string? PaymentMethod { get; set; }
     public string? ServiceDescription { get; set; }
@@ -30,6 +34,9 @@ public class CreatePaymentRequest
     public Guid? InvoiceId { get; set; }
     public decimal Amount { get; set; }
     public string? Currency { get; set; }
+    public string? AccountCurrency { get; set; }
+    public decimal? ExchangeRateToAccountCurrency { get; set; }
+    public string? ExchangeRateSource { get; set; }
     public string? PaymentMethod { get; set; } = "cash";
     public string? ServiceDescription { get; set; }
     public string? Specialty { get; set; }
@@ -48,6 +55,9 @@ public class UpdatePaymentRequest
 {
     public decimal? Amount { get; init; }
     public string? Currency { get; init; }
+    public string? AccountCurrency { get; init; }
+    public decimal? ExchangeRateToAccountCurrency { get; init; }
+    public string? ExchangeRateSource { get; init; }
     public string? PaymentDate { get; init; }
     public string? PaymentMethod { get; init; }
     public string? ServiceDescription { get; init; }

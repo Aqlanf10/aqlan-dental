@@ -27,7 +27,14 @@ public interface ITreasuryResolutionService
     Task<Treasury> ResolveTreasuryAsync(
         Guid branchId,
         string? paymentMethod,
+        string? currency = null,
         Guid? cashierSessionId = null,
+        CancellationToken ct = default);
+
+    Task<Treasury> ResolveTreasuryAsync(
+        Guid branchId,
+        string? paymentMethod,
+        Guid? cashierSessionId,
         CancellationToken ct = default);
 
     /// <summary>
@@ -39,7 +46,15 @@ public interface ITreasuryResolutionService
         Guid branchId,
         string? paymentMethod,
         decimal amount,
+        string? currency = null,
         Guid? cashierSessionId = null,
+        CancellationToken ct = default);
+
+    Task DecrementTreasuryBalanceAsync(
+        Guid branchId,
+        string? paymentMethod,
+        decimal amount,
+        Guid? cashierSessionId,
         CancellationToken ct = default);
 
     /// <summary>
@@ -51,6 +66,7 @@ public interface ITreasuryResolutionService
         Guid branchId,
         string? paymentMethod,
         decimal amount,
+        string? currency = null,
         CancellationToken ct = default);
 
     /// <summary>

@@ -5,6 +5,7 @@ namespace AqlanDentalPro.Application.DTOs.Finance;
 public class UpdateContractRequest
 {
     public string? Specialty { get; set; }
+    public string? Currency { get; set; }
 
     [Range(0, (double)decimal.MaxValue, ErrorMessage = "إجمالي العقد يجب أن يكون صفراً أو أكثر")]
     public decimal TotalAmount { get; set; }

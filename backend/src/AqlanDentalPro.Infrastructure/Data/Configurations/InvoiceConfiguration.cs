@@ -20,6 +20,7 @@ public class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
 
         // String properties
         builder.Property(i => i.InvoiceNumber).HasMaxLength(50).IsRequired();
+        builder.Property(i => i.Currency).HasMaxLength(3).HasDefaultValue("YER");
         builder.Property(i => i.Notes).IsRequired(false);
 
         // Enum conversion

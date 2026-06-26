@@ -122,7 +122,66 @@ public class WhatsAppService(
         appointment.WhatsAppReminderSentAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
+        // ── YOLO-S1: Companion/Guardian WhatsApp ─────────────────────────────
+        // If the appointment has a CompanionPhone set (e.g. parent/guardian of a
+        // child patient), ALSO send the reminder to that number IN ADDITION to
+        // the patient's own phone — never instead of. Best-effort: a companion
+        // send failure must not fail the patient send (already persisted above).
+        if (!string.IsNullOrWhiteSpace(appointment.CompanionPhone))
+        {
+            try
+            {
+                await SendCompanionReminderAsync(appointment, parameters);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex,
+                    "Failed to send companion WhatsApp reminder for appointment {Id} to {Phone}",
+                    appointment.Id, appointment.CompanionPhone);
+            }
+        }
+
         return result;
+    }
+
+    /// <summary>
+    /// YOLO-S1: Sends the appointment reminder WhatsApp to the companion/guardian
+    /// phone stored on the appointment (in addition to the patient's own phone).
+    /// Reuses the same template + parameters as the patient reminder, but addresses
+    /// the companion phone. Linked to the patient FK for traceability (so the
+    /// companion message appears in the patient's WhatsApp history). Best-effort.
+    /// </summary>
+    private async Task SendCompanionReminderAsync(
+        Appointment appointment, Dictionary<string, string> parameters)
+    {
+        var template = await db.WhatsAppTemplates
+            .FirstOrDefaultAsync(t => t.TemplateKey == "appointment_reminder" && t.IsTemplateActive);
+
+        var content = template != null
+            ? ReplacePlaceholders(template.ContentTemplate, parameters)
+            : $"تذكير بموعد: {parameters.GetValueOrDefault("patient_name")} في {parameters.GetValueOrDefault("date")} الساعة {parameters.GetValueOrDefault("time")} لدى {parameters.GetValueOrDefault("doctor_name")}";
+
+        var companionMessage = new WhatsAppMessage
+        {
+            PatientId = appointment.PatientId, // FK for traceability (companion belongs to this patient)
+            PhoneNumber = NormalizePhone(appointment.CompanionPhone!),
+            TemplateType = "appointment_reminder",
+            MessageContent = content,
+            Status = "pending",
+            RelatedEntityId = appointment.Id,
+            RelatedEntityType = "Appointment",
+        };
+
+        db.WhatsAppMessages.Add(companionMessage);
+        await db.SaveChangesAsync();
+
+        // Try to send immediately (same path as the patient message — demo mode
+        // if no API configured, real Meta API otherwise).
+        await TrySendMessageAsync(companionMessage);
+
+        logger.LogInformation(
+            "Companion WhatsApp reminder sent for appointment {Id} to {Phone}",
+            appointment.Id, appointment.CompanionPhone);
     }
 
     public async Task<int> SendPendingRemindersAsync()

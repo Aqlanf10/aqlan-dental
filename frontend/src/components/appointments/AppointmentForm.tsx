@@ -4,13 +4,18 @@ import { useRouter } from "next/navigation";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Save, AlertTriangle, CalendarDays, Loader2, Clock } from "lucide-react";
+import { Save, AlertTriangle, CalendarDays, Loader2, Clock, Users } from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
 import { useDoctors } from "@/hooks/useDoctors";
 import { cn, localDateString } from "@/lib/utils";
 import type { PatientListItem } from "@/types/patient";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
+import type { TreatmentPackage } from "@/types/appointment";
+import {
+  APPOINTMENT_COLOR_SUGGESTIONS,
+  resolveAppointmentColor,
+} from "@/lib/appointmentColors";
 
 interface Doctor {
   id: string;
@@ -43,6 +48,12 @@ const schema = z.object({
   notes:           z.string().optional(),
   serviceId:       z.string().optional(),
   clinicRoomId:    z.string().optional(),
+  // YOLO-S1: companion + color + package (all optional)
+  companionName:         z.string().optional(),
+  companionPhone:        z.string().optional(),
+  companionRelationship: z.string().optional(),
+  appointmentColor:      z.string().optional(),
+  packageId:             z.string().optional(),
 });
 type FormData = z.infer<typeof schema>;
 
@@ -65,6 +76,12 @@ interface Props {
     notes?:          string;
     serviceId?:      string;
     clinicRoomId?:   string;
+    // YOLO-S1
+    companionName?:         string;
+    companionPhone?:        string;
+    companionRelationship?: string;
+    appointmentColor?:      string;
+    packageId?:             string;
   };
 }
 
@@ -78,6 +95,8 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
   const { data: doctors = [] } = useDoctors();
   const [services, setServices] = useState<ServiceOption[]>([]);
   const [rooms, setRooms] = useState<RoomOption[]>([]);
+  // YOLO-S1: treatment packages dropdown
+  const [packages, setPackages] = useState<TreatmentPackage[]>([]);
 
   // Available slots state
   const [slots, setSlots] = useState<string[]>([]);
@@ -104,12 +123,20 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
       notes:           editDefaults?.notes ?? "",
       serviceId:       editDefaults?.serviceId ?? "",
       clinicRoomId:    editDefaults?.clinicRoomId ?? "",
+      // YOLO-S1
+      companionName:         editDefaults?.companionName ?? "",
+      companionPhone:        editDefaults?.companionPhone ?? "",
+      companionRelationship: editDefaults?.companionRelationship ?? "",
+      appointmentColor:      editDefaults?.appointmentColor ?? "",
+      packageId:             editDefaults?.packageId ?? "",
     },
   });
 
   const watchedDate   = useWatch({ control, name: "appointmentDate" });
   const watchedDoctor = useWatch({ control, name: "doctorId" });
   const watchedServiceId = useWatch({ control, name: "serviceId" });
+  const watchedPackageId = useWatch({ control, name: "packageId" });
+  const watchedColor = useWatch({ control, name: "appointmentColor" });
 
   // FE-13: Removed useEffect that fetched doctors — useDoctors() handles it.
 
@@ -127,6 +154,13 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
       .catch(() => {});
   }, []);
 
+  // YOLO-S1: load active treatment packages for the dropdown
+  useEffect(() => {
+    api.get<TreatmentPackage[]>("/api/treatment-packages?activeOnly=true")
+      .then((r) => setPackages(r.data ?? []))
+      .catch(() => {});
+  }, []);
+
   // Auto-set type & duration when service changes
   useEffect(() => {
     if (!watchedServiceId) return;
@@ -136,6 +170,18 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
       setValue("durationMinutes", svc.defaultDurationMinutes, { shouldValidate: true });
     }
   }, [watchedServiceId, services, setValue]);
+
+  // YOLO-S1: when a treatment package is selected, pre-fill the appointment type
+  // from the package name AND adopt the package color if the user hasn't picked one.
+  useEffect(() => {
+    if (!watchedPackageId) return;
+    const pkg = packages.find((p) => p.id === watchedPackageId);
+    if (!pkg) return;
+    setValue("appointmentType", pkg.name, { shouldValidate: true });
+    if (!watchedColor && pkg.color) {
+      setValue("appointmentColor", pkg.color, { shouldValidate: false });
+    }
+  }, [watchedPackageId, packages, setValue, watchedColor]);
 
   // Fetch available slots when doctor + date change
   useEffect(() => {
@@ -187,6 +233,9 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
   const allBooked  = !!watchedDoctor && !!watchedDate && !slotsLoading && doctorAvailable === true && slots.length === 0;
   const useTimePicker = !watchedDoctor || !watchedDate || (doctorAvailable === null && !slotsLoading);
 
+  // Preview the resolved color for the left border swatch next to the picker.
+  const colorPreview = resolveAppointmentColor(watchedColor, undefined, undefined) ?? "#2563EB";
+
   const onSubmit = async (data: FormData) => {
     setSaving(true);
     setServerError("");
@@ -202,6 +251,12 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
         notes:           data.notes,
         serviceId:       data.serviceId || undefined,
         clinicRoomId:    data.clinicRoomId || undefined,
+        // YOLO-S1 — only send non-empty values so null/empty doesn't overwrite on update
+        companionName:         data.companionName?.trim() || null,
+        companionPhone:        data.companionPhone?.trim() || null,
+        companionRelationship: data.companionRelationship?.trim() || null,
+        appointmentColor:      data.appointmentColor?.trim() || null,
+        packageId:             data.packageId || null,
       };
       if (isEditMode) {
         await api.put(`/api/appointments/${appointmentId}`, payload);
@@ -310,6 +365,23 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
               <option value="">— اختر الخدمة —</option>
               {services.map((s) => (
                 <option key={s.id} value={s.id}>{s.arabicName}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Treatment Package (optional — YOLO-S1) */}
+        {packages.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              باقة العلاج <span className="text-gray-400 font-normal">(اختياري)</span>
+            </label>
+            <select {...register("packageId")} className={inputCls()}>
+              <option value="">— اختر الباقة —</option>
+              {packages.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} {p.sessionCount > 1 ? `(${p.sessionCount} جلسات)` : ""}
+                </option>
               ))}
             </select>
           </div>
@@ -441,6 +513,121 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
           {useTimePicker && !slotsLoading && (
             <p className="text-[11px] text-gray-400 mt-1">اختر الطبيب والتاريخ لعرض الأوقات المتاحة تلقائياً</p>
           )}
+        </div>
+
+        {/* ── YOLO-S1: Companion/Guardian section (children/ortho patients) ── */}
+        <div className="md:col-span-2 mt-2 pt-3 border-t border-gray-100">
+          <div className="flex items-center gap-2 mb-3">
+            <Users className="w-4 h-4 text-clinic-blue" />
+            <h3 className="text-sm font-semibold text-gray-800">
+              المرافق / ولي الأمر
+              <span className="text-gray-400 font-normal mr-1"> (للأطفال — اختياري)</span>
+            </h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">اسم المرافق</label>
+              <input
+                {...register("companionName")}
+                className={inputCls()}
+                placeholder="مثال: فاطمة أحمد"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">هاتف المرافق (واتساب)</label>
+              <input
+                {...register("companionPhone")}
+                className={inputCls()}
+                placeholder="مثال: 967777123456+"
+                dir="ltr"
+              />
+              <p className="text-[10px] text-gray-400 mt-1">
+                عند إرسال تذكير واتساب، يُرسل إلى المريض والمرافق معًا
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">صلة القرابة</label>
+              <select {...register("companionRelationship")} className={inputCls()}>
+                <option value="">— اختر —</option>
+                <option value="الأم">الأم</option>
+                <option value="الأب">الأب</option>
+                <option value="الجد">الجد</option>
+                <option value="الجدة">الجدة</option>
+                <option value="الأخ">الأخ</option>
+                <option value="الأخت">الأخت</option>
+                <option value="العم">العم</option>
+                <option value="العمة">العمة</option>
+                <option value="الخال">الخال</option>
+                <option value="الخالة">الخالة</option>
+                <option value="أخرى">أخرى</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* ── YOLO-S1: Appointment color picker ─────────────────────────── */}
+        <div className="md:col-span-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-2">
+            لون الموعد على التقويم
+            <span className="text-gray-400 font-normal text-xs">(اختياري — يُستخدم للحدود على بطاقة الموعد)</span>
+          </label>
+          <div className="flex items-center gap-3 flex-wrap">
+            <input
+              {...register("appointmentColor")}
+              type="color"
+              className="w-12 h-9 p-1 rounded-lg border border-gray-300 cursor-pointer bg-white"
+              value={watchedColor || "#3b82f6"}
+              onChange={(e) => setValue("appointmentColor", e.target.value, { shouldValidate: false })}
+            />
+            <input
+              {...register("appointmentColor")}
+              type="text"
+              dir="ltr"
+              className={cn(inputCls(), "w-32 font-mono text-xs")}
+              placeholder="#3b82f6"
+            />
+            {/* Live preview swatch */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-gray-500">معاينة:</span>
+              <div
+                className="w-6 h-6 rounded-md border border-gray-300"
+                style={{ backgroundColor: colorPreview, borderLeft: `4px solid ${colorPreview}` }}
+              />
+            </div>
+            {/* Quick suggested colors */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {APPOINTMENT_COLOR_SUGGESTIONS.map((s) => (
+                <button
+                  key={s.color}
+                  type="button"
+                  onClick={() => setValue("appointmentColor", s.color, { shouldValidate: false })}
+                  className={cn(
+                    "flex items-center gap-1 px-2 py-1 rounded-full border text-[11px] transition",
+                    watchedColor === s.color
+                      ? "border-clinic-blue bg-clinic-blue/5 text-clinic-blue"
+                      : "border-gray-200 text-gray-600 hover:border-gray-300"
+                  )}
+                  title={s.label}
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-full inline-block"
+                    style={{ backgroundColor: s.color }}
+                  />
+                  {s.label}
+                </button>
+              ))}
+              {/* Clear color → fall back to doctor color on the calendar */}
+              {watchedColor && (
+                <button
+                  type="button"
+                  onClick={() => setValue("appointmentColor", "", { shouldValidate: false })}
+                  className="px-2 py-1 rounded-full border border-gray-200 text-[11px] text-gray-500 hover:text-red-600 hover:border-red-200 transition"
+                >
+                  مسح اللون
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Notes */}

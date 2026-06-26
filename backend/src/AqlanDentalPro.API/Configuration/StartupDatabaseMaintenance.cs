@@ -60,6 +60,7 @@ public static class StartupDatabaseMaintenance
         await EnsureCephApprovalColumnsAsync(app);
         await EnsurePaymentCurrencyColumnAsync(app);
         await EnsureMultiCurrencyColumnsAsync(app);
+        await EnsureAppointmentEnhancementsSchemaAsync(app);
 
         // ── Gated DB maintenance (ENABLE_STARTUP_DB_MAINTENANCE) ──────
         await RunGatedDbMaintenanceAsync(app, configuration);
@@ -4160,6 +4161,78 @@ public static class StartupDatabaseMaintenance
         {
             app.Services.GetRequiredService<ILogger<Program>>()
                 .LogWarning(ex, "Multi-currency columns hotfix failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// YOLO-S1 (C-08 pattern): Idempotently creates the TreatmentPackages table and
+    /// adds the Appointment enhancement columns (CompanionName/CompanionPhone/
+    /// CompanionRelationship/AppointmentColor/PackageId + FK + index) for databases
+    /// where migration 20260712000000_AddAppointmentEnhancements did not apply cleanly
+    /// (the historical migration chain is known-broken — see CLAUDE.md). EF SELECTs
+    /// every mapped column, so a missing CompanionName column makes ANY query loading
+    /// Appointments throw "column does not exist" — which breaks daily-ops + appointment
+    /// pages. All statements use CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS
+    /// so this is a no-op once the schema is present. Does NOT touch the migration
+    /// baseline. Companion-aware WhatsApp reminders depend on CompanionPhone being
+    /// queryable, so this block must run before AppointmentReminderJob ticks.
+    /// </summary>
+    private static async Task EnsureAppointmentEnhancementsSchemaAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                -- ── TreatmentPackages table ──────────────────────────────────────
+                CREATE TABLE IF NOT EXISTS "TreatmentPackages" (
+                    "Id"           uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "Name"         character varying(200)   NOT NULL,
+                    "Description"  character varying(1000)  NULL,
+                    "TotalPrice"   numeric(12,2)            NOT NULL DEFAULT 0,
+                    "SessionCount" integer                  NOT NULL DEFAULT 1,
+                    "Color"        character varying(20)    NULL,
+                    "IsActive"     boolean                  NOT NULL DEFAULT true,
+                    "CreatedAt"    timestamp with time zone NOT NULL DEFAULT now(),
+                    "UpdatedAt"    timestamp with time zone NOT NULL DEFAULT now(),
+                    "DeletedAt"    timestamp with time zone NULL,
+                    "DeletedBy"    uuid                     NULL,
+                    CONSTRAINT "PK_TreatmentPackages" PRIMARY KEY ("Id")
+                );
+
+                CREATE INDEX IF NOT EXISTS "IX_TreatmentPackages_Name_IsActive"
+                    ON "TreatmentPackages" ("Name", "IsActive");
+
+                -- ── Appointments: YOLO-S1 enhancement columns ────────────────────
+                ALTER TABLE "Appointments"
+                    ADD COLUMN IF NOT EXISTS "CompanionName"         character varying(150) NULL,
+                    ADD COLUMN IF NOT EXISTS "CompanionPhone"        character varying(30)  NULL,
+                    ADD COLUMN IF NOT EXISTS "CompanionRelationship" character varying(50)  NULL,
+                    ADD COLUMN IF NOT EXISTS "AppointmentColor"      character varying(20)  NULL,
+                    ADD COLUMN IF NOT EXISTS "PackageId"             uuid                   NULL;
+
+                CREATE INDEX IF NOT EXISTS "IX_Appointments_PackageId"
+                    ON "Appointments" ("PackageId");
+
+                DO $$ BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname = 'FK_Appointments_TreatmentPackages_PackageId'
+                    ) THEN
+                        ALTER TABLE "Appointments"
+                            ADD CONSTRAINT "FK_Appointments_TreatmentPackages_PackageId"
+                            FOREIGN KEY ("PackageId") REFERENCES "TreatmentPackages"("Id")
+                            ON DELETE SET NULL;
+                    END IF;
+                END $$;
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "Appointment enhancements (YOLO-S1) schema hotfix failed (non-fatal)");
         }
     }
 

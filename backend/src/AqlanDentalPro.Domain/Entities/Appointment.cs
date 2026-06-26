@@ -49,6 +49,23 @@ public class Appointment : BaseEntity
     /// <summary>Optional orthodontic case linked to this appointment.</summary>
     public Guid? OrthoCaseId { get; set; }
 
+    // ── YOLO-S1: Companion/Guardian + Color + Treatment Package ────────────
+    // Important for children / ortho patients who are accompanied by a parent
+    // or guardian. WhatsApp reminders are sent to BOTH patient phone and the
+    // companion phone when CompanionPhone is present (WhatsAppService).
+    /// <summary>Name of the parent/guardian accompanying the patient (children/ortho common case).</summary>
+    public string? CompanionName { get; set; }
+    /// <summary>WhatsApp number of the companion. Reminders are sent here IN ADDITION to patient phone.</summary>
+    public string? CompanionPhone { get; set; }
+    /// <summary>Relationship to patient (e.g. "الأم", "الأب", "الجد"). Free-text Arabic.</summary>
+    public string? CompanionRelationship { get; set; }
+
+    /// <summary>Hex color (e.g. "#3b82f6") used as left-border / tint on calendar display. Optional — defaults to doctor color or status color when null.</summary>
+    public string? AppointmentColor { get; set; }
+
+    /// <summary>Optional treatment package linked to this appointment. Pre-fills type from package name when selected.</summary>
+    public Guid? PackageId { get; set; }
+
     public Patient Patient { get; set; } = null!;
     public Doctor Doctor { get; set; } = null!;
     public Branch? Branch { get; set; }
@@ -56,4 +73,5 @@ public class Appointment : BaseEntity
     public ClinicService? Service { get; set; }
     public ClinicRoom? ClinicRoom { get; set; }
     public OrthoCase? OrthoCase { get; set; }
+    public TreatmentPackage? Package { get; set; }
 }

@@ -99,6 +99,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     // Sprint 2 — Payment Method Settings
     public DbSet<PaymentMethodSetting> PaymentMethodSettings => Set<PaymentMethodSetting>();
 
+    // YOLO-S1 — Treatment Packages (catalog for appointment + ortho contracts later)
+    public DbSet<TreatmentPackage> TreatmentPackages => Set<TreatmentPackage>();
+
     // Lab Sprint 2 — Lab Management Foundation
     public DbSet<Lab> Labs => Set<Lab>();
     public DbSet<LabWorkType> LabWorkTypes => Set<LabWorkType>();

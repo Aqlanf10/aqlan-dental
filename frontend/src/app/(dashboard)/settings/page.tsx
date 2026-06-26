@@ -5,7 +5,7 @@
 
 import { useState } from "react";
 import {
-  Globe, FileSearch, Stethoscope, DoorOpen, CreditCard, Languages,
+  Globe, FileSearch, Stethoscope, DoorOpen, CreditCard, Languages, Package,
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -128,6 +128,19 @@ export default function SettingsPage() {
           <div>
             <p className="font-semibold text-gray-900">لغة الوحدات</p>
             <p className="text-sm text-gray-500">التحكم بلغة كل وحدة (عربي / إنجليزي)</p>
+          </div>
+        </Link>
+        {/* YOLO-S1: Treatment Packages catalog */}
+        <Link
+          href="/settings/packages"
+          className="flex items-center gap-4 bg-white rounded-xl border border-gray-200 shadow-sm p-4 hover:border-clinic-blue hover:shadow-md transition group"
+        >
+          <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center flex-shrink-0 group-hover:bg-violet-100 transition">
+            <Package className="w-5 h-5 text-violet-600" />
+          </div>
+          <div>
+            <p className="font-semibold text-gray-900">باقات العلاج</p>
+            <p className="text-sm text-gray-500">كتالوج الباقات (تبييض، تقويم) لاستخدامها في المواعيد</p>
           </div>
         </Link>
       </div>

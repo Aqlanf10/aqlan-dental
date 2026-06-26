@@ -135,6 +135,12 @@ export function TreasuriesTab() {
           </div>
         } />
 
+        {/* Clarify Treasuries (persistent per-currency accounts) vs the daily Cash box/shift */}
+        <div className="rounded-lg border p-3 mb-3 text-xs leading-relaxed" style={{ backgroundColor: tokens.infoBg, borderColor: tokens.border, color: tokens.textSecondary }}>
+          كل <span className="font-bold">خزينة</span> هي رصيد دائم لنوع محدّد (<span className="font-bold">درج كاش</span> أو <span className="font-bold">حساب بنكي</span>) وعملة محدّدة — ولكل عملة (YER / SAR / USD) خزينة مستقلة.
+          أمّا <span className="font-bold">وردية الكاشير اليومية</span> فتُفتح على درج الكاش بالريال اليمني من تبويب «الصندوق». لا يجوز التحويل بين خزينتين بعملتين مختلفتين إلا بعملية مصارفة بسعر صرف موثّق.
+        </div>
+
         {loading ? <LoadingSkeleton /> : treasuries.length === 0 ? <EmptyState icon={Landmark} message="لا توجد خزائن" /> : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {treasuries.map((t) => (

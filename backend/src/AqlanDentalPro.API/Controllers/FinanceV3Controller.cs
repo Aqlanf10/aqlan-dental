@@ -12,99 +12,99 @@ using Microsoft.EntityFrameworkCore;
 namespace AqlanDentalPro.API.Controllers;
 
 /// <summary>
-/// Finance V3 API â€” Provides data endpoints for the Finance V3 Financial Center dashboard.
+/// Finance V3 API — Provides data endpoints for the Finance V3 Financial Center dashboard.
 /// Access is restricted to Admin and Accountant roles only (ReportsAccess policy).
 ///
-/// MIGRATION STATUS (CashFlowTransaction â†’ JournalEntry/JournalLine):
-/// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-/// Migration A â€” COMPLETED:
-///   âœ… GET /dashboard          â€” migrated to JournalLine (Treasury debits/credits)
-///   âœ… GET /account-balances   â€” already reads from JournalLine (no change needed)
+/// MIGRATION STATUS (CashFlowTransaction → JournalEntry/JournalLine):
+/// ─────────────────────────────────────────────────────────────────────
+/// Migration A — COMPLETED:
+///   ✅ GET /dashboard          — migrated to JournalLine (Treasury debits/credits)
+///   ✅ GET /account-balances   — already reads from JournalLine (no change needed)
 ///
-/// Migration B â€” COMPLETED:
-///   âœ… GET /dashboard          â€” FIXED: inflow/outflow labels were swapped
-///   âœ… GET /daily-cash-summary â€” migrated from CashFlowTransaction to JournalLine + Treasury
-///   âœ… GET /profit-loss        â€” migrated cash figures from CashFlowTransaction to JournalLine
-///   âœ… GET /patient-balance    â€” enriched with JournalLine balance calculation
-///   âœ… GET /patient-accounts   â€” enriched with JournalLine aggregation
-///   âœ… GET /payments           â€” already reads from Payment entity (no CashFlow dependency)
-///   âœ… GET /invoices           â€” already reads from Invoice entity (no CashFlow dependency)
+/// Migration B — COMPLETED:
+///   ✅ GET /dashboard          — FIXED: inflow/outflow labels were swapped
+///   ✅ GET /daily-cash-summary — migrated from CashFlowTransaction to JournalLine + Treasury
+///   ✅ GET /profit-loss        — migrated cash figures from CashFlowTransaction to JournalLine
+///   ✅ GET /patient-balance    — enriched with JournalLine balance calculation
+///   ✅ GET /patient-accounts   — enriched with JournalLine aggregation
+///   ✅ GET /payments           — already reads from Payment entity (no CashFlow dependency)
+///   ✅ GET /invoices           — already reads from Invoice entity (no CashFlow dependency)
 ///
-/// Migration C â€” COMPLETED:
-///   âœ… GET /expenses           â€” TreasuryId/TreasuryName now from JournalLine (Treasury account)
-///   âœ… GET /active-cashier-session â€” expected values from JournalLine instead of CashFlow
-///   âœ… GET /cashier-sessions/active â€” expected values from JournalLine instead of CashFlow
-///   âœ… POST cashier-sessions/close â€” expected values + entry linking from JournalLine
-///   âœ… POST treasuries/recalculate â€” balance from JournalLine instead of CashFlow
-///   âœ… MapDocumentTypeToCategory   â€” added AdvancePayment explicit mapping
-///   âœ… GET /invoices comment fix   â€” corrected misleading Balance comment
+/// Migration C — COMPLETED:
+///   ✅ GET /expenses           — TreasuryId/TreasuryName now from JournalLine (Treasury account)
+///   ✅ GET /active-cashier-session — expected values from JournalLine instead of CashFlow
+///   ✅ GET /cashier-sessions/active — expected values from JournalLine instead of CashFlow
+///   ✅ POST cashier-sessions/close — expected values + entry linking from JournalLine
+///   ✅ POST treasuries/recalculate — balance from JournalLine instead of CashFlow
+///   ✅ MapDocumentTypeToCategory   — added AdvancePayment explicit mapping
+///   ✅ GET /invoices comment fix   — corrected misleading Balance comment
 ///
-/// Migration D â€” COMPLETED (this commit):
-///   âœ… GET /audit              â€” CashFlowTransaction removed from resource filter;
+/// Migration D — COMPLETED (this commit):
+///   ✅ GET /audit              — CashFlowTransaction removed from resource filter;
 ///      audit entries now enriched with JournalEntry/JournalLine data (date, type,
 ///      category, amount, treasury, description, reversal status)
-///   âœ… Removed IsCashMethod/IsCardMethod/IsBankMethod â€” unused after Migration C
-///   âœ… Code cleanup â€” removed obsolete helpers and comment blocks
+///   ✅ Removed IsCashMethod/IsCardMethod/IsBankMethod — unused after Migration C
+///   ✅ Code cleanup — removed obsolete helpers and comment blocks
 ///
 /// Hotfixes (same PR):
-///   âœ… ExpectedClosingCard = 0 fix â€” card currently shares the bank treasury bucket
-///   âœ… Treasury opening balance â€” creates JournalEntry on treasury creation
-///   âœ… Treasury recalculate fallback â€” includes CashFlow OP-BAL for legacy treasuries
-///   âœ… DELETE /expenses reads â€” migrated from CashFlowTransaction to JournalEntry
+///   ✅ ExpectedClosingCard = 0 fix — card currently shares the bank treasury bucket
+///   ✅ Treasury opening balance — creates JournalEntry on treasury creation
+///   ✅ Treasury recalculate fallback — includes CashFlow OP-BAL for legacy treasuries
+///   ✅ DELETE /expenses reads — migrated from CashFlowTransaction to JournalEntry
 ///
 /// Hotfixes 5D:
-///   âœ… Fix double SaveChanges in POST /treasuries â€” manual JournalEntry creation
+///   ✅ Fix double SaveChanges in POST /treasuries — manual JournalEntry creation
 ///      with IsPosted=true from the start (single SaveChanges, atomic)
-///   âœ… Fix recalculate fallback too broad â€” now checks for "رصيد افتتاحي" in
+///   âœ… Fix recalculate fallback too broad — now checks for "رصيد افتتاحي" in
 ///      description instead of any VaultTransfer; improved fallback calculation logic
-///   âœ… Fix branchId=Guid.Empty causes 500 â€” added early BadRequest(400) validation
+///   ✅ Fix branchId=Guid.Empty causes 500 — added early BadRequest(400) validation
 ///      in POST /treasuries, POST /payments, POST cashier-sessions/close
 ///
-/// Sprint 1 â€” Finance Stability (this commit):
-///   âœ… Admin branchId fallback â€” when Admin user has no branch assigned (Guid.Empty),
+/// Sprint 1 — Finance Stability (this commit):
+///   ✅ Admin branchId fallback — when Admin user has no branch assigned (Guid.Empty),
 ///      GET endpoints bypass branch filter for consolidated view (already worked).
 ///      POST endpoints now use first active branch as fallback instead of rejecting
 ///      with BadRequest, so admin can still perform write operations.
-///   âœ… Nullable decimal safety â€” all SumAsync calls use (decimal?) cast with ?? 0m
+///   ✅ Nullable decimal safety — all SumAsync calls use (decimal?) cast with ?? 0m
 ///      to prevent NullReferenceException on empty result sets.
-///   âœ… Overdue calculation null safety â€” StartDate! removed, uses .GetValueOrDefault()
+///   ✅ Overdue calculation null safety — StartDate! removed, uses .GetValueOrDefault()
 ///      to prevent NullReferenceException when contract StartDate is null.
-///   âœ… Helper methods â€” CalculateContractOutstandingAsync and
+///   ✅ Helper methods — CalculateContractOutstandingAsync and
 ///      CalculateInvoiceOutstandingAsync now use nullable-safe aggregation.
 ///
 /// Hotfixes 5E:
-///   âœ… Eliminated all remaining CreateEntryAsync/CreateReversalEntryAsync calls â€”
+///   ✅ Eliminated all remaining CreateEntryAsync/CreateReversalEntryAsync calls —
 ///      replaced with manual JournalEntry+JournalLine creation (IsPosted=true from start)
 ///      in POST /expenses, POST /expenses/{id}/approve, DELETE /expenses,
-///      POST /supplier-bills/{id}/pay â€” single SaveChanges per operation
-///   âœ… Unified branchId validation in POST /vault-transfers â€” now applies to ALL
+///      POST /supplier-bills/{id}/pay — single SaveChanges per operation
+///   ✅ Unified branchId validation in POST /vault-transfers — now applies to ALL
 ///      users (including Admin), returns BadRequest(400) instead of Forbid(403)
 ///
-/// Phase 6 â€” Final Cleanup (this commit):
-///   âœ… GET /dashboard â€” extended with legacy summary fields for daily-operations
+/// Phase 6 — Final Cleanup (this commit):
+///   ✅ GET /dashboard — extended with legacy summary fields for daily-operations
 ///      FinanceView migration: ActiveContracts, UnpaidInvoicesCount, DraftInvoicesCount,
 ///      OverdueAmount, PendingCommissionsAmount, RecentPayments, RecentInvoices
-///   âœ… Frontend migrated: useFinanceSummary now calls GET /api/finance-v3/dashboard
-///   âœ… Deleted GET /api/finance/summary from PaymentsController (was [Obsolete])
-///   âœ… Deleted GET /api/finance/overdue from PaymentsController (was [Obsolete])
-///   âœ… Frontend link /finance/overdue â†’ /finance-v3?tab=contracts
-///   âœ… Deleted GET /api/cashier-sessions/active from CashierSessionsController (was [Obsolete])
+///   ✅ Frontend migrated: useFinanceSummary now calls GET /api/finance-v3/dashboard
+///   ✅ Deleted GET /api/finance/summary from PaymentsController (was [Obsolete])
+///   ✅ Deleted GET /api/finance/overdue from PaymentsController (was [Obsolete])
+///   ✅ Frontend link /finance/overdue → /finance-v3?tab=contracts
+///   ✅ Deleted GET /api/cashier-sessions/active from CashierSessionsController (was [Obsolete])
 ///
-/// Remaining CashFlowTransaction references (WRITE ONLY â€” dual-write, keep for now):
-///   âœ… POST /treasuries       â€” creates CashFlowTransaction (OP-BAL, dual-write, preserved)
-///   âœ… POST /expenses          â€” creates CashFlowTransaction (dual-write, preserved)
-///   âœ… DELETE /expenses/{id}   â€” creates reversal CashFlowTransaction (dual-write, preserved)
-///   âœ… POST /expenses/{id}/approve â€” creates CashFlowTransaction (dual-write, preserved)
-///   âœ… POST /payments          â€” creates CashFlowTransaction (dual-write, preserved)
-///   âœ… POST /supplier-bills/pay â€” creates CashFlowTransaction (dual-write, preserved)
-///   âœ… POST cashier-sessions/close â€” links CashFlowTransactions (backward compat, preserved)
-///   âœ… POST treasuries/recalculate â€” reads CashFlowTransaction for opening balance fallback
+/// Remaining CashFlowTransaction references (WRITE ONLY — dual-write, keep for now):
+///   ✅ POST /treasuries       — creates CashFlowTransaction (OP-BAL, dual-write, preserved)
+///   ✅ POST /expenses          — creates CashFlowTransaction (dual-write, preserved)
+///   ✅ DELETE /expenses/{id}   — creates reversal CashFlowTransaction (dual-write, preserved)
+///   ✅ POST /expenses/{id}/approve — creates CashFlowTransaction (dual-write, preserved)
+///   ✅ POST /payments          — creates CashFlowTransaction (dual-write, preserved)
+///   ✅ POST /supplier-bills/pay — creates CashFlowTransaction (dual-write, preserved)
+///   ✅ POST cashier-sessions/close — links CashFlowTransactions (backward compat, preserved)
+///   ✅ POST treasuries/recalculate — reads CashFlowTransaction for opening balance fallback
 ///
-/// ALL READS NOW USE JournalEntry/JournalLine â€” CashFlowTransaction is WRITE-ONLY.
+/// ALL READS NOW USE JournalEntry/JournalLine — CashFlowTransaction is WRITE-ONLY.
 ///
 /// Future phases (not in scope):
-///   âڈ³ Balance Sheet endpoint
-///   âڈ³ Remove CashFlowTransaction dual-write once JournalLine is fully verified
+///   ⏳ Balance Sheet endpoint
+///   ⏳ Remove CashFlowTransaction dual-write once JournalLine is fully verified
 /// </summary>
 [ApiController]
 [Route("api/finance-v3")]
@@ -130,10 +130,10 @@ public partial class FinanceV3Controller(
     private IActionResult Deny() =>
         StatusCode(403, new { message = "غير مصرح لك بهذا الإجراء المالي" });
 
-    // â”€â”€â”€ Write Endpoints (Finance V3) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Write Endpoints (Finance V3) ─────────────────────────────────────
 
     /// <summary>
-    /// POST /api/finance-v3/payments â€” Register a payment.
+    /// POST /api/finance-v3/payments — Register a payment.
     /// Delegates to FinanceService.CreatePaymentAsync (same logic as PaymentsController).
     /// </summary>
     [HttpPost("payments")]
@@ -141,7 +141,7 @@ public partial class FinanceV3Controller(
     public async Task<IActionResult> CreatePayment([FromBody] CreatePaymentRequest req)
     {
         if (!await CanAsync("finance.payments", "create")) return Deny();
-        // Sprint 1: Admin branchId fallback â€” if admin has no branch assigned,
+        // Sprint 1: Admin branchId fallback — if admin has no branch assigned,
         // use the first active branch instead of rejecting with BadRequest.
         var branchId = await ResolveBranchIdAsync();
         if (branchId == Guid.Empty)
@@ -247,7 +247,7 @@ public partial class FinanceV3Controller(
     public sealed record UpdateExchangeRatesRequest(decimal SarToYer, decimal UsdToYer);
 
     /// <summary>
-    /// DELETE /api/finance-v3/payments/{id} â€” Delete a payment (Admin only).
+    /// DELETE /api/finance-v3/payments/{id} — Delete a payment (Admin only).
     /// Delegates to FinanceService.DeletePaymentAsync (same logic as PaymentsController).
     /// </summary>
     [HttpDelete("payments/{id:guid}")]
@@ -266,7 +266,7 @@ public partial class FinanceV3Controller(
     }
 
     /// <summary>
-    /// PATCH /api/finance-v3/invoices/{id}/cancel â€” Cancel an invoice.
+    /// PATCH /api/finance-v3/invoices/{id}/cancel — Cancel an invoice.
     /// Reuses the same logic from InvoicesController.Cancel.
     /// </summary>
     [HttpPatch("invoices/{id:guid}/cancel")]
@@ -344,7 +344,7 @@ public partial class FinanceV3Controller(
         return Ok(new { message = "تم إلغاء الفاتورة بنجاح", invoice.Id, Status = invoice.Status.ToString() });
     }
     /// <summary>
-    /// POST /api/finance-v3/expenses â€” Create an operational expense.
+    /// POST /api/finance-v3/expenses — Create an operational expense.
     /// Reuses logic from OperationalExpensesController.Create.
     /// </summary>
     [HttpPost("expenses")]
@@ -444,7 +444,7 @@ public partial class FinanceV3Controller(
                 expense.CashFlowTransactionId = cashflow.Id;
 
                 // Create JournalEntry manually with IsPosted = true from the start.
-                // Same pattern as POST /treasuries â€” avoids double SaveChanges from CreateEntryAsync.
+                // Same pattern as POST /treasuries — avoids double SaveChanges from CreateEntryAsync.
                 var entryNumber = await journalEntryService.GenerateEntryNumberAsync();
                 var je = new JournalEntry
                 {
@@ -515,7 +515,7 @@ public partial class FinanceV3Controller(
     }
 
     /// <summary>
-    /// POST /api/finance-v3/expenses/{id}/approve â€” Approve a pending expense (Admin only).
+    /// POST /api/finance-v3/expenses/{id}/approve — Approve a pending expense (Admin only).
     /// </summary>
     [HttpPost("expenses/{id:guid}/approve")]
     [Authorize(Policy = "AdminOnly")]
@@ -577,7 +577,7 @@ public partial class FinanceV3Controller(
             expense.CashFlowTransactionId = cashflow.Id;
 
             // Create JournalEntry manually with IsPosted = true from the start.
-            // Same pattern as POST /treasuries â€” avoids double SaveChanges from CreateEntryAsync.
+            // Same pattern as POST /treasuries — avoids double SaveChanges from CreateEntryAsync.
             var entryNumber = await journalEntryService.GenerateEntryNumberAsync();
             var je = new JournalEntry
             {
@@ -631,7 +631,7 @@ public partial class FinanceV3Controller(
     }
 
     /// <summary>
-    /// POST /api/finance-v3/expenses/{id}/reject â€” Reject a pending expense (Admin only).
+    /// POST /api/finance-v3/expenses/{id}/reject — Reject a pending expense (Admin only).
     /// </summary>
     [HttpPost("expenses/{id:guid}/reject")]
     [Authorize(Policy = "AdminOnly")]
@@ -671,7 +671,7 @@ public partial class FinanceV3Controller(
     }
 
     /// <summary>
-    /// DELETE /api/finance-v3/expenses/{id} â€” Delete/reverse an expense.
+    /// DELETE /api/finance-v3/expenses/{id} — Delete/reverse an expense.
     /// Fix: Reads from JournalEntry/JournalLine instead of CashFlowTransaction
     /// for validation checks. CashFlowTransaction reversal (dual-write) is preserved.
     /// </summary>
@@ -690,7 +690,7 @@ public partial class FinanceV3Controller(
 
         if (expense.IsPostedToLedger)
         {
-            // Reversal path â€” replicate OperationalExpensesController.ReversePostedExpenseAsync
+            // Reversal path — replicate OperationalExpensesController.ReversePostedExpenseAsync
             await using var tx = await db.Database.BeginTransactionAsync();
             try
             {
@@ -740,7 +740,7 @@ public partial class FinanceV3Controller(
                 { await tx.RollbackAsync(); return BadRequest(new { message = "عذراً، الخزينة الأصلية غير موجودة أو غير مفعلة. لا يمكن عكس القيد المالي — تواصل مع المحاسب." }); }
 
                 // Create reversal JournalEntry manually with IsPosted = true from the start.
-                // Same pattern as POST /treasuries â€” avoids double/triple SaveChanges from
+                // Same pattern as POST /treasuries — avoids double/triple SaveChanges from
                 // CreateReversalEntryAsync (which calls CreateEntryAsync + separate link save).
                 // We already have the original entry with Lines loaded, so we can mirror directly.
                 var reversalEntryNumber = await journalEntryService.GenerateEntryNumberAsync();
@@ -762,7 +762,7 @@ public partial class FinanceV3Controller(
                 };
                 db.JournalEntries.Add(reversalJe);
 
-                // Mirror the lines: debit â†’ credit, credit â†’ debit
+                // Mirror the lines: debit → credit, credit → debit
                 foreach (var line in originalJe.Lines)
                 {
                     db.JournalLines.Add(new JournalLine
@@ -832,7 +832,7 @@ public partial class FinanceV3Controller(
     }
 
     /// <summary>
-    /// POST /api/finance-v3/supplier-bills â€” Create a supplier bill.
+    /// POST /api/finance-v3/supplier-bills — Create a supplier bill.
     /// </summary>
     [HttpPost("supplier-bills")]
     [Authorize(Policy = "FinanceWrite")]
@@ -902,7 +902,7 @@ public partial class FinanceV3Controller(
     }
 
     /// <summary>
-    /// POST /api/finance-v3/supplier-bills/{id}/pay â€” Pay a supplier bill installment.
+    /// POST /api/finance-v3/supplier-bills/{id}/pay — Pay a supplier bill installment.
     /// </summary>
     [HttpPost("supplier-bills/{id:guid}/pay")]
     [Authorize(Policy = "FinanceWrite")]
@@ -971,7 +971,7 @@ public partial class FinanceV3Controller(
             db.SupplierBillPayments.Add(payment);
 
             // Create JournalEntry manually with IsPosted = true from the start.
-            // Same pattern as POST /treasuries â€” avoids double SaveChanges from CreateEntryAsync.
+            // Same pattern as POST /treasuries — avoids double SaveChanges from CreateEntryAsync.
             var entryNumber = await journalEntryService.GenerateEntryNumberAsync();
             var je = new JournalEntry
             {
@@ -1037,7 +1037,7 @@ public partial class FinanceV3Controller(
         catch { await tx.RollbackAsync(); throw; }
     }
 
-    // â”€â”€â”€ GET /api/finance-v3/diagnostic/cashflow-columns â€” Diagnostic: Category & Type column values â”€â”€
+    // ─── GET /api/finance-v3/diagnostic/cashflow-columns — Diagnostic: Category & Type column values ──
     /// <summary>
     /// Temporary diagnostic endpoint to inspect the distinct values in
     /// CashFlowTransactions.Category and CashFlowTransactions.Type columns.
@@ -1148,19 +1148,19 @@ public partial class FinanceV3Controller(
         }
         catch (Exception ex)
         {
-            // Never leak exception internals to the client â€” log server-side,
+            // Never leak exception internals to the client — log server-side,
             // return a generic Arabic message (project security rule).
             logger.LogError(ex, "Finance diagnostic (schema inspect) failed");
             return StatusCode(500, new { message = "تعذّر تنفيذ التشخيص حاليًا" });
         }
     }
 
-    // â”€â”€â”€ POST /api/finance-v3/diagnostic/apply-cashflow-hotfix â€” Apply CashFlow Category/Type migration manually â”€â”€
+    // ─── POST /api/finance-v3/diagnostic/apply-cashflow-hotfix — Apply CashFlow Category/Type migration manually ──
     /// <summary>
     /// Manually applies the CashFlow Category/Type varchar-to-integer migration.
     /// This is needed because the EF Core migration chain is blocked by earlier
     /// pending migrations. This endpoint executes the raw SQL directly.
-    /// Idempotent â€” only converts if columns are currently varchar.
+    /// Idempotent — only converts if columns are currently varchar.
     /// </summary>
     [HttpPost("diagnostic/apply-cashflow-hotfix")]
     [Authorize(Policy = "AdminOnly")]
@@ -1282,7 +1282,7 @@ public partial class FinanceV3Controller(
             }
             finally { await conn.CloseAsync(); }
 
-            // Also reconcile the migration history â€” mark the hotfix as applied
+            // Also reconcile the migration history — mark the hotfix as applied
             // This prevents EF Core from trying to re-apply it later
             await conn.OpenAsync();
             try
@@ -1327,7 +1327,7 @@ public partial class FinanceV3Controller(
         }
         catch (Exception ex)
         {
-            // Never leak exception internals (message/inner/stack) to the client â€”
+            // Never leak exception internals (message/inner/stack) to the client —
             // log server-side, return a generic Arabic message (project security rule).
             logger.LogError(ex, "Finance diagnostic (cashflow hotfix) failed");
             return StatusCode(500, new { message = "تعذّر تطبيق الإصلاح حاليًا" });

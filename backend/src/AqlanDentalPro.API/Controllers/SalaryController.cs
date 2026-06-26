@@ -262,7 +262,7 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
     }
 
     /// <summary>
-    /// Mark salary as paid â€” dual-writes CashFlowTransaction + JournalEntry atomically.
+    /// Mark salary as paid — dual-writes CashFlowTransaction + JournalEntry atomically.
     /// Rejects if the employee's branch cannot be resolved (never writes Guid.Empty).
     /// </summary>
     [HttpPut("{id:guid}/pay")]
@@ -279,7 +279,7 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         var paidByUid = Guid.TryParse(userId, out var uid) ? uid : Guid.Empty;
 
-        // Fetch employee details â€” reject if branch is unknown
+        // Fetch employee details — reject if branch is unknown
         var employee = await db.Employees.FindAsync(salarySnapshot.EmployeeId);
         if (employee is null)
             return BadRequest(new { message = "الموظف غير موجود" });
@@ -443,7 +443,7 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
     }
 
     /// <summary>
-    /// PUT /api/salaries/{id}/reverse â€” Reverse a paid salary with dual-write CashFlow + JournalEntry reversal.
+    /// PUT /api/salaries/{id}/reverse — Reverse a paid salary with dual-write CashFlow + JournalEntry reversal.
     /// Admin-only. Pessimistic locking prevents concurrent reversal. Double-restore prevention.
     /// </summary>
     [HttpPut("{id:guid}/reverse")]
@@ -516,7 +516,7 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
                 }
             }
 
-            // Un-mark salary as paid â€” only after all validation passes
+            // Un-mark salary as paid — only after all validation passes
             salary.PaidAt = null;
             salary.PaidBy = null;
             salary.PaymentMethod = null;

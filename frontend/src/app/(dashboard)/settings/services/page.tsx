@@ -1,11 +1,18 @@
 "use client";
-import { useEffect, useState } from "react";
-import { Plus, Search, Edit3, Power, PowerOff, X, Save, Stethoscope, ChevronDown, ChevronUp } from "lucide-react";
+import { Fragment, useEffect, useState } from "react";
+import { Plus, Search, Edit3, Power, PowerOff, X, Save, Stethoscope, ChevronDown, ChevronUp, ChevronLeft, Trash2 } from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
+import type { ServiceConsumable } from "@/types/appointment";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+interface InventoryItemOption {
+  id: string;
+  name: string;
+  unit?: string | null;
+}
 
 interface ServiceRow {
   id: string;
@@ -24,6 +31,8 @@ interface ServiceRow {
   showInTreatmentPlan: boolean;
   isActive: boolean;
   sortOrder: number;
+  /** YOLO-S2: optional hex color for calendar/queue display. */
+  color?: string | null;
   // Commission defaults (returned from API)
   defaultMaterialCost: number;
   defaultMaterialCostType: string;
@@ -48,6 +57,8 @@ interface ServiceForm {
   showInReception: boolean;
   showInTreatmentPlan: boolean;
   sortOrder: number;
+  /** YOLO-S2: optional hex color. */
+  color: string;
   // Commission defaults
   defaultMaterialCost: number;
   defaultMaterialCostType: string;
@@ -102,6 +113,7 @@ const EMPTY_FORM: ServiceForm = {
   showInReception: true,
   showInTreatmentPlan: true,
   sortOrder: 0,
+  color: "",
   defaultMaterialCost: 0,
   defaultMaterialCostType: "FixedAmount",
   defaultLabCost: 0,
@@ -137,6 +149,15 @@ export default function ServicesSettingsPage() {
   const [formError, setFormError] = useState("");
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [showCommission, setShowCommission] = useState(false);
+
+  // YOLO-S2: per-row expandable consumables management panel state.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [consumablesByService, setConsumablesByService] = useState<Record<string, ServiceConsumable[]>>({});
+  const [consumablesLoading, setConsumablesLoading] = useState<string | null>(null);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItemOption[]>([]);
+  const [newConsumable, setNewConsumable] = useState<{ itemId: string; quantity: number; notes: string }>({ itemId: "", quantity: 1, notes: "" });
+  const [consumableError, setConsumableError] = useState("");
+  const [consumableSaving, setConsumableSaving] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -175,6 +196,7 @@ export default function ServicesSettingsPage() {
       showInReception: s.showInReception,
       showInTreatmentPlan: s.showInTreatmentPlan,
       sortOrder: s.sortOrder,
+      color: s.color ?? "",
       // Commission defaults — now returned directly from the services API
       defaultMaterialCost: s.defaultMaterialCost ?? 0,
       defaultMaterialCostType: s.defaultMaterialCostType ?? "FixedAmount",
@@ -226,6 +248,7 @@ export default function ServicesSettingsPage() {
         showInReception: form.showInReception,
         showInTreatmentPlan: form.showInTreatmentPlan,
         sortOrder: form.sortOrder,
+        color: form.color || null,
         // Commission defaults — now sent directly with the service payload
         defaultMaterialCost: form.defaultMaterialCost,
         defaultMaterialCostType: form.defaultMaterialCostType,
@@ -263,6 +286,81 @@ export default function ServicesSettingsPage() {
     } catch {
     } finally {
       setTogglingId(null);
+    }
+  };
+
+  // ─── YOLO-S2: ServiceConsumable (service ↔ inventory item) management ────────
+
+  const loadInventoryItems = async () => {
+    if (inventoryItems.length > 0) return;
+    try {
+      const r = await api.get<InventoryItemOption[]>("/api/inventory", { params: { activeOnly: true } });
+      setInventoryItems(r.data ?? []);
+    } catch {
+      // best-effort — the panel just won't show the dropdown options
+    }
+  };
+
+  const loadConsumables = async (serviceId: string) => {
+    setConsumablesLoading(serviceId);
+    try {
+      const r = await api.get<ServiceConsumable[]>("/api/service-consumables", { params: { serviceId } });
+      setConsumablesByService((prev) => ({ ...prev, [serviceId]: r.data ?? [] }));
+    } catch {
+      setConsumablesByService((prev) => ({ ...prev, [serviceId]: [] }));
+    } finally {
+      setConsumablesLoading(null);
+    }
+  };
+
+  const handleToggleExpand = async (serviceId: string) => {
+    if (expandedId === serviceId) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(serviceId);
+    setConsumableError("");
+    setNewConsumable({ itemId: "", quantity: 1, notes: "" });
+    await loadInventoryItems();
+    await loadConsumables(serviceId);
+  };
+
+  const handleAddConsumable = async (serviceId: string) => {
+    if (!newConsumable.itemId) {
+      setConsumableError("اختر المادة أولاً");
+      return;
+    }
+    if (newConsumable.quantity < 1) {
+      setConsumableError("الكمية يجب أن تكون 1 على الأقل");
+      return;
+    }
+    setConsumableSaving(true);
+    setConsumableError("");
+    try {
+      await api.post("/api/service-consumables", {
+        clinicServiceId: serviceId,
+        inventoryItemId: newConsumable.itemId,
+        quantity: newConsumable.quantity,
+        notes: newConsumable.notes || null,
+      });
+      setNewConsumable({ itemId: "", quantity: 1, notes: "" });
+      await loadConsumables(serviceId);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setConsumableError(msg ?? "فشل إضافة المادة");
+    } finally {
+      setConsumableSaving(false);
+    }
+  };
+
+  const handleDeleteConsumable = async (serviceId: string, consumableId: string) => {
+    if (!confirm("هل أنت متأكد من حذف هذه المادة من الخدمة؟")) return;
+    try {
+      await api.delete(`/api/service-consumables/${consumableId}`);
+      await loadConsumables(serviceId);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      alert(msg ?? "فشل حذف المادة");
     }
   };
 
@@ -460,6 +558,38 @@ export default function ServicesSettingsPage() {
                 placeholder="وصف مختصر للخدمة"
               />
             </div>
+            {/* Color (YOLO-S2) */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                اللون (لعرض التقويم/الطابور)
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={form.color || "#3b82f6"}
+                  onChange={(e) => setForm({ ...form, color: e.target.value })}
+                  className="w-10 h-9 p-1 rounded-lg border border-gray-300 cursor-pointer bg-white"
+                  aria-label="منتقي اللون للخدمة"
+                />
+                <input
+                  value={form.color}
+                  onChange={(e) => setForm({ ...form, color: e.target.value })}
+                  className={cn(inputCls, "w-28 font-mono text-xs")}
+                  dir="ltr"
+                  placeholder="#3b82f6"
+                />
+                {form.color && (
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, color: "" })}
+                    className="text-xs text-gray-400 hover:text-red-600 transition px-1"
+                    title="مسح اللون"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Toggles */}
@@ -627,6 +757,7 @@ export default function ServicesSettingsPage() {
                   "التصنيف",
                   "المدة",
                   "السعر الافتراضي",
+                  "اللون",
                   "العمولة",
                   "الحالة",
                   "إجراءات",
@@ -642,31 +773,44 @@ export default function ServicesSettingsPage() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {services.map((s) => (
-                <tr key={s.id} className="hover:bg-gray-50 transition">
+                <Fragment key={s.id}>
+                  <tr className="hover:bg-gray-50 transition">
                   <td className="px-4 py-3">
-                    <div className="font-medium text-gray-900">{s.arabicName}</div>
-                    {s.englishName && (
-                      <div className="text-xs text-gray-400 mt-0.5" dir="ltr">
-                        {s.englishName}
+                    <div className="flex items-start gap-2">
+                      {/* YOLO-S2: color swatch (optional) */}
+                      {s.color && (
+                        <span
+                          className="w-3 h-3 rounded-full mt-1 flex-shrink-0 border border-gray-200"
+                          style={{ backgroundColor: s.color }}
+                          title={`لون الخدمة: ${s.color}`}
+                        />
+                      )}
+                      <div>
+                        <div className="font-medium text-gray-900">{s.arabicName}</div>
+                        {s.englishName && (
+                          <div className="text-xs text-gray-400 mt-0.5" dir="ltr">
+                            {s.englishName}
+                          </div>
+                        )}
+                        {/* Visibility badges */}
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {s.showInBooking && (
+                            <Badge className="bg-emerald-50 text-emerald-600">حجز</Badge>
+                          )}
+                          {s.showInReception && (
+                            <Badge className="bg-sky-50 text-sky-600">استقبال</Badge>
+                          )}
+                          {s.showInTreatmentPlan && (
+                            <Badge className="bg-violet-50 text-violet-600">خطة علاج</Badge>
+                          )}
+                          {s.requiresDoctor && (
+                            <Badge className="bg-orange-50 text-orange-600">طبيب</Badge>
+                          )}
+                          {s.requiresConsultationFee && (
+                            <Badge className="bg-rose-50 text-rose-600">رسوم معاينة</Badge>
+                          )}
+                        </div>
                       </div>
-                    )}
-                    {/* Visibility badges */}
-                    <div className="flex flex-wrap gap-1 mt-1.5">
-                      {s.showInBooking && (
-                        <Badge className="bg-emerald-50 text-emerald-600">حجز</Badge>
-                      )}
-                      {s.showInReception && (
-                        <Badge className="bg-sky-50 text-sky-600">استقبال</Badge>
-                      )}
-                      {s.showInTreatmentPlan && (
-                        <Badge className="bg-violet-50 text-violet-600">خطة علاج</Badge>
-                      )}
-                      {s.requiresDoctor && (
-                        <Badge className="bg-orange-50 text-orange-600">طبيب</Badge>
-                      )}
-                      {s.requiresConsultationFee && (
-                        <Badge className="bg-rose-50 text-rose-600">رسوم معاينة</Badge>
-                      )}
                     </div>
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-gray-600" dir="ltr">
@@ -687,6 +831,19 @@ export default function ServicesSettingsPage() {
                   </td>
                   <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
                     {Number(s.defaultPrice).toLocaleString("ar-YE")} ر.ي
+                  </td>
+                  <td className="px-4 py-3">
+                    {s.color ? (
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className="w-5 h-5 rounded-md border border-gray-200"
+                          style={{ backgroundColor: s.color }}
+                        />
+                        <span className="text-xs font-mono text-gray-500" dir="ltr">{s.color}</span>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
                     {s.defaultDoctorCommissionPercentage != null ? (
@@ -718,6 +875,20 @@ export default function ServicesSettingsPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
                       <button
+                        onClick={() => handleToggleExpand(s.id)}
+                        title={expandedId === s.id ? "إخفاء المواد المستهلكة" : "عرض المواد المستهلكة"}
+                        className={cn(
+                          "text-gray-400 hover:text-clinic-blue transition p-1",
+                          expandedId === s.id && "text-clinic-blue"
+                        )}
+                      >
+                        {expandedId === s.id ? (
+                          <ChevronUp className="w-4 h-4" />
+                        ) : (
+                          <ChevronLeft className="w-4 h-4" />
+                        )}
+                      </button>
+                      <button
                         onClick={() => handleOpenEdit(s)}
                         title="تعديل الخدمة"
                         className="text-gray-400 hover:text-clinic-blue transition p-1"
@@ -739,6 +910,116 @@ export default function ServicesSettingsPage() {
                     </div>
                   </td>
                 </tr>
+                {/* YOLO-S2: Expandable ServiceConsumable management panel */}
+                {expandedId === s.id && (
+                  <tr className="bg-gray-50/60">
+                    <td colSpan={9} className="px-6 py-4">
+                      <div className="border border-gray-200 rounded-lg bg-white p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-bold text-gray-800">
+                            المواد المستهلكة لكل جلسة — <span className="text-clinic-blue">{s.arabicName}</span>
+                          </h4>
+                          <span className="text-xs text-gray-400">
+                            {(consumablesByService[s.id] ?? []).length} مادة
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          تُستخدم هذه القائمة كتالوجًا فقط (لا تخصم تلقائيًا من المخزون عند إكمال الموعد).
+                        </p>
+
+                        {consumableError && (
+                          <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{consumableError}</p>
+                        )}
+
+                        {/* Existing consumables list */}
+                        {consumablesLoading === s.id ? (
+                          <div className="text-xs text-gray-400 py-3 text-center">جارٍ التحميل...</div>
+                        ) : (consumablesByService[s.id] ?? []).length === 0 ? (
+                          <div className="text-xs text-gray-400 py-3 text-center bg-gray-50 rounded-lg">
+                            لا توجد مواد مرتبطة بهذه الخدمة بعد
+                          </div>
+                        ) : (
+                          <ul className="divide-y divide-gray-100 border border-gray-200 rounded-lg">
+                            {(consumablesByService[s.id] ?? []).map((c) => (
+                              <li key={c.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-medium text-gray-800 truncate">
+                                    {c.inventoryItemName}
+                                    {c.inventoryItemUnit && (
+                                      <span className="text-xs text-gray-400 mr-2">({c.inventoryItemUnit})</span>
+                                    )}
+                                  </div>
+                                  <div className="text-xs text-gray-500 mt-0.5">
+                                    الكمية: <span className="font-mono">{c.quantity}</span>
+                                    {c.notes && <span className="mr-2">· {c.notes}</span>}
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => handleDeleteConsumable(s.id, c.id)}
+                                  title="حذف المادة من الخدمة"
+                                  className="text-gray-400 hover:text-red-600 transition p-1"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+
+                        {/* Add new consumable */}
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-2 pt-1">
+                          <div className="md:col-span-6">
+                            <label className="block text-xs font-medium text-gray-600 mb-1">المادة</label>
+                            <select
+                              value={newConsumable.itemId}
+                              onChange={(e) => setNewConsumable((p) => ({ ...p, itemId: e.target.value }))}
+                              className={inputCls}
+                            >
+                              <option value="">اختر المادة...</option>
+                              {inventoryItems.map((it) => (
+                                <option key={it.id} value={it.id}>
+                                  {it.name}{it.unit ? ` (${it.unit})` : ""}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="block text-xs font-medium text-gray-600 mb-1">الكمية</label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={newConsumable.quantity}
+                              onChange={(e) => setNewConsumable((p) => ({ ...p, quantity: parseInt(e.target.value) || 1 }))}
+                              className={inputCls}
+                              dir="ltr"
+                            />
+                          </div>
+                          <div className="md:col-span-3">
+                            <label className="block text-xs font-medium text-gray-600 mb-1">ملاحظات (اختياري)</label>
+                            <input
+                              value={newConsumable.notes}
+                              onChange={(e) => setNewConsumable((p) => ({ ...p, notes: e.target.value }))}
+                              className={inputCls}
+                              placeholder="مثال: فقط للحالات المعقدة"
+                            />
+                          </div>
+                          <div className="md:col-span-1 flex items-end">
+                            <button
+                              type="button"
+                              onClick={() => handleAddConsumable(s.id)}
+                              disabled={consumableSaving}
+                              className="w-full flex items-center justify-center gap-1 px-2 py-2 text-xs font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
+                              title="إضافة المادة"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>

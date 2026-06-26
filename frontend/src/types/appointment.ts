@@ -127,6 +127,24 @@ export interface QueueDisplay {
 
 // ── YOLO-S1: Treatment Package types ─────────────────────────────────────────
 
+export interface TreatmentPackageService {
+  id: string;
+  packageId: string;
+  clinicServiceId: string;
+  serviceArabicName: string;
+  serviceEnglishName?: string | null;
+  serviceCode?: string | null;
+  serviceColor?: string | null;
+  quantity: number;
+  overridePrice?: number | null;
+  /** Effective unit price = overridePrice ?? service default price. Computed server-side. */
+  effectiveUnitPrice: number;
+  /** Line total = effectiveUnitPrice * quantity. Computed server-side. */
+  lineTotal: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface TreatmentPackage {
   id: string;
   name: string;
@@ -137,6 +155,10 @@ export interface TreatmentPackage {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  /** YOLO-S2: services included in this package. Populated on GetById; empty on list. */
+  services?: TreatmentPackageService[];
+  /** YOLO-S2: computed catalog total = sum(lineTotal). Populated on GetById. */
+  computedTotal?: number | null;
 }
 
 export interface CreateTreatmentPackageRequest {
@@ -155,4 +177,32 @@ export interface UpdateTreatmentPackageRequest {
   sessionCount: number;
   color?: string | null;
   isActive?: boolean | null;
+}
+
+/** YOLO-S2: body for POST/PUT /api/treatment-packages/{id}/services[/{serviceId}] */
+export interface UpsertPackageServiceRequest {
+  clinicServiceId: string;
+  quantity: number;
+  overridePrice?: number | null;
+}
+
+/** YOLO-S2: DTO returned by GET /api/service-consumables?serviceId=... */
+export interface ServiceConsumable {
+  id: string;
+  clinicServiceId: string;
+  inventoryItemId: string;
+  inventoryItemName: string;
+  inventoryItemUnit?: string | null;
+  quantity: number;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** YOLO-S2: body for POST /api/service-consumables */
+export interface CreateServiceConsumableRequest {
+  clinicServiceId: string;
+  inventoryItemId: string;
+  quantity: number;
+  notes?: string | null;
 }

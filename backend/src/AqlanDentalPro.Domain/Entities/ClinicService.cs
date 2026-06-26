@@ -19,6 +19,20 @@ public class ClinicService : BaseEntity
     public bool ShowInTreatmentPlan { get; set; } = true;
     public int SortOrder { get; set; } = 0;
 
+    /// <summary>
+    /// YOLO-S2: Optional hex color (e.g. "#3b82f6") used to tag this service on the
+    /// calendar and clinic queue display. Nullable so existing services (which have
+    /// no color) keep the prior behavior — the UI falls back to the category color.
+    /// Mirrors TreatmentPackage.Color / Appointment.AppointmentColor (varchar(20)).
+    /// </summary>
+    public string? Color { get; set; }
+
+    // ── YOLO-S2: Catalog bindings (consumables + package links) ─────────────────
+    /// <summary>Materials consumed per session of this service (ServiceConsumable link table).</summary>
+    public ICollection<ServiceConsumable> Consumables { get; set; } = [];
+    /// <summary>Reverse navigation: packages that include this service (TreatmentPackageService link).</summary>
+    public ICollection<TreatmentPackageService> PackageLinks { get; set; } = [];
+
     // ── Commission default settings ──────────────────────────────────────────
     public decimal DefaultMaterialCost { get; set; } = 0;
     public MaterialCostType DefaultMaterialCostType { get; set; } = MaterialCostType.FixedAmount;

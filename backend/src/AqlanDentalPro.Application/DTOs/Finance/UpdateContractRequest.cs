@@ -23,4 +23,12 @@ public class UpdateContractRequest
 
     public string? DiscountReason { get; set; }
     public string? Notes { get; set; }
+
+    /// <summary>
+    /// YOLO-S2: Optional link to a TreatmentPackage. Pass null/omitted to leave
+    /// unchanged; pass an empty Guid ("00000000-0000-0000-0000-000000000000") to
+    /// clear the link. We resolve Empty → null below to keep the contract table
+    /// consistent (PackageId is a nullable FK).
+    /// </summary>
+    public Guid? PackageId { get; set; }
 }

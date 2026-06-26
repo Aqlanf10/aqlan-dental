@@ -16,6 +16,13 @@ public class ContractListDto
     public decimal? InstallmentAmount { get; set; }
     public string? StartDate { get; set; }
     public string Status { get; set; } = "active";
+
+    /// <summary>YOLO-S2: Optional link to a TreatmentPackage. Null = standalone contract.</summary>
+    public Guid? PackageId { get; set; }
+    /// <summary>YOLO-S2: Snapshot of the package name (read-only display convenience).</summary>
+    public string? PackageName { get; set; }
+    /// <summary>YOLO-S2: Snapshot of the package color (for calendar/queue display).</summary>
+    public string? PackageColor { get; set; }
 }
 
 public class ContractDetailDto : ContractListDto

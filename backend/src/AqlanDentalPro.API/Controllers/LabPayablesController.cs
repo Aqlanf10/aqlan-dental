@@ -243,7 +243,7 @@ public class LabPayablesController(
 
             await audit.LogAsync(AuditAction.Update, "LabPayable", payable.Id,
                 details: $"Payment recorded: amount={req.Amount:N0}, treasury={treasury?.Name}, session={activeSession?.Id}");
-            logger.LogInformation("LabPayable payment recorded securely: {Id} â€” {Amount}", id, req.Amount);
+            logger.LogInformation("LabPayable payment recorded securely: {Id} — {Amount}", id, req.Amount);
 
             return Ok(new
             {

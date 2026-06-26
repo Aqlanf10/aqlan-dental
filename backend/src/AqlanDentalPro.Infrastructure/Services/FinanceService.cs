@@ -288,7 +288,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 throw new ArgumentException($"المبلغ المحتسب ({appliedAmount:N0} {accountCurrency}) يتجاوز الرصيد المتبقي للفاتورة ({remaining:N0} {accountCurrency})");
         }
 
-        // Finance V3: True atomic dual-write â€” start transaction BEFORE any entity mutation
+        // Finance V3: True atomic dual-write — start transaction BEFORE any entity mutation
         // so that Payment, Receipt, CashFlow, Treasury, and JournalEntry are all committed
         // together or rolled back together. Previously, UpdateTreasuryBalanceAsync called
         // SaveChangesAsync independently, committing entities before the JE transaction started.
@@ -393,7 +393,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         var dto = MapPayment(payment);
 
-        // Notify accountants and admins â€” fire-and-forget replaced with direct await
+        // Notify accountants and admins — fire-and-forget replaced with direct await
         // to avoid DbContext concurrent operation. If the notification service shares
         // the same DI scope, running on a different thread via Task.Run could access
         // a disposed DbContext or cause concurrent access. Instead, we await the
@@ -409,7 +409,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "[FinanceService] Payment notification failed after payment {PaymentId} â€” payment is still saved", payment.Id);
+            logger.LogWarning(ex, "[FinanceService] Payment notification failed after payment {PaymentId} — payment is still saved", payment.Id);
         }
 
         return dto;
@@ -481,7 +481,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 }
 
                 // C3: Instead of soft-deleting linked CashFlowTransactions, create reversal entries.
-                // CashFlowTransaction entries are immutable â€” they MUST NEVER be soft-deleted for
+                // CashFlowTransaction entries are immutable — they MUST NEVER be soft-deleted for
                 // financial ledger integrity.
                 foreach (var payment in activePayments)
                 {
@@ -512,7 +512,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                         linkedCashflow.ReversedByTransactionId = reversalCashflow.Id;
                         // Keep original's IsActive = true (never soft-delete CashFlowTransactions)
                     }
-                    // Reverse treasury balance â€” use NoSave variant inside the transaction
+                    // Reverse treasury balance — use NoSave variant inside the transaction
                     await UpdateTreasuryBalanceNoSaveAsync(payment.BranchId ?? Guid.Empty, -payment.Amount, payment.PaymentMethod);
 
                     // Finance V3: Dual-write reversal entry for each reversed payment
@@ -565,7 +565,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         // (replaces in-memory .Sum() over ToListAsync-loaded entities). Each query
         // returns a single scalar, so we move less data across the wire.
 
-        // Sprint Patient-Finance-Ledger: Exclude Draft invoices â€” same as GetPatientFinanceSummaryAsync
+        // Sprint Patient-Finance-Ledger: Exclude Draft invoices — same as GetPatientFinanceSummaryAsync
         var invoicesPredicate = new Func<IQueryable<Invoice>, IQueryable<Invoice>>(q => q
             .Where(i => i.PatientId == patientId
                      && i.Status != InvoiceStatus.Cancelled
@@ -600,11 +600,11 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         var totalRemaining = Math.Max(0m, totalContracted - totalDiscounts - totalPaid);
 
-        // â”€â”€ Contracts list with per-contract paid/remaining computed in SQL â”€â”€
+        // ── Contracts list with per-contract paid/remaining computed in SQL ──
         // FIN-13: Project ContractStatementDto directly. The correlated subquery
         // `c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)` is translated to
         // `(SELECT COALESCE(SUM(p.Amount), 0) FROM Payments p WHERE p.ContractId = c.Id AND p.IsActive)`
-        // â€” avoids loading any Payment rows into memory.
+        // — avoids loading any Payment rows into memory.
         var contracts = await db.Contracts
             .Where(c => c.PatientId == patientId)
             .OrderByDescending(c => c.CreatedAt)
@@ -626,7 +626,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         var activeContracts     = await db.Contracts.CountAsync(c => c.PatientId == patientId && c.Status == ContractStatus.Active);
         var completedContracts  = await db.Contracts.CountAsync(c => c.PatientId == patientId && c.Status == ContractStatus.Completed);
 
-        // FIX: Filter recentPayments to active only â€” inactive/refunded/cancelled
+        // FIX: Filter recentPayments to active only — inactive/refunded/cancelled
         // payments should not appear in the recent list.
         var recentPayments = await db.Payments
             .Include(p => p.Patient)
@@ -685,7 +685,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (branchId.HasValue) activeContractsQuery = activeContractsQuery.Where(c => c.Patient.BranchId == branchId);
         var activeContracts = await activeContractsQuery.CountAsync();
 
-        // â”€â”€ Extended Sprint 1 Dashboard Stats â”€â”€
+        // ── Extended Sprint 1 Dashboard Stats ──
         var unpaidInvoicesQuery = db.Invoices.Where(i => i.Status == InvoiceStatus.Issued && i.IsActive);
         if (branchId.HasValue) unpaidInvoicesQuery = unpaidInvoicesQuery.Where(i => i.Patient.BranchId == branchId);
         var unpaidInvoicesCount = await unpaidInvoicesQuery.CountAsync();
@@ -759,7 +759,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (!payment.IsActive)
             throw new ArgumentException("لا يمكن تعديل دفعة محذوفة");
 
-        // Phase 0B: Financial integrity â€” Amount, PaymentMethod, and PaymentDate
+        // Phase 0B: Financial integrity — Amount, PaymentMethod, and PaymentDate
         // are locked after creation because they affect CashFlowTransaction, Treasury,
         // and CashierSession reconciliation. Changing them would corrupt the ledger.
         if (req.Amount.HasValue && req.Amount.Value != payment.Amount)
@@ -793,7 +793,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         var userId = currentUser.UserId;
 
-        // Phase 0B: Guard â€” do not corrupt a closed or reconciled session by removing
+        // Phase 0B: Guard — do not corrupt a closed or reconciled session by removing
         // a payment whose cashflow was part of its reconciliation calculation.
         var linkedCashflow = await db.CashFlowTransactions
             .FirstOrDefaultAsync(t => t.ReferenceId == payment.Id && t.Category == FinancialCategory.PatientPayment && t.IsActive);
@@ -811,7 +811,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         payment.DeletedBy = userId;
 
         // C3: Instead of soft-deleting the linked CashFlowTransaction, create a reversal entry.
-        // CashFlowTransaction entries are immutable â€” they MUST NEVER be soft-deleted for
+        // CashFlowTransaction entries are immutable — they MUST NEVER be soft-deleted for
         // financial ledger integrity. The reversal creates an opposite entry and links
         // it to the original via ReversalOfTransactionId / ReversedByTransactionId.
         if (linkedCashflow != null)
@@ -840,7 +840,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             // Keep original's IsActive = true (never soft-delete CashFlowTransactions)
         }
 
-        // Finance V3: True atomic dual-write â€” start transaction BEFORE any entity mutation
+        // Finance V3: True atomic dual-write — start transaction BEFORE any entity mutation
         var useDeleteTx = db.Database.IsRelational();
         var deleteTx = useDeleteTx ? await db.Database.BeginTransactionAsync() : null;
         try
@@ -866,7 +866,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             catch (Exception ex) { logger.LogWarning(ex, "OnPaymentCollection commission trigger failed for invoice {InvoiceId} after payment deletion", invoiceId); }
         }
 
-        // Re-evaluate contract status (Completed â†’ Active if paid total drops below effective amount)
+        // Re-evaluate contract status (Completed → Active if paid total drops below effective amount)
         if (contractId.HasValue)
         {
             try { await TryReconcileContractStatusAsync(contractId.Value); }
@@ -905,7 +905,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         // The new guard sums ALL prior refunds against this payment (both full and partial,
         // matched by the existing (PatientId, ContractId, InvoiceId, ServiceDescription prefix)
         // heuristic) and rejects when the cumulative refund + new refund would exceed the
-        // original payment amount. The error message retains the `ط§ط³طھط±ط¯ط§ط¯ ظ‡ط°ظ‡ ط§ظ„ط¯ظپط¹ط© ظ…ط³ط¨ظ‚ط§ظ‹`
+        // original payment amount. The error message retains the `استرداد هذه الدفعة مسبقاً`
         // substring so the existing Phase 0B test (`RefundPaymentAsync_DoubleRefund_ThrowsArgumentException`)
         // and any UI string-match against it keep working.
         var priorRefundedTotal = await db.Payments
@@ -981,7 +981,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         };
         db.CashFlowTransactions.Add(refundCashflow);
 
-        // Finance V3: True atomic dual-write â€” start transaction BEFORE any entity mutation
+        // Finance V3: True atomic dual-write — start transaction BEFORE any entity mutation
         var useRefundTx = db.Database.IsRelational();
         var refundTx = useRefundTx ? await db.Database.BeginTransactionAsync() : null;
         try
@@ -1007,7 +1007,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             catch (Exception ex) { logger.LogWarning(ex, "OnPaymentCollection commission trigger failed for invoice {InvoiceId} after refund", payment.InvoiceId); }
         }
 
-        // Re-evaluate contract status after refund (Completed â†’ Active if paid total drops below effective amount)
+        // Re-evaluate contract status after refund (Completed → Active if paid total drops below effective amount)
         if (payment.ContractId.HasValue)
         {
             try { await TryReconcileContractStatusAsync(payment.ContractId.Value); }
@@ -1025,15 +1025,15 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         //     touch accrual-mode line items, so Approved/Paid commissions on accrual-mode
         //     services are NOT reversed by this refund. Auto-reversing them here would break
         //     accounting (Paid commissions have already been disbursed via DoctorCommissionPayment
-        //     + Treasury outflow + JournalEntry â€” reversing requires reversal entries, treasury
+        //     + Treasury outflow + JournalEntry — reversing requires reversal entries, treasury
         //     top-ups, and possibly already-closed cashier sessions).
         //   - OnPaymentCollection mode: commission IS re-proportioned by the trigger above based
-        //     on the new (lower) collected total â€” that's the correct behavior and we leave it alone.
+        //     on the new (lower) collected total — that's the correct behavior and we leave it alone.
         //
         // The safe, accounting-preserving action is to write a clear Arabic audit-log entry
         // flagging that manual review may be needed for Approved/Paid accrual-mode commissions
         // tied to this invoice/contract. The owner / accountant can then decide per-case whether
-        // to issue a manual commission adjustment (via the existing Unlock â†’ Recalculate flow).
+        // to issue a manual commission adjustment (via the existing Unlock → Recalculate flow).
         //
         // This is best-effort: the refund transaction has already committed, so an audit-write
         // failure here must NOT roll back the refund. We log + swallow.
@@ -1062,7 +1062,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     /// from the primary refund audit (resource `"PaymentRefund"`, written by the controller).
     ///
     /// The payload snapshots whether any OnPaymentCollection commission line items were in
-    /// Approved or Paid status at refund time â€” that's the risky case where
+    /// Approved or Paid status at refund time — that's the risky case where
     /// `TriggerOnPaymentCommissionsAsync` (called above) silently re-proportions the
     /// commission via the dual-write path, and where accrual-mode Approved/Paid commissions
     /// are NOT touched at all. Finance staff can use this flag to prioritize which refunds
@@ -1074,7 +1074,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         // Snapshot OnPaymentCollection commission line items BEFORE writing the audit, so the
         // accountant sees the state of commissions AT REFUND TIME (not after the trigger above
         // already re-proportioned them). For accrual-mode services we don't snapshot per-line
-        // â€” there can be many, and the message is the same ("manual review required") â€” but we
+        // — there can be many, and the message is the same ("manual review required") — but we
         // do flag the high-risk case where any OnPaymentCollection item was Approved/Paid.
         var hasApprovedOrPaidOnPaymentCollection = false;
         var onPaymentCollectionItemsAffected = 0;
@@ -1093,7 +1093,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                        || i.CommissionStatus == CommissionStatus.Paid);
         }
 
-        // Two warning variants â€” both must mention "العمولات" so finance staff can grep the
+        // Two warning variants — both must mention "العمولات" so finance staff can grep the
         // audit log. The high-risk variant (Approved/Paid commissions exist) is more urgent.
         string baseWarning = isPartialRefund
             ? "تم استرداد جزء من دفعة مرتبطة بفاتورة/عقد قد يحتوي على بنود عمولات. "
@@ -1139,7 +1139,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
     public async Task<PatientFinanceSummaryDto> GetPatientFinanceSummaryAsync(Guid patientId)
     {
-        // â”€â”€ Contract-based cost (server-side aggregation, FIN-13) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Contract-based cost (server-side aggregation, FIN-13) ───────────
         // Previously: loaded all contracts (+ Payments collection) into memory then
         //             `contracts.Sum(c => c.TotalAmount - c.DiscountAmount)`.
         // Now:        single SQL `SELECT SUM(TotalAmount - DiscountAmount) FROM Contracts
@@ -1148,9 +1148,9 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             .Where(c => c.PatientId == patientId)
             .SumAsync(c => (decimal?)(c.TotalAmount - c.DiscountAmount)) ?? 0m;
 
-        // â”€â”€ Invoice-based financials (new invoice system) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Invoice-based financials (new invoice system) ───────────────────
         // Sprint Patient-Finance-Ledger: Exclude Draft invoices from outstanding balance.
-        // Draft invoices are not yet committed â€” only Issued and Paid represent actual obligation.
+        // Draft invoices are not yet committed — only Issued and Paid represent actual obligation.
         // This aligns with FinanceV3 GetPatientBalance which also excludes Drafts.
         var invoiceCost = await db.Invoices
             .Where(i => i.PatientId == patientId
@@ -1159,14 +1159,14 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                      && i.IsActive)
             .SumAsync(i => (decimal?)i.TotalAmount) ?? 0m;
 
-        // â”€â”€ Combined totals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Combined totals ─────────────────────────────────────────────────
         var totalCost      = contractCost + invoiceCost;
         var totalPaid      = await db.Payments
             .Where(p => p.PatientId == patientId && p.IsActive)
             .SumAsync(p => (decimal?)(p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)) ?? 0m;
         var outstanding    = Math.Max(0m, totalCost - totalPaid);
 
-        // â”€â”€ Overdue amount â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Overdue amount ──────────────────────────────────────────────────
         // FIN-13: Project only the fields needed for the date math + the per-contract
         // paid total (computed in SQL via correlated subquery). Avoids loading the
         // full Payment collection for every contract. The month-since-StartDate calc
@@ -1226,7 +1226,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         };
     }
 
-    // â”€â”€â”€ Finance Phase 1: Supplier Payables & Credit Notes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Finance Phase 1: Supplier Payables & Credit Notes ─────────────────
 
     /// <summary>
     /// Finance Phase 1: Pays a supplier bill (partially or fully).
@@ -1290,7 +1290,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         };
         db.SupplierBillPayments.Add(billPayment);
 
-        // Create CashFlowTransaction (Outflow â€” supplier payment)
+        // Create CashFlowTransaction (Outflow — supplier payment)
         var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
         var cashflow = new CashFlowTransaction
         {
@@ -1312,12 +1312,12 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         // Link bill payment to cashflow
         billPayment.CashFlowTransactionId = cashflow.Id;
 
-        // Finance V3: Atomic dual-write â€” treasury update + journal entry within a transaction
+        // Finance V3: Atomic dual-write — treasury update + journal entry within a transaction
         var useTx = db.Database.IsRelational();
         var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
         try
         {
-            // Deduct from treasury (outflow) â€” use explicit TreasuryId if provided
+            // Deduct from treasury (outflow) — use explicit TreasuryId if provided
             Treasury treasury;
             if (request.TreasuryId.HasValue && request.TreasuryId.Value != Guid.Empty)
             {
@@ -1417,7 +1417,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         creditNote.RefundPaymentId = refund.Id;
         creditNote.UpdatedAt = DateTime.UtcNow;
 
-        // Create CashFlowTransaction (Outflow â€” credit note refund)
+        // Create CashFlowTransaction (Outflow — credit note refund)
         var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
         var cashflow = new CashFlowTransaction
         {
@@ -1436,7 +1436,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         };
         db.CashFlowTransactions.Add(cashflow);
 
-        // Finance V3: Atomic dual-write â€” treasury update + journal entry within a transaction
+        // Finance V3: Atomic dual-write — treasury update + journal entry within a transaction
         var useTx = db.Database.IsRelational();
         var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
         try
@@ -1444,7 +1444,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             // Deduct from treasury (outflow for refund)
             await UpdateTreasuryBalanceNoSaveAsync(currentUser.BranchId.Value, -creditNote.Amount, request.PaymentMethod);
 
-            // Resolve treasury for journal entry â€” use explicit TreasuryId if provided, otherwise auto-resolve
+            // Resolve treasury for journal entry — use explicit TreasuryId if provided, otherwise auto-resolve
             Treasury treasury;
             if (request.TreasuryId.HasValue && request.TreasuryId.Value != Guid.Empty)
             {
@@ -1582,7 +1582,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     /// Format: RCP-yyyyMMdd-NNN (sequential, not random).
     /// CON FIX: Uses pg_advisory_xact_lock inside an explicit transaction to prevent
     /// race conditions when multiple payments are created concurrently.
-    /// Transaction-level lock is automatically released on commit/rollback â€” safe with
+    /// Transaction-level lock is automatically released on commit/rollback — safe with
     /// connection pooling (no risk of stuck locks if the connection is returned to the pool).
     /// </summary>
     private async Task<string> GenerateReceiptNumberAsync()
@@ -1619,7 +1619,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     /// Format: REF-yyyyMMdd-NNN (sequential).
     /// CON FIX: Uses pg_advisory_xact_lock inside an explicit transaction to prevent
     /// race conditions. Transaction-level lock is automatically released on commit/rollback
-    /// â€” safe with connection pooling (no risk of stuck locks).
+    /// — safe with connection pooling (no risk of stuck locks).
     /// </summary>
     private async Task<string> GenerateRefundReceiptNumberAsync()
     {
@@ -1649,8 +1649,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     /// <summary>
     /// Checks if total active payments for a contract cover its effective amount (TotalAmount - DiscountAmount).
     /// Handles both directions:
-    ///   - Active â†’ Completed (when payments cover the effective amount)
-    ///   - Completed â†’ Active (when payments are deleted/refunded and no longer cover the effective amount)
+    ///   - Active → Completed (when payments cover the effective amount)
+    ///   - Completed → Active (when payments are deleted/refunded and no longer cover the effective amount)
     /// Skips Cancelled contracts. Safe to call after payment creation, deletion, or refund.
     /// </summary>
     private async Task TryReconcileContractStatusAsync(Guid contractId)
@@ -1684,8 +1684,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     /// <summary>
     /// Checks if total payments for an invoice cover its TotalAmount.
     /// H3 FIX: Now handles BOTH directions:
-    ///   - Issued â†’ Paid (when payments cover the total)
-    ///   - Paid â†’ Issued (when payments are deleted/refunded and no longer cover total)
+    ///   - Issued → Paid (when payments cover the total)
+    ///   - Paid → Issued (when payments are deleted/refunded and no longer cover total)
     /// Safe to call after payment creation, deletion, or refund.
     /// </summary>
     public async Task TryMarkInvoicePaidAsync(Guid invoiceId)
@@ -1702,7 +1702,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         if (invoice.Status == InvoiceStatus.Issued && totalPaid >= invoice.TotalAmount)
         {
-            // Issued â†’ Paid
+            // Issued → Paid
             invoice.Status = InvoiceStatus.Paid;
             invoice.UpdatedBy = currentUser.UserId;
             invoice.UpdatedAt = DateTime.UtcNow;
@@ -1710,7 +1710,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         }
         else if (invoice.Status == InvoiceStatus.Paid && totalPaid < invoice.TotalAmount)
         {
-            // H3 FIX: Paid â†’ Issued (payment was deleted/refunded)
+            // H3 FIX: Paid → Issued (payment was deleted/refunded)
             invoice.Status = InvoiceStatus.Issued;
             invoice.UpdatedBy = currentUser.UserId;
             invoice.UpdatedAt = DateTime.UtcNow;
@@ -1745,7 +1745,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 IsActive = true
             };
             db.Treasuries.Add(treasury);
-            // Do NOT call SaveChangesAsync â€” the caller's transaction will persist this.
+            // Do NOT call SaveChangesAsync — the caller's transaction will persist this.
             // Previously, SaveChangesAsync here caused "A second operation was started on
             // this context instance" because it conflicts with the caller's open transaction.
         }
@@ -1754,7 +1754,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         // ExecuteSqlRawAsync causes "A second operation was started on this context
         // instance" because EF Core cannot pipeline a raw SQL command alongside an
         // open transaction on the same DbContext. Using the tracked entity's Balance
-        // property is safe because the transaction guarantees atomicity â€” if two
+        // property is safe because the transaction guarantees atomicity — if two
         // concurrent payments try to update the same treasury, the database's
         // default READ COMMITTED isolation will serialize the writes.
         treasury.Balance += amount;
@@ -1840,15 +1840,15 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             db.Treasuries.Add(treasury);
         }
 
-        // Direct balance update (no raw SQL) â€” same reason as UpdateTreasuryBalanceNoSaveAsync:
+        // Direct balance update (no raw SQL) — same reason as UpdateTreasuryBalanceNoSaveAsync:
         // ExecuteSqlRawAsync causes DbContext concurrency issues inside transactions.
         // The tracked entity update is safe because the caller's transaction provides atomicity.
         treasury.Balance += amount;
 
-        // Do NOT call SaveChangesAsync â€” the caller persists all changes together
+        // Do NOT call SaveChangesAsync — the caller persists all changes together
     }
 
-    // â”€â”€â”€ Finance V3 Dual-Write Methods â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Finance V3 Dual-Write Methods ─────────────────────────────────────────
 
     /// <summary>
     /// Resolves the treasury for a given branch and payment method.
@@ -1937,7 +1937,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 IsActive = true
             };
             db.Treasuries.Add(treasury);
-            // Do NOT call SaveChangesAsync â€” the caller will save all tracked entities together
+            // Do NOT call SaveChangesAsync — the caller will save all tracked entities together
         }
 
         return treasury;
@@ -1947,7 +1947,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     /// Dual-write journal entry for a patient payment.
     /// - If allocated to an Issued invoice: Debit Treasury / Credit PatientReceivable (settles AR, no revenue)
     /// - If unallocated advance: Debit Treasury / Credit PatientAdvance (records liability)
-    /// MUST be atomic â€” if JE fails, the entire operation must fail.
+    /// MUST be atomic — if JE fails, the entire operation must fail.
     /// </summary>
     private async Task DualWritePaymentEntryAsync(Payment payment, CashFlowTransaction cashflow, Invoice? invoice)
     {
@@ -2007,14 +2007,14 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             throw new ArgumentException($"Invoice {invoiceId} not found");
 
         if (invoice.Status != InvoiceStatus.Issued)
-            throw new ArgumentException($"Invoice {invoiceId} is not in Issued status â€” cannot post issuance entry");
+            throw new ArgumentException($"Invoice {invoiceId} is not in Issued status — cannot post issuance entry");
 
         if (invoice.PatientId == Guid.Empty)
             throw new ArgumentException("PatientId cannot be Guid.Empty for invoice issuance entry");
 
         var branchId = invoice.Patient?.BranchId ?? Guid.Empty;
         if (branchId == Guid.Empty)
-            throw new ArgumentException("Cannot determine BranchId for invoice issuance entry â€” patient has no branch");
+            throw new ArgumentException("Cannot determine BranchId for invoice issuance entry — patient has no branch");
 
         var lines = new List<(JournalAccountType, Guid, decimal, decimal, string?)>
         {
@@ -2055,7 +2055,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         if (originalEntry == null)
         {
-            logger.LogWarning("No original issuance JournalEntry found for invoice {InvoiceId} â€” skipping reversal", invoiceId);
+            logger.LogWarning("No original issuance JournalEntry found for invoice {InvoiceId} — skipping reversal", invoiceId);
             return;
         }
 
@@ -2082,7 +2082,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         if (originalEntry == null)
         {
-            logger.LogWarning("No original JournalEntry found for payment {PaymentId} â€” skipping JE reversal", paymentId);
+            logger.LogWarning("No original JournalEntry found for payment {PaymentId} — skipping JE reversal", paymentId);
             return;
         }
 

@@ -12,7 +12,7 @@ namespace AqlanDentalPro.API.Controllers;
 public partial class FinanceV3Controller
 {
     /// <summary>
-    /// POST /api/finance-v3/treasuries â€” Create a treasury account (Admin only).
+    /// POST /api/finance-v3/treasuries — Create a treasury account (Admin only).
     /// Reuses logic from TreasuriesController.Create.
     /// </summary>
     [HttpPost("treasuries")]
@@ -67,7 +67,7 @@ public partial class FinanceV3Controller
 
             // Fix: Create JournalEntry manually with IsPosted = true from the start.
             // This avoids the double-save problem where CreateEntryAsync calls SaveChanges
-            // with IsPosted=false, then IsPosted=true is set and saved again â€” if the second
+            // with IsPosted=false, then IsPosted=true is set and saved again — if the second
             // save fails, the entry remains unposted, meaning the opening balance is in
             // CashFlowTransaction but not in JournalLine. By creating everything in memory
             // and saving once, we ensure atomicity.
@@ -121,7 +121,7 @@ public partial class FinanceV3Controller
         return Ok(new { treasury.Id, treasury.Name, Type = treasury.Type.ToString(), treasury.Balance, message = "تم إنشاء الخزنة/الحساب المالي بنجاح" });
     }
     /// <summary>
-    /// POST /api/finance-v3/vault-transfers â€” Create a vault transfer.
+    /// POST /api/finance-v3/vault-transfers — Create a vault transfer.
     /// Reuses logic from VaultTransfersController.Create.
     /// </summary>
     [HttpPost("vault-transfers")]
@@ -181,7 +181,7 @@ public partial class FinanceV3Controller
                 if (!string.Equals(sourceTreasury.Currency, destTreasury.Currency, StringComparison.OrdinalIgnoreCase))
                     return BadRequest(new { message = "لا يمكن التحويل المباشر بين خزائن بعملات مختلفة. استخدم عملية مصارفة مستقلة بسعر صرف موثق." });
 
-                // AUTHORITATIVE re-check inside the lock â€” concurrent transfer may have
+                // AUTHORITATIVE re-check inside the lock — concurrent transfer may have
                 // already deducted enough to make this transfer impossible.
                 if (sourceTreasury.Balance < req.Amount)
                     return BadRequest(new { message = $"عذراً، رصيد الخزنة المصدر ({sourceTreasury.Balance:N0} ر.ي) أقل من مبلغ التحويل المطلوب ({req.Amount:N0} ر.ي)" });
@@ -237,7 +237,7 @@ public partial class FinanceV3Controller
         catch { await tx.RollbackAsync(); throw; }
     }
     /// <summary>
-    /// POST /api/finance-v3/treasuries/{id}/recalculate â€” Recalculate treasury balance (Admin only).
+    /// POST /api/finance-v3/treasuries/{id}/recalculate — Recalculate treasury balance (Admin only).
     /// Migration C: Balance now recalculated from JournalLine (Treasury account type)
     /// instead of CashFlowTransaction. Treasury balance = SUM(Debit) - SUM(Credit)
     /// for all posted JournalLines where AccountType == Treasury and AccountId matches.

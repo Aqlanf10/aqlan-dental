@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
@@ -37,9 +37,9 @@ import { JournalTab } from "./components/JournalTab";
 import { CommissionsTab } from "./components/CommissionsTab";
 import { ExchangeRatesTab } from "./components/ExchangeRatesTab";
 
-/* â•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گ
+/* ═══════════════════════════════════════════════════════════════════════════════
    Tab definition
-   â•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گ */
+   ═══════════════════════════════════════════════════════════════════════════════ */
 interface TabDef {
   key: string;
   label: string;
@@ -62,9 +62,9 @@ const TABS: TabDef[] = [
   { key: "audit",          label: "سجل المراجعة",      icon: ClipboardCheck },
 ];
 
-/* â•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گ
-   Finance V3 Financial Center â€” Main Page
-   â•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گ */
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Finance V3 Financial Center — Main Page
+   ═══════════════════════════════════════════════════════════════════════════════ */
 const VALID_TABS = new Set(TABS.map((t) => t.key));
 
 function FinanceV3PageInner() {
@@ -77,11 +77,11 @@ function FinanceV3PageInner() {
   const [hasActiveSession, setHasActiveSession] = useState(false);
   const [activeSessionInfo, setActiveSessionInfo] = useState<{ cashierName: string; openedAt: string } | null>(null);
 
-  /* â”€â”€ Access gate: Admin / Accountant only â”€â”€ */
+  /* ── Access gate: Admin / Accountant only ── */
   const isAuthorized = user?.role === "Admin" || user?.role === "Accountant";
   const isAdmin = user?.role === "Admin";
 
-  /* â”€â”€ Fetch active cashier session status â”€â”€ */
+  /* ── Fetch active cashier session status ── */
   const fetchActiveSession = useCallback(async () => {
     try {
       const { data } = await api.get<{ hasActiveSession: boolean; cashierName?: string; openedAt?: string }>("/api/finance-v3/cashier-sessions/active");
@@ -109,27 +109,27 @@ function FinanceV3PageInner() {
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: tokens.bg, direction: "rtl" }}>
-      {/* â•گâ•گâ•گ Top Header â•گâ•گâ•گ */}
+      {/* ═══ Top Header ═══ */}
       <header className="flex items-center gap-4 px-5 py-2.5 border-b" style={{ backgroundColor: tokens.card, borderColor: tokens.border, boxShadow: tokens.shadow2 }}>
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-md flex items-center justify-center" style={{ backgroundColor: tokens.brand }}>
             <Wallet className="w-4 h-4" style={{ color: tokens.textOnBrand }} />
           </div>
           <div>
-            <h1 className="text-sm font-bold leading-tight" style={{ color: tokens.textPrimary }}>ط§ظ„ظ…ط±ظƒط² ط§ظ„ظ…ط§ظ„ظٹ</h1>
+            <h1 className="text-sm font-bold leading-tight" style={{ color: tokens.textPrimary }}>المركز المالي</h1>
             <p className="text-[11px]" style={{ color: tokens.textTertiary }}>Finance V3</p>
           </div>
         </div>
         <div className="flex-1" />
         <span className="text-xs" style={{ color: tokens.textSecondary }}>{todayArabic()}</span>
         <div className="w-px h-5" style={{ backgroundColor: tokens.border }} />
-        <span className="text-xs font-medium" style={{ color: tokens.textSecondary }}>ط§ظ„ظپط±ط¹ ط§ظ„ط±ط¦ظٹط³ظٹ</span>
+        <span className="text-xs font-medium" style={{ color: tokens.textSecondary }}>الفرع الرئيسي</span>
         <div className="w-px h-5" style={{ backgroundColor: tokens.border }} />
         <div className="flex items-center gap-1.5">
           {hasActiveSession ? (
             <>
               <CircleDot className="w-3 h-3" style={{ color: tokens.successBorder }} />
-              <span className="text-xs font-medium" style={{ color: tokens.successBorder }}>ظˆط±ط¯ظٹط© ظ…ظپطھظˆط­ط©</span>
+              <span className="text-xs font-medium" style={{ color: tokens.successBorder }}>وردية مفتوحة</span>
               {activeSessionInfo?.cashierName && (
                 <span className="text-xs" style={{ color: tokens.textTertiary }}>({activeSessionInfo.cashierName})</span>
               )}
@@ -137,15 +137,15 @@ function FinanceV3PageInner() {
           ) : (
             <>
               <CircleDot className="w-3 h-3" style={{ color: tokens.textTertiary }} />
-              <span className="text-xs" style={{ color: tokens.textTertiary }}>ظ„ط§ ظˆط±ط¯ظٹط© ظ…ظپطھظˆط­ط©</span>
+              <span className="text-xs" style={{ color: tokens.textTertiary }}>لا وردية مفتوحة</span>
             </>
           )}
         </div>
         <div className="w-px h-5" style={{ backgroundColor: tokens.border }} />
-        <button className="w-7 h-7 rounded-md flex items-center justify-center transition-colors" style={{ color: tokens.textSecondary }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = tokens.cardHover; }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }} title="ط§ظ„ط¥ط´ط¹ط§ط±ط§طھ"><Bell className="w-4 h-4" /></button>
+        <button className="w-7 h-7 rounded-md flex items-center justify-center transition-colors" style={{ color: tokens.textSecondary }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = tokens.cardHover; }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }} title="الإشعارات"><Bell className="w-4 h-4" /></button>
       </header>
 
-      {/* â•گâ•گâ•گ Tabs â•گâ•گâ•گ */}
+      {/* ═══ Tabs ═══ */}
       <div className="flex items-center border-b px-5 overflow-x-auto" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
         {TABS.map((tab) => {
           const Icon = tab.icon;
@@ -158,7 +158,7 @@ function FinanceV3PageInner() {
         })}
       </div>
 
-      {/* â•گâ•گâ•گ Main Content â•گâ•گâ•گ */}
+      {/* ═══ Main Content ═══ */}
       <div className="flex-1 overflow-y-auto">
         {activeTab === "overview" && <OverviewTab />}
         {activeTab === "patient-acct" && <PatientAccountsTab />}
@@ -185,7 +185,7 @@ function FinanceV3PageInner() {
 
 export default function FinanceV3Page() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-sm text-slate-500">ط¬ط§ط±ظٹ ط§ظ„طھط­ظ…ظٹظ„...</div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-sm text-slate-500">جاري التحميل...</div>}>
       <FinanceV3PageInner />
     </Suspense>
   );

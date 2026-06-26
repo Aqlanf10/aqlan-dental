@@ -43,9 +43,9 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
     // Reception excluded) is the coarse gate; the granular finance.expenses permission
     // (RolePermissions, owner-configurable from Settings) is the real per-action gate.
     // Admin always bypasses (see PermissionGuard). Accountant is seeded view/create/
-    // edit/approve but NOT delete (admin-only) â€” protects the posted ledger from
+    // edit/approve but NOT delete (admin-only) — protects the posted ledger from
     // accountant-driven history rewriting. Voucher PDF = view (matches InvoicesController
-    // .GetInvoicePdf mapping from #517). Approve/Reject = approve (Accountant allowed â€”
+    // .GetInvoicePdf mapping from #517). Approve/Reject = approve (Accountant allowed —
     // owner can revoke from Settings if they want admin-only approval).
     private Task<bool> CanAsync(string action) =>
         PermissionGuard.HasAsync(db, currentUser, "finance.expenses", action);
@@ -53,11 +53,11 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
     private IActionResult Deny() =>
         StatusCode(403, new { message = "غير مصرح لك بهذا الإجراء المالي" });
 
-    /// <summary>ط³ظ†ط¯ طµط±ظپ (quarter-A4) PDF for an operational expense.</summary>
+    /// <summary>سند صرف (quarter-A4) PDF for an operational expense.</summary>
     [HttpGet("{id:guid}/voucher/pdf")]
     public async Task<IActionResult> DownloadDisbursementVoucher(Guid id, [FromServices] IPdfService pdfService)
     {
-        // FIN-PERM: finance.expenses.view â€” a PDF is a rendering of the expense view
+        // FIN-PERM: finance.expenses.view — a PDF is a rendering of the expense view
         // (matches InvoicesController.GetInvoicePdf which uses finance.invoices.view).
         if (!await CanAsync("view")) return Deny();
 
@@ -79,7 +79,7 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateExpenseRequest req)
     {
-        // FIN-PERM: authorization FIRST â€” finance.expenses.create (Accountant allowed).
+        // FIN-PERM: authorization FIRST — finance.expenses.create (Accountant allowed).
         if (!await CanAsync("create")) return Deny();
 
         if (string.IsNullOrWhiteSpace(req.Title))
@@ -112,7 +112,7 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
                 return BadRequest(new { message = "عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل تسجيل مصروف نقدي." });
         }
 
-        // Resolve treasury for the branch by payment method â€” required for JournalEntry posting
+        // Resolve treasury for the branch by payment method — required for JournalEntry posting
         Treasury treasury;
         try
         {
@@ -349,7 +349,7 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
         return Ok(new { data = expenses, total, page, pageSize, pendingCount });
     }
 
-    /// <summary>GET /api/expenses/pending â€” Returns all expenses awaiting approval.</summary>
+    /// <summary>GET /api/expenses/pending — Returns all expenses awaiting approval.</summary>
     [HttpGet("pending")]
     public async Task<IActionResult> GetPending()
     {
@@ -379,12 +379,12 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
         return Ok(expenses);
     }
 
-    /// <summary>POST /api/expenses/{id}/approve â€” Approve a pending expense and post to GL.</summary>
+    /// <summary>POST /api/expenses/{id}/approve — Approve a pending expense and post to GL.</summary>
     [HttpPost("{id:guid}/approve")]
     [Authorize(Policy = "AdminAccess")]
     public async Task<IActionResult> Approve(Guid id, [FromBody] ApproveExpenseRequest req)
     {
-        // FIN-PERM: finance.expenses.approve â€” Accountant is seeded approve=true on
+        // FIN-PERM: finance.expenses.approve — Accountant is seeded approve=true on
         // finance.expenses (the seeded AdminAccess policy keeps the controller-level
         // gate admin-only; the granular gate allows the owner to widen to Accountant
         // by removing the [Authorize] attribute in a future change). The seeded
@@ -513,12 +513,12 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
         }
     }
 
-    /// <summary>POST /api/expenses/{id}/reject â€” Reject a pending expense (does NOT post to GL).</summary>
+    /// <summary>POST /api/expenses/{id}/reject — Reject a pending expense (does NOT post to GL).</summary>
     [HttpPost("{id:guid}/reject")]
     [Authorize(Policy = "AdminAccess")]
     public async Task<IActionResult> Reject(Guid id, [FromBody] RejectExpenseRequest req)
     {
-        // FIN-PERM: finance.expenses.approve â€” rejection is the symmetric counterpart
+        // FIN-PERM: finance.expenses.approve — rejection is the symmetric counterpart
         // of approval (a pending financial action adjudicated). Accountant is seeded
         // approve=true so is allowed; the AdminAccess attribute keeps the coarse gate.
         if (!await CanAsync("approve")) return Deny();
@@ -562,7 +562,7 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        // FIN-PERM: finance.expenses.delete â€” Admin only per seed (Accountant is seeded
+        // FIN-PERM: finance.expenses.delete — Admin only per seed (Accountant is seeded
         // delete=false). Protects posted-ledger history from accountant-driven edits;
         // admin bypass still goes through the per-row IsAdmin check below for posted
         // expenses (defense-in-depth on the reversal path).
@@ -609,7 +609,7 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
 
     /// <summary>
     /// Reverses a posted expense by creating reversal CashFlowTransaction + JournalEntry.
-    /// NEVER soft-deletes posted financial history â€” all corrections go through reversal entries.
+    /// NEVER soft-deletes posted financial history — all corrections go through reversal entries.
     /// </summary>
     private async Task<IActionResult> ReversePostedExpenseAsync(OperationalExpense expenseSnapshot, Guid userId)
     {
@@ -655,7 +655,7 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
                 }
             }
 
-            // Check if already reversed â€” prevents double-restore (re-checked inside lock)
+            // Check if already reversed — prevents double-restore (re-checked inside lock)
             if (originalCashflow?.ReversedByTransactionId != null)
             {
                 await tx.RollbackAsync();
@@ -699,7 +699,7 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
             };
             db.CashFlowTransactions.Add(reversalCashflow);
 
-            // Link original to reversal â€” prevents double-restore on retry
+            // Link original to reversal — prevents double-restore on retry
             originalCashflow.ReversedByTransactionId = reversalCashflow.Id;
 
             // Create reversal JournalEntry via service
@@ -719,7 +719,7 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
             }
 
             // Blocker 1: Atomically increment Treasury.Balance on the EXACT original treasury.
-            // Uses the original CashFlowTransaction.TreasuryId â€” never re-resolves by payment method.
+            // Uses the original CashFlowTransaction.TreasuryId — never re-resolves by payment method.
             // Double-restore is prevented because originalCashflow.ReversedByTransactionId is set above,
             // and the check at the top of this method rejects if it's already non-null.
             await treasuryResolution.IncrementTreasuryBalanceByTreasuryIdAsync(originalTreasuryId, expense.Amount);

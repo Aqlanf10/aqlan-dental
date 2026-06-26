@@ -6,6 +6,8 @@ import api from "@/lib/api";
 import { cn, formatTime, localDateString } from "@/lib/utils";
 // FE-09: centralized appointment status colors
 import { APPOINTMENT_STATUS_COLORS as STATUS_COLORS } from "@/lib/statusStyles";
+// YOLO-S1: resolve appointment color (explicit pick → package color → doctor color)
+import { resolveAppointmentColor } from "@/lib/appointmentColors";
 
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 8); // 8:00 – 20:00
 
@@ -142,7 +144,16 @@ export function WeekCalendar({ anchor, doctorId, onDateClick }: Props) {
                   )}
                 >
                   <div className="space-y-0.5">
-                    {slotAppts.map((a) => (
+                    {slotAppts.map((a) => {
+                      // YOLO-S1: resolve the appointment color (explicit → package → doctor → null).
+                      // Applied as a 4px left border so the calendar entry is visually
+                      // differentiated by type while preserving the status background color.
+                      const resolvedColor = resolveAppointmentColor(
+                        a.appointmentColor,
+                        a.packageColor,
+                        a.doctorColor,
+                      );
+                      return (
                       <Link
                         key={a.id}
                         href={`/appointments/${a.id}`}
@@ -150,20 +161,28 @@ export function WeekCalendar({ anchor, doctorId, onDateClick }: Props) {
                           "block rounded px-1.5 py-1 text-xs border truncate hover:brightness-95 transition",
                           STATUS_COLORS[a.status] ?? "bg-gray-100 border-gray-200"
                         )}
-                        title={`${a.patientName} — ${a.appointmentType} — ${formatTime(a.startTime)}`}
+                        style={resolvedColor ? { borderRight: `4px solid ${resolvedColor}` } : undefined}
+                        title={`${a.patientName} — ${a.appointmentType} — ${formatTime(a.startTime)}${a.companionName ? ` — مرافق: ${a.companionName}` : ""}`}
                       >
                         <div className="flex items-center gap-1">
                           <span
                             className="w-1.5 h-1.5 rounded-full flex-shrink-0 inline-block"
-                            style={{ backgroundColor: a.doctorColor ?? "#2563EB" }}
+                            style={{ backgroundColor: resolvedColor ?? "#2563EB" }}
                           />
                           <span className="font-medium truncate">{a.patientName}</span>
+                          {a.companionName && (
+                            <span className="text-[9px] text-emerald-700 bg-emerald-50 rounded-full px-1 py-px flex-shrink-0">
+                              👤
+                            </span>
+                          )}
                         </div>
                         <div className="text-[10px] opacity-70 font-mono">
                           {formatTime(a.startTime)} · {a.appointmentType}
+                          {a.packageName && <span className="opacity-80"> · 📦 {a.packageName}</span>}
                         </div>
                       </Link>
-                    ))}
+                      );
+                    })}
                   </div>
                   {/* Click empty area to add appointment */}
                   {slotAppts.length === 0 && (

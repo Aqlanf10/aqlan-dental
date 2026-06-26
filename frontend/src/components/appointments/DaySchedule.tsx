@@ -10,6 +10,8 @@ import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
 import { useAuthStore } from "@/stores/authStore";
 // FE-09: centralized appointment status colors
 import { APPOINTMENT_STATUS_COLORS as STATUS_COLORS } from "@/lib/statusStyles";
+// YOLO-S1: resolve appointment color (explicit pick → package color → doctor color)
+import { resolveAppointmentColor } from "@/lib/appointmentColors";
 
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 8); // 8:00 – 20:00
 
@@ -311,11 +313,25 @@ function AppointmentCard({
         "rounded-lg border px-3 py-2 flex items-center gap-3",
         STATUS_COLORS[a.status] ?? "bg-gray-50 border-gray-200"
       )}
+      // YOLO-S1: subtle background tint (8% opacity) when an explicit appointment
+      // color is set, so the card visually groups with the calendar entry.
+      style={
+        resolveAppointmentColor(a.appointmentColor, a.packageColor, a.doctorColor)
+          ? {
+              backgroundColor: `${resolveAppointmentColor(a.appointmentColor, a.packageColor, a.doctorColor)}14`,
+            }
+          : undefined
+      }
     >
-      {/* Doctor color bar */}
+      {/* YOLO-S1: appointment color left border (4px). Falls back to doctor color
+          (existing behavior) when no explicit appointment color is set. */}
       <div
         className="w-1 self-stretch rounded-full flex-shrink-0"
-        style={{ backgroundColor: a.doctorColor ?? "#2563EB" }}
+        style={{
+          backgroundColor:
+            resolveAppointmentColor(a.appointmentColor, a.packageColor, a.doctorColor) ?? "#2563EB",
+          width: "4px",
+        }}
       />
 
       {/* Info */}
@@ -345,6 +361,31 @@ function AppointmentCard({
             <>
               <span>·</span>
               <span className="flex items-center gap-0.5 text-purple-600">📍 {a.roomName}</span>
+            </>
+          )}
+          {/* YOLO-S1: companion badge — show name + relationship for children/ortho patients */}
+          {a.companionName && (
+            <>
+              <span>·</span>
+              <span className="flex items-center gap-0.5 text-emerald-700 bg-emerald-50 rounded-full px-1.5 py-0.5" title={a.companionPhone ?? undefined}>
+                👤 {a.companionName}
+                {a.companionRelationship && <span className="text-emerald-500">({a.companionRelationship})</span>}
+              </span>
+            </>
+          )}
+          {/* YOLO-S1: package badge — show linked package name if set */}
+          {a.packageName && (
+            <>
+              <span>·</span>
+              <span
+                className="flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                style={{
+                  backgroundColor: (a.packageColor ?? "#6b7280") + "20",
+                  color: a.packageColor ?? "#6b7280",
+                }}
+              >
+                📦 {a.packageName}
+              </span>
             </>
           )}
         </div>

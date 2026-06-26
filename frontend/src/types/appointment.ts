@@ -26,6 +26,16 @@ export interface Appointment {
   inRoomAt?: string | null;
   // Email reminder availability
   hasEmail?: boolean;
+
+  // YOLO-S1: Companion/Guardian + Color + Treatment Package — all optional,
+  // nullable, default undefined so existing callers see no behavior change.
+  companionName?: string | null;
+  companionPhone?: string | null;
+  companionRelationship?: string | null;
+  appointmentColor?: string | null;
+  packageId?: string | null;
+  packageName?: string | null;
+  packageColor?: string | null;
 }
 
 export interface CreateAppointmentRequest {
@@ -40,6 +50,13 @@ export interface CreateAppointmentRequest {
   serviceId?: string;
   clinicRoomId?: string;
   orthoCaseId?: string;
+
+  // YOLO-S1
+  companionName?: string | null;
+  companionPhone?: string | null;
+  companionRelationship?: string | null;
+  appointmentColor?: string | null;
+  packageId?: string | null;
 }
 
 export interface BatchUpdateStatusRequest {
@@ -106,4 +123,36 @@ export interface QueueDisplay {
     status: string;
     calledAt: string;
   }[];
+}
+
+// ── YOLO-S1: Treatment Package types ─────────────────────────────────────────
+
+export interface TreatmentPackage {
+  id: string;
+  name: string;
+  description?: string | null;
+  totalPrice: number;
+  sessionCount: number;
+  color?: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateTreatmentPackageRequest {
+  name: string;
+  description?: string | null;
+  totalPrice: number;
+  sessionCount: number;
+  color?: string | null;
+  isActive: boolean;
+}
+
+export interface UpdateTreatmentPackageRequest {
+  name: string;
+  description?: string | null;
+  totalPrice: number;
+  sessionCount: number;
+  color?: string | null;
+  isActive?: boolean | null;
 }

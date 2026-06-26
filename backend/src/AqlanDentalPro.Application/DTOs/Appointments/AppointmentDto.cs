@@ -29,6 +29,15 @@ public class AppointmentDto
     public Guid? ClinicRoomId { get; set; }
     public Guid? OrthoCaseId { get; set; }
 
+    // YOLO-S1: Companion/Guardian + Color + Treatment Package
+    public string? CompanionName { get; set; }
+    public string? CompanionPhone { get; set; }
+    public string? CompanionRelationship { get; set; }
+    public string? AppointmentColor { get; set; }
+    public Guid? PackageId { get; set; }
+    public string? PackageName { get; set; }
+    public string? PackageColor { get; set; }
+
     // Reminder availability (for frontend button state)
     /// <summary>Whether the patient has an email on file (for showing/disabling email reminder button).</summary>
     public bool HasEmail { get; set; }
@@ -47,6 +56,14 @@ public class CreateAppointmentRequest
     public Guid? ServiceId { get; set; }
     public Guid? ClinicRoomId { get; set; }
     public Guid? OrthoCaseId { get; set; }
+
+    // YOLO-S1: Companion/Guardian + Color + Treatment Package — all optional,
+    // nullable, and default null so existing callers see no behavior change.
+    public string? CompanionName { get; set; }
+    public string? CompanionPhone { get; set; }
+    public string? CompanionRelationship { get; set; }
+    public string? AppointmentColor { get; set; }
+    public Guid? PackageId { get; set; }
 }
 
 public class UpdateAppointmentStatusRequest

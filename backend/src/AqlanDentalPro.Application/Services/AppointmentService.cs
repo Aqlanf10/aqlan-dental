@@ -47,7 +47,13 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
             CreatedBy = currentUser.UserId,
             ServiceId = req.ServiceId,
             ClinicRoomId = req.ClinicRoomId,
-            OrthoCaseId = req.OrthoCaseId
+            OrthoCaseId = req.OrthoCaseId,
+            // YOLO-S1: companion + color + package (all nullable; existing callers see null)
+            CompanionName = req.CompanionName,
+            CompanionPhone = req.CompanionPhone,
+            CompanionRelationship = req.CompanionRelationship,
+            AppointmentColor = req.AppointmentColor,
+            PackageId = req.PackageId,
         };
 
         // C-15: atomic conflict-check + insert (transaction + per-doctor advisory
@@ -148,6 +154,12 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         appointment.ServiceId       = req.ServiceId;
         appointment.ClinicRoomId    = req.ClinicRoomId;
         appointment.OrthoCaseId      = req.OrthoCaseId;
+        // YOLO-S1: companion + color + package (all nullable; updating with null clears them, which is intended)
+        appointment.CompanionName         = req.CompanionName;
+        appointment.CompanionPhone        = req.CompanionPhone;
+        appointment.CompanionRelationship = req.CompanionRelationship;
+        appointment.AppointmentColor      = req.AppointmentColor;
+        appointment.PackageId             = req.PackageId;
 
         repo.Update(appointment);
         await repo.SaveChangesAsync();
@@ -306,6 +318,14 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         InRoomAt = a.InRoomAt,
         ServiceId = a.ServiceId,
         ClinicRoomId = a.ClinicRoomId,
-        OrthoCaseId = a.OrthoCaseId
+        OrthoCaseId = a.OrthoCaseId,
+        // YOLO-S1
+        CompanionName = a.CompanionName,
+        CompanionPhone = a.CompanionPhone,
+        CompanionRelationship = a.CompanionRelationship,
+        AppointmentColor = a.AppointmentColor,
+        PackageId = a.PackageId,
+        PackageName = a.Package?.Name,
+        PackageColor = a.Package?.Color,
     };
 }

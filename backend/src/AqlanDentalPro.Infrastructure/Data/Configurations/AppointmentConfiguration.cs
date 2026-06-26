@@ -24,12 +24,20 @@ public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
         builder.Property(a => a.ClinicRoomId).IsRequired(false);
         builder.Property(a => a.OrthoCaseId).IsRequired(false);
 
+        // YOLO-S1: Companion/Guardian + Color + Treatment Package
+        builder.Property(a => a.CompanionName).HasMaxLength(150);
+        builder.Property(a => a.CompanionPhone).HasMaxLength(30);
+        builder.Property(a => a.CompanionRelationship).HasMaxLength(50);
+        builder.Property(a => a.AppointmentColor).HasMaxLength(20);
+        builder.Property(a => a.PackageId).IsRequired(false);
+
         // Composite index for conflict detection
         builder.HasIndex(a => new { a.DoctorId, a.AppointmentDate, a.StartTime });
 
         // Index for queue queries
         builder.HasIndex(a => a.AppointmentDate);
         builder.HasIndex(a => a.OrthoCaseId);
+        builder.HasIndex(a => a.PackageId);
 
         builder.HasOne(a => a.Patient)
             .WithMany(p => p.Appointments)
@@ -59,6 +67,14 @@ public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
         builder.HasOne(a => a.OrthoCase)
             .WithMany()
             .HasForeignKey(a => a.OrthoCaseId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        // YOLO-S1: optional link to TreatmentPackage — SetNull so deleting a
+        // package (soft-delete via IsActive=false) does not break historical
+        // appointments; the read path falls back to the appointment's own type.
+        builder.HasOne(a => a.Package)
+            .WithMany()
+            .HasForeignKey(a => a.PackageId)
             .OnDelete(DeleteBehavior.SetNull);
     }
 }

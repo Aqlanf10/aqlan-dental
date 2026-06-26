@@ -67,6 +67,12 @@ export default function EditAppointmentPage() {
           durationMinutes: appt.durationMinutes,
           appointmentType: appt.appointmentType,
           notes:           appt.notes ?? "",
+          // YOLO-S1: preserve companion + color + package fields on edit
+          companionName:         appt.companionName ?? "",
+          companionPhone:        appt.companionPhone ?? "",
+          companionRelationship: appt.companionRelationship ?? "",
+          appointmentColor:      appt.appointmentColor ?? "",
+          packageId:             appt.packageId ?? "",
         }}
       />
     </div>

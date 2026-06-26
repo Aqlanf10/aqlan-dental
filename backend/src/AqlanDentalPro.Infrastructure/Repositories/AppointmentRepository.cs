@@ -98,6 +98,7 @@ public class AppointmentRepository(AppDbContext context)
         await DbSet
             .Include(a => a.Patient)
             .Include(a => a.Doctor)
+            .Include(a => a.Package) // YOLO-S1: eager-load for PackageName/Color in DTO
             .FirstOrDefaultAsync(a => a.Id == id);
 
     public async Task<IEnumerable<Appointment>> GetByPatientAsync(Guid patientId) =>

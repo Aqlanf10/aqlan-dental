@@ -22,6 +22,13 @@ public sealed class CreateInventoryItemRequest
     public string? BatchNumber { get; init; }
     public string? ExpiryDate { get; init; }
     public Guid? DefaultSupplierId { get; init; }
+
+    // ── YOLO-S4 inventory enhancements (all nullable, optional) ──────────
+    public decimal? MinStockLevel { get; init; }
+    public string? PurchaseUnit { get; init; }
+    public string? ConsumptionUnit { get; init; }
+    public string? ImageUrl { get; init; }
+    public string? WarehouseLocation { get; init; }
 }
 
 public sealed class CreateInventoryItemRequestValidator : AbstractValidator<CreateInventoryItemRequest>
@@ -42,9 +49,29 @@ public sealed class CreateInventoryItemRequestValidator : AbstractValidator<Crea
             .GreaterThanOrEqualTo(0).WithMessage("تكلفة الوحدة يجب أن تكون صفراً أو أكثر")
             .When(x => x.CostPerUnit.HasValue);
 
+        RuleFor(x => x.MinStockLevel)
+            .GreaterThanOrEqualTo(0).WithMessage("الحد الأدنى للمخزون يجب أن يكون صفراً أو أكثر")
+            .When(x => x.MinStockLevel.HasValue);
+
         RuleFor(x => x.BatchNumber)
             .MaximumLength(50).WithMessage("رقم الدفعة يجب ألا يتجاوز 50 حرفاً")
             .When(x => !string.IsNullOrWhiteSpace(x.BatchNumber));
+
+        RuleFor(x => x.PurchaseUnit)
+            .MaximumLength(30).WithMessage("وحدة الشراء يجب ألا تتجاوز 30 حرفاً")
+            .When(x => !string.IsNullOrWhiteSpace(x.PurchaseUnit));
+
+        RuleFor(x => x.ConsumptionUnit)
+            .MaximumLength(30).WithMessage("وحدة الصرف يجب ألا تتجاوز 30 حرفاً")
+            .When(x => !string.IsNullOrWhiteSpace(x.ConsumptionUnit));
+
+        RuleFor(x => x.ImageUrl)
+            .MaximumLength(500).WithMessage("رابط الصورة يجب ألا يتجاوز 500 حرف")
+            .When(x => !string.IsNullOrWhiteSpace(x.ImageUrl));
+
+        RuleFor(x => x.WarehouseLocation)
+            .MaximumLength(100).WithMessage("موقع المستودع يجب ألا يتجاوز 100 حرف")
+            .When(x => !string.IsNullOrWhiteSpace(x.WarehouseLocation));
 
         RuleFor(x => x.ExpiryDate)
             .Must(d => DateOnly.TryParse(d, out _)).WithMessage("تنسيق تاريخ الانتهاء غير صالح. استخدم YYYY-MM-DD")
@@ -105,6 +132,13 @@ public class InventoryController(AppDbContext db, ILogger<InventoryController> l
                 ExpiryDate = i.ExpiryDate != null ? i.ExpiryDate.Value.ToString("yyyy-MM-dd") : (string?)null,
                 i.DefaultSupplierId,
                 IsLowStock = i.Quantity <= i.MinQuantity,
+                // YOLO-S4 enhancements
+                MinStockLevel = i.MinStockLevel != null ? i.MinStockLevel.Value.ToString("0.######") : (string?)null,
+                IsBelowMinStockLevel = i.MinStockLevel != null && i.Quantity < i.MinStockLevel.Value,
+                i.PurchaseUnit,
+                i.ConsumptionUnit,
+                i.ImageUrl,
+                i.WarehouseLocation,
                 CreatedAt = i.CreatedAt.ToString("yyyy-MM-dd")
             })
             .ToListAsync();
@@ -397,7 +431,13 @@ public class InventoryController(AppDbContext db, ILogger<InventoryController> l
             CostPerUnit = req.CostPerUnit,
             BatchNumber = req.BatchNumber,
             ExpiryDate = expiryDate,
-            DefaultSupplierId = req.DefaultSupplierId
+            DefaultSupplierId = req.DefaultSupplierId,
+            // YOLO-S4 enhancements
+            MinStockLevel = req.MinStockLevel,
+            PurchaseUnit = req.PurchaseUnit,
+            ConsumptionUnit = req.ConsumptionUnit,
+            ImageUrl = req.ImageUrl,
+            WarehouseLocation = req.WarehouseLocation,
         };
 
         db.Inventory.Add(item);
@@ -428,6 +468,12 @@ public class InventoryController(AppDbContext db, ILogger<InventoryController> l
         item.BatchNumber = req.BatchNumber;
         item.ExpiryDate = expiryDate;
         item.DefaultSupplierId = req.DefaultSupplierId;
+        // YOLO-S4 enhancements
+        item.MinStockLevel = req.MinStockLevel;
+        item.PurchaseUnit = req.PurchaseUnit;
+        item.ConsumptionUnit = req.ConsumptionUnit;
+        item.ImageUrl = req.ImageUrl;
+        item.WarehouseLocation = req.WarehouseLocation;
 
         await db.SaveChangesAsync();
         return NoContent();

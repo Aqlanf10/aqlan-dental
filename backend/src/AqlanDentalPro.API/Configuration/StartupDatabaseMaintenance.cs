@@ -61,6 +61,8 @@ public static class StartupDatabaseMaintenance
         await EnsurePaymentCurrencyColumnAsync(app);
         await EnsureMultiCurrencyColumnsAsync(app);
         await EnsureAppointmentEnhancementsSchemaAsync(app);
+        await EnsureInventoryEnhancementsSchemaAsync(app);
+        await EnsurePatientSegmentsSchemaAsync(app);
 
         // ── Gated DB maintenance (ENABLE_STARTUP_DB_MAINTENANCE) ──────
         await RunGatedDbMaintenanceAsync(app, configuration);
@@ -4233,6 +4235,130 @@ public static class StartupDatabaseMaintenance
         {
             app.Services.GetRequiredService<ILogger<Program>>()
                 .LogWarning(ex, "Appointment enhancements (YOLO-S1) schema hotfix failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// YOLO-S4: Inventory enhancements hotfix — mirrors migration
+    /// 20260714000000_AddInventoryEnhancements. Idempotent (ADD COLUMN IF NOT
+    /// EXISTS) so it is safe on databases where the migration has not yet been
+    /// applied. Runs unconditionally on every boot so the app stays healthy
+    /// even if EF MigrateAsync is disabled (ENABLE_STARTUP_DB_MAINTENANCE=false).
+    /// </summary>
+    private static async Task EnsureInventoryEnhancementsSchemaAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                -- ── Inventory: YOLO-S4 enhancement columns ────────────────────────
+                ALTER TABLE "Inventory"
+                    ADD COLUMN IF NOT EXISTS "MinStockLevel"     numeric(12,2)          NULL,
+                    ADD COLUMN IF NOT EXISTS "PurchaseUnit"      character varying(30)  NULL,
+                    ADD COLUMN IF NOT EXISTS "ConsumptionUnit"   character varying(30)  NULL,
+                    ADD COLUMN IF NOT EXISTS "ImageUrl"          character varying(500) NULL,
+                    ADD COLUMN IF NOT EXISTS "WarehouseLocation" character varying(100) NULL;
+
+                CREATE INDEX IF NOT EXISTS "IX_Inventory_WarehouseLocation"
+                    ON "Inventory" ("WarehouseLocation");
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "Inventory enhancements (YOLO-S4) schema hotfix failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// YOLO-S5: Patient segments hotfix — mirrors migration
+    /// 20260715000000_AddPatientSegments. Idempotent (CREATE TABLE IF NOT
+    /// EXISTS + DO $$ ... END $$ guard for FKs) so it is safe on databases
+    /// where the migration has not yet been applied.
+    /// </summary>
+    private static async Task EnsurePatientSegmentsSchemaAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                -- ── PatientSegments table ────────────────────────────────────────
+                CREATE TABLE IF NOT EXISTS "PatientSegments" (
+                    "Id"          uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "Name"        character varying(200)   NOT NULL,
+                    "Description" character varying(1000)  NULL,
+                    "Color"       character varying(20)    NULL,
+                    "IsDynamic"   boolean                  NOT NULL DEFAULT false,
+                    "QueryJson"   text                     NULL,
+                    "CreatedAt"   timestamp with time zone NOT NULL DEFAULT now(),
+                    "UpdatedAt"   timestamp with time zone NOT NULL DEFAULT now(),
+                    "IsActive"    boolean                  NOT NULL DEFAULT true,
+                    "DeletedAt"   timestamp with time zone NULL,
+                    "DeletedBy"   uuid                     NULL,
+                    CONSTRAINT "PK_PatientSegments" PRIMARY KEY ("Id")
+                );
+
+                CREATE INDEX IF NOT EXISTS "IX_PatientSegments_Name"
+                    ON "PatientSegments" ("Name");
+                CREATE INDEX IF NOT EXISTS "IX_PatientSegments_IsActive"
+                    ON "PatientSegments" ("IsActive");
+
+                -- ── PatientSegmentMembers table ──────────────────────────────────
+                CREATE TABLE IF NOT EXISTS "PatientSegmentMembers" (
+                    "Id"         uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "SegmentId"  uuid                     NOT NULL,
+                    "PatientId"  uuid                     NOT NULL,
+                    "AddedAt"    timestamp with time zone NOT NULL DEFAULT now(),
+                    "CreatedAt"  timestamp with time zone NOT NULL DEFAULT now(),
+                    "UpdatedAt"  timestamp with time zone NOT NULL DEFAULT now(),
+                    "IsActive"   boolean                  NOT NULL DEFAULT true,
+                    "DeletedAt"  timestamp with time zone NULL,
+                    "DeletedBy"  uuid                     NULL,
+                    CONSTRAINT "PK_PatientSegmentMembers" PRIMARY KEY ("Id"),
+                    CONSTRAINT "UQ_PatientSegmentMembers_SegmentId_PatientId"
+                        UNIQUE ("SegmentId", "PatientId")
+                );
+
+                CREATE INDEX IF NOT EXISTS "IX_PatientSegmentMembers_SegmentId"
+                    ON "PatientSegmentMembers" ("SegmentId");
+                CREATE INDEX IF NOT EXISTS "IX_PatientSegmentMembers_PatientId"
+                    ON "PatientSegmentMembers" ("PatientId");
+
+                DO $$ BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname = 'FK_PatientSegmentMembers_PatientSegments_SegmentId'
+                    ) THEN
+                        ALTER TABLE "PatientSegmentMembers"
+                            ADD CONSTRAINT "FK_PatientSegmentMembers_PatientSegments_SegmentId"
+                            FOREIGN KEY ("SegmentId") REFERENCES "PatientSegments"("Id")
+                            ON DELETE CASCADE;
+                    END IF;
+                END $$;
+
+                DO $$ BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname = 'FK_PatientSegmentMembers_Patients_PatientId'
+                    ) THEN
+                        ALTER TABLE "PatientSegmentMembers"
+                            ADD CONSTRAINT "FK_PatientSegmentMembers_Patients_PatientId"
+                            FOREIGN KEY ("PatientId") REFERENCES "Patients"("Id")
+                            ON DELETE CASCADE;
+                    END IF;
+                END $$;
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "Patient segments (YOLO-S5) schema hotfix failed (non-fatal)");
         }
     }
 

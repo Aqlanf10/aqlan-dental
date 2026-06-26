@@ -9,7 +9,7 @@ import {
   UserRound, Building2, UserCog,
   Truck, ShoppingCart, ChevronDown,
   Smartphone, Banknote, CalendarDays, CalendarOff, Shield, DollarSign,
-  Route, BellRing, CalendarPlus,
+  Route, BellRing, CalendarPlus, Layers,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -61,6 +61,10 @@ const NAV: NavEntry[] = [
   { href: "/",               label: "لوحة التحكم",     icon: LayoutDashboard, roles: ["Admin"],                                                             section: "رئيسي" },
   { href: "/daily-operations", label: "التشغيل اليومي", icon: ClipboardList, roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.DAILY_OPERATIONS_VIEW, badge: "⭐" },
   { href: "/patients",       label: "المرضى",           icon: Users,           roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.PATIENTS_VIEW },
+  // YOLO-S5: Patient segments — pre-built dynamic (overdue ortho, outstanding balance,
+  // no-show 90d, lab ready) + admin-managed custom segments. Admin-only — backed by
+  // PatientSegmentsController [Authorize(Policy = "AdminOnly")] + routePermissions.ts.
+  { href: "/patient-segments", label: "مجموعات المرضى", icon: Layers,          roles: ["Admin"] },
 
   // ── العيادة ───────────────────────────────────────────────────────────────
   { href: "/appointments",   label: "المواعيد",        icon: CalendarDays,    roles: ["Admin", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.APPOINTMENTS_VIEW, section: "العيادة" },

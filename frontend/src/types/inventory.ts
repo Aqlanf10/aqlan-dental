@@ -12,6 +12,15 @@ export interface InventoryItem {
   defaultSupplierId?: string;
   defaultSupplierName?: string;
   createdAt: string;
+  // ── YOLO-S4 inventory enhancements ───────────────────────────────────────
+  /** Parallel decimal threshold to MinQuantity (int). Null = not configured. */
+  minStockLevel?: string | null;
+  /** True when minStockLevel is set and Quantity < minStockLevel. */
+  isBelowMinStockLevel?: boolean;
+  purchaseUnit?: string | null;
+  consumptionUnit?: string | null;
+  imageUrl?: string | null;
+  warehouseLocation?: string | null;
 }
 
 export interface CreateInventoryItemRequest {
@@ -21,6 +30,15 @@ export interface CreateInventoryItemRequest {
   minQuantity: number;
   unit?: string;
   costPerUnit?: number;
+  // ── YOLO-S4 inventory enhancements (all optional) ────────────────────────
+  batchNumber?: string;
+  expiryDate?: string;
+  defaultSupplierId?: string;
+  minStockLevel?: number;
+  purchaseUnit?: string;
+  consumptionUnit?: string;
+  imageUrl?: string;
+  warehouseLocation?: string;
 }
 
 export interface AdjustQuantityRequest {

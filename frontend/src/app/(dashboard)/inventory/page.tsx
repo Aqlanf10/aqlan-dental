@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import {
   Plus, Package, AlertTriangle, Search, Minus, Clock, X,
-  TrendingDown, BarChart3, Truck, CalendarClock,
+  TrendingDown, BarChart3, Truck, CalendarClock, MapPin, ImageIcon,
 } from "lucide-react";
 import api from "@/lib/api";
 import { toast } from "@/stores/toastStore";
@@ -334,6 +334,7 @@ export default function InventoryPage() {
                       "التكلفة / وحدة",
                       "رقم الدفعة",
                       "تاريخ الانتهاء",
+                      "موقع المستودع",
                       "المورد الافتراضي",
                       "",
                     ].map((h) => (
@@ -363,10 +364,41 @@ export default function InventoryPage() {
                       >
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            {item.isLowStock && (
-                              <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+                            {item.imageUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={item.imageUrl}
+                                alt={item.name}
+                                className="w-8 h-8 rounded-md object-cover border border-gray-200 flex-shrink-0"
+                                onError={(e) => {
+                                  (e.currentTarget as HTMLImageElement).style.display = "none";
+                                }}
+                              />
+                            ) : (
+                              <div className="w-8 h-8 rounded-md bg-gray-100 flex items-center justify-center flex-shrink-0">
+                                <ImageIcon className="w-4 h-4 text-gray-400" />
+                              </div>
                             )}
-                            <span className="font-medium text-gray-900">{item.name}</span>
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-1.5">
+                                {item.isLowStock && (
+                                  <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+                                )}
+                                <span className="font-medium text-gray-900">{item.name}</span>
+                              </div>
+                              {item.isBelowMinStockLevel && (
+                                <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full w-fit mt-0.5">
+                                  أقل من حد المخزون ({item.minStockLevel})
+                                </span>
+                              )}
+                              {(item.purchaseUnit || item.consumptionUnit) && (
+                                <span className="text-[10px] text-gray-400 mt-0.5">
+                                  {item.purchaseUnit && `شراء: ${item.purchaseUnit}`}
+                                  {item.purchaseUnit && item.consumptionUnit && " · "}
+                                  {item.consumptionUnit && `صرف: ${item.consumptionUnit}`}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </td>
                         <td className="px-4 py-3">
@@ -409,6 +441,16 @@ export default function InventoryPage() {
                               {formatArabicDate(item.expiryDate)}
                               {isExpired && " (منتهي)"}
                               {!isExpired && isExpiringSoon && " (قريب)"}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {item.warehouseLocation ? (
+                            <span className="flex items-center gap-1 text-xs text-gray-600">
+                              <MapPin className="w-3 h-3 text-gray-400" />
+                              {item.warehouseLocation}
                             </span>
                           ) : (
                             "—"

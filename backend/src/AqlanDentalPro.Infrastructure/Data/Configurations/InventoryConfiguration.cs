@@ -27,12 +27,22 @@ public class InventoryConfiguration : IEntityTypeConfiguration<Inventory>
         builder.Property(i => i.DefaultSupplierId).IsRequired(false);
         builder.Property(i => i.ExpiryDate).IsRequired(false);
 
+        // ── Sprint 4 (YOLO-S4) inventory enhancements ───────────────────────
+        // MinStockLevel: parallel decimal threshold (kept distinct from the
+        // legacy int MinQuantity to avoid changing existing low-stock logic).
+        builder.Property(i => i.MinStockLevel).HasPrecision(12, 2).IsRequired(false);
+        builder.Property(i => i.PurchaseUnit).HasMaxLength(30).IsRequired(false);
+        builder.Property(i => i.ConsumptionUnit).HasMaxLength(30).IsRequired(false);
+        builder.Property(i => i.ImageUrl).HasMaxLength(500).IsRequired(false);
+        builder.Property(i => i.WarehouseLocation).HasMaxLength(100).IsRequired(false);
+
         // Indexes
         builder.HasIndex(i => i.Name);
         builder.HasIndex(i => i.Category);
         builder.HasIndex(i => i.BranchId);
         builder.HasIndex(i => i.DefaultSupplierId);
         builder.HasIndex(i => i.ExpiryDate);
+        builder.HasIndex(i => i.WarehouseLocation);
 
         // Relationships
         builder.HasOne(i => i.Branch)

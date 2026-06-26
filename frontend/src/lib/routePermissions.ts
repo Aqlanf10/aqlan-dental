@@ -37,6 +37,10 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   
   // Inventory - Admin only
   { path: '/inventory', allowedRoles: ['Admin'] },
+
+  // YOLO-S5: Patient segments — pre-built dynamic + admin-managed custom.
+  // Backend (PatientSegmentsController) is [Authorize(Policy = "AdminOnly")].
+  { path: '/patient-segments', allowedRoles: ['Admin'] },
   
   // Reports - specific roles
   // More specific path first (startsWith matching) — same roles as /reports

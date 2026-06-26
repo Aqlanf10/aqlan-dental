@@ -2549,8 +2549,16 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<Guid?>("DeletedBy")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ConsumptionUnit")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
                     b.Property<DateOnly?>("ExpiryDate")
                         .HasColumnType("date");
+
+                    b.Property<string>("ImageUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
@@ -2558,10 +2566,18 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<int>("MinQuantity")
                         .HasColumnType("integer");
 
+                    b.Property<decimal?>("MinStockLevel")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<string>("PurchaseUnit")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
 
                     b.Property<int>("Quantity")
                         .HasColumnType("integer");
@@ -2572,6 +2588,10 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("WarehouseLocation")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.HasKey("Id");
 
@@ -2584,6 +2604,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.HasIndex("ExpiryDate");
 
                     b.HasIndex("Name");
+
+                    b.HasIndex("WarehouseLocation");
 
                     b.ToTable("Inventory", (string)null);
                 });
@@ -5269,6 +5291,95 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.HasIndex("Status");
 
                     b.ToTable("PatientTreatmentPlanSteps");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.PatientSegment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Color")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDynamic")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("QueryJson")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("Name");
+
+                    b.ToTable("PatientSegments", (string)null);
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.PatientSegmentMember", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("AddedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("SegmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PatientId");
+
+                    b.HasIndex("SegmentId", "PatientId")
+                        .IsUnique();
+
+                    b.ToTable("PatientSegmentMembers", (string)null);
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.Payment", b =>
@@ -8737,6 +8848,25 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Navigation("Service");
                 });
 
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.PatientSegmentMember", b =>
+                {
+                    b.HasOne("AqlanDentalPro.Domain.Entities.Patient", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AqlanDentalPro.Domain.Entities.PatientSegment", "Segment")
+                        .WithMany("Members")
+                        .HasForeignKey("SegmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("Segment");
+                });
+
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.Payment", b =>
                 {
                     b.HasOne("AqlanDentalPro.Domain.Entities.Branch", "Branch")
@@ -9385,6 +9515,11 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.Payment", b =>
                 {
                     b.Navigation("Receipt");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.PatientSegment", b =>
+                {
+                    b.Navigation("Members");
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.PurchaseOrder", b =>

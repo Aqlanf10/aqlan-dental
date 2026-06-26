@@ -136,3 +136,87 @@ column nullable, the migration fully idempotent.
   - `npx tsc --noEmit` — clean (exit 0)
   - `npx vitest run` — **166/166 pass**
   - `scripts/check-mojibake.sh` — clean
+
+---
+
+## YOLO Sprint 4 + 5 — Inventory Enhancements + Patient Segments (2026-06-26)
+
+### Sprint 4 — Inventory enhancements
+- `Inventory` entity gains 5 new nullable fields (parallel to the existing `ExpiryDate`):
+  - `MinStockLevel` (numeric 12,2) — parallel decimal threshold to the legacy int `MinQuantity`; kept distinct so existing low-stock logic (`Quantity <= MinQuantity`) is untouched
+  - `PurchaseUnit` (varchar 30) — e.g. كرتون، عبوة، كيلو
+  - `ConsumptionUnit` (varchar 30) — e.g. قطعة، مل، جرام
+  - `ImageUrl` (varchar 500) — thumbnail URL for visual identification
+  - `WarehouseLocation` (varchar 100) — bin/shelf label, indexed for fast lookups
+- **Migration `20260714000000_AddInventoryEnhancements`**: idempotent raw SQL (`ADD COLUMN IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`) — safe on databases where the C-08 startup hotfix already added the columns. Mirrors the existing `20260712000000_AddAppointmentEnhancements` pattern (raw SQL because the EF migration chain is historically broken per CLAUDE.md pitfall).
+- **StartupDatabaseMaintenance**: `EnsureInventoryEnhancementsSchemaAsync` hotfix mirrors the migration, runs unconditionally on every boot so the app stays healthy even if `ENABLE_STARTUP_DB_MAINTENANCE=false`.
+- `InventoryConfiguration`: register the new properties + `WarehouseLocation` index.
+- `InventoryController` + DTO: new fields in `CreateInventoryItemRequest` (validator with Arabic messages) + `GetAll` response (incl. computed `IsBelowMinStockLevel`) + Create/Update mappings.
+- **Frontend** (Arabic RTL):
+  - `types/inventory.ts`: extend `InventoryItem` + `CreateInventoryItemRequest` with the new fields
+  - `InventoryFormModal`: add fields for `ExpiryDate`, `BatchNumber`, `MinStockLevel`, `PurchaseUnit`, `ConsumptionUnit`, `ImageUrl`, `WarehouseLocation` with Arabic labels and helper text
+  - `inventory/page.tsx` table: image thumbnail (with graceful fallback to `ImageIcon`), warehouse-location column with `MapPin` icon, below-min-stock badge under item name, purchase/consumption unit subtext
+
+### Sprint 5 — Patient segments
+- **Entities** (`PatientSegment` + `PatientSegmentMember`, both `BaseEntity` → soft-delete + global query filter):
+  - `PatientSegment`: Name, Description, Color, IsDynamic, QueryJson (reserved for custom dynamic segments later)
+  - `PatientSegmentMember`: SegmentId, PatientId, AddedAt — `UNIQUE (SegmentId, PatientId)` so a patient appears at most once per custom segment
+  - `PatientSegmentBuiltInKeys` static class with 4 stable keys: `builtin:ortho-overdue`, `builtin:outstanding-balance`, `builtin:no-recent-visit`, `builtin:lab-ready`
+- **Migration `20260715000000_AddPatientSegments`**: idempotent raw SQL (`CREATE TABLE IF NOT EXISTS` + `DO $$ ... END $$` FK guards checking `pg_constraint`) — safe on databases where the C-08 startup hotfix already created the tables.
+- **StartupDatabaseMaintenance**: `EnsurePatientSegmentsSchemaAsync` hotfix mirrors the migration.
+- `PatientSegmentConfiguration` + `PatientSegmentMemberConfiguration`: unique index, cascade delete on both FKs (Segment → Members, Patient → Memberships).
+- `AppDbContext`: register `PatientSegments` + `PatientSegmentMembers` DbSets.
+- **`PatientSegmentsController`** (`[Authorize(Policy = "AdminOnly")]`):
+  - `GET /api/patient-segments` — returns 4 built-in dynamic segments (computed at read time, not stored) + custom segments from DB
+  - `GET /api/patient-segments/{key}/members` — built-in by Key, custom by Guid; built-in memberships include a `Reason` field (overdue amount, days since visit, appliance type, etc.)
+  - `POST /api/patient-segments` — create custom segment
+  - `POST /api/patient-segments/{id}/members` — add member (duplicate guard with Arabic 400)
+  - `DELETE /api/patient-segments/{id}/members/{patientId}` — soft-delete member
+  - `DELETE /api/patient-segments/{id}` — soft-delete segment (members cascade)
+  - All error messages in Arabic per CLAUDE.md; no exception details leaked.
+- **Pre-built dynamic segments**:
+  - **مرضى تقويم متأخرون** — active OrthoCase patients whose latest OrthoVisit's `NextAppointmentDate` is in the past
+  - **مرضى عليهم مبالغ** — patients with outstanding balance > 0 (contracts + non-draft invoices − payments)
+  - **مرضى لم يحضروا** — patients with no Visit in the last 90 days (must have at least one visit ever — excludes brand-new walk-ins)
+  - **مرضى المختبر الجاهز** — patients with at least one LabOrder in `Ready` status
+- **Frontend `/patient-segments` page** (Arabic RTL):
+  - Summary strip (total segments, built-in count, total members)
+  - Card grid for built-in dynamic segments (4 cards with color stripe + icon + member count)
+  - Card grid for custom segments with delete button
+  - Members modal with debounced search + CSV export (UTF-8 BOM for Excel Arabic)
+  - Create segment modal with 8 color presets
+  - Add member modal with debounced patient search (300ms) using `/api/patients?search=`
+  - Floating add-member button when a custom segment is open
+  - Low-data warning when all segments are empty (helpful onboarding cue)
+- **Sidebar**: add 'مجموعات المرضى' entry under the main section (Admin only, `Layers` icon)
+- **`routePermissions.ts`**: add `/patient-segments` (Admin only — matches backend `[Authorize(Policy = "AdminOnly")]`)
+
+### Tests
+- `InventoryEnhancementsMigrationIdempotencyTests` (11 tests) — verifies Up/Down SQL uses `IF NOT EXISTS` / `IF EXISTS` guards, all 5 new columns are nullable, `ExpiryDate` is not touched (already existed), no destructive ops in Up, round-trip safety.
+- `PatientSegmentsMigrationIdempotencyTests` (13 tests) — verifies both tables use `CREATE TABLE IF NOT EXISTS`, indexes use `CREATE INDEX IF NOT EXISTS`, FKs are guarded by `pg_constraint` check, `ON DELETE CASCADE` on both FKs, `UNIQUE (SegmentId, PatientId)`, Members dropped before Segments in Down.
+- `PatientSegmentsControllerTests` (18 tests) — GetList always returns 4 built-ins with stable keys + Arabic names + IsDynamic/IsBuiltIn flags; empty DB → zero member counts; custom CRUD (create → appears in GetList → delete hides it); AddMember duplicate/patient-not-found/segment-not-found guards with Arabic messages; RemoveMember soft-deletes; GetMembers for built-in + custom; OrthoOverdue + LabReady computation smoke tests with seeded data.
+
+### Verification
+- `dotnet build -c Release` — 0 errors (55 pre-existing warnings, none new)
+- `dotnet test` (UnitTests) — **2082/2082 pass** (was 2040; +42 from new tests: 11 Inventory + 13 PatientSegments migration + 18 PatientSegments controller)
+- `npx tsc --noEmit` — clean (exit 0)
+- `npm run lint` — only pre-existing warnings, no errors
+- `npx vitest run` — **166/166 pass**
+- `npm run build` — succeeded (`/patient-segments` route at 11 kB / 155 kB First Load JS)
+- `scripts/check-mojibake.sh` — clean
+- Integration tests (Testcontainers) require Docker and are not run in the sandbox; CI will exercise them.
+
+### Stage Summary
+- Branch: `yolo-s4-s5/inventory-segments`
+- PR #555: https://github.com/Aqlanf10/aqlan-dental/pull/555
+- 21 files changed, +2933 / -29
+- 10 new files (2 entities, 2 configurations, 2 migrations, 1 controller, 3 test files, 1 frontend type, 1 frontend page)
+- 11 modified files (1 entity, 1 DbContext, 1 EF config, 1 model snapshot, 1 startup maintenance, 1 controller, 1 frontend type, 1 form modal, 1 inventory page, 1 sidebar, 1 routePermissions)
+- No migrations deleted. No framework swap. No features removed.
+- All new columns nullable + idempotent migrations (re-runnable on hot-fixed DBs).
+- All new error messages in Arabic.
+- No exception details leaked in HTTP responses.
+- Pre-built dynamic segments are computed in code (not stored) — they always reflect current DB state with zero stale-cache risk.
+- Custom segments use soft-delete (BaseEntity) — reversible, global query filter excludes tombstoned rows.
+- CSV export uses UTF-8 BOM so Excel renders Arabic correctly (mirrors the existing `PatientTable.exportCsv` pattern).
+

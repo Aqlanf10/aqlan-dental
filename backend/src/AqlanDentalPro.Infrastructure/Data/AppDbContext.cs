@@ -153,6 +153,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
     public DbSet<JournalLine> JournalLines => Set<JournalLine>();
 
+    // YOLO-S5 — Patient Segments (custom manual lists; pre-built dynamic
+    // segments are computed in PatientSegmentsController and not stored).
+    public DbSet<PatientSegment> PatientSegments => Set<PatientSegment>();
+    public DbSet<PatientSegmentMember> PatientSegmentMembers => Set<PatientSegmentMember>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

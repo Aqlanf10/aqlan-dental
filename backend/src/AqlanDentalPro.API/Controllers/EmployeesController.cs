@@ -169,6 +169,146 @@ public class EmployeesController(AppDbContext db, ILogger<EmployeesController> l
         return Ok(employee);
     }
 
+    [HttpGet("{id:guid}/profile-summary")]
+    public async Task<IActionResult> GetProfileSummary(Guid id)
+    {
+        var employee = await db.Employees
+            .AsNoTracking()
+            .Include(e => e.User)
+            .Include(e => e.Branch)
+            .FirstOrDefaultAsync(e => e.Id == id);
+
+        if (employee is null)
+            return NotFound(new { message = "الموظف غير موجود" });
+
+        var doctor = await db.Doctors
+            .AsNoTracking()
+            .FirstOrDefaultAsync(d => d.UserId == employee.UserId);
+
+        List<object> schedule;
+        if (doctor is null)
+        {
+            schedule = [];
+        }
+        else
+        {
+            var doctorSchedule = await db.DoctorSchedules
+                .AsNoTracking()
+                .Where(s => s.DoctorId == doctor.Id)
+                .OrderBy(s => s.DayOfWeek)
+                .Select(s => new
+                {
+                    s.Id,
+                    s.DayOfWeek,
+                    s.IsWorking,
+                    StartTime = s.StartTime.ToString("HH:mm"),
+                    EndTime = s.EndTime.ToString("HH:mm"),
+                    BreakStart = s.BreakStart != null ? s.BreakStart.Value.ToString("HH:mm") : null,
+                    BreakEnd = s.BreakEnd != null ? s.BreakEnd.Value.ToString("HH:mm") : null,
+                    s.SlotDurationMinutes
+                })
+                .ToListAsync();
+            schedule = doctorSchedule.Cast<object>().ToList();
+        }
+
+        var since = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(-30));
+        var attendance = await db.Attendances
+            .AsNoTracking()
+            .Where(a => a.EmployeeId == id && a.Date >= since)
+            .GroupBy(a => a.Status)
+            .Select(g => new { Status = g.Key.ToString(), Count = g.Count() })
+            .ToListAsync();
+
+        var latestSalary = await db.SalaryRecords
+            .AsNoTracking()
+            .Where(s => s.EmployeeId == id)
+            .OrderByDescending(s => s.Year)
+            .ThenByDescending(s => s.Month)
+            .Select(s => new
+            {
+                s.Id,
+                s.Year,
+                s.Month,
+                s.BaseSalary,
+                s.Deductions,
+                s.Advances,
+                s.Bonuses,
+                s.NetSalary,
+                s.PaidAt,
+                IsPaid = s.PaidAt != null
+            })
+            .FirstOrDefaultAsync();
+
+        var pendingAdvances = await db.AdvancePayments
+            .AsNoTracking()
+            .Where(a => a.EmployeeId == id && a.Status == RequestStatus.Pending)
+            .Select(a => new { a.Id, a.Amount, a.Reason, a.RequestDate })
+            .ToListAsync();
+
+        var pendingLeaves = await db.LeaveRequests
+            .AsNoTracking()
+            .Where(l => l.EmployeeId == id && l.Status == RequestStatus.Pending)
+            .Select(l => new
+            {
+                l.Id,
+                LeaveType = l.LeaveType.ToString(),
+                l.StartDate,
+                l.EndDate,
+                l.TotalDays,
+                l.Reason
+            })
+            .ToListAsync();
+
+        var recentDocuments = await db.EmployeeDocuments
+            .AsNoTracking()
+            .Where(d => d.EmployeeId == id)
+            .OrderByDescending(d => d.CreatedAt)
+            .Take(5)
+            .Select(d => new
+            {
+                d.Id,
+                d.DocumentType,
+                d.Title,
+                d.FileName,
+                d.FileSize,
+                d.CreatedAt
+            })
+            .ToListAsync();
+
+        return Ok(new
+        {
+            Employee = new
+            {
+                employee.Id,
+                employee.UserId,
+                employee.FullName,
+                employee.Phone,
+                employee.Position,
+                employee.BranchId,
+                BranchName = employee.Branch != null ? employee.Branch.Name : null,
+                employee.HireDate,
+                employee.BaseSalary,
+                employee.IsActive,
+                Username = employee.User.Username,
+                Role = employee.User.Role.ToString(),
+                UserActive = employee.User.IsActive
+            },
+            Doctor = doctor is null ? null : new
+            {
+                doctor.Id,
+                doctor.Name,
+                doctor.Specialty,
+                doctor.LicenseNumber
+            },
+            Schedule = schedule,
+            AttendanceLast30Days = attendance,
+            LatestSalary = latestSalary,
+            PendingAdvances = pendingAdvances,
+            PendingLeaves = pendingLeaves,
+            RecentDocuments = recentDocuments
+        });
+    }
+
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateEmployeeRequest req)
     {

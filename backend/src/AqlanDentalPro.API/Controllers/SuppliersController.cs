@@ -119,12 +119,21 @@ public class SuppliersController(AppDbContext db, ILogger<SuppliersController> l
             {
                 s.Id,
                 s.Name,
+                Type = s.Type.ToString(),
                 s.ContactPerson,
                 s.Phone,
                 s.Email,
                 s.Address,
                 s.Notes,
-                PurchaseOrderCount = 0,
+                s.Balance,
+                PurchaseOrderCount = s.PurchaseOrders.Count(po => po.Status != Domain.Enums.PurchaseOrderStatus.Cancelled),
+                OpenBillCount = s.Bills.Count(b => b.Status != Domain.Enums.BillStatus.FullyPaid && b.Status != Domain.Enums.BillStatus.Cancelled),
+                TotalSpent = s.PurchaseOrders
+                    .Where(po => po.Status != Domain.Enums.PurchaseOrderStatus.Cancelled)
+                    .Sum(po => po.TotalAmount),
+                OutstandingBills = s.Bills
+                    .Where(b => b.Status != Domain.Enums.BillStatus.Cancelled)
+                    .Sum(b => b.TotalAmount - b.PaidAmount),
                 CreatedAt = s.CreatedAt.ToString("yyyy-MM-dd")
             })
             .ToListAsync();
@@ -170,16 +179,79 @@ public class SuppliersController(AppDbContext db, ILogger<SuppliersController> l
         {
             supplier.Id,
             supplier.Name,
+            Type = supplier.Type.ToString(),
             supplier.ContactPerson,
             supplier.Phone,
             supplier.Email,
             supplier.Address,
             supplier.Notes,
+            supplier.Balance,
             PurchaseOrderCount = purchaseOrderCount,
             TotalSpent = totalSpent,
             CreatedAt = supplier.CreatedAt.ToString("yyyy-MM-dd"),
             UpdatedAt = supplier.UpdatedAt.ToString("yyyy-MM-dd")
         });
+    }
+
+    /// <summary>Returns purchasing/payables summary for one supplier.</summary>
+    [HttpGet("{id:guid}/summary")]
+    public async Task<IActionResult> GetSummary(Guid id)
+    {
+        var supplier = await db.Suppliers
+            .AsNoTracking()
+            .Where(s => s.Id == id)
+            .Select(s => new
+            {
+                s.Id,
+                s.Name,
+                Type = s.Type.ToString(),
+                s.Balance,
+                PurchaseOrderCount = s.PurchaseOrders.Count(po => po.Status != Domain.Enums.PurchaseOrderStatus.Cancelled),
+                TotalPurchaseOrders = s.PurchaseOrders
+                    .Where(po => po.Status != Domain.Enums.PurchaseOrderStatus.Cancelled)
+                    .Sum(po => po.TotalAmount),
+                BillCount = s.Bills.Count(b => b.Status != Domain.Enums.BillStatus.Cancelled),
+                OutstandingBills = s.Bills
+                    .Where(b => b.Status != Domain.Enums.BillStatus.Cancelled)
+                    .Sum(b => b.TotalAmount - b.PaidAmount),
+                LastPurchaseDate = s.PurchaseOrders
+                    .Where(po => po.Status != Domain.Enums.PurchaseOrderStatus.Cancelled)
+                    .OrderByDescending(po => po.OrderDate)
+                    .Select(po => (DateOnly?)po.OrderDate)
+                    .FirstOrDefault(),
+                RecentPurchaseOrders = s.PurchaseOrders
+                    .Where(po => po.Status != Domain.Enums.PurchaseOrderStatus.Cancelled)
+                    .OrderByDescending(po => po.OrderDate)
+                    .Take(5)
+                    .Select(po => new
+                    {
+                        po.Id,
+                        po.OrderNumber,
+                        Status = po.Status.ToString(),
+                        po.OrderDate,
+                        po.TotalAmount
+                    }),
+                RecentBills = s.Bills
+                    .Where(b => b.Status != Domain.Enums.BillStatus.Cancelled)
+                    .OrderByDescending(b => b.BillDate)
+                    .Take(5)
+                    .Select(b => new
+                    {
+                        b.Id,
+                        b.BillNumber,
+                        Status = b.Status.ToString(),
+                        b.BillDate,
+                        b.TotalAmount,
+                        b.PaidAmount,
+                        RemainingAmount = b.TotalAmount - b.PaidAmount
+                    })
+            })
+            .FirstOrDefaultAsync();
+
+        if (supplier is null)
+            return NotFound(new { message = "المورد غير موجود" });
+
+        return Ok(supplier);
     }
 
     // ─── 3. POST /api/suppliers — Create supplier ───────────────────────

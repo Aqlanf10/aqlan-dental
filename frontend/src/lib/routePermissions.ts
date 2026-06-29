@@ -10,6 +10,7 @@ export interface RoutePermission {
 
 export const ROUTE_PERMISSIONS: RoutePermission[] = [
   // Main pages
+  { path: '/clinic-command-center', allowedRoles: ['Admin'] },
   { path: '/daily-operations', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   { path: '/patients', allowedRoles: ['Admin', 'Reception', 'Accountant', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   

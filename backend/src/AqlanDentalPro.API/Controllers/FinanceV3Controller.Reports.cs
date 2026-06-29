@@ -350,8 +350,9 @@ public partial class FinanceV3Controller
                 c.InstallmentsCount,
                 c.InstallmentAmount,
                 c.DownPayment,
-                // Server-side correlated subquery → COALESCE(SUM(p.Amount), 0)
-                PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => (decimal?)p.Amount) ?? 0m
+                // MULTI-CURRENCY: settle in account currency (YER) via AppliedAmount, falling
+                // back to Amount for legacy rows where AppliedAmount==0 (matches FinanceService).
+                PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => (decimal?)(p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)) ?? 0m
             })
             .ToListAsync();
 
@@ -1030,13 +1031,16 @@ public partial class FinanceV3Controller
             .Where(c => c.PatientId == patientId && c.IsActive)
             .SumAsync(c => (decimal?)(c.TotalAmount - c.DiscountAmount)) ?? 0;
 
+        // MULTI-CURRENCY: patient balance is YER-denominated → settle in AppliedAmount
+        // (YER-equivalent), falling back to Amount for legacy rows. Sign filters stay on
+        // Amount because Amount and AppliedAmount always share the same sign.
         var totalPaid = await db.Payments
             .Where(p => p.PatientId == patientId && p.IsActive && p.Amount > 0)
-            .SumAsync(p => (decimal?)p.Amount) ?? 0;
+            .SumAsync(p => (decimal?)(p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)) ?? 0;
 
         var totalRefunds = await db.Payments
             .Where(p => p.PatientId == patientId && p.IsActive && p.Amount < 0)
-            .SumAsync(p => (decimal?)p.Amount) ?? 0; // negative values
+            .SumAsync(p => (decimal?)(p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)) ?? 0; // negative values
 
         var totalDiscounts = await db.Contracts
             .Where(c => c.PatientId == patientId && c.IsActive)
@@ -1054,7 +1058,7 @@ public partial class FinanceV3Controller
         // Contract outstanding
         var contractOutstanding = await db.Contracts
             .Where(c => c.PatientId == patientId && c.Status == ContractStatus.Active && c.IsActive)
-            .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount))
+            .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount))
             .SumAsync();
 
         // Use JournalLine balance as the canonical Balance field
@@ -1404,8 +1408,8 @@ public partial class FinanceV3Controller
                 PatientName = (p.FirstName + " " + p.MiddleName + " " + p.LastName).Trim(),
                 Phone = p.Phone,
                 TotalInvoiced = db.Invoices.Where(i => i.PatientId == p.Id && i.IsActive && (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Paid)).Sum(i => (decimal?)i.TotalAmount) ?? 0,
-                TotalPaid = db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive && pay.Amount > 0).Sum(pay => (decimal?)pay.Amount) ?? 0,
-                TotalRefunds = db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive && pay.Amount < 0).Sum(pay => (decimal?)Math.Abs(pay.Amount)) ?? 0,
+                TotalPaid = db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive && pay.Amount > 0).Sum(pay => (decimal?)(pay.AppliedAmount == 0 ? pay.Amount : pay.AppliedAmount)) ?? 0,
+                TotalRefunds = db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive && pay.Amount < 0).Sum(pay => (decimal?)Math.Abs(pay.AppliedAmount == 0 ? pay.Amount : pay.AppliedAmount)) ?? 0,
                 OutstandingInvoices = db.Invoices.Count(i => i.PatientId == p.Id && i.IsActive && i.Status == InvoiceStatus.Issued),
                 ActiveContracts = db.Contracts.Count(c => c.PatientId == p.Id && c.IsActive && c.Status == ContractStatus.Active)
             })
@@ -1674,8 +1678,8 @@ public partial class FinanceV3Controller
                 i.Subtotal,
                 i.DiscountAmount,
                 i.TotalAmount,
-                PaidAmount = i.Payments.Where(p => p.IsActive && p.Amount > 0).Sum(p => p.Amount),
-                Balance = i.TotalAmount - i.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
+                PaidAmount = i.Payments.Where(p => p.IsActive && p.Amount > 0).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
+                Balance = i.TotalAmount - i.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
                 PatientName = (i.Patient.FirstName + " " + i.Patient.LastName).Trim(),
                 PatientNumber = i.Patient.PatientNumber,
                 IssueDate = i.CreatedAt,
@@ -1758,8 +1762,8 @@ public partial class FinanceV3Controller
                 c.Specialty,
                 c.TotalAmount,
                 c.DiscountAmount,
-                PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
-                OutstandingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
+                PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
+                OutstandingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
                 c.Status,
                 StartDate = c.StartDate.HasValue ? c.StartDate.Value.ToString("yyyy-MM-dd") : (string?)null,
                 IsOverdue = false

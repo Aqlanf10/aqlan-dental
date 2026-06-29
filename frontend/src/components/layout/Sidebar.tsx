@@ -59,6 +59,7 @@ type NavEntry = (NavItem & { kind?: "leaf" }) | (NavGroup & { section?: string }
 const NAV: NavEntry[] = [
   // ── رئيسي ────────────────────────────────────────────────────────────────
   { href: "/",               label: "لوحة التحكم",     icon: LayoutDashboard, roles: ["Admin"],                                                             section: "رئيسي" },
+  { href: "/clinic-command-center", label: "مركز القيادة", icon: Route, roles: ["Admin"] },
   { href: "/daily-operations", label: "التشغيل اليومي", icon: ClipboardList, roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.DAILY_OPERATIONS_VIEW, badge: "⭐" },
   { href: "/patients",       label: "المرضى",           icon: Users,           roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.PATIENTS_VIEW },
   // YOLO-S5: Patient segments — pre-built dynamic (overdue ortho, outstanding balance,

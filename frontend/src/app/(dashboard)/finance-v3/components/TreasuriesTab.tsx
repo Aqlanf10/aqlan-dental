@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Plus,
   RefreshCw,
@@ -47,6 +47,25 @@ export function TreasuriesTab() {
   const sourceTreasury = srcId ? treasuries.find((t) => t.id === srcId) : undefined;
   const destinationTreasury = dstId ? treasuries.find((t) => t.id === dstId) : undefined;
   const isCrossCurrencyTransfer = !!sourceTreasury && !!destinationTreasury && sourceTreasury.currency !== destinationTreasury.currency;
+
+  // Per-currency totals (cash drawer vs bank) computed from the already-loaded treasuries.
+  // Currencies are NOT summed together — each is a separate total (no implicit conversion).
+  const currencyTotals = useMemo(() => {
+    const order = ["YER", "SAR", "USD"] as const;
+    const map = new Map<string, { cash: number; bank: number; total: number }>();
+    for (const t of treasuries) {
+      const cur = t.currency ?? "YER";
+      const entry = map.get(cur) ?? { cash: 0, bank: 0, total: 0 };
+      if (t.type === "Bank") entry.bank += t.balance ?? 0;
+      else entry.cash += t.balance ?? 0;
+      entry.total += t.balance ?? 0;
+      map.set(cur, entry);
+    }
+    return order.filter((c) => map.has(c)).map((c) => ({ currency: c, ...map.get(c)! }));
+  }, [treasuries]);
+
+  const currencyLabel = (c: string) =>
+    c === "SAR" ? "ريال سعودي" : c === "USD" ? "دولار أمريكي" : "ريال يمني";
 
   const fetchData = useCallback(async () => {
     try {
@@ -140,6 +159,22 @@ export function TreasuriesTab() {
           كل <span className="font-bold">خزينة</span> هي رصيد دائم لنوع محدّد (<span className="font-bold">درج كاش</span> أو <span className="font-bold">حساب بنكي</span>) وعملة محدّدة — ولكل عملة (YER / SAR / USD) خزينة مستقلة.
           أمّا <span className="font-bold">وردية الكاشير اليومية</span> فتُفتح على درج الكاش بالريال اليمني من تبويب «الصندوق». لا يجوز التحويل بين خزينتين بعملتين مختلفتين إلا بعملية مصارفة بسعر صرف موثّق.
         </div>
+
+        {/* Per-currency totals (each currency kept separate — no implicit conversion) */}
+        {!loading && currencyTotals.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+            {currencyTotals.map((ct) => (
+              <div key={ct.currency} className="rounded-lg border p-3" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
+                <span className="text-xs font-bold" style={{ color: tokens.textSecondary }}>{currencyLabel(ct.currency)} ({ct.currency})</span>
+                <p className="text-lg font-black my-1" style={{ color: tokens.successBorder }}>{formatMoney(ct.total, ct.currency)}</p>
+                <div className="flex items-center gap-3 text-[11px]" style={{ color: tokens.textTertiary }}>
+                  <span>نقد/درج: <span className="font-bold" style={{ color: tokens.textPrimary }}>{formatMoney(ct.cash, ct.currency)}</span></span>
+                  <span>بنك: <span className="font-bold" style={{ color: tokens.textPrimary }}>{formatMoney(ct.bank, ct.currency)}</span></span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {loading ? <LoadingSkeleton /> : treasuries.length === 0 ? <EmptyState icon={Landmark} message="لا توجد خزائن" /> : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

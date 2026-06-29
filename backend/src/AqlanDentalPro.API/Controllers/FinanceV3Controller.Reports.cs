@@ -109,7 +109,10 @@ public partial class FinanceV3Controller
         var journalEntryCount = await ScalarIntAsync($@"SELECT COUNT(*) FROM ""JournalEntries"" je WHERE 1=1 {entryBranch}");
         var postedEntryCount = await ScalarIntAsync($@"SELECT COUNT(*) FROM ""JournalEntries"" je WHERE je.""IsPosted"" = TRUE {entryBranch}");
         var reversalEntryCount = await ScalarIntAsync($@"SELECT COUNT(*) FROM ""JournalEntries"" je WHERE je.""IsReversal"" = TRUE {entryBranch}");
-        var totalTreasuryBalance = await ScalarDecimalAsync($@"SELECT COALESCE(SUM(""Balance""), 0) FROM ""Treasuries"" WHERE ""IsActive"" = TRUE {treasuryBranch}");
+        // MULTI-CURRENCY: this dashboard figure is YER-denominated (formatted with formatYER on the
+        // client), so sum ONLY the YER treasuries — never add SAR/USD balances into a YER total.
+        // Foreign-currency balances are shown separately per-currency in the Treasuries tab.
+        var totalTreasuryBalance = await ScalarDecimalAsync($@"SELECT COALESCE(SUM(""Balance""), 0) FROM ""Treasuries"" WHERE ""IsActive"" = TRUE AND (""Currency"" = 'YER' OR ""Currency"" IS NULL) {treasuryBranch}");
         var pendingExpenses = await ScalarIntAsync($@"SELECT COUNT(*) FROM ""OperationalExpenses"" WHERE ""ApprovalStatus""::text IN ('Pending', '1') AND ""IsActive"" = TRUE {expenseBranch}");
         var pendingTransfers = await ScalarIntAsync($@"
             SELECT COUNT(*)
@@ -279,7 +282,9 @@ public partial class FinanceV3Controller
             e.IsReversal && (!branchId.HasValue || e.BranchId == branchId.Value));
 
         // ── Treasury summary ──
-        var treasuryQuery = db.Treasuries.Where(t => t.IsActive);
+        // MULTI-CURRENCY: YER-denominated dashboard total — sum only YER treasuries (never mix
+        // SAR/USD into a YER figure). Foreign balances are shown per-currency in the Treasuries tab.
+        var treasuryQuery = db.Treasuries.Where(t => t.IsActive && (t.Currency == "YER" || t.Currency == null));
         if (branchId.HasValue) treasuryQuery = treasuryQuery.Where(t => t.BranchId == branchId.Value);
         var totalTreasuryBalance = await treasuryQuery.SumAsync(t => (decimal?)t.Balance) ?? 0;
 

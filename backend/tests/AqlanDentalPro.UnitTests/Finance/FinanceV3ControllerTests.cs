@@ -362,6 +362,27 @@ public class FinanceV3ControllerTests
         ok.Value!.GetType().GetProperty("TotalTreasuryBalance").Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task FinanceV3_Dashboard_TotalTreasuryBalance_SumsOnlyYerTreasuries()
+    {
+        // MULTI-CURRENCY: the YER-denominated dashboard total must NOT add SAR/USD balances into
+        // a YER figure. Foreign balances are surfaced per-currency in the Treasuries tab instead.
+        await using var db = CreateDb();
+        var (branchId, _) = SeedBranchAndUser(db);
+
+        db.Treasuries.Add(new Treasury { Id = Guid.NewGuid(), Name = "درج YER", Type = TreasuryType.Vault, Currency = "YER", Balance = 1_000m, BranchId = branchId, IsActive = true });
+        db.Treasuries.Add(new Treasury { Id = Guid.NewGuid(), Name = "درج SAR", Type = TreasuryType.Vault, Currency = "SAR", Balance = 500m, BranchId = branchId, IsActive = true });
+        db.Treasuries.Add(new Treasury { Id = Guid.NewGuid(), Name = "حساب USD", Type = TreasuryType.Bank, Currency = "USD", Balance = 200m, BranchId = branchId, IsActive = true });
+        await db.SaveChangesAsync();
+
+        var controller = BuildFinanceV3Controller(db, CreateAdminUser());
+        var result = await controller.GetDashboard();
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var total = (decimal)ok.Value!.GetType().GetProperty("TotalTreasuryBalance")!.GetValue(ok.Value)!;
+        total.Should().Be(1_000m, "only the YER treasury counts toward the YER-denominated total — SAR/USD are never mixed in");
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // InvoicesController — /api/patients/{id}/invoices returns Balance
     // ═══════════════════════════════════════════════════════════════════════════

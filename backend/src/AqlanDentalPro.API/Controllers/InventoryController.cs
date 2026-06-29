@@ -85,6 +85,15 @@ public sealed class AdjustQuantityRequest
     public string? Reason { get; init; }
 }
 
+public sealed class ConsumeServiceInventoryRequest
+{
+    public Guid ServiceId { get; init; }
+    public int Quantity { get; init; } = 1;
+    public Guid? PatientId { get; init; }
+    public Guid? VisitId { get; init; }
+    public string? Notes { get; init; }
+}
+
 public sealed class AdjustQuantityRequestValidator : AbstractValidator<AdjustQuantityRequest>
 {
     public AdjustQuantityRequestValidator()
@@ -511,6 +520,113 @@ public class InventoryController(AppDbContext db, ILogger<InventoryController> l
             id,
             newQuantity = item.Quantity,
             isLowStock = item.Quantity <= item.MinQuantity
+        });
+    }
+
+    /// <summary>
+    /// Consumes the inventory materials configured for a clinic service.
+    /// This creates auditable InventoryAdjustment rows and never silently changes stock.
+    /// </summary>
+    [HttpPost("consume-service")]
+    public async Task<IActionResult> ConsumeServiceInventory([FromBody] ConsumeServiceInventoryRequest req)
+    {
+        if (req.ServiceId == Guid.Empty)
+            return BadRequest(new { message = "الخدمة مطلوبة لاستهلاك المخزون" });
+
+        var serviceQuantity = Math.Max(1, req.Quantity);
+
+        var service = await db.ClinicServices
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == req.ServiceId);
+        if (service is null)
+            return NotFound(new { message = "الخدمة غير موجودة" });
+
+        var consumables = await db.ServiceConsumables
+            .Include(c => c.InventoryItem)
+            .Where(c => c.ClinicServiceId == req.ServiceId && c.InventoryItem != null)
+            .ToListAsync();
+
+        if (consumables.Count == 0)
+            return Ok(new
+            {
+                serviceId = req.ServiceId,
+                serviceName = service.ArabicName,
+                consumed = Array.Empty<object>(),
+                message = "لا توجد مواد مخزون مرتبطة بهذه الخدمة"
+            });
+
+        var insufficient = consumables
+            .Where(c => c.InventoryItem!.Quantity < c.Quantity * serviceQuantity)
+            .Select(c => new
+            {
+                inventoryItemId = c.InventoryItemId,
+                itemName = c.InventoryItem!.Name,
+                available = c.InventoryItem.Quantity,
+                required = c.Quantity * serviceQuantity,
+                unit = c.InventoryItem.Unit ?? c.InventoryItem.ConsumptionUnit
+            })
+            .ToList();
+
+        if (insufficient.Count > 0)
+            return BadRequest(new
+            {
+                message = "لا يمكن تنفيذ الاستهلاك: كمية بعض المواد غير كافية",
+                insufficient
+            });
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+        var adjustedBy = GetCurrentUserId();
+        var consumed = new List<object>();
+        var contextParts = new List<string>();
+        if (req.PatientId.HasValue) contextParts.Add($"PatientId={req.PatientId.Value}");
+        if (req.VisitId.HasValue) contextParts.Add($"VisitId={req.VisitId.Value}");
+        if (!string.IsNullOrWhiteSpace(req.Notes)) contextParts.Add(req.Notes.Trim());
+
+        foreach (var consumable in consumables)
+        {
+            var item = consumable.InventoryItem!;
+            var previous = item.Quantity;
+            var delta = -(consumable.Quantity * serviceQuantity);
+            item.Quantity += delta;
+
+            var reason = $"استهلاك خدمة: {service.ArabicName}";
+            if (contextParts.Count > 0)
+                reason += $" — {string.Join(" — ", contextParts)}";
+
+            db.InventoryAdjustments.Add(new InventoryAdjustment
+            {
+                InventoryItemId = item.Id,
+                PreviousQuantity = previous,
+                NewQuantity = item.Quantity,
+                Delta = delta,
+                Reason = reason,
+                AdjustmentType = "consumption",
+                AdjustedBy = adjustedBy
+            });
+
+            consumed.Add(new
+            {
+                inventoryItemId = item.Id,
+                itemName = item.Name,
+                previousQuantity = previous,
+                consumedQuantity = -delta,
+                newQuantity = item.Quantity,
+                unit = item.Unit ?? item.ConsumptionUnit,
+                isLowStock = item.Quantity <= item.MinQuantity ||
+                             (item.MinStockLevel.HasValue && item.Quantity < item.MinStockLevel.Value)
+            });
+        }
+
+        await db.SaveChangesAsync();
+        await tx.CommitAsync();
+
+        return Ok(new
+        {
+            serviceId = req.ServiceId,
+            serviceName = service.ArabicName,
+            serviceQuantity,
+            consumed,
+            message = "تم صرف مواد الخدمة من المخزون"
         });
     }
 

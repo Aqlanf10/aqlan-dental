@@ -210,12 +210,11 @@ export const TABS: TabDef[] = [
     icon: FileText,
     links: [
       {
-        href: "#",
-        label: "قوالب الوصفات الطبية",
-        description: "قوالب جاهزة للوصفات المتكررة لتسريع إصدارها",
+        href: "/settings/templates",
+        label: "قوالب الوثائق والنماذج",
+        description: "موافقات وتعليمات ووصفات قابلة للتخصيص بمتغيرات المريض والمركز",
         icon: FileText,
         color: "indigo",
-        comingSoon: true,
       },
       {
         href: "#",

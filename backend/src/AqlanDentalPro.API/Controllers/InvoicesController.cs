@@ -375,7 +375,9 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
         if (invoice == null)
             return NotFound(new { message = "الفاتورة غير موجودة" });
 
-        var paidAmount = invoice.Payments.Sum(p => p.Amount);
+        // MULTI-CURRENCY: invoice is YER-denominated → settle in AppliedAmount (YER-equivalent),
+        // falling back to Amount for legacy rows where AppliedAmount==0 (matches FinanceService).
+        var paidAmount = invoice.Payments.Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount);
         var remainingAmount = Math.Max(0, invoice.TotalAmount - paidAmount);
 
         return Ok(new
@@ -463,8 +465,8 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
                 Status = i.Status.ToString(),
                 StatusArabic = GetStatusArabic(i.Status),
                 i.TotalAmount,
-                PaidAmount = i.Payments.Where(p => p.IsActive && p.Amount > 0).Sum(p => p.Amount),
-                Balance = i.TotalAmount - i.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
+                PaidAmount = i.Payments.Where(p => p.IsActive && p.Amount > 0).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
+                Balance = i.TotalAmount - i.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
                 LineItemCount = i.LineItems.Count,
                 i.CreatedAt,
                 i.UpdatedAt

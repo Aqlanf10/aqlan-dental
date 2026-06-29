@@ -534,6 +534,43 @@ public class PatientFinanceLedgerTests
         fileResult.FileContents.Should().BeEquivalentTo(pdfBytes);
     }
 
+    [Fact]
+    public async Task InvoicesController_GetById_ForeignCurrencyPayment_SettlesInAccountCurrency()
+    {
+        // MULTI-CURRENCY: a 10,000 YER invoice paid with 100 SAR (rate 75 → AppliedAmount 7,500 YER)
+        // must show PaidAmount=7,500 and RemainingAmount=2,500 — NOT 100 / 9,900 (raw SAR amount).
+        await using var db = CreateDb();
+        var (branchId, patientId, userId, _, _) = SeedPatientWithUser(db);
+
+        var invoiceId = Guid.NewGuid();
+        db.Invoices.Add(new Invoice
+        {
+            Id = invoiceId, PatientId = patientId, InvoiceNumber = "INV-FX-001",
+            Status = InvoiceStatus.Issued, TotalAmount = 10_000m, Subtotal = 10_000m,
+            IsActive = true, CreatedBy = userId,
+        });
+        db.Payments.Add(new Payment
+        {
+            Id = Guid.NewGuid(), PatientId = patientId, InvoiceId = invoiceId, BranchId = branchId,
+            Amount = 100m, Currency = "SAR", AccountCurrency = "YER",
+            ExchangeRateToAccountCurrency = 75m, AppliedAmount = 7_500m,
+            PaymentMethod = "cash", PaymentDate = DateOnly.FromDateTime(DateTime.Today), IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var mockCurrentUser = new Mock<ICurrentUserService>();
+        mockCurrentUser.SetupGet(c => c.Role).Returns(UserRole.Admin);
+        var controller = new InvoicesController(
+            db, new Mock<IPdfService>().Object, new Mock<IAuditService>().Object,
+            new Mock<ILogger<InvoicesController>>().Object, new Mock<ICommissionService>().Object,
+            mockCurrentUser.Object, new FinanceSettingsReader(db));
+
+        var ok = (await controller.GetById(invoiceId)).Should().BeOfType<OkObjectResult>().Subject;
+        decimal Get(string n) => (decimal)ok.Value!.GetType().GetProperty(n)!.GetValue(ok.Value)!;
+        Get("PaidAmount").Should().Be(7_500m, "the SAR payment settles the YER invoice by its YER-equivalent (AppliedAmount)");
+        Get("RemainingAmount").Should().Be(2_500m);
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // 12. GET /api/patients/{id}/financial-statement/pdf returns PDF and non-empty bytes (and 404 for invalid patient)
     // ═══════════════════════════════════════════════════════════════════════════

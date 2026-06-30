@@ -267,6 +267,72 @@ public class FinanceV3ControllerTests
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // FinanceV3Controller — GetPayments exposes currency fields + honors method filter
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task FinanceV3_GetPayments_ExposesCurrencyFields_AndFiltersByMethod()
+    {
+        await using var db = CreateDb();
+        var (branchId, _) = SeedBranchAndUser(db);
+
+        var patient = new Patient
+        {
+            Id = Guid.NewGuid(), FirstName = "خالد", LastName = "سعيد",
+            PatientNumber = "P-PAY", BranchId = branchId
+        };
+        db.Patients.Add(patient);
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+
+        // YER cash payment
+        db.Payments.Add(new Payment
+        {
+            Id = Guid.NewGuid(), PatientId = patient.Id, BranchId = branchId,
+            Amount = 1000m, Currency = "YER", AccountCurrency = "YER",
+            ExchangeRateToAccountCurrency = 1m, AppliedAmount = 1000m,
+            PaymentMethod = "cash", PaymentDate = today,
+            ReceiptNumber = "RCP-YER", IsActive = true
+        });
+
+        // SAR card payment settling a YER account (100 SAR ≈ 7500 YER)
+        db.Payments.Add(new Payment
+        {
+            Id = Guid.NewGuid(), PatientId = patient.Id, BranchId = branchId,
+            Amount = 100m, Currency = "SAR", AccountCurrency = "YER",
+            ExchangeRateToAccountCurrency = 75m, AppliedAmount = 7500m,
+            PaymentMethod = "card", PaymentDate = today,
+            ReceiptNumber = "RCP-SAR", IsActive = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildFinanceV3Controller(db, CreateAdminUser(branchId));
+
+        // Act 1: no filter → both payments, currency fields present
+        var all = (OkObjectResult)await controller.GetPayments(page: 1, pageSize: 20);
+        var allData = (System.Collections.IEnumerable)all.Value!.GetType()
+            .GetProperty("data")!.GetValue(all.Value)!;
+        var allItems = allData.Cast<object>().ToList();
+        allItems.Should().HaveCount(2, "both payments returned with no filter");
+
+        var sar = allItems.Single(i => (string)i.GetType().GetProperty("Currency")!.GetValue(i)! == "SAR");
+        var sarType = sar.GetType();
+        sarType.GetProperty("Currency").Should().NotBeNull("DTO must expose Currency");
+        sarType.GetProperty("AccountCurrency").Should().NotBeNull("DTO must expose AccountCurrency");
+        sarType.GetProperty("AppliedAmount").Should().NotBeNull("DTO must expose AppliedAmount");
+        sarType.GetProperty("AppliedAmount")!.GetValue(sar).Should().Be(7500m,
+            "SAR payment applied 7500 YER to the patient account");
+
+        // Act 2: method=cash → only the YER cash payment
+        var cashOnly = (OkObjectResult)await controller.GetPayments(page: 1, pageSize: 20, method: "cash");
+        var cashData = (System.Collections.IEnumerable)cashOnly.Value!.GetType()
+            .GetProperty("data")!.GetValue(cashOnly.Value)!;
+        var cashItems = cashData.Cast<object>().ToList();
+        cashItems.Should().HaveCount(1, "method filter returns only cash payments");
+        cashItems[0].GetType().GetProperty("PaymentMethod")!.GetValue(cashItems[0]).Should().Be("cash");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // FinanceV3Controller — Branch isolation for non-admin with null BranchId
     // ═══════════════════════════════════════════════════════════════════════════
 

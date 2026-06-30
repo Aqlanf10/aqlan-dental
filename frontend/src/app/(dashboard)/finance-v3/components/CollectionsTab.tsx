@@ -90,6 +90,11 @@ export function CollectionsTab() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Server-side filters (the GET /payments endpoint already accepts method/fromDate/toDate).
+  const [filterMethod, setFilterMethod] = useState("");
+  const [filterFrom, setFilterFrom] = useState("");
+  const [filterTo, setFilterTo] = useState("");
+
   // Fix 3: Get current user role for permission checks
   const { user } = useAuthStore();
   const isAdmin = user?.role === "Admin";
@@ -123,10 +128,21 @@ export function CollectionsTab() {
   });
 
   const fetchPayments = useCallback(async () => {
-    try { setLoading(true); const { data: responseData } = await api.get<{ data: PaymentListItem[]; total: number }>("/api/finance-v3/payments"); setPayments(responseData?.data ?? []); } catch { toast.error("فشل في تحميل التحصيلات"); } finally { setLoading(false); }
-  }, []);
+    try {
+      setLoading(true);
+      const params: Record<string, string> = { pageSize: "100" };
+      if (filterMethod) params.method = filterMethod;
+      if (filterFrom) params.fromDate = filterFrom;
+      if (filterTo) params.toDate = filterTo;
+      const { data: responseData } = await api.get<{ data: PaymentListItem[]; total: number }>("/api/finance-v3/payments", { params });
+      setPayments(responseData?.data ?? []);
+    } catch { toast.error("فشل في تحميل التحصيلات"); } finally { setLoading(false); }
+  }, [filterMethod, filterFrom, filterTo]);
 
   useEffect(() => { fetchPayments(); }, [fetchPayments]);
+
+  const clearFilters = () => { setFilterMethod(""); setFilterFrom(""); setFilterTo(""); };
+  const hasActiveFilters = !!(filterMethod || filterFrom || filterTo);
 
   const onPatientSelect = async (patientId: string) => {
     setValue("patientId", patientId);
@@ -282,7 +298,32 @@ export function CollectionsTab() {
         </div>
       } />
 
-      {loading ? <LoadingSkeleton /> : payments.length === 0 ? <EmptyState icon={Receipt} message="لا توجد تحصيلات" /> : (
+      {/* Filter bar — wired to the server-side method/fromDate/toDate params */}
+      <div
+        className="flex flex-wrap items-end gap-3 p-3 rounded-lg"
+        style={{ background: tokens.infoBg, border: `1px solid ${tokens.border}` }}
+      >
+        <div className="flex flex-col gap-1">
+          <label style={{ ...labelStyle, marginBottom: 0 }}>طريقة الدفع</label>
+          <select value={filterMethod} onChange={(e) => setFilterMethod(e.target.value)} style={{ ...inputStyle, minWidth: 150 }}>
+            <option value="">كل الطرق</option>
+            {PAYMENT_METHODS.map((m) => (<option key={m.value} value={m.value}>{m.label}</option>))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label style={{ ...labelStyle, marginBottom: 0 }}>من تاريخ</label>
+          <input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} dir="ltr" style={{ ...inputStyle, minWidth: 150 }} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label style={{ ...labelStyle, marginBottom: 0 }}>إلى تاريخ</label>
+          <input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} dir="ltr" style={{ ...inputStyle, minWidth: 150 }} />
+        </div>
+        {hasActiveFilters && (
+          <button onClick={clearFilters} style={btnGhost}>مسح التصفية</button>
+        )}
+      </div>
+
+      {loading ? <LoadingSkeleton /> : payments.length === 0 ? <EmptyState icon={Receipt} message={hasActiveFilters ? "لا توجد تحصيلات مطابقة للتصفية" : "لا توجد تحصيلات"} /> : (
         <DataTable<PaymentListItem>
           keyField="id"
           data={payments}
@@ -290,8 +331,22 @@ export function CollectionsTab() {
             { key: "paymentNumber", label: "رقم الإيصال", render: (r) => getReceiptNumber(r) },
             { key: "patientName", label: "المريض" },
             { key: "amount", label: "المبلغ", render: (r) => {
-              const sym = r.currency === "SAR" ? "ر.س" : r.currency === "USD" ? "$" : "ر.ي";
-              return `${r.amount.toLocaleString("en-US")} ${sym}`;
+              const cur = r.currency ?? "YER";
+              const sym = cur === "SAR" ? "ر.س" : cur === "USD" ? "$" : "ر.ي";
+              const main = `${r.amount.toLocaleString("en-US")} ${sym}`;
+              // For foreign-currency payments show the YER-equivalent applied to the patient account.
+              const applied = r.appliedAmount && r.appliedAmount !== 0 ? r.appliedAmount : r.amount;
+              if (cur !== "YER") {
+                return (
+                  <span>
+                    {main}
+                    <span style={{ color: tokens.textTertiary, fontSize: "0.72rem", marginInlineStart: 6 }}>
+                      (≈ {formatYER(applied)})
+                    </span>
+                  </span>
+                );
+              }
+              return main;
             } },
             { key: "paymentMethod", label: "طريقة الدفع", render: (r) => PAYMENT_METHODS.find((m) => m.value === r.paymentMethod)?.label ?? r.paymentMethod },
             { key: "paymentDate", label: "التاريخ", render: (r) => safeFormatDate(r.paymentDate) },

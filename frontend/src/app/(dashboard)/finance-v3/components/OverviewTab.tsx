@@ -10,12 +10,57 @@ import {
   CheckCircle2,
   Clock,
   BarChart3,
+  ArrowDown,
+  ArrowUp,
+  Minus,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { localDateString } from "@/lib/utils";
+import { buildMonthToDateComparisonRanges, calculatePercentageChange } from "@/lib/financePeriodComparison";
 import type { DashboardData, ProfitLossData } from "./types";
 import { KpiCard, tokens } from "./FinanceSharedUI";
 import { formatYER } from "./FinanceHelpers";
+
+function formatChange(change: number | null): string {
+  if (change === null) return "فترة جديدة";
+  if (change === 0) return "بدون تغير";
+  return `${change > 0 ? "+" : ""}${change.toFixed(1)}%`;
+}
+
+function PeriodComparisonMetric({
+  label,
+  current,
+  previous,
+  lowerIsBetter = false,
+}: {
+  label: string;
+  current: number;
+  previous: number;
+  lowerIsBetter?: boolean;
+}) {
+  const change = calculatePercentageChange(current, previous);
+  const isUp = change !== null && change > 0;
+  const isDown = change !== null && change < 0;
+  const Icon = isUp ? ArrowUp : isDown ? ArrowDown : Minus;
+  const isFavorable = lowerIsBetter ? isDown : isUp;
+  const isUnfavorable = lowerIsBetter ? isUp : isDown;
+  const changeColor = isFavorable ? tokens.successBorder : isUnfavorable ? tokens.dangerBorder : tokens.textTertiary;
+
+  return (
+    <div className="rounded-md border p-3" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px]" style={{ color: tokens.textTertiary }}>{label}</p>
+        <span className="inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: changeColor }}>
+          <Icon className="h-3 w-3" />
+          {formatChange(change)}
+        </span>
+      </div>
+      <p className="mt-2 text-sm font-bold" style={{ color: tokens.textPrimary }}>{formatYER(current)}</p>
+      <p className="mt-1 text-[11px]" style={{ color: tokens.textTertiary }}>
+        الفترة السابقة: {formatYER(previous)}
+      </p>
+    </div>
+  );
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 1: Overview
@@ -25,6 +70,7 @@ export function OverviewTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [plData, setPlData] = useState<ProfitLossData | null>(null);
+  const [previousPlData, setPreviousPlData] = useState<ProfitLossData | null>(null);
   const [plLoading, setPlLoading] = useState(false);
 
   const fetchDashboard = useCallback(async () => {
@@ -52,11 +98,13 @@ export function OverviewTab() {
   const fetchPL = useCallback(async () => {
     try {
       setPlLoading(true);
-      const now = new Date();
-      const from = localDateString(new Date(now.getFullYear(), now.getMonth(), 1));
-      const to = localDateString(now);
-      const { data } = await api.get<ProfitLossData>("/api/finance-v3/profit-loss", { params: { fromDate: from, toDate: to } });
-      setPlData(data);
+      const ranges = buildMonthToDateComparisonRanges();
+      const [currentResponse, previousResponse] = await Promise.all([
+        api.get<ProfitLossData>("/api/finance-v3/profit-loss", { params: ranges.current }),
+        api.get<ProfitLossData>("/api/finance-v3/profit-loss", { params: ranges.previous }),
+      ]);
+      setPlData(currentResponse.data);
+      setPreviousPlData(previousResponse.data);
     } catch {
       // P&L is supplementary — don't block the page
     } finally {
@@ -172,6 +220,47 @@ export function OverviewTab() {
           </div>
         ) : (
           <p className="text-xs" style={{ color: tokens.textTertiary }}>لم يتم تحميل بيانات الأرباح والخسائر</p>
+        )}
+      </div>
+
+      {/* Period comparison */}
+      <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
+        <div className="flex items-center gap-2 mb-3">
+          <BarChart3 className="w-4 h-4" style={{ color: tokens.brand }} />
+          <div>
+            <h4 className="text-sm font-semibold" style={{ color: tokens.textPrimary }}>مقارنة الفترة</h4>
+            <p className="text-[11px]" style={{ color: tokens.textTertiary }}>
+              الشهر الحالي حتى اليوم مقارنة بنفس المدة من الشهر السابق
+            </p>
+          </div>
+        </div>
+        {plLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-24 rounded-md animate-pulse" style={{ backgroundColor: tokens.cardHover }} />
+            ))}
+          </div>
+        ) : plData && previousPlData ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <PeriodComparisonMetric
+              label="صافي التحصيل"
+              current={plData.netCashCollections}
+              previous={previousPlData.netCashCollections}
+            />
+            <PeriodComparisonMetric
+              label="إجمالي المصروفات"
+              current={plData.totalCosts}
+              previous={previousPlData.totalCosts}
+              lowerIsBetter
+            />
+            <PeriodComparisonMetric
+              label="صافي الربح النقدي"
+              current={plData.cashNetProfit}
+              previous={previousPlData.cashNetProfit}
+            />
+          </div>
+        ) : (
+          <p className="text-xs" style={{ color: tokens.textTertiary }}>لم يتم تحميل بيانات المقارنة</p>
         )}
       </div>
 

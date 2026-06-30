@@ -5,6 +5,8 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -46,7 +48,8 @@ public class OrthoClinicalExamV2Tests : IDisposable
             _db,
             currentUser.Object,
             patientAccess.Object,
-            audit.Object);
+            audit.Object,
+            new OrthoCaseQueryService(_db, NullLogger<OrthoCaseQueryService>.Instance));
     }
 
     public void Dispose() => _db.Dispose();

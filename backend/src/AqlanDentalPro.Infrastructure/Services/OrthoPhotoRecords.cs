@@ -1,7 +1,7 @@
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 
-namespace AqlanDentalPro.API.Controllers;
+namespace AqlanDentalPro.Infrastructure.Services;
 
 /// <summary>
 /// Phase 2 — standardized ortho records helpers:

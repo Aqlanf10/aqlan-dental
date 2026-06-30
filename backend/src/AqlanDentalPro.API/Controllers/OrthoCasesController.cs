@@ -98,7 +98,11 @@ public class OrthoCasesController(
     AppDbContext db,
     ICurrentUserService currentUser,
     IPatientAccessService patientAccess,
-    IAuditService audit) : ControllerBase
+    IAuditService audit,
+    // READ-side query logic extracted to OrthoCaseQueryService (LabOrderQueryService pattern,
+    // PR #542). Controller keeps permission checks + write/mutation endpoints + request DTO
+    // validation; GET endpoints delegate their EF queries here.
+    OrthoCaseQueryService queryService) : ControllerBase
 {
     private const int DefaultOrthoFollowUpIntervalDays = 21;
     private static readonly HashSet<string> ImagePreparationStatuses = new(StringComparer.OrdinalIgnoreCase)
@@ -158,26 +162,7 @@ public class OrthoCasesController(
         var accessError = await GetCaseAccessErrorAsync(id);
         if (accessError is not null) return accessError;
 
-        var orders = await db.LabOrders
-            .AsNoTracking()
-            .Where(o => o.OrthoCaseId == id && o.IsActive)
-            .OrderByDescending(o => o.CreatedAt)
-            .Select(o => new
-            {
-                id = o.Id,
-                orderNumber = o.OrderNumber,
-                applianceType = o.ApplianceType,
-                status = o.Status,
-                priority = o.Priority,
-                labName = o.LabName,
-                totalCost = o.TotalCost,
-                sentDate = o.SentDate,
-                expectedDate = o.ExpectedDate,
-                receivedDate = o.ReceivedDate,
-                deliveredDate = o.DeliveredDate,
-            })
-            .ToListAsync();
-
+        var orders = await queryService.GetLabOrdersAsync(id);
         return Ok(orders);
     }
 
@@ -196,29 +181,9 @@ public class OrthoCasesController(
         return await patientAccess.CanAccessPatientAsync(patientId.Value) ? null : Forbid();
     }
 
-    private static object MapImagePreparation(
-        OrthoClinicalPhoto photo,
-        OrthoImagePreparation? preparation) => new
-    {
-        photoId = photo.Id,
-        originalPhotoUrl = photo.PhotoUrl,
-        preparedImageUrl = preparation?.PreparedImageUrl,
-        cropX = preparation?.CropX ?? 0m,
-        cropY = preparation?.CropY ?? 0m,
-        cropWidth = preparation?.CropWidth ?? 1m,
-        cropHeight = preparation?.CropHeight ?? 1m,
-        zoom = preparation?.Zoom ?? 1m,
-        rotationDegrees = preparation?.RotationDegrees ?? 0,
-        brightness = preparation?.Brightness ?? 0,
-        contrast = preparation?.Contrast ?? 0,
-        flipHorizontal = preparation?.FlipHorizontal ?? false,
-        flipVertical = preparation?.FlipVertical ?? false,
-        aspectRatio = preparation?.AspectRatio ?? "Original",
-        preset = preparation?.Preset,
-        status = preparation?.Status ?? "OriginalUploaded",
-        preparedAt = preparation?.PreparedAt,
-        approvedAt = preparation?.ApprovedAt,
-    };
+    // MapImagePreparation moved to OrthoCaseQueryService.MapImagePreparation (public static).
+    // The two write endpoints that still use it (SaveImagePreparation / ResetImagePreparation)
+    // call OrthoCaseQueryService.MapImagePreparation directly.
 
     // GET /api/ortho-cases/{id}/case-summary/report/pdf — unified Arabic case summary PDF.
     // Aggregates existing data only (no new computation). Same OrthoAccess policy +
@@ -313,212 +278,12 @@ public class OrthoCasesController(
         // The only remaining extra round-trips are:
         //   - contract lookup (needs Payments included for the active-only paid sum);
         //   - optional photo projection for checklist auto-derive (only when no saved checklist).
-        var overview = await db.OrthoCases
-            .AsNoTracking()
-            .Where(c => c.Id == id)
-            .Select(c => new
-            {
-                c.PatientId,
-                TreatmentPlansCount = c.TreatmentPlans.Count,
-                CompletedStages = c.Stages.Count(s => s.Status == "completed"),
-                TotalStages = c.Stages.Count,
-                VisitsCount = c.Visits.Count,
-                PhotosCount = c.OrthoClinicalPhotos.Count,
-                CephAnalysesCount = c.CephAnalyses.Count,
-                PhotoAnalysesCount = c.PhotoAnalyses.Count,
-                HasClinicalExam = c.ClinicalExam != null,
-                ProblemsCount = c.ProblemList.Count,
-                HasModelAnalysis = c.ModelAnalyses.Any(),
-                LatestPlanIsApproved = c.TreatmentPlans
-                    .OrderByDescending(p => p.CreatedAt)
-                    .Select(p => p.IsApproved)
-                    .FirstOrDefault(),
-                LatestVisit = c.Visits
-                    .OrderByDescending(v => v.VisitDate)
-                    .Select(v => new { v.VisitDate, v.NextAppointmentDate })
-                    .FirstOrDefault(),
-                LatestCeph = c.CephAnalyses
-                    .OrderByDescending(a => a.AnalysisDate)
-                    .ThenByDescending(a => a.UpdatedAt)
-                    .Select(a => new { a.Id, a.AnalysisDate })
-                    .FirstOrDefault(),
-                LatestProfile = c.PhotoAnalyses
-                    .Where(a => a.ViewType == "profile")
-                    .OrderByDescending(a => a.CreatedAt)
-                    .Select(a => new { a.Id, a.CreatedAt })
-                    .FirstOrDefault(),
-                LatestFrontal = c.PhotoAnalyses
-                    .Where(a => a.ViewType == "frontal")
-                    .OrderByDescending(a => a.CreatedAt)
-                    .Select(a => new { a.Id, a.CreatedAt })
-                    .FirstOrDefault(),
-                HasRetention = c.RetentionRecord != null,
-                Diagnosis = c.Diagnosis == null ? null : new
-                {
-                    c.Diagnosis.ApprovedAt,
-                    c.Diagnosis.CephSourceAnalysisId,
-                    c.Diagnosis.CephSyncedAt,
-                    c.Diagnosis.ProfileSourceAnalysisId,
-                    c.Diagnosis.FrontalSourceAnalysisId,
-                    c.Diagnosis.PhotoAnalysisSyncedAt,
-                },
-                Checklist = c.RecordsChecklist == null ? null : new
-                {
-                    c.RecordsChecklist.ExtraoralFrontal,
-                    c.RecordsChecklist.ExtraoralProfile,
-                    c.RecordsChecklist.ExtraoralSmile,
-                    c.RecordsChecklist.IntraoralFrontal,
-                    c.RecordsChecklist.IntraoralRight,
-                    c.RecordsChecklist.IntraoralLeft,
-                    c.RecordsChecklist.UpperOcclusal,
-                    c.RecordsChecklist.LowerOcclusal,
-                    c.RecordsChecklist.Opg,
-                    c.RecordsChecklist.LateralCeph,
-                    c.RecordsChecklist.Cbct,
-                    c.RecordsChecklist.StudyModels,
-                    c.RecordsChecklist.Consent,
-                    c.RecordsChecklist.Contract,
-                },
-            })
-            .FirstOrDefaultAsync();
-
+        //
+        // Query + projection extracted to OrthoCaseQueryService.GetOverviewAsync. The service
+        // returns null when the case does not exist (mapped here to 404 with Arabic message).
+        var overview = await queryService.GetOverviewAsync(id);
         if (overview is null) return NotFound(new { message = "الحالة غير موجودة" });
-
-        var hasDiagnosis = overview.Diagnosis is not null;
-        var isDiagnosisApproved = overview.Diagnosis?.ApprovedAt is not null;
-
-        // Contract selection: prefer contract explicitly linked to this ortho case.
-        // Fallback: unlinked legacy ortho contracts (RelatedCaseId == null).
-        // Never select a contract linked to a different ortho case.
-        var contract = await db.Contracts
-            .Include(c => c.Payments)
-            .Where(c => c.PatientId == overview.PatientId &&
-                c.RelatedCaseId == id)
-            .OrderByDescending(c => c.CreatedAt)
-            .FirstOrDefaultAsync();
-
-        if (contract is null)
-        {
-            // Legacy fallback: orthodontics contracts with no case link (pre-dating RelatedCaseId)
-            var unlinkedOrthoContracts = await db.Contracts
-                .Include(c => c.Payments)
-                .Where(c => c.PatientId == overview.PatientId &&
-                    c.RelatedCaseId == null &&
-                    (c.Specialty == "orthodontics" || c.Specialty == "ortho"))
-                .OrderByDescending(c => c.CreatedAt)
-                .ToListAsync();
-
-            // CLIN-30: When multiple unlinked legacy ortho contracts exist, pick the NEWEST one
-            // (list is already ordered by CreatedAt descending) instead of silently nulling them all.
-            // NOTE: this remains inherently ambiguous — the selected contract may not actually belong
-            // to this ortho case, but hiding all contracts broke the overview for legacy patients.
-            // Consistent with PatientJourneyController.LoadOrthoJourneySummariesAsync (newest-wins).
-            contract = unlinkedOrthoContracts.FirstOrDefault();
-        }
-
-        decimal? contractTotal = null;
-        decimal? contractPaid = null;
-        decimal? contractRemaining = null;
-        if (contract is not null)
-        {
-            contractTotal = contract.TotalAmount - contract.DiscountAmount;
-            // FIX: Only count active payments — exclude soft-deleted/refunded payments
-            contractPaid = contract.Payments.Where(p => p.IsActive).Sum(p => p.Amount);
-            contractRemaining = Math.Max(0, contractTotal.Value - contractPaid.Value);
-        }
-
-        // Records checklist completion
-        int checklistCompleted = 0;
-        int checklistTotal = 14;
-        if (overview.Checklist is not null)
-        {
-            var checklist = overview.Checklist;
-            checklistCompleted = new[]
-            {
-                checklist.ExtraoralFrontal, checklist.ExtraoralProfile, checklist.ExtraoralSmile,
-                checklist.IntraoralFrontal, checklist.IntraoralRight, checklist.IntraoralLeft,
-                checklist.UpperOcclusal, checklist.LowerOcclusal,
-                checklist.Opg, checklist.LateralCeph, checklist.Cbct,
-                checklist.StudyModels, checklist.Consent, checklist.Contract,
-            }.Count(b => b);
-        }
-        else
-        {
-            // Auto-derive checklist items from existing data using same per-item logic as GET /checklist.
-            // CLIN-15: fetch only the 4 columns actually used by OrthoPhotoRecords (Category, Subtype,
-            // PhotoType, Caption) instead of pulling the full OrthoClinicalPhoto rows.
-            var photos = await db.OrthoClinicalPhotos
-                .AsNoTracking()
-                .Where(p => p.OrthoCaseId == id)
-                .Select(p => new OrthoClinicalPhoto
-                {
-                    Category = p.Category,
-                    Subtype = p.Subtype,
-                    PhotoType = p.PhotoType,
-                    Caption = p.Caption,
-                })
-                .ToListAsync();
-            var hasCeph = overview.CephAnalysesCount > 0;
-            var hasModel = overview.HasModelAnalysis;
-            // Use precise per-item matching — same as GET /checklist derivation:
-            // (Category, Subtype) tags first, legacy caption keywords as fallback
-            checklistCompleted = new[]
-            {
-                OrthoPhotoRecords.DeriveExtraoralFrontal(photos),
-                OrthoPhotoRecords.DeriveExtraoralProfile(photos),
-                OrthoPhotoRecords.DeriveExtraoralSmile(photos),
-                OrthoPhotoRecords.DeriveIntraoralFrontal(photos),
-                OrthoPhotoRecords.DeriveIntraoralRight(photos),
-                OrthoPhotoRecords.DeriveIntraoralLeft(photos),
-                OrthoPhotoRecords.DeriveUpperOcclusal(photos),
-                OrthoPhotoRecords.DeriveLowerOcclusal(photos),
-                OrthoPhotoRecords.DeriveOpg(photos),
-                hasCeph || OrthoPhotoRecords.DeriveLateralCeph(photos),
-                OrthoPhotoRecords.DeriveCbct(photos),
-                hasModel,
-                false, // Consent — cannot auto-derive
-                contract is not null,
-            }.Count(b => b);
-        }
-
-        return Ok(new
-        {
-            HasClinicalExam = overview.HasClinicalExam,
-            ProblemsCount = overview.ProblemsCount,
-            HasDiagnosis = hasDiagnosis,
-            IsDiagnosisApproved = isDiagnosisApproved,
-            HasTreatmentPlan = overview.TreatmentPlansCount > 0,
-            IsTreatmentPlanApproved = overview.LatestPlanIsApproved,
-            TreatmentPlansCount = overview.TreatmentPlansCount,
-            CompletedStages = overview.CompletedStages,
-            TotalStages = overview.TotalStages,
-            VisitsCount = overview.VisitsCount,
-            PhotosCount = overview.PhotosCount,
-            CephAnalysesCount = overview.CephAnalysesCount,
-            PhotoAnalysesCount = overview.PhotoAnalysesCount,
-            LatestCephAnalysisId = overview.LatestCeph?.Id,
-            LatestCephAnalysisDate = overview.LatestCeph?.AnalysisDate.ToString("yyyy-MM-dd"),
-            CephDiagnosisSyncedAt = overview.Diagnosis?.CephSyncedAt,
-            IsCephDiagnosisOutdated = overview.LatestCeph is not null &&
-                overview.Diagnosis?.CephSourceAnalysisId != overview.LatestCeph.Id,
-            LatestProfileAnalysisId = overview.LatestProfile?.Id,
-            LatestProfileAnalysisDate = overview.LatestProfile?.CreatedAt.ToString("yyyy-MM-dd"),
-            LatestFrontalAnalysisId = overview.LatestFrontal?.Id,
-            LatestFrontalAnalysisDate = overview.LatestFrontal?.CreatedAt.ToString("yyyy-MM-dd"),
-            PhotoAnalysisSyncedAt = overview.Diagnosis?.PhotoAnalysisSyncedAt,
-            IsPhotoAnalysisSyncOutdated =
-                (overview.LatestProfile is not null && overview.Diagnosis?.ProfileSourceAnalysisId != overview.LatestProfile.Id) ||
-                (overview.LatestFrontal is not null && overview.Diagnosis?.FrontalSourceAnalysisId != overview.LatestFrontal.Id),
-            HasRetention = overview.HasRetention,
-            ChecklistCompleted = checklistCompleted,
-            ChecklistTotal = checklistTotal,
-            ContractId = contract?.Id,
-            ContractTotal = contractTotal,
-            ContractPaid = contractPaid,
-            ContractRemaining = contractRemaining,
-            LatestVisitDate = overview.LatestVisit?.VisitDate.ToString("yyyy-MM-dd"),
-            NextAppointmentDate = overview.LatestVisit?.NextAppointmentDate?.ToString("yyyy-MM-dd")
-        });
+        return Ok(overview);
     }
 
     [HttpPost]
@@ -718,77 +483,8 @@ public class OrthoCasesController(
     [HttpGet("{id:guid}/clinical-exam")]
     public async Task<IActionResult> GetClinicalExam(Guid id)
     {
-        var exam = await db.OrthoClinicalExams
-            .Where(e => e.OrthoCaseId == id)
-            .OrderByDescending(e => e.CreatedAt)
-            .FirstOrDefaultAsync();
-        if (exam is null) return Ok(null);
-        return Ok(new {
-            exam.Id,
-            ExamDate            = exam.ExamDate.ToString("yyyy-MM-dd"),
-            exam.FacialSymmetry,
-            exam.Profile,
-            exam.LipsCompetence,
-            exam.SmileLine,
-            exam.VerticalProportion,
-            exam.MolarRelation,
-            exam.CanineRelation,
-            exam.Overjet,
-            exam.Overbite,
-            exam.Crossbite,
-            exam.OpenBite,
-            exam.UpperCrowding,
-            exam.LowerCrowding,
-            exam.UpperSpacing,
-            exam.MidlineUpper,
-            exam.MidlineLower,
-            exam.CoCrDiscrepancy,
-            exam.TmjFindings,
-            exam.Habits,
-            exam.Notes,
-            exam.DoctorId,
-            // Phase 3 — structured clinical examination
-            exam.MolarRelationRight,
-            exam.MolarRelationLeft,
-            exam.CanineRelationRight,
-            exam.CanineRelationLeft,
-            exam.IncisorRelation,
-            exam.OverbitePercent,
-            exam.DeepBite,
-            exam.CrossbiteType,
-            exam.ScissorBite,
-            exam.MidlineUpperShiftMm,
-            exam.MidlineLowerShiftMm,
-            exam.UpperCrowdingMm,
-            exam.LowerCrowdingMm,
-            exam.LowerSpacingMm,
-            exam.CurveOfSpee,
-            exam.ArchFormUpper,
-            exam.ArchFormLower,
-            exam.BoltonDiscrepancyNote,
-            exam.LipCompetenceGrade,
-            exam.NasolabialAngle,
-            exam.ChinPosition,
-            exam.FunctionalShift,
-            exam.GummySmile,
-            exam.ThumbSucking,
-            exam.MouthBreathing,
-            exam.TongueThrust,
-            exam.LipBiting,
-            exam.NailBiting,
-            exam.Bruxism,
-            exam.OralHygiene,
-            exam.GingivalCondition,
-            exam.PeriodontalConcerns,
-            exam.MissingTeethFdi,
-            exam.RetainedDeciduousFdi,
-            exam.ImpactedTeethFdi,
-            exam.SupernumeraryNote,
-            exam.EctopicEruptionNote,
-            exam.FrenumNote,
-            exam.TongueNote,
-            exam.CariesNote,
-        });
+        var exam = await queryService.GetClinicalExamAsync(id);
+        return Ok(exam);
     }
 
     [HttpPut("{id:guid}/clinical-exam")]
@@ -933,11 +629,7 @@ public class OrthoCasesController(
     [HttpGet("{id:guid}/problem-list")]
     public async Task<IActionResult> GetProblemList(Guid id)
     {
-        var items = await db.ProblemListItems
-            .Where(p => p.OrthoCaseId == id)
-            .OrderBy(p => p.SortOrder).ThenBy(p => p.CreatedAt)
-            .Select(p => new { p.Id, p.Category, p.Description, p.Severity, p.SortOrder })
-            .ToListAsync();
+        var items = await queryService.GetProblemListAsync(id);
         return Ok(items);
     }
 
@@ -976,31 +668,7 @@ public class OrthoCasesController(
     [HttpGet("{id:guid}/treatment-plans")]
     public async Task<IActionResult> GetTreatmentPlans(Guid id)
     {
-        var plans = await db.TreatmentPlans
-            .Include(p => p.ApprovedByDoctor)
-            .Where(p => p.OrthoCaseId == id)
-            .OrderBy(p => p.PlanLabel)
-            .Select(p => new
-            {
-                p.Id,
-                p.PlanVersion,
-                p.PlanLabel,
-                p.IsApproved,
-                p.ApplianceType,
-                p.BracketSystem,
-                p.InitialWire,
-                p.ExtractionPlan,
-                p.AnchoragePlan,
-                p.UseTads,
-                p.UseElastics,
-                p.ExpectedDurationMonths,
-                p.RetentionPlan,
-                p.TreatmentGoals,
-                p.RisksLimitations,
-                ApprovedByName = p.ApprovedByDoctor != null ? p.ApprovedByDoctor.Name : null,
-                ApprovedAt     = p.ApprovedAt != null ? p.ApprovedAt.Value.ToString("yyyy-MM-dd") : null,
-            })
-            .ToListAsync();
+        var plans = await queryService.GetTreatmentPlansAsync(id);
         return Ok(plans);
     }
 
@@ -1008,33 +676,8 @@ public class OrthoCasesController(
     public async Task<IActionResult> GetTreatmentPlan(Guid id)
     {
         // Backward-compatible: returns the latest (or approved) plan
-        var plan = await db.TreatmentPlans
-            .Include(p => p.ApprovedByDoctor)
-            .Where(p => p.OrthoCaseId == id)
-            .OrderByDescending(p => p.IsApproved ? 1 : 0)
-            .ThenByDescending(p => p.CreatedAt)
-            .FirstOrDefaultAsync();
-        if (plan is null) return Ok(null);
-        return Ok(new
-        {
-            plan.Id,
-            plan.PlanVersion,
-            plan.PlanLabel,
-            plan.IsApproved,
-            plan.ApplianceType,
-            plan.BracketSystem,
-            plan.InitialWire,
-            plan.ExtractionPlan,
-            plan.AnchoragePlan,
-            plan.UseTads,
-            plan.UseElastics,
-            plan.ExpectedDurationMonths,
-            plan.RetentionPlan,
-            plan.TreatmentGoals,
-            plan.RisksLimitations,
-            ApprovedByName = plan.ApprovedByDoctor?.Name,
-            ApprovedAt     = plan.ApprovedAt?.ToString("yyyy-MM-dd"),
-        });
+        var plan = await queryService.GetTreatmentPlanAsync(id);
+        return Ok(plan);
     }
 
     private static readonly HashSet<string> ValidPlanLabels = new(StringComparer.OrdinalIgnoreCase) { "A", "B", "C" };
@@ -1335,22 +978,8 @@ public class OrthoCasesController(
     [HttpGet("{id:guid}/extraction-decision")]
     public async Task<IActionResult> GetExtractionDecision(Guid id)
     {
-        var decision = await db.ExtractionDecisions
-            .Include(e => e.Doctor)
-            .Where(e => e.OrthoCaseId == id)
-            .OrderByDescending(e => e.CreatedAt)
-            .FirstOrDefaultAsync();
-        if (decision is null) return Ok(null);
-        return Ok(new {
-            decision.Id,
-            decision.Decision,
-            decision.ProExtraction,
-            decision.ConExtraction,
-            decision.DoctorNotes,
-            decision.AiRecommendation,
-            DecidedByName = decision.Doctor?.Name,
-            DecidedAt     = decision.DecidedAt?.ToString("yyyy-MM-dd"),
-        });
+        var decision = await queryService.GetExtractionDecisionAsync(id);
+        return Ok(decision);
     }
 
     [HttpPut("{id:guid}/extraction-decision")]
@@ -1383,71 +1012,8 @@ public class OrthoCasesController(
     [HttpGet("{id:guid}/checklist")]
     public async Task<IActionResult> GetChecklist(Guid id)
     {
-        var checklist = await db.RecordsChecklists
-            .Where(r => r.OrthoCaseId == id)
-            .FirstOrDefaultAsync();
-
-        if (checklist is not null)
-        {
-            return Ok(new
-            {
-                checklist.Id,
-                checklist.OrthoCaseId,
-                checklist.ExtraoralFrontal,
-                checklist.ExtraoralProfile,
-                checklist.ExtraoralSmile,
-                checklist.IntraoralFrontal,
-                checklist.IntraoralRight,
-                checklist.IntraoralLeft,
-                checklist.UpperOcclusal,
-                checklist.LowerOcclusal,
-                checklist.Opg,
-                checklist.LateralCeph,
-                checklist.Cbct,
-                checklist.StudyModels,
-                checklist.Consent,
-                checklist.Contract,
-            });
-        }
-
-        // Auto-derive from existing data if no checklist exists yet
-        var photos = await db.OrthoClinicalPhotos.Where(p => p.OrthoCaseId == id).ToListAsync();
-        var hasCeph = await db.CephAnalyses.AnyAsync(c => c.OrthoCaseId == id);
-        var hasModel = await db.ModelAnalyses.AnyAsync(m => m.OrthoCaseId == id);
-        var patientId = await db.OrthoCases.Where(oc => oc.Id == id).Select(oc => oc.PatientId).FirstOrDefaultAsync();
-        var contract = await db.Contracts
-            .Where(c => c.PatientId == patientId && c.RelatedCaseId == id)
-            .AnyAsync();
-        if (!contract && patientId != Guid.Empty)
-        {
-            var unlinkedCount = await db.Contracts
-                .Where(c => c.PatientId == patientId && c.RelatedCaseId == null &&
-                    (c.Specialty == "orthodontics" || c.Specialty == "ortho"))
-                .CountAsync();
-            contract = unlinkedCount == 1;
-        }
-
-        // Auto-derive each item from (Category, Subtype) tags with the legacy
-        // caption-keyword heuristic as an OR'd fallback (untagged photos keep working)
-        return Ok(new
-        {
-            Id = (Guid?)null,
-            OrthoCaseId = id,
-            ExtraoralFrontal = OrthoPhotoRecords.DeriveExtraoralFrontal(photos),
-            ExtraoralProfile = OrthoPhotoRecords.DeriveExtraoralProfile(photos),
-            ExtraoralSmile = OrthoPhotoRecords.DeriveExtraoralSmile(photos),
-            IntraoralFrontal = OrthoPhotoRecords.DeriveIntraoralFrontal(photos),
-            IntraoralRight = OrthoPhotoRecords.DeriveIntraoralRight(photos),
-            IntraoralLeft = OrthoPhotoRecords.DeriveIntraoralLeft(photos),
-            UpperOcclusal = OrthoPhotoRecords.DeriveUpperOcclusal(photos),
-            LowerOcclusal = OrthoPhotoRecords.DeriveLowerOcclusal(photos),
-            Opg = OrthoPhotoRecords.DeriveOpg(photos),
-            LateralCeph = hasCeph || OrthoPhotoRecords.DeriveLateralCeph(photos),
-            Cbct = OrthoPhotoRecords.DeriveCbct(photos),
-            StudyModels = hasModel,
-            Consent = false,
-            Contract = contract,
-        });
+        var checklist = await queryService.GetChecklistAsync(id);
+        return Ok(checklist);
     }
 
     [HttpPut("{id:guid}/checklist")]
@@ -1487,162 +1053,14 @@ public class OrthoCasesController(
     [HttpGet("{id:guid}/diagnosis")]
     public async Task<IActionResult> GetDiagnosis(Guid id)
     {
-        var latestCephInfo = await db.CephAnalyses
-            .AsNoTracking()
-            .Where(a => a.OrthoCaseId == id)
-            .OrderByDescending(a => a.AnalysisDate)
-            .ThenByDescending(a => a.UpdatedAt)
-            .Select(a => new
-            {
-                a.Id,
-                AnalysisDate = a.AnalysisDate.ToString("yyyy-MM-dd"),
-            })
-            .FirstOrDefaultAsync();
-        var latestProfile = await db.PhotoAnalyses
-            .AsNoTracking()
-            .Where(a => a.OrthoCaseId == id && a.ViewType == "profile")
-            .OrderByDescending(a => a.CreatedAt)
-            .Select(a => new
-            {
-                a.Id,
-                AnalysisDate = a.CreatedAt.ToString("yyyy-MM-dd"),
-            })
-            .FirstOrDefaultAsync();
-        var latestFrontal = await db.PhotoAnalyses
-            .AsNoTracking()
-            .Where(a => a.OrthoCaseId == id && a.ViewType == "frontal")
-            .OrderByDescending(a => a.CreatedAt)
-            .Select(a => new
-            {
-                a.Id,
-                AnalysisDate = a.CreatedAt.ToString("yyyy-MM-dd"),
-            })
-            .FirstOrDefaultAsync();
-
-        var diagnosis = await db.OrthoDiagnoses
-            .Include(d => d.ApprovedByDoctor)
-            .Where(d => d.OrthoCaseId == id)
-            .FirstOrDefaultAsync();
-
-        if (diagnosis is not null)
-        {
-            return Ok(new
-            {
-                diagnosis.Id,
-                diagnosis.SkeletalClassification,
-                diagnosis.DentalClassification,
-                diagnosis.FacialPattern,
-                diagnosis.SoftTissueDiagnosis,
-                diagnosis.FunctionalDiagnosis,
-                diagnosis.Etiology,
-                diagnosis.ANB,
-                diagnosis.Wits,
-                diagnosis.FMA,
-                diagnosis.SNA,
-                diagnosis.SNB,
-                diagnosis.IMPA,
-                diagnosis.Summary,
-                diagnosis.CephSourceAnalysisId,
-                diagnosis.CephSyncedAt,
-                diagnosis.PhotoAnalysisSummary,
-                diagnosis.ProfileSourceAnalysisId,
-                diagnosis.FrontalSourceAnalysisId,
-                diagnosis.PhotoAnalysisSyncedAt,
-                LatestCephAnalysisId = latestCephInfo?.Id,
-                LatestCephAnalysisDate = latestCephInfo?.AnalysisDate,
-                IsCephSyncOutdated = latestCephInfo is not null &&
-                    diagnosis.CephSourceAnalysisId != latestCephInfo.Id,
-                LatestProfileAnalysisId = latestProfile?.Id,
-                LatestProfileAnalysisDate = latestProfile?.AnalysisDate,
-                LatestFrontalAnalysisId = latestFrontal?.Id,
-                LatestFrontalAnalysisDate = latestFrontal?.AnalysisDate,
-                IsPhotoAnalysisSyncOutdated =
-                    (latestProfile is not null && diagnosis.ProfileSourceAnalysisId != latestProfile.Id) ||
-                    (latestFrontal is not null && diagnosis.FrontalSourceAnalysisId != latestFrontal.Id),
-                IsApproved = diagnosis.ApprovedAt != null,
-                ApprovedByName = diagnosis.ApprovedByDoctor?.Name,
-                ApprovedAt = diagnosis.ApprovedAt?.ToString("yyyy-MM-dd"),
-            });
-        }
-
-        // Compute a summary from ClinicalExam, ProblemList, and CephAnalysis measurements
-        var orthoCase = await db.OrthoCases
-            .Include(c => c.ClinicalExam)
-            .Include(c => c.ProblemList)
-            .Include(c => c.CephAnalyses)
-                .ThenInclude(a => a.Measurements)
-            .FirstOrDefaultAsync(c => c.Id == id);
-
-        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
-
-        var latestCeph = orthoCase.CephAnalyses
-            .OrderByDescending(a => a.AnalysisDate)
-            .FirstOrDefault();
-        var measurements = latestCeph?.Measurements ?? [];
-
-        var anbValue = measurements.FirstOrDefault(m => m.MeasurementName == "ANB")?.MeasurementValue;
-        var witsValue = measurements.FirstOrDefault(m => m.MeasurementName == "Wits")?.MeasurementValue;
-        var fmaValue = measurements.FirstOrDefault(m => m.MeasurementName == "FMA")?.MeasurementValue;
-        var snaValue = measurements.FirstOrDefault(m => m.MeasurementName == "SNA")?.MeasurementValue;
-        var snbValue = measurements.FirstOrDefault(m => m.MeasurementName == "SNB")?.MeasurementValue;
-        var impaValue = measurements.FirstOrDefault(m => m.MeasurementName == "IMPA")?.MeasurementValue;
-
-        string? skeletalClass = anbValue switch
-        {
-            >= 0 and <= 4 => "Class I",
-            > 4 => "Class II",
-            < 0 => "Class III",
-            null => null
-        };
-
-        string? facialPattern = fmaValue switch
-        {
-            < 22 => "Hypodivergent",
-            >= 22 and <= 28 => "Normodivergent",
-            > 28 => "Hyperdivergent",
-            null => null
-        };
-
-        string? dentalClass = orthoCase.ClinicalExam?.MolarRelation;
-
-        var problemSummary = orthoCase.ProblemList.Count > 0
-            ? string.Join("، ", orthoCase.ProblemList.OrderBy(p => p.SortOrder).Select(p => p.Description))
-            : null;
-
-        return Ok(new
-        {
-            Id = (Guid?)null,
-            SkeletalClassification = skeletalClass,
-            DentalClassification = dentalClass,
-            FacialPattern = facialPattern,
-            SoftTissueDiagnosis = (string?)null,
-            FunctionalDiagnosis = (string?)null,
-            Etiology = (string?)null,
-            ANB = anbValue,
-            Wits = witsValue,
-            FMA = fmaValue,
-            SNA = snaValue,
-            SNB = snbValue,
-            IMPA = impaValue,
-            Summary = problemSummary,
-            CephSourceAnalysisId = (Guid?)null,
-            CephSyncedAt = (DateTime?)null,
-            PhotoAnalysisSummary = (string?)null,
-            ProfileSourceAnalysisId = (Guid?)null,
-            FrontalSourceAnalysisId = (Guid?)null,
-            PhotoAnalysisSyncedAt = (DateTime?)null,
-            LatestCephAnalysisId = latestCephInfo?.Id,
-            LatestCephAnalysisDate = latestCephInfo?.AnalysisDate,
-            IsCephSyncOutdated = latestCephInfo is not null,
-            LatestProfileAnalysisId = latestProfile?.Id,
-            LatestProfileAnalysisDate = latestProfile?.AnalysisDate,
-            LatestFrontalAnalysisId = latestFrontal?.Id,
-            LatestFrontalAnalysisDate = latestFrontal?.AnalysisDate,
-            IsPhotoAnalysisSyncOutdated = latestProfile is not null || latestFrontal is not null,
-            IsApproved = false,
-            ApprovedByName = (string?)null,
-            ApprovedAt = (string?)null,
-        });
+        // Query + computed-summary fallback extracted to OrthoCaseQueryService.GetDiagnosisAsync.
+        // The service returns null if the case itself does not exist (mapped here to 404 with
+        // Arabic message). When the case exists but no OrthoDiagnosis row is saved, the service
+        // returns a non-null DTO with derived values from ClinicalExam + ProblemList + CephAnalysis
+        // measurements (preserving the original "Ok(new {...})" behavior).
+        var diagnosis = await queryService.GetDiagnosisAsync(id);
+        if (diagnosis is null) return NotFound(new { message = "الحالة غير موجودة" });
+        return Ok(diagnosis);
     }
 
     [HttpPut("{id:guid}/diagnosis")]
@@ -1725,31 +1143,8 @@ public class OrthoCasesController(
     [HttpGet("{id:guid}/retention")]
     public async Task<IActionResult> GetRetention(Guid id)
     {
-        var record = await db.RetentionRecords
-            .Include(r => r.Visits)
-            .Where(r => r.OrthoCaseId == id)
-            .FirstOrDefaultAsync();
-        if (record is null) return Ok(null);
-        return Ok(new
-        {
-            record.Id,
-            DebondDate   = record.DebondDate?.ToString("yyyy-MM-dd"),
-            record.UpperRetainer,
-            record.LowerRetainer,
-            record.Instructions,
-            record.Status,
-            Visits = record.Visits
-                .OrderBy(v => v.VisitDate)
-                .Select(v => new
-                {
-                    v.Id,
-                    VisitDate     = v.VisitDate?.ToString("yyyy-MM-dd"),
-                    v.Period,
-                    v.ToothStability,
-                    v.RetainerStatus,
-                    v.Notes,
-                })
-        });
+        var record = await queryService.GetRetentionAsync(id);
+        return Ok(record);
     }
 
     [HttpPut("{id:guid}/retention")]
@@ -1806,19 +1201,7 @@ public class OrthoCasesController(
     [HttpGet("{id:guid}/retention/visits")]
     public async Task<IActionResult> GetRetentionVisits(Guid id)
     {
-        var visits = await db.RetentionVisits
-            .Where(v => v.RetentionRecord.OrthoCaseId == id)
-            .OrderByDescending(v => v.VisitDate)
-            .Select(v => new
-            {
-                v.Id,
-                VisitDate     = v.VisitDate != null ? v.VisitDate.Value.ToString("yyyy-MM-dd") : null,
-                v.Period,
-                v.ToothStability,
-                v.RetainerStatus,
-                v.Notes,
-            })
-            .ToListAsync();
+        var visits = await queryService.GetRetentionVisitsAsync(id);
         return Ok(visits);
     }
 
@@ -1879,42 +1262,14 @@ public class OrthoCasesController(
         [FromQuery] string? phase = null,
         [FromQuery] bool? selectedOnly = null)
     {
+        // Request-DTO validation stays in the controller (returns Arabic BadRequest
+        // on invalid enum names). The service receives already-normalized values.
         if (!OrthoPhotoRecords.TryNormalizeCategory(category, out var normalizedCategory))
             return BadRequest(new { message = "فئة الصورة غير صالحة" });
         if (!OrthoPhotoRecords.TryNormalizePhase(phase, out var normalizedPhase))
             return BadRequest(new { message = "مرحلة العلاج غير صالحة" });
 
-        var query = db.OrthoClinicalPhotos.Where(p => p.OrthoCaseId == id);
-        if (normalizedCategory is not null)
-            query = query.Where(p => p.Category == normalizedCategory);
-        if (normalizedPhase is not null)
-            query = query.Where(p => p.TreatmentPhase == normalizedPhase);
-        if (selectedOnly == true)
-            query = query.Where(p => p.IsSelectedForReport);
-
-        var photos = await query
-            .OrderBy(p => p.SortOrder).ThenBy(p => p.TakenAt)
-            .Select(p => new
-            {
-                p.Id,
-                p.PhotoUrl,
-                p.PhotoType,
-                p.Caption,
-                TakenAt   = p.TakenAt.ToString("yyyy-MM-dd"),
-                p.SortOrder,
-                p.Category,
-                p.Subtype,
-                p.TreatmentPhase,
-                p.IsSelectedForReport,
-                PreparationStatus = p.ImagePreparation != null
-                    ? p.ImagePreparation.Status
-                    : "OriginalUploaded",
-                IsPreparedForReport = p.ImagePreparation != null,
-                PreparedImageUrl = p.ImagePreparation != null
-                    ? p.ImagePreparation.PreparedImageUrl
-                    : null,
-            })
-            .ToListAsync();
+        var photos = await queryService.GetPhotosAsync(id, normalizedCategory, normalizedPhase, selectedOnly);
         return Ok(photos);
     }
 
@@ -1968,13 +1323,10 @@ public class OrthoCasesController(
         var accessError = await GetCaseAccessErrorAsync(id);
         if (accessError is not null) return accessError;
 
-        var photo = await db.OrthoClinicalPhotos
-            .AsNoTracking()
-            .Include(p => p.ImagePreparation)
-            .FirstOrDefaultAsync(p => p.Id == photoId && p.OrthoCaseId == id);
-        if (photo is null) return NotFound(new { message = "الصورة غير موجودة" });
+        var preparation = await queryService.GetImagePreparationAsync(id, photoId);
+        if (preparation is null) return NotFound(new { message = "الصورة غير موجودة" });
 
-        return Ok(MapImagePreparation(photo, photo.ImagePreparation));
+        return Ok(preparation);
     }
 
     [HttpPut("{id:guid}/photos/{photoId:guid}/preparation")]
@@ -2058,7 +1410,7 @@ public class OrthoCasesController(
             await renderer.DeletePreparedAsync(previousPreparedUrl);
 
         await db.SaveChangesAsync();
-        return Ok(MapImagePreparation(photo, preparation));
+        return Ok(OrthoCaseQueryService.MapImagePreparation(photo, preparation));
     }
 
     [HttpDelete("{id:guid}/photos/{photoId:guid}/preparation")]
@@ -2083,7 +1435,7 @@ public class OrthoCasesController(
         photo.IsSelectedForReport = false;
         await db.SaveChangesAsync();
 
-        return Ok(MapImagePreparation(photo, null));
+        return Ok(OrthoCaseQueryService.MapImagePreparation(photo, null));
     }
 
     [HttpDelete("{id:guid}/photos/{photoId:guid}")]

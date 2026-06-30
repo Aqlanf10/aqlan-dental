@@ -6,6 +6,7 @@ using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Infrastructure.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -192,7 +193,8 @@ public class OrthoCasesControllerCreateAccessTests : IDisposable
             db,
             currentUser.Object,
             patientAccess.Object,
-            audit.Object);
+            audit.Object,
+            new OrthoCaseQueryService(db, NullLogger<OrthoCaseQueryService>.Instance));
 
     private static string ExtractMessage(object? value)
     {

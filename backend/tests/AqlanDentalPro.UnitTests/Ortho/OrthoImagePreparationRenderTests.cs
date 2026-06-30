@@ -4,6 +4,7 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using DocumentFormat.OpenXml.Packaging;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
@@ -148,6 +149,7 @@ public class OrthoImagePreparationRenderTests
         access.Setup(x => x.CanAccessPatientAsync(It.IsAny<Guid>())).ReturnsAsync(true);
         var audit = new Mock<IAuditService>();
         return new OrthoCasesController(
-            new OrthoService(db, currentUser.Object), db, currentUser.Object, access.Object, audit.Object);
+            new OrthoService(db, currentUser.Object), db, currentUser.Object, access.Object, audit.Object,
+            new OrthoCaseQueryService(db, NullLogger<OrthoCaseQueryService>.Instance));
     }
 }

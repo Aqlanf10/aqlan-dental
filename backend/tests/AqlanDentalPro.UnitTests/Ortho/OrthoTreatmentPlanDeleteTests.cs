@@ -4,6 +4,8 @@ using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -65,7 +67,8 @@ public class OrthoTreatmentPlanDeleteTests : IDisposable
             db,
             currentUser.Object,
             FullAccess().Object,
-            (audit ?? new Mock<IAuditService>()).Object);
+            (audit ?? new Mock<IAuditService>()).Object,
+            new OrthoCaseQueryService(db, NullLogger<OrthoCaseQueryService>.Instance));
     }
 
     private async Task<(Guid caseId, Guid planId)> SeedPlan(bool approved)

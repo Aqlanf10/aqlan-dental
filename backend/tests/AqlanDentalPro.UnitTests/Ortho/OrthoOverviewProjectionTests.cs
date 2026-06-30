@@ -1,5 +1,7 @@
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -36,7 +38,8 @@ public class OrthoOverviewProjectionTests : IDisposable
         patientAccess.Setup(p => p.CanAccessPatientAsync(It.IsAny<Guid>())).ReturnsAsync(true);
         var audit = new Mock<Application.Interfaces.Services.IAuditService>();
         _controller = new API.Controllers.OrthoCasesController(
-            new Application.Services.OrthoService(_db, currentUser.Object), _db, currentUser.Object, patientAccess.Object, audit.Object);
+            new Application.Services.OrthoService(_db, currentUser.Object), _db, currentUser.Object, patientAccess.Object, audit.Object,
+            new OrthoCaseQueryService(_db, NullLogger<OrthoCaseQueryService>.Instance));
     }
 
     public void Dispose() => _db.Dispose();

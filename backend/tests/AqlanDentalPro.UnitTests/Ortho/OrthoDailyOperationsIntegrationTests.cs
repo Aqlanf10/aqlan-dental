@@ -238,7 +238,8 @@ public class OrthoDailyOperationsIntegrationTests
             db,
             currentUser.Object,
             access.Object,
-            audit.Object);
+            audit.Object,
+            new OrthoCaseQueryService(db, NullLogger<OrthoCaseQueryService>.Instance));
     }
 
     private static IPatientAccessService BuildFullAccess()

@@ -4,6 +4,8 @@ using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -55,7 +57,8 @@ public class OrthoExtractionDecisionTests : IDisposable
             db,
             currentUser.Object,
             patientAccess.Object,
-            new Mock<IAuditService>().Object);
+            new Mock<IAuditService>().Object,
+            new OrthoCaseQueryService(db, NullLogger<OrthoCaseQueryService>.Instance));
     }
 
     private async Task<Guid> SeedCaseAsync()

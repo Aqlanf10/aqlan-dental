@@ -74,6 +74,10 @@ public static class ServiceRegistrationConfiguration
         // Sprint 12: READ-side query service extracted from LabOrdersController.
         // Concrete class (no interface) — matches PatientJourneyService / DashboardService pattern.
         services.AddScoped<LabOrderQueryService>();
+        // READ-side query service extracted from OrthoCasesController (LabOrderQueryService pattern).
+        // Concrete class (no interface). Controller keeps permission checks + write endpoints;
+        // GET endpoints delegate their EF queries here.
+        services.AddScoped<OrthoCaseQueryService>();
         services.AddHttpClient(); // Register IHttpClientFactory for PatientPortalService
         services.AddHttpClient("RemoteClinicalImage", client =>
         {

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -38,7 +39,8 @@ public class OrthoImagePreparationTests : IDisposable
     public void Dispose() => _db.Dispose();
 
     private OrthoCasesController CreateController(IPatientAccessService patientAccess) =>
-        new(new OrthoService(_db, _currentUser.Object), _db, _currentUser.Object, patientAccess, new Mock<IAuditService>().Object);
+        new(new OrthoService(_db, _currentUser.Object), _db, _currentUser.Object, patientAccess, new Mock<IAuditService>().Object,
+            new OrthoCaseQueryService(_db, NullLogger<OrthoCaseQueryService>.Instance));
 
     private async Task<(Guid CaseId, Guid PhotoId)> SeedPhotoAsync(string photoUrl = "/uploads/original.jpg")
     {
@@ -117,9 +119,12 @@ public class OrthoImagePreparationTests : IDisposable
 
         var value = ValueOf(await _controller.GetImagePreparation(caseId, photoId));
 
-        PropertyOf<string>(value, "status").Should().Be("OriginalUploaded");
-        PropertyOf<decimal>(value, "zoom").Should().Be(1m);
-        PropertyOf<string>(value, "originalPhotoUrl").Should().Be("/uploads/original.jpg");
+        // The DTO property names are PascalCase (Status, Zoom, OriginalPhotoUrl) — System.Text.Json's
+        // default camelCase policy still serializes them to the same JSON keys as the original
+        // anonymous type (status, zoom, originalPhotoUrl), so the HTTP response shape is unchanged.
+        PropertyOf<string>(value, "Status").Should().Be("OriginalUploaded");
+        PropertyOf<decimal>(value, "Zoom").Should().Be(1m);
+        PropertyOf<string>(value, "OriginalPhotoUrl").Should().Be("/uploads/original.jpg");
     }
 
     [Fact]

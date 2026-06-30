@@ -5,6 +5,8 @@ using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -72,7 +74,8 @@ public class OrthoVisitUpdateDeleteTests : IDisposable
             db,
             currentUser.Object,
             patientAccess.Object,
-            audit.Object);
+            audit.Object,
+            new OrthoCaseQueryService(db, NullLogger<OrthoCaseQueryService>.Instance));
     }
 
     private async Task<(Guid caseId, Guid visitId, Guid linkedVisitId, Guid doctorId)> SeedVisitWithLinkedRow()

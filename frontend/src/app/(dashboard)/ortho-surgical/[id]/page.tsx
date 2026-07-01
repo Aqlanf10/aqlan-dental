@@ -6,6 +6,7 @@ import Link from "next/link";
 import {
   ArrowRight, User, GitBranch, Send, ShieldCheck, Loader2, AlertCircle,
   CheckCircle2, Circle, Stethoscope, Scissors, ClipboardCheck, Play, ListChecks,
+  FileDown,
 } from "lucide-react";
 import type {
   OrthoSurgicalCaseDetail, OrthoSurgicalStatus, OrthoSurgicalReadiness,
@@ -18,6 +19,7 @@ import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
+import { downloadPdfFromApi } from "@/lib/pdfDownload";
 import { CommentsPanel } from "./_components/CommentsPanel";
 import { AuditTrailPanel } from "./_components/AuditTrailPanel";
 import { JointPlanPanel } from "./_components/JointPlanPanel";
@@ -64,6 +66,21 @@ export default function OrthoSurgicalDetailPage() {
   }, [id]);
 
   useEffect(() => { fetchCase(); }, [fetchCase]);
+
+  const [pdfBusy, setPdfBusy] = useState<"doctor" | "patient" | null>(null);
+  const downloadReport = async (kind: "doctor" | "patient") => {
+    setPdfBusy(kind);
+    try {
+      if (kind === "doctor")
+        await downloadPdfFromApi(`/api/ortho-surgical-cases/${id}/report/pdf`, `ortho-surgical-report-${id}.pdf`);
+      else
+        await downloadPdfFromApi(`/api/ortho-surgical-cases/${id}/patient-explanation/pdf`, `ortho-surgical-patient-explanation-${id}.pdf`);
+    } catch {
+      toast.error("فشل إنشاء التقرير");
+    } finally {
+      setPdfBusy(null);
+    }
+  };
 
   const act = async (label: string, fn: () => Promise<unknown>, okMsg: string, errMsg: string) => {
     setBusy(label);
@@ -168,6 +185,19 @@ export default function OrthoSurgicalDetailPage() {
             <span className="text-xs text-gray-500">
               المسؤول الآن: <span className="font-semibold text-gray-700">{data.responsibleParty}</span>
             </span>
+            <div className="flex items-center gap-1">
+              <button onClick={() => downloadReport("doctor")} disabled={pdfBusy === "doctor"}
+                className="flex items-center gap-1 text-xs font-medium text-[#3d7ab5] hover:underline disabled:opacity-50">
+                {pdfBusy === "doctor" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+                تقرير الطبيب
+              </button>
+              <span className="text-gray-300">·</span>
+              <button onClick={() => downloadReport("patient")} disabled={pdfBusy === "patient"}
+                className="flex items-center gap-1 text-xs font-medium text-[#3d7ab5] hover:underline disabled:opacity-50">
+                {pdfBusy === "patient" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+                شرح للمريض
+              </button>
+            </div>
           </div>
         </div>
 

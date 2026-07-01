@@ -1,9 +1,12 @@
 using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.Application.DTOs.Ortho;
+using AqlanDentalPro.Application.Exceptions;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -956,6 +959,56 @@ public class OrthoSurgicalCasesController(
         {
             logger.LogError(ex, "Failed to generate ortho-surgical patient explanation for case {CaseId}", id);
             return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إنشاء التقرير" });
+        }
+    }
+
+    // ── AI text assistant (Sprint A8) ─────────────────────────────────────────────
+    // Draft-only: never written to JointPlan/SurgeonReview automatically. The caller
+    // (doctor) copies text into the joint-plan editor explicitly after review. Same
+    // safety machinery as OrthoCaseAiController/CephController's draft-diagnosis:
+    // Settings-gated, honest Arabic errors, every attempt audited.
+    [HttpPost("{id:guid}/ai/draft")]
+    public async Task<IActionResult> GenerateAiDraft(
+        Guid id,
+        [FromBody] OrthoCaseDraftRequestDto request,
+        [FromServices] OrthoSurgicalDraftService draftService,
+        CancellationToken ct)
+    {
+        if (!await CanAsync("view")) return Deny();
+
+        var c = await db.OrthoSurgicalCases.FirstOrDefaultAsync(x => x.Id == id && x.IsActive, ct);
+        if (c is null) return NotFound(new { message = "الحالة التقويمية الجراحية غير موجودة" });
+
+        var denied = await DenyIfDoctorCannotAccess(c.PatientId);
+        if (denied is not null) return denied;
+
+        try
+        {
+            var result = await draftService.GenerateAsync(id, request.Section, ct);
+            return result is null
+                ? NotFound(new { message = "الحالة التقويمية الجراحية غير موجودة" })
+                : Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (CephAiUnavailableException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+        }
+        catch (CephAiLimitReachedException ex)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { message = ex.Message });
+        }
+        catch (CephAiUpstreamException)
+        {
+            return StatusCode(StatusCodes.Status502BadGateway, new { message = CephAiDraftService.UpstreamFailureMessageAr });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to generate ortho-surgical AI draft for case {CaseId}", id);
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "تعذر توليد المسودة حالياً" });
         }
     }
 

@@ -105,6 +105,7 @@ public static class ServiceRegistrationConfiguration
         services.AddScoped<CephAiDraftService>();
         services.AddScoped<CephAiLandmarkDraftService>();
         services.AddScoped<OrthoCaseDraftService>();
+        services.AddScoped<OrthoSurgicalDraftService>();
         services.AddScoped<AiApiKeyVault>();
         services.AddScoped<IAiDraftProvider, AqlanDentalPro.Infrastructure.Services.Ai.GeminiAiDraftProvider>();
         services.AddScoped<IAiDraftProvider, AqlanDentalPro.Infrastructure.Services.Ai.AnthropicAiDraftProvider>();

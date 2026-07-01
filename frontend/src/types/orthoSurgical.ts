@@ -205,3 +205,25 @@ export const SURGERY_CASE_STATUS_LABELS: Record<string, string> = {
   Cancelled: "ملغاة",
   Postponed: "مؤجلة",
 };
+
+// Sprint A8 — AI text-drafting assistant (POST /api/ortho-surgical-cases/{id}/ai/draft).
+// Draft-only: never auto-applied. Mirrors the ortho-case clinical-draft contract.
+export type OrthoSurgicalAiSection = "case_summary" | "referral_letter" | "patient_explanation" | "joint_plan_draft";
+
+export interface OrthoSurgicalAiDraftResult {
+  section: string;
+  draft: string;
+  evidenceUsed: string[];
+  missingData: string[];
+  warnings: string[];
+  disclaimer: string;
+  modelId: string;
+  generatedAt: string;
+}
+
+export const AI_SECTION_LABELS: Record<OrthoSurgicalAiSection, string> = {
+  case_summary: "تلخيص الحالة",
+  referral_letter: "خطاب إحالة للجراح",
+  patient_explanation: "شرح مبسّط للمريض",
+  joint_plan_draft: "مسودة الخطة المشتركة",
+};

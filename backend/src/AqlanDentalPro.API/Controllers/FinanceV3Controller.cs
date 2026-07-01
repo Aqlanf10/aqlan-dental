@@ -163,15 +163,15 @@ public partial class FinanceV3Controller(
                 newData: new { result.Amount, result.PatientId, result.PaymentMethod });
             return Ok(result);
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            logger.LogWarning(ex, "Payment creation validation failed");
-            return BadRequest(new { message = ex.Message });
+            logger.LogWarning("Payment creation validation failed");
+            return BadRequest(new { message = "بيانات الدفعة غير صالحة" });
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
-            logger.LogWarning(ex, "Payment creation operation failed");
-            return BadRequest(new { message = ex.Message });
+            logger.LogWarning("Payment creation operation failed");
+            return BadRequest(new { message = "تعذر إنشاء الدفعة — تحقق من البيانات أو الوردية" });
         }
     }
 
@@ -381,7 +381,7 @@ public partial class FinanceV3Controller(
 
         Treasury treasury;
         try { treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, req.PaymentMethod, null, activeSession?.Id); }
-        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (ArgumentException) { return BadRequest(new { message = "تعذر تحديد الخزينة — بيانات غير صالحة" }); }
 
         if (req.SupplierId.HasValue)
         {
@@ -540,7 +540,7 @@ public partial class FinanceV3Controller(
 
         Treasury treasury;
         try { treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, expenseSnapshot.PaymentMethod, null, activeSession?.Id); }
-        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (ArgumentException) { return BadRequest(new { message = "تعذر تحديد الخزينة — بيانات غير صالحة" }); }
 
         await using var tx = await db.Database.BeginTransactionAsync();
         try
@@ -932,7 +932,7 @@ public partial class FinanceV3Controller(
 
         Treasury treasury;
         try { treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, req.PaymentMethod, null, activeSession?.Id); }
-        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (ArgumentException) { return BadRequest(new { message = "تعذر تحديد الخزينة — بيانات غير صالحة" }); }
 
         await using var tx = await db.Database.BeginTransactionAsync();
         try

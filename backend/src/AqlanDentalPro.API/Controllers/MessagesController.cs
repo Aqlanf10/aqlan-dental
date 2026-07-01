@@ -94,10 +94,10 @@ public class MessagesController(IMessagingService messagingService, AppDbContext
             logger.LogWarning(ex, "Unauthorized message send to conversation {ConversationId}", conversationId);
             return StatusCode(StatusCodes.Status403Forbidden, new { message = "ليس لديك صلاحية الإرسال في هذه المحادثة" });
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            logger.LogWarning(ex, "Invalid argument sending message to conversation {ConversationId}", conversationId);
-            return BadRequest(new { message = ex.Message });
+            logger.LogWarning("Invalid argument sending message to conversation {ConversationId}", conversationId);
+            return BadRequest(new { message = "بيانات الرسالة غير صالحة" });
         }
         catch (Exception ex)
         {
@@ -142,10 +142,10 @@ public class MessagesController(IMessagingService messagingService, AppDbContext
             var result = await messagingService.GetOrCreatePatientFacingConversationAsync(patientId);
             return Ok(result);
         }
-        catch (KeyNotFoundException ex)
+        catch (KeyNotFoundException)
         {
-            logger.LogWarning(ex, "Patient not found for patient-facing conversation, patient {PatientId}", patientId);
-            return NotFound(new { message = ex.Message });
+            logger.LogWarning("Patient not found for patient-facing conversation, patient {PatientId}", patientId);
+            return NotFound(new { message = "المريض غير موجود" });
         }
     }
 
@@ -161,10 +161,10 @@ public class MessagesController(IMessagingService messagingService, AppDbContext
             var result = await messagingService.GetOrCreatePatientConversationAsync(patientId);
             return Ok(result);
         }
-        catch (KeyNotFoundException ex)
+        catch (KeyNotFoundException)
         {
-            logger.LogWarning(ex, "Patient not found for internal patient conversation, patient {PatientId}", patientId);
-            return NotFound(new { message = ex.Message });
+            logger.LogWarning("Patient not found for internal patient conversation, patient {PatientId}", patientId);
+            return NotFound(new { message = "المريض غير موجود" });
         }
     }
 
@@ -210,10 +210,10 @@ public class MessagesController(IMessagingService messagingService, AppDbContext
                 return NotFound(new { message = "لا توجد محادثة داخلية مرتبطة بهذا المريض" });
             return Ok(result);
         }
-        catch (KeyNotFoundException ex)
+        catch (KeyNotFoundException)
         {
-            logger.LogWarning(ex, "Patient not found for internal conversation lookup, patient {PatientId}", patientId);
-            return NotFound(new { message = ex.Message });
+            logger.LogWarning("Patient not found for internal conversation lookup, patient {PatientId}", patientId);
+            return NotFound(new { message = "المريض غير موجود" });
         }
     }
 

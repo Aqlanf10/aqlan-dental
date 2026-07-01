@@ -64,13 +64,13 @@ public class CommissionsController(
             var result = await commissionService.UpdateCostsAsync(lineItemId, req, userId.Value);
             return result == null ? NotFound() : Ok(result);
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            return BadRequest(new { message = ex.Message });
+            return BadRequest(new { message = "بيانات تكاليف العمولة غير صالحة" });
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
-            return Conflict(new { message = ex.Message });
+            return Conflict(new { message = "تعذر تحديث تكاليف العمولة — الحالة الحالية لا تسمح" });
         }
     }
 
@@ -87,9 +87,9 @@ public class CommissionsController(
             var result = await commissionService.ApproveAsync(lineItemId, req, userId.Value);
             return result == null ? NotFound() : Ok(result);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
-            return Conflict(new { message = ex.Message });
+            return Conflict(new { message = "تعذر اعتماد العمولة — الحالة الحالية لا تسمح" });
         }
     }
 
@@ -106,9 +106,9 @@ public class CommissionsController(
             var result = await commissionService.UnlockAsync(lineItemId, userId.Value);
             return result == null ? NotFound() : Ok(result);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
-            return Conflict(new { message = ex.Message });
+            return Conflict(new { message = "تعذر فتح قفل العمولة — الحالة الحالية لا تسمح" });
         }
     }
 
@@ -170,9 +170,9 @@ public class CommissionsController(
             var result = await commissionService.RecordPaymentAsync(req, userId.Value);
             return Created(string.Empty, result);
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            return BadRequest(new { message = ex.Message });
+            return BadRequest(new { message = "بيانات دفعة العمولة غير صالحة" });
         }
     }
 
@@ -204,9 +204,9 @@ public class CommissionsController(
             var result = await commissionService.UpdateServiceDefaultsAsync(serviceId, req);
             return result == null ? NotFound() : Ok(result);
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            return BadRequest(new { message = ex.Message });
+            return BadRequest(new { message = "بيانات افتراضيات العمولة غير صالحة" });
         }
     }
 

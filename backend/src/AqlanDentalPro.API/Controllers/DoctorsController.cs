@@ -20,6 +20,8 @@ public sealed class CreateDoctorRequest
     public CompensationType? CompensationType { get; init; }
     public decimal? DefaultCommissionPercentage { get; init; }
     public string? CompensationNotes { get; init; }
+    /// <summary>Standing room assignment. Guid.Empty clears it (partial-update convention).</summary>
+    public Guid? DefaultClinicRoomId { get; init; }
 }
 
 public sealed class UpdateDoctorRequest
@@ -33,6 +35,8 @@ public sealed class UpdateDoctorRequest
     public CompensationType? CompensationType { get; init; }
     public decimal? DefaultCommissionPercentage { get; init; }
     public string? CompensationNotes { get; init; }
+    /// <summary>Standing room assignment. Omit = unchanged; Guid.Empty = clear the assignment.</summary>
+    public Guid? DefaultClinicRoomId { get; init; }
 }
 
 [ApiController]
@@ -92,6 +96,8 @@ public class DoctorsController(
                 CompensationType = d.CompensationType.ToString(),
                 d.DefaultCommissionPercentage,
                 d.CompensationNotes,
+                d.DefaultClinicRoomId,
+                DefaultRoomName = d.DefaultClinicRoom != null ? d.DefaultClinicRoom.ArabicName : null,
                 BranchName = db.Branches
                     .Where(b => b.Id == d.BranchId)
                     .Select(b => b.Name)
@@ -128,6 +134,8 @@ public class DoctorsController(
                 CompensationType = d.CompensationType.ToString(),
                 d.DefaultCommissionPercentage,
                 d.CompensationNotes,
+                d.DefaultClinicRoomId,
+                DefaultRoomName = d.DefaultClinicRoom != null ? d.DefaultClinicRoom.ArabicName : null,
                 d.CreatedAt,
                 d.UpdatedAt,
                 BranchName = db.Branches
@@ -166,6 +174,16 @@ public class DoctorsController(
                 return BadRequest(new { message = "المستخدم المحدد غير موجود" });
         }
 
+        // Standing room assignment: Guid.Empty (or omitted) means no assignment on create.
+        Guid? defaultRoomId = null;
+        if (req.DefaultClinicRoomId.HasValue && req.DefaultClinicRoomId.Value != Guid.Empty)
+        {
+            var roomExists = await db.ClinicRooms.AnyAsync(r => r.Id == req.DefaultClinicRoomId.Value);
+            if (!roomExists)
+                return BadRequest(new { message = "الغرفة المحددة غير موجودة" });
+            defaultRoomId = req.DefaultClinicRoomId.Value;
+        }
+
         var initials = !string.IsNullOrWhiteSpace(req.AvatarInitials)
             ? req.AvatarInitials
             : GenerateInitials(req.Name);
@@ -181,7 +199,8 @@ public class DoctorsController(
             UserId = req.UserId ?? Guid.Empty,
             CompensationType = req.CompensationType ?? CompensationType.None,
             DefaultCommissionPercentage = req.DefaultCommissionPercentage,
-            CompensationNotes = req.CompensationNotes?.Trim()
+            CompensationNotes = req.CompensationNotes?.Trim(),
+            DefaultClinicRoomId = defaultRoomId
         };
 
         db.Doctors.Add(doctor);
@@ -200,7 +219,8 @@ public class DoctorsController(
             doctor.IsActive,
             CompensationType = doctor.CompensationType.ToString(),
             doctor.DefaultCommissionPercentage,
-            doctor.CompensationNotes
+            doctor.CompensationNotes,
+            doctor.DefaultClinicRoomId
         });
     }
 
@@ -258,6 +278,23 @@ public class DoctorsController(
         if (req.CompensationNotes is not null)
             doctor.CompensationNotes = req.CompensationNotes.Trim();
 
+        // Standing room assignment ("تعيينات غرف الأطباء"): omitted = unchanged;
+        // Guid.Empty = clear; any other value must reference an existing room.
+        if (req.DefaultClinicRoomId.HasValue)
+        {
+            if (req.DefaultClinicRoomId.Value == Guid.Empty)
+            {
+                doctor.DefaultClinicRoomId = null;
+            }
+            else
+            {
+                var roomExists = await db.ClinicRooms.AnyAsync(r => r.Id == req.DefaultClinicRoomId.Value);
+                if (!roomExists)
+                    return BadRequest(new { message = "الغرفة المحددة غير موجودة" });
+                doctor.DefaultClinicRoomId = req.DefaultClinicRoomId.Value;
+            }
+        }
+
         await db.SaveChangesAsync();
 
         return Ok(new
@@ -273,7 +310,8 @@ public class DoctorsController(
             doctor.IsActive,
             CompensationType = doctor.CompensationType.ToString(),
             doctor.DefaultCommissionPercentage,
-            doctor.CompensationNotes
+            doctor.CompensationNotes,
+            doctor.DefaultClinicRoomId
         });
     }
 

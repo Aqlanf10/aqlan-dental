@@ -19,6 +19,9 @@ export interface DoctorDto {
   createdAt?: string;
   updatedAt?: string;
   scheduleCount?: number;
+  /** Standing room assignment ("تعيينات غرف الأطباء") — pre-fills the room on queue call. */
+  defaultClinicRoomId?: string | null;
+  defaultRoomName?: string | null;
 }
 
 export interface CreateDoctorRequest {
@@ -32,6 +35,7 @@ export interface CreateDoctorRequest {
   compensationType?: string;
   defaultCommissionPercentage?: number;
   compensationNotes?: string;
+  defaultClinicRoomId?: string;
 }
 
 export interface UpdateDoctorRequest {
@@ -44,6 +48,8 @@ export interface UpdateDoctorRequest {
   compensationType?: string;
   defaultCommissionPercentage?: number;
   compensationNotes?: string;
+  /** Omit = unchanged; the all-zeros GUID clears the assignment (backend convention). */
+  defaultClinicRoomId?: string;
 }
 
 /** Hook: Fetch all active doctors (backward compatible) */

@@ -30,5 +30,13 @@ public class DoctorConfiguration : IEntityTypeConfiguration<Doctor>
             .WithMany(b => b.Doctors)
             .HasForeignKey(d => d.BranchId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        // Standing room assignment ("تعيينات غرف الأطباء"). No inverse collection on
+        // ClinicRoom — a room doesn't need to enumerate its doctors. Deleting a room
+        // simply clears the assignment (SetNull), never blocks nor cascades.
+        builder.HasOne(d => d.DefaultClinicRoom)
+            .WithMany()
+            .HasForeignKey(d => d.DefaultClinicRoomId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

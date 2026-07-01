@@ -24,6 +24,7 @@ import {
   UserCircle,
   Banknote,
   FileText,
+  DoorOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -37,6 +38,7 @@ import {
   type UpdateDoctorRequest,
 } from "@/hooks/useDoctors";
 import { useBranches } from "@/hooks/useBranches";
+import { useClinicRooms } from "@/hooks/useClinicRooms";
 import { useAuthStore } from "@/stores/authStore";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -105,6 +107,7 @@ interface DoctorFormData {
   compensationType: string;
   defaultCommissionPercentage: string;
   compensationNotes: string;
+  defaultClinicRoomId: string;
 }
 
 const EMPTY_FORM: DoctorFormData = {
@@ -117,6 +120,7 @@ const EMPTY_FORM: DoctorFormData = {
   compensationType: "None",
   defaultCommissionPercentage: "",
   compensationNotes: "",
+  defaultClinicRoomId: "",
 };
 
 // ─── Confirm Dialog State ───────────────────────────────────────────────────
@@ -218,6 +222,7 @@ export default function DoctorsPage() {
   } = useDoctorsFiltered(queryStatus, queryBranchId);
 
   const { data: branches } = useBranches();
+  const { data: clinicRooms } = useClinicRooms();
 
   const createDoctor = useCreateDoctor();
   const updateDoctor = useUpdateDoctor();
@@ -273,6 +278,7 @@ export default function DoctorsPage() {
           ? String(doctor.defaultCommissionPercentage)
           : "",
       compensationNotes: doctor.compensationNotes ?? "",
+      defaultClinicRoomId: doctor.defaultClinicRoomId ?? "",
     });
     setFormError(null);
     setShowCompensation(
@@ -330,6 +336,10 @@ export default function DoctorsPage() {
               : undefined,
           compensationNotes:
             form.compensationNotes.trim() || undefined,
+          // Always explicit on update: empty selection clears the standing room
+          // via the all-zeros GUID convention (omitting would mean "unchanged").
+          defaultClinicRoomId:
+            form.defaultClinicRoomId || "00000000-0000-0000-0000-000000000000",
         };
         await updateDoctor.mutateAsync(req);
         showToast("success", "تم تحديث بيانات الطبيب بنجاح");
@@ -349,6 +359,7 @@ export default function DoctorsPage() {
               : undefined,
           compensationNotes:
             form.compensationNotes.trim() || undefined,
+          defaultClinicRoomId: form.defaultClinicRoomId || undefined,
         };
         await createDoctor.mutateAsync(req);
         showToast("success", "تم إضافة الطبيب بنجاح");
@@ -691,6 +702,34 @@ export default function DoctorsPage() {
                     ))}
                   </select>
                 </div>
+              </div>
+
+              {/* Default clinic room — "تعيينات غرف الأطباء": pre-fills the room
+                  when calling this doctor's patient from the daily-operations queue */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  الغرفة الافتراضية
+                </label>
+                <div className="relative">
+                  <DoorOpen className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <select
+                    value={form.defaultClinicRoomId}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, defaultClinicRoomId: e.target.value }))
+                    }
+                    className="w-full border border-gray-200 rounded-xl pr-9 pl-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]/40 focus:border-[#3d7ab5] transition appearance-none"
+                  >
+                    <option value="">بدون تعيين — اختيار يدوي عند النداء</option>
+                    {clinicRooms?.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.arabicName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p className="mt-1 text-[11px] text-gray-400">
+                  تُقترح هذه الغرفة تلقائيًا عند نداء مرضى هذا الطبيب من العمليات اليومية.
+                </p>
               </div>
 
               {/* Color Picker */}

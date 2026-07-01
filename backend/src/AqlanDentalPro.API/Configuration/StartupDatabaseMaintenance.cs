@@ -40,6 +40,7 @@ public static class StartupDatabaseMaintenance
         await EnsureMessagingBaseEntityColumnsAsync(app);
         await EnsureDoctorCommissionSchemaAsync(app);
         await EnsureClinicServicesAndRoomsSchemaAsync(app);
+        await EnsureDoctorDefaultRoomColumnAsync(app);
         await EnsurePasswordResetSchemaAsync(app);
         await EnsureEmailLogsSchemaAsync(app);
         await EnsureReminderTrackingColumnsAsync(app);
@@ -1886,6 +1887,41 @@ public static class StartupDatabaseMaintenance
     /// never overwrites an owner's existing customization for a role. Orthodontist and
     /// OralSurgeon get view/create/edit/approve; Admin is implicitly allowed everywhere.
     /// </summary>
+    /// <summary>
+    /// Doctor room assignments ("تعيينات غرف الأطباء" — CLAUDE.md priority): adds the
+    /// nullable Doctors.DefaultClinicRoomId column on existing databases. Fresh databases
+    /// get it from the EF model baseline. Idempotent (ADD COLUMN IF NOT EXISTS); the FK is
+    /// added only when the ClinicRooms table exists, with ON DELETE SET NULL so deleting a
+    /// room clears the assignment rather than blocking.
+    /// </summary>
+    private static async Task EnsureDoctorDefaultRoomColumnAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                ALTER TABLE "Doctors" ADD COLUMN IF NOT EXISTS "DefaultClinicRoomId" uuid NULL;
+                CREATE INDEX IF NOT EXISTS "IX_Doctors_DefaultClinicRoomId"
+                    ON "Doctors" ("DefaultClinicRoomId");
+                DO $$ BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicRooms')
+                       AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Doctors_ClinicRooms_DefaultClinicRoomId') THEN
+                        ALTER TABLE "Doctors" ADD CONSTRAINT "FK_Doctors_ClinicRooms_DefaultClinicRoomId"
+                            FOREIGN KEY ("DefaultClinicRoomId") REFERENCES "ClinicRooms" ("Id") ON DELETE SET NULL;
+                    END IF;
+                END $$;
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "Doctors.DefaultClinicRoomId schema hotfix failed (non-fatal)");
+        }
+    }
+
     private static async Task EnsureOrthoSurgicalPermissionsAsync(WebApplication app)
     {
         try

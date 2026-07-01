@@ -174,10 +174,15 @@ public class CephController(
         var accessError = await GetAnalysisAccessErrorAsync(id);
         if (accessError is not null) return accessError;
 
+        // Map the optional precision string → enum. Unknown / null = draft.
+        var precision = string.Equals(request?.Precision, "high", StringComparison.OrdinalIgnoreCase)
+            ? AqlanDentalPro.Application.Interfaces.Services.CephAiPrecision.High
+            : AqlanDentalPro.Application.Interfaces.Services.CephAiPrecision.Draft;
+
         try
         {
             var result = await landmarkService.GenerateAsync(
-                id, request.ImageWidth, request.ImageHeight, HttpContext.RequestAborted);
+                id, request.ImageWidth, request.ImageHeight, precision, HttpContext.RequestAborted);
             return result is null
                 ? NotFound(new { message = "تحليل السيفالومتري غير موجود" })
                 : Ok(result);
@@ -204,6 +209,61 @@ public class CephController(
         {
             logger.LogError(ex, "Unexpected AI landmark draft failure for analysis {AnalysisId}", id);
             return StatusCode(500, new { message = "حدث خطأ أثناء توليد مسودة نقاط السيفالومتري" });
+        }
+    }
+
+    // POST /api/ceph/{id}/ai/refine-landmark
+    // Re-evaluate the position of a single AI-placed landmark. The orthodontist
+    // right-clicks a point on the canvas and asks the model to reconsider. The
+    // result is UNSAVED — the user reviews and saves it manually.
+    [HttpPost("{id:guid}/ai/refine-landmark")]
+    public async Task<IActionResult> RefineLandmark(
+        Guid id,
+        [FromBody] CephAiRefineLandmarkRequest request,
+        [FromServices] AqlanDentalPro.Infrastructure.Services.CephAiLandmarkDraftService landmarkService,
+        [FromServices] ILogger<CephController> logger)
+    {
+        var accessError = await GetAnalysisAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        if (string.IsNullOrWhiteSpace(request?.LandmarkKey))
+            return BadRequest(new { message = "يجب تحديد النقطة المراد تحسينها" });
+        if (request.ImageWidth <= 0 || request.ImageHeight <= 0)
+            return BadRequest(new { message = "أبعاد صورة الأشعة غير صالحة" });
+
+        try
+        {
+            var result = await landmarkService.RefineLandmarkAsync(
+                id, request.LandmarkKey, request.ImageWidth, request.ImageHeight,
+                request.CurrentX, request.CurrentY, HttpContext.RequestAborted);
+            return result is null
+                ? NotFound(new { message = "تحليل السيفالومتري غير موجود" })
+                : Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (AqlanDentalPro.Application.Exceptions.CephAiUnavailableException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+        }
+        catch (AqlanDentalPro.Application.Exceptions.CephAiLimitReachedException ex)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { message = ex.Message });
+        }
+        catch (AqlanDentalPro.Application.Exceptions.CephAiUpstreamException ex)
+        {
+            logger.LogError(ex, "AI landmark refine upstream failure for analysis {AnalysisId} key {Key}",
+                id, request.LandmarkKey);
+            return StatusCode(StatusCodes.Status502BadGateway,
+                new { message = "تعذر تحسين موضع النقطة من خدمة الذكاء الاصطناعي — حاول لاحقاً" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected AI landmark refine failure for analysis {AnalysisId} key {Key}",
+                id, request.LandmarkKey);
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحسين موضع النقطة" });
         }
     }
 

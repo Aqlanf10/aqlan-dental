@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useEffect, useState, useCallback, useMemo } from "react";
-import { ZoomIn, ZoomOut, Hand, Ruler } from "lucide-react";
+import { ZoomIn, ZoomOut, Hand, Ruler, Brain, Loader2 } from "lucide-react";
 import type { CephLandmark, CephMeasurement } from "@/types/ceph";
 import { tracingPolylines } from "@/lib/cephTracing";
 import { cn } from "@/lib/utils";
@@ -134,6 +134,16 @@ interface Props {
     inverted: boolean;
   };
   onImageDimensions?: (width: number, height: number) => void;
+  /**
+   * AI-assisted per-landmark refinement callback. Fired when the orthodontist
+   * right-clicks (or long-presses on touch) an AI-placed landmark and picks
+   * "تحسين موضع النقطة بالذكاء الاصطناعي" from the context menu. The page
+   * calls POST /api/ceph/{id}/ai/refine-landmark with the current position and
+   * replaces the landmark with the refined one (still an UNSAVED AI draft).
+   */
+  onRefineLandmark?: (key: string) => void;
+  /** True while a refine request is in flight — disables the menu item. */
+  refining?: boolean;
 }
 
 export function CephCanvas({
@@ -142,6 +152,8 @@ export function CephCanvas({
   showMeasurements = false, measurements, onCalibrate,
   imageAdjustments = { brightness: 100, contrast: 100, inverted: false },
   onImageDimensions,
+  onRefineLandmark,
+  refining = false,
 }: Props) {
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -149,6 +161,9 @@ export function CephCanvas({
   const [imgError, setImgError] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
   const [hovered,  setHovered]  = useState<string | null>(null);
+  // Right-click / long-press context menu for AI refinement of a single landmark.
+  const [ctxMenu, setCtxMenu] = useState<{ key: string; x: number; y: number } | null>(null);
+  const longPressTimer = useRef<number | null>(null);
 
   // ── Zoom / pan state ──
   // `view` is the explicit transform; null = auto fit-to-container.
@@ -570,7 +585,44 @@ export function CephCanvas({
       panRef.current = { sx: cx, sy: cy, ox: T.ox, oy: T.oy };
       return;
     }
+
+    // Right-click on an AI-placed landmark opens the refine context menu.
+    // (Suppressed when no refine callback is wired up.)
+    if (e.button === 2) {
+      if (!onRefineLandmark) return;
+      const hit = hitLandmark(cx, cy);
+      if (hit && lmMap[hit]?.isAiPlaced) {
+        e.preventDefault();
+        const rect = canvasRef.current!.getBoundingClientRect();
+        setCtxMenu({
+          key: hit,
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top,
+        });
+      }
+      return;
+    }
+
     if (e.button !== 0) return;
+
+    // Long-press on touch devices: start a timer that, if not cancelled by a
+    // drag/pointer-up, opens the same refine context menu for the touched
+    // landmark. Mirrors the right-click path for tablets (orthodontists often
+    // use touch screens during ceph review).
+    if (onRefineLandmark && e.detail === 1) {
+      const hit = hitLandmark(cx, cy);
+      if (hit && lmMap[hit]?.isAiPlaced) {
+        if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current);
+        longPressTimer.current = window.setTimeout(() => {
+          const rect = canvasRef.current!.getBoundingClientRect();
+          setCtxMenu(prev => prev ?? {
+            key: hit,
+            x: rect.left + cx * (rect.width / canvasRef.current!.width),
+            y: rect.top + cy * (rect.height / canvasRef.current!.height),
+          });
+        }, 550);
+      }
+    }
 
     // Calibration: place the two ruler points (third click restarts)
     if (calMode) {
@@ -599,6 +651,15 @@ export function CephCanvas({
     }
   };
 
+  const handleMouseUp = () => {
+    setDragging(null);
+    panRef.current = null;
+    if (longPressTimer.current !== null) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const { cx, cy } = coords(e);
     const T = getT(); if (!T) return;
@@ -621,6 +682,11 @@ export function CephCanvas({
     if (dragging) {
       const ip = T.ti(cx, cy);
       onLandmarksChange(landmarks.map(l => l.key === dragging ? { ...l, x: ip.x, y: ip.y, isAiPlaced: false } : l));
+      // Dragging cancels any pending long-press — the user wants to move, not refine.
+      if (longPressTimer.current !== null) {
+        window.clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+      }
     }
     if (canvasRef.current) {
       canvasRef.current.style.cursor =
@@ -629,11 +695,6 @@ export function CephCanvas({
         hit ? 'grab' :
         selectedKey ? 'crosshair' : 'default';
     }
-  };
-
-  const handleMouseUp = () => {
-    setDragging(null);
-    panRef.current = null;
   };
 
   // ── Toolbar / panel derived values ──
@@ -667,6 +728,9 @@ export function CephCanvas({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        // Suppress the browser's default right-click menu on the canvas so the
+        // AI-refine context menu is the only one the orthodontist sees.
+        onContextMenu={e => { if (onRefineLandmark) e.preventDefault(); }}
       />
 
       {/* ── Toolbar overlay (top-left, fixed position regardless of RTL) ── */}
@@ -749,13 +813,56 @@ export function CephCanvas({
       )}
 
       {hovered && !calMode && (
-        <div className="absolute bottom-3 left-3 bg-black/80 text-white text-xs px-2.5 py-1.5 rounded-lg pointer-events-none flex items-center gap-1.5">
+        <div className="absolute bottom-3 left-3 bg-black/80 text-white text-xs px-2.5 py-1.5 rounded-lg pointer-events-none flex items-center gap-1.5 max-w-[80%]">
           <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: LANDMARK_DEFS[hovered]?.color }} />
           {LANDMARK_DEFS[hovered]?.nameAr ?? hovered}
           {lmMap[hovered]?.isAiPlaced && (
             <span className="text-purple-300">· AI {Math.round((lmMap[hovered]?.confidence ?? 0) * 100)}%</span>
           )}
+          {lmMap[hovered]?.reasoning && (
+            <span className="text-slate-300 truncate" title={lmMap[hovered]?.reasoning}>
+              · {lmMap[hovered]?.reasoning}
+            </span>
+          )}
         </div>
+      )}
+
+      {/* ── AI-refine context menu (right-click / long-press on an AI-placed
+              landmark). Calls onRefineLandmark(key); the page posts to
+              /api/ceph/{id}/ai/refine-landmark and replaces the point. ── */}
+      {ctxMenu && onRefineLandmark && (
+        <>
+          <div
+            className="fixed inset-0 z-20"
+            onClick={() => setCtxMenu(null)}
+            onContextMenu={e => { e.preventDefault(); setCtxMenu(null); }}
+            aria-hidden="true"
+          />
+          <div
+            className="absolute z-30 min-w-[15rem] rounded-md border border-violet-200 bg-white py-1 shadow-lg"
+            style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          >
+            <div className="border-b border-violet-100 px-3 py-1.5 text-[10px] font-bold text-violet-700">
+              {LANDMARK_DEFS[ctxMenu.key]?.nameAr ?? ctxMenu.key} · نقطة AI
+            </div>
+            <button
+              type="button"
+              disabled={refining}
+              onClick={() => {
+                const key = ctxMenu.key;
+                setCtxMenu(null);
+                onRefineLandmark(key);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-start text-xs font-medium text-violet-800 hover:bg-violet-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            >
+              {refining ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
+              تحسين موضع النقطة بالذكاء الاصطناعي
+            </button>
+            <p className="px-3 py-1 text-[9px] text-gray-400">
+              مسودة AI — تتطلب مراجعة أخصائي التقويم قبل الحفظ
+            </p>
+          </div>
+        </>
       )}
     </div>
   );

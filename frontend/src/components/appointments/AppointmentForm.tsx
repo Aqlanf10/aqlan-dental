@@ -63,6 +63,18 @@ const inputCls = (err?: string) =>
     err ? "border-red-400" : "border-gray-300"
   );
 
+// Quick-pick chips for the common orthodontic visit types. The orthodontist
+// taps one to pre-fill the appointmentType field instead of typing the full
+// Arabic phrase. The labels mirror APPOINTMENT_TYPES in @/components/shared/
+// journey/constants.ts and ORTHO_STAGE_LABELS in @/types/ortho so the same
+// vocabulary appears across the booking, daily-operations, and ortho module.
+const ORTHO_APPOINTMENT_SHORTCUTS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "OrthoBonding",    label: "تركيب بندات التقويم" },
+  { value: "OrthoAdjustment", label: "تعديل تقويم" },
+  { value: "OrthoDebonding",  label: "فك بندات التقويم" },
+  { value: "OrthoRetainer",   label: "تركيب مثبتات" },
+];
+
 interface Props {
   defaultPatientId?:   string;
   defaultPatientName?: string;
@@ -350,6 +362,24 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
             className={inputCls(errors.appointmentType?.message)}
             placeholder="تقويم، حشو، قلع، فحص..."
           />
+          {/* Quick-pick chips for the common orthodontic visit types. The
+              orthodontist taps one to pre-fill the field instead of typing the
+              full Arabic phrase. Mirrors the APPOINTMENT_TYPES vocabulary used
+              by the daily-operations booking modal so the same appointment type
+              shows up consistently across both screens. */}
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {ORTHO_APPOINTMENT_SHORTCUTS.map(s => (
+              <button
+                key={s.value}
+                type="button"
+                onClick={() => setValue("appointmentType", s.label, { shouldValidate: true })}
+                className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700 hover:bg-violet-100 transition"
+                title={`تعبئة نوع الموعد بـ: ${s.label}`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
           {errors.appointmentType && (
             <p className="mt-1 text-xs text-red-600">{errors.appointmentType.message}</p>
           )}

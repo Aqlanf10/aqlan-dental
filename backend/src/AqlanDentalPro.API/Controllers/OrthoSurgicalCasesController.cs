@@ -1261,6 +1261,202 @@ public class OrthoSurgicalCasesController(
         return Ok(new { id = vto.Id, deleted = true });
     }
 
+    // Sprint A10a: read-only export manifest for external 3D planning tools.
+    [HttpGet("{id:guid}/export-package")]
+    public async Task<IActionResult> GetExportPackage(Guid id)
+    {
+        if (!await CanAsync("view")) return Deny();
+
+        var c = await db.OrthoSurgicalCases
+            .AsNoTracking()
+            .Include(x => x.Patient)
+            .Include(x => x.OrthoCase)
+            .Include(x => x.JointPlan)
+            .Include(x => x.SurgeonReview)
+            .FirstOrDefaultAsync(x => x.Id == id && x.IsActive);
+        if (c is null) return NotFound(new { message = "الحالة التقويمية الجراحية غير موجودة" });
+
+        var denied = await DenyIfDoctorCannotAccess(c.PatientId);
+        if (denied is not null) return denied;
+
+        var cephMeasurements = c.CephAnalysisId.HasValue
+            ? await db.CephMeasurements
+                .AsNoTracking()
+                .Where(m => m.AnalysisId == c.CephAnalysisId.Value && m.IsActive)
+                .OrderBy(m => m.MeasurementName)
+                .Select(m => new
+                {
+                    name = m.MeasurementName,
+                    value = m.MeasurementValue,
+                    normalValue = m.NormalValue,
+                    unit = m.Unit,
+                    deviation = m.Deviation,
+                    classification = m.Classification
+                })
+                .ToListAsync()
+            : [];
+
+        var vtos = await db.OrthoSurgicalVtos
+            .AsNoTracking()
+            .Where(v => v.OrthoSurgicalCaseId == id && v.IsActive)
+            .OrderByDescending(v => v.IsApprovedByOrthodontist)
+            .ThenByDescending(v => v.CreatedAt)
+            .Select(v => new
+            {
+                v.Id,
+                v.CephAnalysisId,
+                movement = new
+                {
+                    v.MaxillaMoveMm,
+                    v.MandibleMoveMm,
+                    v.ChinMoveMm,
+                    v.RotationDegree
+                },
+                predicted = new
+                {
+                    v.PredictedSNA,
+                    v.PredictedSNB,
+                    v.PredictedANB,
+                    v.PredictedWits,
+                    v.PredictedOverjet
+                },
+                v.Notes,
+                v.IsApprovedByOrthodontist,
+                v.ApprovedAt,
+                v.CreatedAt
+            })
+            .ToListAsync();
+
+        var cbctRadiographs = await db.Radiographs
+            .AsNoTracking()
+            .Where(r => r.PatientId == c.PatientId
+                && r.OrthoCaseId == c.OrthoCaseId
+                && r.IsActive
+                && r.XrayType != null
+                && r.XrayType.ToLower() == "cbct")
+            .OrderByDescending(r => r.XrayDate)
+            .Select(r => new
+            {
+                r.Id,
+                type = r.XrayType,
+                fileName = r.FileName,
+                fileUrl = r.FileUrl,
+                fileSize = r.FileSize,
+                mimeType = r.MimeType,
+                xrayDate = r.XrayDate,
+                notes = r.Notes
+            })
+            .ToListAsync();
+
+        var candidateDocuments = await db.Documents
+            .AsNoTracking()
+            .Where(d => d.PatientId == c.PatientId
+                && d.OrthoCaseId == c.OrthoCaseId
+                && d.IsActive)
+            .OrderByDescending(d => d.CreatedAt)
+            .ToListAsync();
+
+        static bool IsThreeDModel(Document d)
+        {
+            var type = (d.DocumentType ?? string.Empty).Trim().ToLowerInvariant();
+            var name = (d.FileName ?? string.Empty).Trim().ToLowerInvariant();
+            return type is "3d_model" or "stl" or "ply" or "obj" or "model_3d"
+                || name.EndsWith(".stl")
+                || name.EndsWith(".ply")
+                || name.EndsWith(".obj");
+        }
+
+        var threeDModels = candidateDocuments
+            .Where(IsThreeDModel)
+            .Select(d => new
+            {
+                d.Id,
+                type = d.DocumentType,
+                title = d.Title,
+                fileName = d.FileName,
+                fileUrl = d.FileUrl,
+                fileSize = d.FileSize,
+                mimeType = d.MimeType,
+                notes = d.Notes,
+                createdAt = d.CreatedAt
+            })
+            .ToList();
+
+        return Ok(new
+        {
+            schemaVersion = "aqlan-ortho-surgical-export-v1",
+            generatedAt = DateTime.UtcNow,
+            intendedUse = "External orthognathic planning handoff / 3D Slicer round-trip",
+            safety = new
+            {
+                readOnly = true,
+                noSegmentation = true,
+                noSplintsOrGuides = true,
+                noAutomaticSurgicalDecision = true,
+                disclaimer = "هذه حزمة قراءة فقط للتخطيط الخارجي ولا تعد قرارا جراحيا نهائيا."
+            },
+            patient = new
+            {
+                patientReference = c.Patient.PatientNumber
+            },
+            orthoCase = new
+            {
+                c.OrthoCaseId,
+                c.OrthoCase.CaseNumber,
+                c.OrthoCase.ApplianceType,
+                c.OrthoCase.CurrentStage
+            },
+            surgicalCase = new
+            {
+                c.Id,
+                c.CaseNumber,
+                status = c.Status.ToString(),
+                statusLabel = OrthoSurgicalStatusTransitions.GetArabicLabel(c.Status),
+                c.DiagnosisSummary,
+                c.CephAnalysisId,
+                c.SurgeryCaseId,
+                c.OrthodontistApprovedAt,
+                c.SurgeonApprovedAt
+            },
+            cephalometry = new
+            {
+                analysisId = c.CephAnalysisId,
+                measurements = cephMeasurements
+            },
+            jointPlan = c.JointPlan is null ? null : new
+            {
+                c.JointPlan.ProcedureType,
+                c.JointPlan.Timing,
+                c.JointPlan.OrthodonticObjectives,
+                c.JointPlan.SurgicalObjectives,
+                c.JointPlan.PreSurgicalRequirements,
+                c.JointPlan.PostSurgicalPlan,
+                c.JointPlan.Risks,
+                c.JointPlan.LockedAt
+            },
+            surgeonReview = c.SurgeonReview is null ? null : new
+            {
+                c.SurgeonReview.Decision,
+                c.SurgeonReview.ProposedProcedure,
+                c.SurgeonReview.RequiredRecords,
+                c.SurgeonReview.Risks,
+                c.SurgeonReview.Notes,
+                c.SurgeonReview.ReviewedAt
+            },
+            vtoScenarios = vtos,
+            assets = new
+            {
+                cbctRadiographs,
+                threeDModels,
+                missing = new
+                {
+                    cbct = cbctRadiographs.Count == 0,
+                    threeDModel = threeDModels.Count == 0
+                }
+            }
+        });
+    }
+
     // Loads baseline SNA/SNB/Wits/Overjet from the approved CephAnalysis.Measurements
     // (canonical keys "SNA"/"SNB"/"Wits"/"Overjet" — produced by CephService.SteinerAnalysis),
     // falling back to the OrthoDiagnosis snapshot (SNA/SNB/Wits) and the latest OrthoClinicalExam

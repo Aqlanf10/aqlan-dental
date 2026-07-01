@@ -36,6 +36,7 @@ import { JointPlanPanel } from "@/app/(dashboard)/ortho-surgical/[id]/_component
 import { SurgeryExecutionPanel } from "@/app/(dashboard)/ortho-surgical/[id]/_components/SurgeryExecutionPanel";
 import { AiAssistantPanel } from "@/app/(dashboard)/ortho-surgical/[id]/_components/AiAssistantPanel";
 import { OrthoSurgicalVtoPanel } from "@/app/(dashboard)/ortho-surgical/[id]/_components/OrthoSurgicalVtoPanel";
+import { OrthoSurgicalExportPackagePanel } from "@/app/(dashboard)/ortho-surgical/[id]/_components/OrthoSurgicalExportPackagePanel";
 
 interface OrthoSurgicalPlanningTabProps {
   caseId: string;
@@ -294,6 +295,7 @@ export function OrthoSurgicalPlanningTab({ caseId }: OrthoSurgicalPlanningTabPro
           a planning aid over the approved CephAnalysis baseline. The mandatory Arabic
           disclaimer is rendered inside the panel on every VTO card. */}
       <OrthoSurgicalVtoPanel orthoSurgicalCaseId={data.id} />
+      <OrthoSurgicalExportPackagePanel orthoSurgicalCaseId={data.id} />
 
       <SurgeryExecutionPanel orthoSurgicalCaseId={data.id} />
       <AiAssistantPanel orthoSurgicalCaseId={data.id} />

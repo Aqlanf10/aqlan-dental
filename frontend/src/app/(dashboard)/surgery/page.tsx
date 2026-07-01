@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Scissors, Plus, Search, UserPlus } from "lucide-react";
+import { Scissors, Plus, Search, UserPlus, GitBranch, ChevronLeft } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
 import type { PaginatedResponse } from "@/types/api";
 import type { SurgeryCase } from "@/types/surgery";
 import { SURGERY_STATUS_LABELS, SURGERY_STATUS_COLORS } from "@/types/surgery";
+import type { OrthoSurgicalCaseListItem } from "@/types/orthoSurgical";
 import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
@@ -16,6 +17,17 @@ export default function SurgeryPage() {
   const [filter, setFilter] = useState("");
   const [search, setSearch] = useState("");
   const [patientSuggestions, setPatientSuggestions] = useState<PatientListItem[]>([]);
+
+  // Ortho-surgical joint plans awaiting the surgeon's review — folded into this
+  // list (rather than a separate top-level page/module) since this is where a
+  // surgeon already looks for their work queue.
+  const [pendingReview, setPendingReview] = useState<OrthoSurgicalCaseListItem[]>([]);
+
+  useEffect(() => {
+    api.get<{ data: OrthoSurgicalCaseListItem[] }>("/api/ortho-surgical-cases", { params: { pendingSurgeonReview: true, pageSize: 20 } })
+      .then((r) => setPendingReview(r.data?.data ?? []))
+      .catch(() => {});
+  }, []);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -69,6 +81,30 @@ export default function SurgeryPage() {
           حالة جراحية
         </Link>
       </div>
+
+      {/* ── حالات تقويمية جراحية بانتظار مراجعة الجراح ─────────────────────── */}
+      {pendingReview.length > 0 && (
+        <div className="bg-[#f7fafd] border border-[#3d7ab5]/30 rounded-xl p-4 space-y-2">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+            <GitBranch className="w-4 h-4 text-[#3d7ab5]" />
+            حالات تقويمية جراحية بانتظار مراجعتك ({pendingReview.length})
+          </h2>
+          <div className="space-y-1.5">
+            {pendingReview.map((c) => (
+              <Link key={c.id} href={`/ortho/${c.orthoCaseId}?tab=surgical`}
+                className="flex items-center justify-between gap-3 bg-white rounded-lg border border-gray-100 px-3 py-2 text-sm hover:border-[#3d7ab5]/40 transition">
+                <span className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono text-xs font-semibold text-[#3d7ab5] flex-shrink-0">{c.caseNumber}</span>
+                  <span className="text-gray-700 truncate">{c.patientName}</span>
+                </span>
+                <span className="flex items-center gap-1 text-xs text-gray-500 flex-shrink-0">
+                  {c.statusLabel} <ChevronLeft className="w-3.5 h-3.5" />
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Search + Filter */}
       <div className="flex items-center gap-2 flex-wrap">

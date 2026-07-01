@@ -898,6 +898,67 @@ public class OrthoSurgicalCasesController(
         return StatusCode(500, new { message = "فشل إنشاء الحالة الجراحية بعد عدة محاولات" });
     }
 
+    // ── PDF reports (Sprint A7) ────────────────────────────────────────────────────
+    // Aggregate existing data only (no new computation). Same per-patient access guard
+    // as the rest of the controller; never expose exception details in the response.
+    [HttpGet("{id:guid}/report/pdf")]
+    public async Task<IActionResult> GetDoctorReportPdf(
+        Guid id,
+        [FromServices] AqlanDentalPro.API.Services.OrthoSurgicalReportPdfGenerator generator)
+    {
+        if (!await CanAsync("view")) return Deny();
+
+        var c = await db.OrthoSurgicalCases.FirstOrDefaultAsync(x => x.Id == id && x.IsActive);
+        if (c is null) return NotFound(new { message = "الحالة التقويمية الجراحية غير موجودة" });
+
+        var denied = await DenyIfDoctorCannotAccess(c.PatientId);
+        if (denied is not null) return denied;
+
+        try
+        {
+            var pdf = await generator.GenerateDoctorReportAsync(id);
+            return File(pdf, "application/pdf", $"ortho-surgical-report-{id}.pdf");
+        }
+        catch (ArgumentException)
+        {
+            return NotFound(new { message = "الحالة التقويمية الجراحية غير موجودة" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to generate ortho-surgical doctor report for case {CaseId}", id);
+            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إنشاء التقرير" });
+        }
+    }
+
+    [HttpGet("{id:guid}/patient-explanation/pdf")]
+    public async Task<IActionResult> GetPatientExplanationPdf(
+        Guid id,
+        [FromServices] AqlanDentalPro.API.Services.OrthoSurgicalReportPdfGenerator generator)
+    {
+        if (!await CanAsync("view")) return Deny();
+
+        var c = await db.OrthoSurgicalCases.FirstOrDefaultAsync(x => x.Id == id && x.IsActive);
+        if (c is null) return NotFound(new { message = "الحالة التقويمية الجراحية غير موجودة" });
+
+        var denied = await DenyIfDoctorCannotAccess(c.PatientId);
+        if (denied is not null) return denied;
+
+        try
+        {
+            var pdf = await generator.GeneratePatientExplanationAsync(id);
+            return File(pdf, "application/pdf", $"ortho-surgical-patient-explanation-{id}.pdf");
+        }
+        catch (ArgumentException)
+        {
+            return NotFound(new { message = "الحالة التقويمية الجراحية غير موجودة" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to generate ortho-surgical patient explanation for case {CaseId}", id);
+            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إنشاء التقرير" });
+        }
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────────
     private static string ResponsiblePartyLabel(OrthoSurgicalStatus status) => status switch
     {

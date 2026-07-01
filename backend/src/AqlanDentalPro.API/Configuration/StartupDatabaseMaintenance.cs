@@ -63,6 +63,8 @@ public static class StartupDatabaseMaintenance
         await EnsureAppointmentEnhancementsSchemaAsync(app);
         await EnsureInventoryEnhancementsSchemaAsync(app);
         await EnsurePatientSegmentsSchemaAsync(app);
+        await EnsureOrthoSurgicalSchemaAsync(app);
+        await EnsureOrthoSurgicalPermissionsAsync(app);
 
         // ── Gated DB maintenance (ENABLE_STARTUP_DB_MAINTENANCE) ──────
         await RunGatedDbMaintenanceAsync(app, configuration);
@@ -1641,6 +1643,185 @@ public static class StartupDatabaseMaintenance
         {
             app.Services.GetRequiredService<ILogger<Program>>()
                 .LogWarning(ex, "CephAnalysisVersions schema hotfix failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// Ortho-Surgical (orthognathic) bridge schema (Sprint A1): creates the
+    /// "OrthoSurgicalCases", "SurgeonReviews" and "JointPlans" tables on existing
+    /// databases. Fresh databases get these from the EF model baseline. Idempotent
+    /// (CREATE TABLE / INDEX / CONSTRAINT IF NOT EXISTS) so it runs safely on every
+    /// startup. FK constraints are added only when the referenced tables exist.
+    /// </summary>
+    private static async Task EnsureOrthoSurgicalSchemaAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS "OrthoSurgicalCases" (
+                    "Id" uuid NOT NULL,
+                    "CaseNumber" character varying(30) NOT NULL,
+                    "PatientId" uuid NOT NULL,
+                    "OrthoCaseId" uuid NOT NULL,
+                    "CephAnalysisId" uuid NULL,
+                    "SurgeryCaseId" uuid NULL,
+                    "OrthodontistId" uuid NULL,
+                    "SurgeonId" uuid NULL,
+                    "BranchId" uuid NULL,
+                    "Status" character varying(30) NOT NULL,
+                    "DiagnosisSummary" character varying(4000) NULL,
+                    "OrthodontistApprovedAt" timestamp with time zone NULL,
+                    "SurgeonApprovedAt" timestamp with time zone NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "UpdatedAt" timestamp with time zone NOT NULL,
+                    "IsActive" boolean NOT NULL DEFAULT true,
+                    "DeletedAt" timestamp with time zone NULL,
+                    "DeletedBy" uuid NULL,
+                    CONSTRAINT "PK_OrthoSurgicalCases" PRIMARY KEY ("Id")
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_OrthoSurgicalCases_CaseNumber"
+                    ON "OrthoSurgicalCases" ("CaseNumber");
+                CREATE INDEX IF NOT EXISTS "IX_OrthoSurgicalCases_PatientId"
+                    ON "OrthoSurgicalCases" ("PatientId");
+                CREATE INDEX IF NOT EXISTS "IX_OrthoSurgicalCases_OrthoCaseId"
+                    ON "OrthoSurgicalCases" ("OrthoCaseId");
+                CREATE INDEX IF NOT EXISTS "IX_OrthoSurgicalCases_SurgeryCaseId"
+                    ON "OrthoSurgicalCases" ("SurgeryCaseId");
+                CREATE INDEX IF NOT EXISTS "IX_OrthoSurgicalCases_Status"
+                    ON "OrthoSurgicalCases" ("Status");
+
+                CREATE TABLE IF NOT EXISTS "SurgeonReviews" (
+                    "Id" uuid NOT NULL,
+                    "OrthoSurgicalCaseId" uuid NOT NULL,
+                    "SurgeonId" uuid NULL,
+                    "Decision" character varying(40) NOT NULL,
+                    "ProposedProcedure" character varying(2000) NULL,
+                    "RequiredRecords" character varying(2000) NULL,
+                    "Risks" character varying(2000) NULL,
+                    "Notes" character varying(4000) NULL,
+                    "ReviewedAt" timestamp with time zone NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "UpdatedAt" timestamp with time zone NOT NULL,
+                    "IsActive" boolean NOT NULL DEFAULT true,
+                    "DeletedAt" timestamp with time zone NULL,
+                    "DeletedBy" uuid NULL,
+                    CONSTRAINT "PK_SurgeonReviews" PRIMARY KEY ("Id")
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_SurgeonReviews_OrthoSurgicalCaseId"
+                    ON "SurgeonReviews" ("OrthoSurgicalCaseId");
+
+                CREATE TABLE IF NOT EXISTS "JointPlans" (
+                    "Id" uuid NOT NULL,
+                    "OrthoSurgicalCaseId" uuid NOT NULL,
+                    "OrthodonticObjectives" character varying(4000) NULL,
+                    "SurgicalObjectives" character varying(4000) NULL,
+                    "ProcedureType" character varying(200) NULL,
+                    "Timing" character varying(500) NULL,
+                    "PreSurgicalRequirements" character varying(4000) NULL,
+                    "PostSurgicalPlan" character varying(4000) NULL,
+                    "Risks" character varying(4000) NULL,
+                    "PatientExplanation" character varying(4000) NULL,
+                    "OrthodontistApprovedAt" timestamp with time zone NULL,
+                    "SurgeonApprovedAt" timestamp with time zone NULL,
+                    "LockedAt" timestamp with time zone NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "UpdatedAt" timestamp with time zone NOT NULL,
+                    "IsActive" boolean NOT NULL DEFAULT true,
+                    "DeletedAt" timestamp with time zone NULL,
+                    "DeletedBy" uuid NULL,
+                    CONSTRAINT "PK_JointPlans" PRIMARY KEY ("Id")
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_JointPlans_OrthoSurgicalCaseId"
+                    ON "JointPlans" ("OrthoSurgicalCaseId");
+
+                DO $$ BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Patients')
+                       AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_OrthoSurgicalCases_Patients_PatientId') THEN
+                        ALTER TABLE "OrthoSurgicalCases" ADD CONSTRAINT "FK_OrthoSurgicalCases_Patients_PatientId"
+                            FOREIGN KEY ("PatientId") REFERENCES "Patients" ("Id") ON DELETE RESTRICT;
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'OrthoCases')
+                       AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_OrthoSurgicalCases_OrthoCases_OrthoCaseId') THEN
+                        ALTER TABLE "OrthoSurgicalCases" ADD CONSTRAINT "FK_OrthoSurgicalCases_OrthoCases_OrthoCaseId"
+                            FOREIGN KEY ("OrthoCaseId") REFERENCES "OrthoCases" ("Id") ON DELETE RESTRICT;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_SurgeonReviews_OrthoSurgicalCases_OrthoSurgicalCaseId') THEN
+                        ALTER TABLE "SurgeonReviews" ADD CONSTRAINT "FK_SurgeonReviews_OrthoSurgicalCases_OrthoSurgicalCaseId"
+                            FOREIGN KEY ("OrthoSurgicalCaseId") REFERENCES "OrthoSurgicalCases" ("Id") ON DELETE CASCADE;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_JointPlans_OrthoSurgicalCases_OrthoSurgicalCaseId') THEN
+                        ALTER TABLE "JointPlans" ADD CONSTRAINT "FK_JointPlans_OrthoSurgicalCases_OrthoSurgicalCaseId"
+                            FOREIGN KEY ("OrthoSurgicalCaseId") REFERENCES "OrthoSurgicalCases" ("Id") ON DELETE CASCADE;
+                    END IF;
+                END $$;
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "OrthoSurgical schema hotfix failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// Seeds RolePermissions for the "ortho_surgical" resource (Sprint A1). INSERT-ONLY:
+    /// never overwrites an owner's existing customization for a role. Orthodontist and
+    /// OralSurgeon get view/create/edit/approve; Admin is implicitly allowed everywhere.
+    /// </summary>
+    private static async Task EnsureOrthoSurgicalPermissionsAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+            // (Role, View, Create, Edit, Approve)
+            var perms = new (string Role, bool View, bool Create, bool Edit, bool Approve)[]
+            {
+                ("Admin",        true,  true,  true,  true),
+                ("Orthodontist", true,  true,  true,  true),
+                ("OralSurgeon",  true,  false, true,  true),
+                ("Reception",    true,  false, false, false),
+            };
+
+            var existing = await db.RolePermissions
+                .Where(rp => rp.Resource == "ortho_surgical")
+                .Select(rp => rp.Role)
+                .ToListAsync();
+
+            var toAdd = new List<RolePermission>();
+            foreach (var (role, view, create, edit, approve) in perms)
+            {
+                if (existing.Contains(role)) continue;
+                toAdd.Add(new RolePermission
+                {
+                    Role = role,
+                    Resource = "ortho_surgical",
+                    CanView = view,
+                    CanCreate = create,
+                    CanEdit = edit,
+                    CanDelete = false,
+                    CanExport = false,
+                    CanApprove = approve
+                });
+            }
+
+            if (toAdd.Count > 0)
+            {
+                await db.RolePermissions.AddRangeAsync(toAdd);
+                await db.SaveChangesAsync();
+                logger.LogInformation("HOTFIX: Seeded {Count} ortho_surgical permissions", toAdd.Count);
+            }
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogError(ex, "HOTFIX: Failed to seed ortho_surgical permissions");
         }
     }
 

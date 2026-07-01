@@ -46,6 +46,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<OperativeReport> OperativeReports => Set<OperativeReport>();
     public DbSet<PostopRecord> PostopRecords => Set<PostopRecord>();
     public DbSet<HospitalReferral> HospitalReferrals => Set<HospitalReferral>();
+    // Ortho-Surgical (orthognathic) planning bridge — shared workflow between ortho & surgery.
+    public DbSet<OrthoSurgicalCase> OrthoSurgicalCases => Set<OrthoSurgicalCase>();
+    public DbSet<SurgeonReview> SurgeonReviews => Set<SurgeonReview>();
+    public DbSet<JointPlan> JointPlans => Set<JointPlan>();
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<Receipt> Receipts => Set<Receipt>();

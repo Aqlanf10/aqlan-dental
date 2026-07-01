@@ -32,6 +32,14 @@ public static class AuthorizationPolicyConfiguration
             opts.AddPolicy("SurgeryAccess", policy =>
                 policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.OralSurgeon)));
 
+            // Ortho-Surgical (orthognathic) shared workspace: orthodontist + oral surgeon + admin.
+            // Granular actions (approve/surgeon_review) are further gated by RolePermissions.
+            opts.AddPolicy("OrthoSurgicalAccess", policy =>
+                policy.RequireRole(
+                    nameof(UserRole.Admin),
+                    nameof(UserRole.Orthodontist),
+                    nameof(UserRole.OralSurgeon)));
+
             // Finance access: Admin + Reception + Accountant
             opts.AddPolicy("FinanceAccess", policy =>
                 policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Reception), nameof(UserRole.Accountant)));

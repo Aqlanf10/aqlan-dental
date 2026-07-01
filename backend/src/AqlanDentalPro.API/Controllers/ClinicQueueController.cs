@@ -288,6 +288,13 @@ public class ClinicQueueController(
 
             // Validate and assign room if provided
             var roomName = req?.RoomName ?? item.RoomName;
+            // Doctor room assignment ("تعيينات غرف الأطباء"): when neither the request nor
+            // the queue item carries a room, fall back to the doctor's standing room so
+            // reception doesn't re-pick the same room on every call. Explicit choices
+            // above always win; the fetched name is valid by construction (comes from
+            // ClinicRooms) and still passes IsRoomValidAsync below.
+            if (string.IsNullOrWhiteSpace(roomName))
+                roomName = await Services.DoctorRoomResolver.ResolveDefaultRoomNameAsync(db, item.DoctorId);
             if (!string.IsNullOrWhiteSpace(roomName))
             {
                 var isValidRoom = await IsRoomValidAsync(roomName);
@@ -693,6 +700,13 @@ public class ClinicQueueController(
 
             // Validate and assign room if provided
             var roomName = req?.RoomName ?? item.RoomName;
+            // Doctor room assignment ("تعيينات غرف الأطباء"): when neither the request nor
+            // the queue item carries a room, fall back to the doctor's standing room so
+            // reception doesn't re-pick the same room on every call. Explicit choices
+            // above always win; the fetched name is valid by construction (comes from
+            // ClinicRooms) and still passes IsRoomValidAsync below.
+            if (string.IsNullOrWhiteSpace(roomName))
+                roomName = await Services.DoctorRoomResolver.ResolveDefaultRoomNameAsync(db, item.DoctorId);
             if (!string.IsNullOrWhiteSpace(roomName))
             {
                 var isValidRoom = await IsRoomValidAsync(roomName);

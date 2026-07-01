@@ -1798,6 +1798,8 @@ export default function DailyOperationsPage() {
       {roomSelectOpen && (
         <RoomSelectDialog
           rooms={rooms}
+          // Doctor room assignment: pre-select the calling doctor's standing room
+          defaultRoomName={doctors.find(d => d.id === pendingCallItem?.doctorId)?.defaultRoomName}
           onConfirm={handleRoomConfirm}
           onCancel={() => { setRoomSelectOpen(false); setPendingCallItem(null); }}
           loading={callPatientMutation.isPending || recallPatientMutation.isPending}

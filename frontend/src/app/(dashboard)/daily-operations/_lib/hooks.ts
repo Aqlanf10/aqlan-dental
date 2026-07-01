@@ -82,7 +82,8 @@ export function useDoctors() {
     queryKey: ["daily-ops", "doctors"],
     queryFn: async () => {
       const { data } = await api.get("/api/doctors?status=active");
-      return (data as { id: string; name: string; specialty?: string }[]).map(d => ({ id: d.id, name: d.name, specialty: d.specialty }));
+      return (data as { id: string; name: string; specialty?: string; defaultRoomName?: string | null }[])
+        .map(d => ({ id: d.id, name: d.name, specialty: d.specialty, defaultRoomName: d.defaultRoomName }));
     },
     staleTime: 60_000,
   });

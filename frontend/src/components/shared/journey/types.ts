@@ -115,6 +115,8 @@ export interface DoctorOption {
   id: string;
   name: string;
   specialty?: string;
+  /** Standing room assignment ("تعيينات غرف الأطباء") — pre-selects the room on queue call. */
+  defaultRoomName?: string | null;
 }
 
 export interface BranchOption {

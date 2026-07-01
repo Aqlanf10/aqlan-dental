@@ -14,13 +14,19 @@ import {
   BLUE,
 } from "../_lib/constants";
 
-export function RoomSelectDialog({ rooms, onConfirm, onCancel, loading }: {
+export function RoomSelectDialog({ rooms, onConfirm, onCancel, loading, defaultRoomName }: {
   rooms: { id: string; arabicName: string }[];
   onConfirm: (roomName: string) => void;
   onCancel: () => void;
   loading: boolean;
+  /** Doctor room assignment ("تعيينات غرف الأطباء"): pre-selects the calling
+      doctor's standing room instead of the first room in the list. */
+  defaultRoomName?: string | null;
 }) {
-  const [selectedRoom, setSelectedRoom] = useState(rooms[0]?.arabicName || "غرفة 1");
+  const [selectedRoom, setSelectedRoom] = useState(() =>
+    (defaultRoomName && rooms.some(r => r.arabicName === defaultRoomName)
+      ? defaultRoomName
+      : rooms[0]?.arabicName) || "غرفة 1");
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onCancel}>
       <div className="bg-white rounded-xl shadow-xl p-5 min-w-[300px]" onClick={e => e.stopPropagation()}>

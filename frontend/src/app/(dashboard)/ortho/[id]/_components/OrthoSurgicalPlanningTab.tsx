@@ -35,6 +35,7 @@ import { AuditTrailPanel } from "@/app/(dashboard)/ortho-surgical/[id]/_componen
 import { JointPlanPanel } from "@/app/(dashboard)/ortho-surgical/[id]/_components/JointPlanPanel";
 import { SurgeryExecutionPanel } from "@/app/(dashboard)/ortho-surgical/[id]/_components/SurgeryExecutionPanel";
 import { AiAssistantPanel } from "@/app/(dashboard)/ortho-surgical/[id]/_components/AiAssistantPanel";
+import { OrthoSurgicalVtoPanel } from "@/app/(dashboard)/ortho-surgical/[id]/_components/OrthoSurgicalVtoPanel";
 
 interface OrthoSurgicalPlanningTabProps {
   caseId: string;
@@ -288,6 +289,12 @@ export function OrthoSurgicalPlanningTab({ caseId }: OrthoSurgicalPlanningTabPro
         canEdit={isOrtho || isSurgeon}
         onSaved={fetchWorkspace}
       />
+
+      {/* Sprint A9 — Surgical VTO 2D. Below the joint plan per §8 of the A9 handoff:
+          a planning aid over the approved CephAnalysis baseline. The mandatory Arabic
+          disclaimer is rendered inside the panel on every VTO card. */}
+      <OrthoSurgicalVtoPanel orthoSurgicalCaseId={data.id} />
+
       <SurgeryExecutionPanel orthoSurgicalCaseId={data.id} />
       <AiAssistantPanel orthoSurgicalCaseId={data.id} />
       <CommentsPanel orthoSurgicalCaseId={data.id} />

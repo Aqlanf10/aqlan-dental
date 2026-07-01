@@ -227,3 +227,46 @@ export const AI_SECTION_LABELS: Record<OrthoSurgicalAiSection, string> = {
   patient_explanation: "شرح مبسّط للمريض",
   joint_plan_draft: "مسودة الخطة المشتركة",
 };
+
+// Sprint A9 — Surgical VTO (Visual Treatment Objective) scenarios. A planning aid that
+// records the planned jaw movement (mm) and the resulting predicted cephalometric
+// measurements computed server-side from documented geometric relationships (Bishara,
+// Jacobson, Steiner — see OrthoSurgicalCasesController.ComputePredictedMeasurements).
+// The mandatory Arabic disclaimer must be rendered on every VTO surface.
+export interface OrthoSurgicalVto {
+  id: string;
+  orthoSurgicalCaseId: string;
+  cephAnalysisId: string | null;
+  maxillaMoveMm: number | null;
+  mandibleMoveMm: number | null;
+  chinMoveMm: number | null;
+  rotationDegree: number | null;
+  predictedSNA: number | null;
+  predictedSNB: number | null;
+  predictedANB: number | null;
+  predictedWits: number | null;
+  predictedOverjet: number | null;
+  notes: string | null;
+  createdBy: string | null;
+  isApprovedByOrthodontist: boolean;
+  approvedAt: string | null;
+  approvedByUserId: string | null;
+  createdAt: string;
+  disclaimer: string;
+}
+
+export interface OrthoSurgicalVtoListResponse {
+  data: OrthoSurgicalVto[];
+  disclaimer: string;
+}
+
+export interface CreateOrthoSurgicalVtoRequest {
+  maxillaMoveMm?: number | null;
+  mandibleMoveMm?: number | null;
+  chinMoveMm?: number | null;
+  rotationDegree?: number | null;
+  notes?: string | null;
+}
+
+export const VTO_DISCLAIMER_AR =
+  "هذه محاكاة تخطيطية تقريبية ولا تُعد قرارًا جراحيًا نهائيًا.";

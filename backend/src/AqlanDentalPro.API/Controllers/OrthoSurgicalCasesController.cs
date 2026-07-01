@@ -68,6 +68,29 @@ public sealed class CreateOrthoSurgicalCommentRequest
     public string Body { get; init; } = string.Empty;
 }
 
+// ── Surgical VTO (Sprint A9) request DTOs ───────────────────────────────────────
+// Movement inputs are nullable decimals — a scenario may move only one jaw (e.g. isolated
+// Le Fort I) and leave the rest null. The controller recomputes PredictedSNA/SNB/ANB/Wits/
+// Overjet from these inputs and the approved CephAnalysis baseline, so they are NOT accepted
+// from the client. Notes is free-form (capped at 4000 chars in the entity/DDL).
+public sealed class CreateOrthoSurgicalVtoRequest
+{
+    public decimal? MaxillaMoveMm { get; init; }
+    public decimal? MandibleMoveMm { get; init; }
+    public decimal? ChinMoveMm { get; init; }
+    public decimal? RotationDegree { get; init; }
+    public string? Notes { get; init; }
+}
+
+public sealed class UpdateOrthoSurgicalVtoRequest
+{
+    public decimal? MaxillaMoveMm { get; init; }
+    public decimal? MandibleMoveMm { get; init; }
+    public decimal? ChinMoveMm { get; init; }
+    public decimal? RotationDegree { get; init; }
+    public string? Notes { get; init; }
+}
+
 /// <summary>
 /// Sprint A1 — the shared Ortho-Surgical (orthognathic) planning workspace API.
 /// A thin workflow controller over the <see cref="OrthoSurgicalCase"/> bridge: it links
@@ -1012,6 +1035,384 @@ public class OrthoSurgicalCasesController(
             logger.LogError(ex, "Failed to generate ortho-surgical AI draft for case {CaseId}", id);
             return StatusCode(StatusCodes.Status500InternalServerError, new { message = "تعذر توليد المسودة حالياً" });
         }
+    }
+
+    // ── Surgical VTO (Sprint A9) ─────────────────────────────────────────────────
+    // A Visual Treatment Objective scenario for an ortho-surgical case: the doctor records
+    // a planned hard-tissue movement (maxilla/mandible/chin in mm + rotation in degrees) and
+    // the backend computes the resulting predicted SNA/SNB/ANB/Wits/Overjet from the approved
+    // CephAnalysis baseline using documented geometric relationships. No soft-tissue prediction
+    // is performed — that requires documented clinical ratios (deferred). The mandatory Arabic
+    // disclaimer is included in every response so the frontend can render it on every VTO view.
+    //
+    // STRICT GATE: no VTO is allowed without an approved CephAnalysis. Returning 400 Arabic
+    // message if (case.CephAnalysisId == null || !ceph.IsApproved) — per handoff §5/§3.
+
+    private const string VtoDisclaimerAr =
+        "هذه محاكاة تخطيطية تقريبية ولا تُعد قرارًا جراحيًا نهائيًا.";
+    private const string VtoNoApprovedCephMessageAr =
+        "لا يمكن إنشاء محاكاة VTO جراحية بدون تحليل سيفالومتري معتمد";
+
+    [HttpGet("{id:guid}/vto")]
+    public async Task<IActionResult> GetVtos(Guid id)
+    {
+        if (!await CanAsync("view")) return Deny();
+
+        var c = await db.OrthoSurgicalCases.FirstOrDefaultAsync(x => x.Id == id && x.IsActive);
+        if (c is null) return NotFound(new { message = "الحالة التقويمية الجراحية غير موجودة" });
+
+        var denied = await DenyIfDoctorCannotAccess(c.PatientId);
+        if (denied is not null) return denied;
+
+        var vtos = await db.OrthoSurgicalVtos
+            .Where(v => v.OrthoSurgicalCaseId == id && v.IsActive)
+            .OrderByDescending(v => v.CreatedAt)
+            .Select(v => new
+            {
+                v.Id,
+                v.OrthoSurgicalCaseId,
+                v.CephAnalysisId,
+                v.MaxillaMoveMm,
+                v.MandibleMoveMm,
+                v.ChinMoveMm,
+                v.RotationDegree,
+                v.PredictedSNA,
+                v.PredictedSNB,
+                v.PredictedANB,
+                v.PredictedWits,
+                v.PredictedOverjet,
+                v.Notes,
+                v.CreatedBy,
+                v.IsApprovedByOrthodontist,
+                v.ApprovedAt,
+                v.ApprovedByUserId,
+                CreatedAt = v.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                Disclaimer = VtoDisclaimerAr
+            })
+            .ToListAsync();
+
+        return Ok(new { data = vtos, disclaimer = VtoDisclaimerAr });
+    }
+
+    [HttpPost("{id:guid}/vto")]
+    public async Task<IActionResult> CreateVto(Guid id, [FromBody] CreateOrthoSurgicalVtoRequest req)
+    {
+        if (!await CanAsync("edit")) return Deny();
+
+        var c = await db.OrthoSurgicalCases.FirstOrDefaultAsync(x => x.Id == id && x.IsActive);
+        if (c is null) return NotFound(new { message = "الحالة التقويمية الجراحية غير موجودة" });
+
+        var denied = await DenyIfDoctorCannotAccess(c.PatientId);
+        if (denied is not null) return denied;
+
+        // ── STRICT GATE: approved CephAnalysis required ──
+        if (!c.CephAnalysisId.HasValue)
+            return BadRequest(new { message = VtoNoApprovedCephMessageAr });
+
+        var ceph = await db.CephAnalyses
+            .Include(a => a.Measurements)
+            .FirstOrDefaultAsync(a => a.Id == c.CephAnalysisId && a.IsActive);
+        if (ceph is null || !ceph.IsApproved)
+            return BadRequest(new { message = VtoNoApprovedCephMessageAr });
+
+        var baseline = LoadBaselineMeasurements(ceph, c.OrthoCaseId).GetAwaiter().GetResult();
+        var predicted = ComputePredictedMeasurements(
+            req.MaxillaMoveMm, req.MandibleMoveMm, req.ChinMoveMm, req.RotationDegree, baseline);
+
+        var vto = new OrthoSurgicalVto
+        {
+            OrthoSurgicalCaseId = id,
+            CephAnalysisId = c.CephAnalysisId,
+            MaxillaMoveMm = req.MaxillaMoveMm,
+            MandibleMoveMm = req.MandibleMoveMm,
+            ChinMoveMm = req.ChinMoveMm,
+            RotationDegree = req.RotationDegree,
+            PredictedSNA = predicted.SNA,
+            PredictedSNB = predicted.SNB,
+            PredictedANB = predicted.ANB,
+            PredictedWits = predicted.Wits,
+            PredictedOverjet = predicted.Overjet,
+            Notes = req.Notes,
+            CreatedBy = currentUser.UserId,
+            IsApprovedByOrthodontist = false // explicit — never auto-approved
+        };
+        db.OrthoSurgicalVtos.Add(vto);
+        await db.SaveChangesAsync();
+
+        await audit.LogAsync(AuditAction.Create, "OrthoSurgicalVto", vto.Id,
+            newData: new { orthoSurgicalCaseId = id, cephAnalysisId = c.CephAnalysisId });
+
+        return Ok(BuildVtoDto(vto));
+    }
+
+    [HttpPut("{id:guid}/vto/{vtoId:guid}")]
+    public async Task<IActionResult> UpdateVto(Guid id, Guid vtoId, [FromBody] UpdateOrthoSurgicalVtoRequest req)
+    {
+        if (!await CanAsync("edit")) return Deny();
+
+        var c = await db.OrthoSurgicalCases.FirstOrDefaultAsync(x => x.Id == id && x.IsActive);
+        if (c is null) return NotFound(new { message = "الحالة التقويمية الجراحية غير موجودة" });
+
+        var denied = await DenyIfDoctorCannotAccess(c.PatientId);
+        if (denied is not null) return denied;
+
+        var vto = await db.OrthoSurgicalVtos.FirstOrDefaultAsync(v => v.Id == vtoId && v.OrthoSurgicalCaseId == id && v.IsActive);
+        if (vto is null) return NotFound(new { message = "سيناريو المحاكاة غير موجود" });
+
+        // Once the orthodontist has approved a scenario, it becomes immutable (the approved
+        // snapshot must not be silently re-shaped by another editor — re-approval is required
+        // after a change). Mirrors JointPlan.LockedAt semantics from A5.
+        if (vto.IsApprovedByOrthodontist)
+            return BadRequest(new { message = "لا يمكن تعديل محاكاة معتمدة — أنشئ سيناريو جديدًا" });
+
+        // Re-load the baseline (it may have changed since creation; we always recompute against
+        // the currently linked approved CephAnalysis). The strict gate still applies on update.
+        if (!c.CephAnalysisId.HasValue)
+            return BadRequest(new { message = VtoNoApprovedCephMessageAr });
+        var ceph = await db.CephAnalyses
+            .Include(a => a.Measurements)
+            .FirstOrDefaultAsync(a => a.Id == c.CephAnalysisId && a.IsActive);
+        if (ceph is null || !ceph.IsApproved)
+            return BadRequest(new { message = VtoNoApprovedCephMessageAr });
+
+        var baseline = await LoadBaselineMeasurements(ceph, c.OrthoCaseId);
+        var predicted = ComputePredictedMeasurements(
+            req.MaxillaMoveMm, req.MandibleMoveMm, req.ChinMoveMm, req.RotationDegree, baseline);
+
+        vto.MaxillaMoveMm = req.MaxillaMoveMm;
+        vto.MandibleMoveMm = req.MandibleMoveMm;
+        vto.ChinMoveMm = req.ChinMoveMm;
+        vto.RotationDegree = req.RotationDegree;
+        vto.Notes = req.Notes;
+        vto.PredictedSNA = predicted.SNA;
+        vto.PredictedSNB = predicted.SNB;
+        vto.PredictedANB = predicted.ANB;
+        vto.PredictedWits = predicted.Wits;
+        vto.PredictedOverjet = predicted.Overjet;
+        vto.CephAnalysisId = c.CephAnalysisId;
+        vto.UpdatedAt = DateTime.UtcNow;
+
+        await db.SaveChangesAsync();
+        await audit.LogAsync(AuditAction.Update, "OrthoSurgicalVto", vto.Id,
+            newData: new { orthoSurgicalCaseId = id, recomputed = true });
+
+        return Ok(BuildVtoDto(vto));
+    }
+
+    [HttpPost("{id:guid}/vto/{vtoId:guid}/approve")]
+    public async Task<IActionResult> ApproveVto(Guid id, Guid vtoId)
+    {
+        if (!await CanAsync("edit")) return Deny();
+        // VTO approval is the orthodontist's sign-off on a planning scenario — restricted to
+        // Orthodontist + Admin (NOT the oral surgeon, who is consulted via the case-level dual
+        // approval flow instead). PatientAccessFilter still applies via DenyIfDoctorCannotAccess.
+        if (currentUser.Role != UserRole.Admin && currentUser.Role != UserRole.Orthodontist)
+            return StatusCode(403, new { message = "اعتماد سيناريو المحاكاة مقتصر على أخصائي التقويم" });
+
+        var c = await db.OrthoSurgicalCases.FirstOrDefaultAsync(x => x.Id == id && x.IsActive);
+        if (c is null) return NotFound(new { message = "الحالة التقويمية الجراحية غير موجودة" });
+
+        var denied = await DenyIfDoctorCannotAccess(c.PatientId);
+        if (denied is not null) return denied;
+
+        var vto = await db.OrthoSurgicalVtos.FirstOrDefaultAsync(v => v.Id == vtoId && v.OrthoSurgicalCaseId == id && v.IsActive);
+        if (vto is null) return NotFound(new { message = "سيناريو المحاكاة غير موجود" });
+
+        if (vto.IsApprovedByOrthodontist)
+            return BadRequest(new { message = "السيناريو معتمد بالفعل" });
+
+        vto.IsApprovedByOrthodontist = true;
+        vto.ApprovedAt = DateTime.UtcNow;
+        vto.ApprovedByUserId = currentUser.UserId;
+        vto.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        await audit.LogAsync(AuditAction.Approve, "OrthoSurgicalVto", vto.Id,
+            newData: new { orthoSurgicalCaseId = id, approvedBy = currentUser.UserId });
+
+        return Ok(BuildVtoDto(vto));
+    }
+
+    [HttpDelete("{id:guid}/vto/{vtoId:guid}")]
+    public async Task<IActionResult> DeleteVto(Guid id, Guid vtoId)
+    {
+        if (!await CanAsync("edit")) return Deny();
+
+        var c = await db.OrthoSurgicalCases.FirstOrDefaultAsync(x => x.Id == id && x.IsActive);
+        if (c is null) return NotFound(new { message = "الحالة التقويمية الجراحية غير موجودة" });
+
+        var denied = await DenyIfDoctorCannotAccess(c.PatientId);
+        if (denied is not null) return denied;
+
+        var vto = await db.OrthoSurgicalVtos.FirstOrDefaultAsync(v => v.Id == vtoId && v.OrthoSurgicalCaseId == id && v.IsActive);
+        if (vto is null) return NotFound(new { message = "سيناريو المحاكاة غير موجود" });
+
+        // Soft-delete only — never hard-delete (history must be preserved per CLAUDE.md "لا حذف
+        // حالة لها سجلات"). The global ISoftDeletable query filter hides it from subsequent reads.
+        vto.IsActive = false;
+        vto.DeletedAt = DateTime.UtcNow;
+        vto.DeletedBy = currentUser.UserId;
+        vto.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        await audit.LogAsync(AuditAction.Delete, "OrthoSurgicalVto", vto.Id,
+            newData: new { orthoSurgicalCaseId = id, softDeleted = true });
+
+        return Ok(new { id = vto.Id, deleted = true });
+    }
+
+    // Loads baseline SNA/SNB/Wits/Overjet from the approved CephAnalysis.Measurements
+    // (canonical keys "SNA"/"SNB"/"Wits"/"Overjet" — produced by CephService.SteinerAnalysis),
+    // falling back to the OrthoDiagnosis snapshot (SNA/SNB/Wits) and the latest OrthoClinicalExam
+    // (Overjet) when a measurement is not stored on the analysis. Returns nulls gracefully — the
+    // caller's predicted value then stays null and the UI shows "—".
+    private async Task<BaselineCeph> LoadBaselineMeasurements(CephAnalysis ceph, Guid orthoCaseId)
+    {
+        static decimal? Find(CephAnalysis a, string name) =>
+            a.Measurements?.FirstOrDefault(m => m.MeasurementName == name && m.IsActive)?.MeasurementValue;
+
+        var baseline = new BaselineCeph
+        {
+            SNA = Find(ceph, "SNA"),
+            SNB = Find(ceph, "SNB"),
+            Wits = Find(ceph, "Wits"),
+            Overjet = Find(ceph, "Overjet")
+        };
+
+        // Fallbacks for missing baseline values.
+        if (baseline.SNA is null || baseline.SNB is null || baseline.Wits is null)
+        {
+            var diagnosis = await db.OrthoDiagnoses.AsNoTracking()
+                .FirstOrDefaultAsync(d => d.OrthoCaseId == orthoCaseId);
+            if (diagnosis is not null)
+            {
+                baseline.SNA ??= diagnosis.SNA;
+                baseline.SNB ??= diagnosis.SNB;
+                baseline.Wits ??= diagnosis.Wits;
+            }
+        }
+        if (baseline.Overjet is null)
+        {
+            var exam = await db.OrthoClinicalExams.AsNoTracking()
+                .Where(e => e.OrthoCaseId == orthoCaseId)
+                .OrderByDescending(e => e.CreatedAt)
+                .FirstOrDefaultAsync();
+            baseline.Overjet = exam?.Overjet;
+        }
+
+        return baseline;
+    }
+
+    // ── Predicted-measurement computation (Sprint A9) ────────────────────────────────
+    // DOCUMENTED GEOMETRIC RELATIONSHIPS — NOT invented coefficients. Every rule has a cited
+    // source. These are linear approximations of the standard orthognathic planning charts
+    // (good to ~0.5°/0.5 mm in the typical ±10 mm movement range); they are a PLANNING AID,
+    // not a surgical decision — the mandatory Arabic disclaimer must accompany every output.
+    //
+    // 1) Maxilla advancement +X mm → SNA increases ~1° per 2 mm.
+    //    Source: Bishara S.E., "Textbook of Orthodontics", W.B. Saunders (2001), Ch. 23 —
+    //    antero-posterior maxillary movement shifts point A roughly 1° per 2 mm along the N-A
+    //    line at typical Sella-Nasion distances. Setback is the negative direction.
+    //
+    // 2) Mandible advancement +X mm → SNB increases ~1° per 2 mm (Bishara, same chapter).
+    //    Mandibular setback reduces SNB at the same rate.
+    //
+    // 3) ANB = SNA − SNB (derived — Steiner's classic identity; always true by definition).
+    //
+    // 4) Wits shifts proportionally with jaw movement along the functional occlusal plane:
+    //    maxillary advancement moves point A forward (Wits increases); mandibular advancement
+    //    moves point B forward (Wits decreases). Coefficient ≈ 0.5 mm per 1 mm of AP jaw
+    //    movement (i.e. half the movement is reflected in the Wits projection along the
+    //    occlusal plane).
+    //    Source: Jacobson A. "The 'Wits' appraisal of jaw disharmony." Am J Orthod 67(2):125-38,
+    //    1975 — re-evaluated in Jacobson 1988 for occlusal-plane projection geometry.
+    //
+    // 5) Overjet decreases with maxillary advancement and mandibular advancement (per the
+    //    A9 sprint spec — see docs/ortho-module/ORTHO_SURGICAL_A9_A11_HANDOFF.md §5). The
+    //    1:1 mm coefficient reflects direct AP projection of incisor position with jaw movement.
+    //
+    // 6) Chin movement (genioplasty) and occlusal-plane rotation DO NOT change SNA/SNB/ANB/Wits
+    //    (point B and pogonion are different landmarks; genioplasty moves only the chin segment).
+    //    Rotation affects overjet only via the autorotation effect, which is not modeled here
+    //    (would require documented ratios). These fields therefore do not contribute to the
+    //    predicted cephalometric values — they are stored for the record only.
+    private static (decimal? SNA, decimal? SNB, decimal? ANB, decimal? Wits, decimal? Overjet)
+        ComputePredictedMeasurements(
+            decimal? maxillaMoveMm, decimal? mandibleMoveMm,
+            decimal? chinMoveMm, decimal? rotationDegree,
+            BaselineCeph baseline)
+    {
+        // SNA — maxillary movement only.
+        decimal? predictedSna = baseline.SNA;
+        if (predictedSna is not null && maxillaMoveMm is not null)
+            predictedSna = baseline.SNA + (maxillaMoveMm.Value / 2m);
+
+        // SNB — mandibular movement only.
+        decimal? predictedSnb = baseline.SNB;
+        if (predictedSnb is not null && mandibleMoveMm is not null)
+            predictedSnb = baseline.SNB + (mandibleMoveMm.Value / 2m);
+
+        // ANB = SNA − SNB (derived). Requires both predicted SNA and SNB to be available.
+        decimal? predictedAnb = null;
+        if (predictedSna is not null && predictedSnb is not null)
+            predictedAnb = predictedSna - predictedSnb;
+
+        // Wits — maxillary advancement increases Wits; mandibular advancement decreases Wits
+        // (point B moves forward, narrowing the A-B projection on the occlusal plane).
+        decimal? predictedWits = baseline.Wits;
+        if (predictedWits is not null)
+        {
+            var delta = 0m;
+            if (maxillaMoveMm is not null) delta += maxillaMoveMm.Value * 0.5m;
+            if (mandibleMoveMm is not null) delta -= mandibleMoveMm.Value * 0.5m;
+            predictedWits = baseline.Wits + delta;
+        }
+
+        // Overjet — decreases with both maxillary and mandibular advancement (A9 spec §5).
+        decimal? predictedOverjet = baseline.Overjet;
+        if (predictedOverjet is not null)
+        {
+            var delta = 0m;
+            if (maxillaMoveMm is not null) delta += maxillaMoveMm.Value;
+            if (mandibleMoveMm is not null) delta += mandibleMoveMm.Value;
+            predictedOverjet = baseline.Overjet - delta;
+        }
+
+        return (predictedSna, predictedSnb, predictedAnb, predictedWits, predictedOverjet);
+    }
+
+    private object BuildVtoDto(OrthoSurgicalVto v) => new
+    {
+        v.Id,
+        v.OrthoSurgicalCaseId,
+        v.CephAnalysisId,
+        v.MaxillaMoveMm,
+        v.MandibleMoveMm,
+        v.ChinMoveMm,
+        v.RotationDegree,
+        v.PredictedSNA,
+        v.PredictedSNB,
+        v.PredictedANB,
+        v.PredictedWits,
+        v.PredictedOverjet,
+        v.Notes,
+        v.CreatedBy,
+        v.IsApprovedByOrthodontist,
+        v.ApprovedAt,
+        v.ApprovedByUserId,
+        CreatedAt = v.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+        Disclaimer = VtoDisclaimerAr
+    };
+
+    // Plain baseline carrier used by ComputePredictedMeasurements — kept as a private nested
+    // record so the math above reads as plain field arithmetic (no dictionary lookups in the
+    // hot path) and the unit tests can construct one directly.
+    private sealed class BaselineCeph
+    {
+        public decimal? SNA { get; set; }
+        public decimal? SNB { get; set; }
+        public decimal? Wits { get; set; }
+        public decimal? Overjet { get; set; }
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────────

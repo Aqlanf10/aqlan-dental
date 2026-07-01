@@ -17,6 +17,7 @@ public sealed class CephAiLandmarkDraftService(
     ILogger<CephAiLandmarkDraftService> logger)
 {
     public const string Action = "ceph_landmark_draft";
+    public const string RefineAction = "ceph_landmark_refine";
     public const string ReviewDisclaimer =
         "هذه مسودة نقاط مولدة بنموذج رؤية عام وليست تتبعاً سيفالومترياً معتمداً. يجب على أخصائي التقويم مراجعة وتحريك كل نقطة قبل الحفظ والحساب.";
 
@@ -55,6 +56,7 @@ public sealed class CephAiLandmarkDraftService(
         Guid analysisId,
         int imageWidth,
         int imageHeight,
+        CephAiPrecision precision,
         CancellationToken cancellationToken = default)
     {
         if (imageWidth <= 0 || imageHeight <= 0)
@@ -66,7 +68,8 @@ public sealed class CephAiLandmarkDraftService(
         if (analysis is null)
             return null;
 
-        var inputSummary = $"image:{imageWidth}x{imageHeight};requestedLandmarks:24";
+        var precisionLabel = precision == CephAiPrecision.High ? "high" : "draft";
+        var inputSummary = $"image:{imageWidth}x{imageHeight};requestedLandmarks:24;precision:{precisionLabel}";
         var settings = await settingsService.GetSettingsAsync();
         if (!settings.Enabled)
         {
@@ -108,7 +111,7 @@ public sealed class CephAiLandmarkDraftService(
         try
         {
             var points = await provider.GenerateAsync(
-                imageBytes, mimeType, settings.Model, secret, cancellationToken);
+                imageBytes, mimeType, settings.Model, secret, precision, cancellationToken);
             var landmarks = points.Select(point => new CephLandmarkDto
             {
                 Key = point.Key,
@@ -117,6 +120,7 @@ public sealed class CephAiLandmarkDraftService(
                 Y = point.YNormalized / 1000d * imageHeight,
                 IsAiPlaced = true,
                 Confidence = point.Confidence,
+                Reasoning = point.Reasoning,
             }).ToList();
 
             await WriteAuditAsync(
@@ -143,6 +147,132 @@ public sealed class CephAiLandmarkDraftService(
                 _ => "vision_network_error",
             };
             await WriteAuditAsync(analysisId, modelId, false, reason, inputSummary, 0, bestEffort: true);
+            if (ex is CephAiUpstreamException)
+                throw;
+            throw new CephAiUpstreamException(reason, ex);
+        }
+    }
+
+    /// <summary>
+    /// Refine the position of a single AI-placed landmark. Returns the refined
+    /// point (or null when the analysis/landmark is unknown, or when the model
+    /// declined). The result is UNSAVED — the caller must review and save it.
+    /// </summary>
+    public async Task<CephAiRefineResultDto?> RefineLandmarkAsync(
+        Guid analysisId,
+        string landmarkKey,
+        int imageWidth,
+        int imageHeight,
+        double currentX,
+        double currentY,
+        CancellationToken cancellationToken = default)
+    {
+        if (imageWidth <= 0 || imageHeight <= 0)
+            throw new ArgumentException("أبعاد صورة الأشعة غير صالحة.");
+        if (string.IsNullOrWhiteSpace(landmarkKey))
+            throw new ArgumentException("يجب تحديد النقطة المراد تحسينها.");
+
+        var analysis = await db.CephAnalyses
+            .AsNoTracking()
+            .FirstOrDefaultAsync(a => a.Id == analysisId, cancellationToken);
+        if (analysis is null)
+            return null;
+
+        var inputSummary = $"image:{imageWidth}x{imageHeight};refine:{landmarkKey};currentPx:({(int)currentX},{(int)currentY})";
+        var settings = await settingsService.GetSettingsAsync();
+        if (!settings.Enabled)
+        {
+            await WriteAuditAsync(analysisId, null, false, "feature_disabled", inputSummary, 0, bestEffort: true, action: RefineAction);
+            throw new CephAiUnavailableException(CephAiDraftService.DisabledMessageAr);
+        }
+
+        var provider = providers.FirstOrDefault(p =>
+            string.Equals(p.ProviderName, settings.Provider, StringComparison.OrdinalIgnoreCase));
+        if (provider is null)
+        {
+            await WriteAuditAsync(
+                analysisId, null, false, $"vision_provider_unsupported:{settings.Provider}", inputSummary, 0, bestEffort: true, action: RefineAction);
+            throw new CephAiUnavailableException(
+                $"مزود {settings.Provider} لا يدعم تحسين نقاط السيفالومتري حالياً");
+        }
+
+        var secret = await keyVault.ResolveAsync(
+            provider.ProviderName, provider.ApiKeyEnvVar, cancellationToken);
+        if (string.IsNullOrWhiteSpace(secret))
+        {
+            await WriteAuditAsync(analysisId, null, false, "api_key_missing", inputSummary, 0, bestEffort: true, action: RefineAction);
+            throw new CephAiUnavailableException(CephAiDraftService.MissingKeyMessageAr);
+        }
+
+        if (settings.MonthlyLimit > 0
+            && await settingsService.CountUsageThisMonthAsync() >= settings.MonthlyLimit)
+        {
+            await WriteAuditAsync(
+                analysisId, $"{provider.ProviderName}/{settings.Model}", false,
+                "monthly_limit_reached", inputSummary, 0, bestEffort: true, action: RefineAction);
+            throw new CephAiLimitReachedException(CephAiDraftService.MonthlyLimitMessageAr);
+        }
+
+        var (imageBytes, mimeType) = await ReadImageAsync(
+            analysis.XrayFileUrl, cancellationToken);
+        var modelId = $"{provider.ProviderName}/{settings.Model}";
+
+        // Convert pixel coordinates back to the normalized 0..1000 grid the
+        // provider expects.
+        var xNorm = Math.Clamp(currentX / imageWidth * 1000d, 0, 1000);
+        var yNorm = Math.Clamp(currentY / imageHeight * 1000d, 0, 1000);
+        var target = new CephLandmarkRefineTarget(landmarkKey, xNorm, yNorm);
+
+        try
+        {
+            var refined = await provider.RefineAsync(
+                imageBytes, mimeType, settings.Model, secret, target, cancellationToken);
+
+            await WriteAuditAsync(
+                analysisId, modelId, true, null, inputSummary,
+                refined is null ? 0 : 1, action: RefineAction);
+
+            if (refined is null)
+            {
+                return new CephAiRefineResultDto
+                {
+                    Landmark = null,
+                    ModelId = modelId,
+                    Disclaimer = ReviewDisclaimer,
+                    GeneratedAt = DateTime.UtcNow,
+                };
+            }
+
+            return new CephAiRefineResultDto
+            {
+                Landmark = new CephLandmarkDto
+                {
+                    Key = refined.Key,
+                    Name = LandmarkNames.GetValueOrDefault(refined.Key, refined.Key),
+                    X = refined.XNormalized / 1000d * imageWidth,
+                    Y = refined.YNormalized / 1000d * imageHeight,
+                    IsAiPlaced = true,
+                    Confidence = refined.Confidence,
+                    Reasoning = refined.Reasoning,
+                },
+                ModelId = modelId,
+                Disclaimer = ReviewDisclaimer,
+                GeneratedAt = DateTime.UtcNow,
+            };
+        }
+        catch (Exception ex) when (
+            ex is CephAiUpstreamException or HttpRequestException
+                or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            logger.LogError(ex, "AI landmark refine failed for analysis {AnalysisId} key {Key}", analysisId, landmarkKey);
+            var reason = ex switch
+            {
+                TaskCanceledException => "vision_timeout",
+                System.Text.Json.JsonException => "vision_invalid_json",
+                CephAiUpstreamException upstream => upstream.Message,
+                _ => "vision_network_error",
+            };
+            await WriteAuditAsync(analysisId, modelId, false, reason, inputSummary, 0, bestEffort: true, action: RefineAction);
             if (ex is CephAiUpstreamException)
                 throw;
             throw new CephAiUpstreamException(reason, ex);
@@ -202,7 +332,8 @@ public sealed class CephAiLandmarkDraftService(
         string? errorSummary,
         string inputSummary,
         int outputLength,
-        bool bestEffort = false)
+        bool bestEffort = false,
+        string action = Action)
     {
         try
         {
@@ -210,7 +341,7 @@ public sealed class CephAiLandmarkDraftService(
             {
                 AnalysisId = analysisId,
                 UserId = currentUser.UserId,
-                Action = Action,
+                Action = action,
                 ModelId = modelId,
                 Succeeded = succeeded,
                 ErrorSummary = errorSummary,

@@ -101,13 +101,21 @@ export const PAYMENT_METHODS = [
 ];
 
 // ─── Appointment Types ─────────────────────────────────────────────────────
+// Orthodontic visit types (Bonding/Adjustment/Debonding/Retainer) appear here
+// so the daily-operations appointment booking modal and any other consumer of
+// APPOINTMENT_TYPES can offer them as quick-pick options when an OrthoCase is
+// linked. The matching Arabic labels mirror ORTHO_STAGE_LABELS in
+// @/types/ortho so the orthodontist sees the same vocabulary everywhere.
 export const APPOINTMENT_TYPES = [
-  { value: "Consultation",    label: "استشارة" },
-  { value: "FollowUp",        label: "متابعة" },
-  { value: "Treatment",       label: "علاج" },
-  { value: "Emergency",       label: "حالة إسعافية" },
-  { value: "OrthoAdjustment", label: "تعديل تقويم" },
-  { value: "Surgery",         label: "جراحة" },
+  { value: "Consultation",       label: "استشارة" },
+  { value: "FollowUp",           label: "متابعة" },
+  { value: "Treatment",          label: "علاج" },
+  { value: "Emergency",          label: "حالة إسعافية" },
+  { value: "OrthoBonding",       label: "تركيب بندات التقويم" },
+  { value: "OrthoAdjustment",    label: "تعديل تقويم" },
+  { value: "OrthoDebonding",     label: "فك بندات التقويم" },
+  { value: "OrthoRetainer",      label: "تركيب مثبتات" },
+  { value: "Surgery",            label: "جراحة" },
 ];
 
 // ─── Severity Styles ──────────────────────────────────────────────────────

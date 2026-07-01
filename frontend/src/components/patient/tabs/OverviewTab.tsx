@@ -13,6 +13,7 @@ import api from "@/lib/api";
 import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate, APPOINTMENT_STATUS_LABELS } from "@/lib/utils";
 import type { PatientProfile } from "@/types/patient";
+import type { OrthoOverview } from "@/types/ortho";
 import { financeV3CollectionsUrl } from "@/lib/financeRoutes";
 import { SURGERY_STATUS_LABELS } from "@/types/surgery";
 // FE-09: centralized appointment status colors (includes 'signed' for mixed timeline views)
@@ -108,6 +109,11 @@ export function OverviewTab({ patientId, summary, patient, canViewFinance = fals
   const [surgeryCases, setSurgeryCases] = useState<SurgeryCase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Ortho case overview (next appointment + contract remaining). Fetched
+  // opportunistically for the active ortho case only — keeps the patient file
+  // summary card useful without forcing every patient into an extra round-trip
+  // when they have no ortho case.
+  const [orthoOverview, setOrthoOverview] = useState<OrthoOverview | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -126,6 +132,23 @@ export function OverviewTab({ patientId, summary, patient, canViewFinance = fals
       setLoading(false);
     });
   }, [patientId]);
+
+  const activeOrthoCase = orthoCases.find((c) => c.status?.toLowerCase() === "active") ?? null;
+
+  // Once we know the active ortho case id, fetch its overview (best-effort —
+  // a 404/403 just leaves the summary card without the next-appointment /
+  // contract-remaining lines; the card still shows stage + appliance).
+  useEffect(() => {
+    if (!activeOrthoCase) {
+      setOrthoOverview(null);
+      return;
+    }
+    let cancelled = false;
+    api.get<OrthoOverview>(`/api/ortho-cases/${activeOrthoCase.id}/overview`)
+      .then((r) => { if (!cancelled) setOrthoOverview(r.data); })
+      .catch(() => { if (!cancelled) setOrthoOverview(null); });
+    return () => { cancelled = true; };
+  }, [activeOrthoCase?.id]);
 
   if (loading) {
     return (
@@ -158,7 +181,6 @@ export function OverviewTab({ patientId, summary, patient, canViewFinance = fals
 
   const whatsappNumber = patient.whatsApp || patient.phone;
   const patientName = `${patient.firstName} ${patient.lastName}`;
-  const activeOrthoCase = orthoCases.find((c) => c.status?.toLowerCase() === "active") ?? null;
 
   return (
     <div className="space-y-5">
@@ -274,6 +296,27 @@ export function OverviewTab({ patientId, summary, patient, canViewFinance = fals
             )}
             {activeOrthoCase.doctorName && (
               <span className="text-[#64748b]">د. {activeOrthoCase.doctorName}</span>
+            )}
+            {/* Next appointment — pulled from the ortho overview so the orthodontist
+                can see at a glance when the patient is due back without leaving the
+                patient file. Best-effort: hidden when the overview call failed or
+                no next appointment is recorded. */}
+            {orthoOverview?.nextAppointmentDate && (
+              <span className="text-[#64748b] inline-flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                الموعد القادم: {formatArabicDate(orthoOverview.nextAppointmentDate)}
+              </span>
+            )}
+            {/* Contract remaining — only shown to users who can view finance.
+                The amount is the contract total minus what's been paid so far,
+                straight from OrthoOverview (computed server-side). */}
+            {canViewFinance
+              && typeof orthoOverview?.contractRemaining === "number"
+              && orthoOverview.contractRemaining > 0 && (
+              <span className="text-[#64748b] inline-flex items-center gap-1">
+                <Wallet className="w-3 h-3" />
+                المتبقي على العقد: {orthoOverview.contractRemaining.toLocaleString("ar-YE")} ر.ي
+              </span>
             )}
           </div>
           <div className="flex items-center gap-2 mt-2.5">

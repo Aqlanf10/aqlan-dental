@@ -68,6 +68,9 @@ export default function CephAnalysisPage() {
   const [simError, setSimError]       = useState<string | null>(null);
   const [aiTraceNotice, setAiTraceNotice] = useState<string | null>(null);
   const [aiTraceError, setAiTraceError] = useState<string | null>(null);
+  // AI per-landmark refinement state — the canvas shows a spinner on the
+  // context-menu item while a refine request is in flight.
+  const [refiningKey, setRefiningKey] = useState<string | null>(null);
   // C-C: Arabic ceph PDF report (download / print)
   const [pdfBusy, setPdfBusy]         = useState<'download' | 'print' | null>(null);
   const [pdfError, setPdfError]       = useState<string | null>(null);
@@ -250,7 +253,7 @@ export default function CephAnalysisPage() {
     } finally { setDetecting(false); }
   };
 
-  const handleAiTrace = async () => {
+  const handleAiTrace = async (precision: "draft" | "high" = "draft") => {
     setAiTracing(true);
     setAiTraceError(null);
     setAiTraceNotice(null);
@@ -263,6 +266,7 @@ export default function CephAnalysisPage() {
       }>(`/api/ceph/${id}/ai/auto-trace`, {
         imageWidth: imageSize.w,
         imageHeight: imageSize.h,
+        precision,
       });
 
       const drafted = (data.landmarks ?? []).map((landmark) => ({
@@ -276,13 +280,59 @@ export default function CephAnalysisPage() {
       setIsDirty(true);
       setSaveStatus("idle");
       setSelectedKey(drafted[0]?.key ?? null);
-      setAiTraceNotice(`${data.disclaimer} النموذج: ${data.modelId}`);
+      const modeLabel = precision === "high" ? " (تتبع دقيق)" : "";
+      setAiTraceNotice(`${data.disclaimer}${modeLabel} النموذج: ${data.modelId}`);
     } catch (error) {
       const message = (error as { response?: { data?: { message?: string } } })
         .response?.data?.message;
       setAiTraceError(message ?? "تعذر توليد مسودة نقاط السيفالومتري");
     } finally {
       setAiTracing(false);
+    }
+  };
+
+  const handleRefineLandmark = async (key: string) => {
+    const lm = landmarks.find(l => l.key === key);
+    if (!lm) return;
+    setRefiningKey(key);
+    setAiTraceError(null);
+    try {
+      const { data } = await api.post<{
+        landmark: CephLandmark | null;
+        modelId: string;
+        disclaimer: string;
+        generatedAt: string;
+      }>(`/api/ceph/${id}/ai/refine-landmark`, {
+        landmarkKey: key,
+        imageWidth: imageSize.w,
+        imageHeight: imageSize.h,
+        currentX: lm.x,
+        currentY: lm.y,
+      });
+
+      if (!data.landmark) {
+        // The model declined to refine — keep the current position, tell the
+        // orthodontist honestly instead of silently doing nothing.
+        setAiTraceNotice(`لم يستطع النموذج تحسين موضع النقطة ${key} بثقة كافية — ابقَ الموضع الحالي وراجعه يدويًا. ${data.disclaimer}`);
+        return;
+      }
+      const refined = {
+        ...data.landmark,
+        name: data.landmark.name || LANDMARK_DEFS[data.landmark.key]?.nameAr || data.landmark.key,
+        nameAr: LANDMARK_DEFS[data.landmark.key]?.nameAr || data.landmark.name || data.landmark.key,
+        group: LANDMARK_DEFS[data.landmark.key]?.group as CephLandmark["group"],
+        isAiPlaced: true,
+      };
+      setLandmarks(prev => prev.map(l => l.key === key ? refined : l));
+      setIsDirty(true);
+      setSaveStatus("idle");
+      setAiTraceNotice(`تم تحسين موضع ${key} بواسطة الذكاء الاصطناعي. ${data.disclaimer}`);
+    } catch (error) {
+      const message = (error as { response?: { data?: { message?: string } } })
+        .response?.data?.message;
+      setAiTraceError(message ?? `تعذر تحسين موضع النقطة ${key}`);
+    } finally {
+      setRefiningKey(null);
     }
   };
 
@@ -415,7 +465,7 @@ export default function CephAnalysisPage() {
         <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
           <button
             type="button"
-            onClick={handleAiTrace}
+            onClick={() => handleAiTrace("draft")}
             disabled={aiTracing || !analysis.xrayFileUrl}
             title="مسودة نقاط بنموذج رؤية (Gemini Vision) — تتطلب مراجعة أخصائي التقويم وتحريك كل نقطة يدويًا قبل الحفظ"
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-violet-300 bg-violet-50 text-violet-800 hover:bg-violet-100 disabled:opacity-50 transition">
@@ -423,18 +473,18 @@ export default function CephAnalysisPage() {
             {aiTracing ? "جارٍ تحليل الصورة..." : "مسودة AI للنقاط"}
           </button>
 
-          {/* C-D: HONEST auto-trace placeholder. A specialized cephalometric
-              vision model (beyond the general Gemini draft above) is NOT yet
-              available. The button is disabled and labeled honestly per
-              CEPH-EPIC: «يتطلب نموذج رؤية — قريبًا». No fake behavior. */}
+          {/* Precise auto-trace: same Gemini endpoint, precision=high. The model
+              takes a slower, deliberate pass and omits any landmark it cannot
+              place with confidence > 0.5. The result is STILL an unsaved AI
+              draft — the disclaimer banner remains mandatory. */}
           <button
             type="button"
-            disabled
-            title="تتبع آلي متخصص — يتطلب نموذج رؤية سيفالومتري مخصصًا — قريبًا"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed">
-            <Lock className="w-3.5 h-3.5" />
-            تتبع آلي متخصص
-            <span className="text-[9px] font-normal opacity-70">قريبًا</span>
+            onClick={() => handleAiTrace("high")}
+            disabled={aiTracing || !analysis.xrayFileUrl}
+            title="تتبع آلي دقيق — تمريرة أبطأ وأكثر حرصًا، يتجاهل النقاط التي لا يستطيع وضعها بثقة > 50٪. مسودة AI تتطلب مراجعة أخصائي التقويم."
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-indigo-300 bg-indigo-50 text-indigo-800 hover:bg-indigo-100 disabled:opacity-50 transition">
+            {aiTracing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Target className="w-3.5 h-3.5" />}
+            {aiTracing ? "جارٍ التحليل الدقيق..." : "تتبع آلي دقيق"}
           </button>
 
           <button onClick={handleTemplateSimulation} disabled={detecting}
@@ -851,11 +901,17 @@ export default function CephAnalysisPage() {
                     typeof placed?.confidence === "number"
                       ? Math.round(placed.confidence * 100)
                       : null;
+                  const reasoning = placed?.reasoning;
                   return (
                     <button
                       key={key}
                       type="button"
                       onClick={() => setSelectedKey(isSelected ? null : key)}
+                      title={
+                        reasoning
+                          ? `${def?.nameAr ?? key}\nسبب وضع النموذج للنقطة هنا: ${reasoning}`
+                          : undefined
+                      }
                       className={cn(
                         "mb-0.5 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-[11px] transition",
                         isSelected
@@ -1005,6 +1061,8 @@ export default function CephAnalysisPage() {
               onCalibrate={handleCalibrationChange}
               imageAdjustments={{ brightness, contrast, inverted }}
               onImageDimensions={handleImageDimensions}
+              onRefineLandmark={handleRefineLandmark}
+              refining={refiningKey !== null}
             />
           </div>
 

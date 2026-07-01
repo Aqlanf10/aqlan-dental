@@ -30,6 +30,12 @@ public class CephLandmarkDto
     public double Y { get; set; }
     public bool IsAiPlaced { get; set; }
     public double? Confidence { get; set; }
+    /// <summary>
+    /// Optional short note (Arabic or English) explaining WHY the AI placed this
+    /// landmark at this position. Surfaced in the canvas UI so the orthodontist
+    /// can read the model's reasoning before accepting or moving the point.
+    /// </summary>
+    public string? Reasoning { get; set; }
 }
 
 public class CephMeasurementDto
@@ -119,6 +125,7 @@ public class LandmarkInput
     public double Y { get; set; }
     public bool IsAiPlaced { get; set; }
     public double? Confidence { get; set; }
+    public string? Reasoning { get; set; }
 }
 
 public class SaveDiagnosisRequest
@@ -153,11 +160,40 @@ public class CephAiTraceRequest
 {
     public int ImageWidth { get; set; }
     public int ImageHeight { get; set; }
+    /// <summary>
+    /// Precision mode for the AI draft. <c>"draft"</c> (default) = fast first-pass;
+    /// <c>"high"</c> = slower deliberate pass that cross-checks each landmark and
+    /// omits anything with confidence &lt;= 0.5. Unknown / null values fall back to draft.
+    /// </summary>
+    public string? Precision { get; set; }
 }
 
 public class CephAiTraceResultDto
 {
     public List<CephLandmarkDto> Landmarks { get; set; } = [];
+    public string ModelId { get; set; } = string.Empty;
+    public string Disclaimer { get; set; } = string.Empty;
+    public DateTime GeneratedAt { get; set; }
+}
+
+/// <summary>Request body for POST /api/ceph/{id}/ai/refine-landmark.</summary>
+public class CephAiRefineLandmarkRequest
+{
+    public string LandmarkKey { get; set; } = string.Empty;
+    public int ImageWidth { get; set; }
+    public int ImageHeight { get; set; }
+    public double CurrentX { get; set; }
+    public double CurrentY { get; set; }
+}
+
+/// <summary>
+/// Result of refining a single landmark. <see cref="Landmark"/> is null when the
+/// model declined to refine (e.g. confidence too low) — the caller should keep
+/// the current position. The result is NEVER auto-saved.
+/// </summary>
+public class CephAiRefineResultDto
+{
+    public CephLandmarkDto? Landmark { get; set; }
     public string ModelId { get; set; } = string.Empty;
     public string Disclaimer { get; set; } = string.Empty;
     public DateTime GeneratedAt { get; set; }

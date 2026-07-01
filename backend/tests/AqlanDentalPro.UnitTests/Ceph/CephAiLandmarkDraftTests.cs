@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Xunit;
 
 namespace AqlanDentalPro.UnitTests.Ceph;
@@ -58,7 +59,8 @@ public class CephAiLandmarkDraftTests
         var provider = new GeminiCephLandmarkDraftProvider(new StubFactory(handler));
 
         var result = await provider.GenerateAsync(
-            [1, 2, 3, 4], "image/jpeg", "gemini-3.5-flash", TestKey, CancellationToken.None);
+            [1, 2, 3, 4], "image/jpeg", "gemini-3.5-flash", TestKey,
+            CephAiPrecision.Draft, CancellationToken.None);
 
         result.Should().HaveCount(8);
         result[0].Key.Should().Be("S");
@@ -68,6 +70,88 @@ public class CephAiLandmarkDraftTests
         handler.Body.Should().Contain("inline_data");
         handler.Body.Should().Contain(Convert.ToBase64String([1, 2, 3, 4]));
         handler.Body.Should().Contain("responseMimeType");
+    }
+
+    [Fact]
+    public async Task GeminiProvider_HighPrecision_DropsLandmarksUnderConfidenceThreshold()
+    {
+        // 9 high-confidence points + 3 low-confidence ones. In HIGH precision the
+        // provider must drop the 3 low-confidence points (leaving 9); DRAFT keeps all 12.
+        var generated =
+            """{"landmarks":[{"key":"S","x":100,"y":200,"confidence":0.9},{"key":"N","x":200,"y":200,"confidence":0.85},{"key":"Or","x":300,"y":300,"confidence":0.8},{"key":"Po","x":150,"y":300,"confidence":0.75},{"key":"ANS","x":500,"y":400,"confidence":0.8},{"key":"PNS","x":350,"y":400,"confidence":0.7},{"key":"A","x":520,"y":480,"confidence":0.85},{"key":"B","x":540,"y":600,"confidence":0.85},{"key":"Pog","x":560,"y":650,"confidence":0.85},{"key":"Gn","x":570,"y":670,"confidence":0.4},{"key":"Me","x":575,"y":690,"confidence":0.35},{"key":"Go","x":100,"y":550,"confidence":0.2}]}""";
+        var response = JsonSerializer.Serialize(new
+        {
+            candidates = new[]
+            {
+                new { content = new { parts = new[] { new { text = generated } } } },
+            },
+        });
+        var handler = new CapturingHandler(response);
+        var provider = new GeminiCephLandmarkDraftProvider(new StubFactory(handler));
+
+        var high = await provider.GenerateAsync(
+            [1, 2, 3, 4], "image/jpeg", "gemini-3.5-flash", TestKey,
+            CephAiPrecision.High, CancellationToken.None);
+        high.Should().HaveCount(9, "high precision drops confidence < 0.5");
+        high.Should().OnlyContain(p => (p.Confidence ?? 0) >= 0.5);
+        high.Select(p => p.Key).Should().NotContain(new[] { "Gn", "Me", "Go" });
+
+        handler = new CapturingHandler(response);
+        var provider2 = new GeminiCephLandmarkDraftProvider(new StubFactory(handler));
+        var draft = await provider2.GenerateAsync(
+            [1, 2, 3, 4], "image/jpeg", "gemini-3.5-flash", TestKey,
+            CephAiPrecision.Draft, CancellationToken.None);
+        draft.Should().HaveCount(12, "draft keeps all defensible landmarks");
+    }
+
+    [Fact]
+    public async Task GeminiProvider_ParsesReasoningField_WhenModelReturnsIt()
+    {
+        var generated =
+            """{"landmarks":[{"key":"S","x":100,"y":200,"confidence":0.85,"reasoning":"center of sella turcica outline"},{"key":"N","x":200,"y":200,"confidence":0.85},{"key":"Or","x":300,"y":300,"confidence":0.8},{"key":"Po","x":150,"y":300,"confidence":0.8},{"key":"ANS","x":500,"y":400,"confidence":0.85},{"key":"PNS","x":350,"y":400,"confidence":0.8},{"key":"A","x":520,"y":480,"confidence":0.85},{"key":"B","x":540,"y":600,"confidence":0.85}]}""";
+        var response = JsonSerializer.Serialize(new
+        {
+            candidates = new[]
+            {
+                new { content = new { parts = new[] { new { text = generated } } } },
+            },
+        });
+        var handler = new CapturingHandler(response);
+        var provider = new GeminiCephLandmarkDraftProvider(new StubFactory(handler));
+
+        var result = await provider.GenerateAsync(
+            [1, 2, 3, 4], "image/jpeg", "gemini-3.5-flash", TestKey,
+            CephAiPrecision.Draft, CancellationToken.None);
+
+        result[0].Key.Should().Be("S");
+        result[0].Reasoning.Should().Be("center of sella turcica outline");
+        result[1].Reasoning.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GeminiProvider_RefineAsync_ReturnsOnlyTheRequestedLandmark()
+    {
+        var generated =
+            """{"landmarks":[{"key":"S","x":120,"y":210,"confidence":0.9,"reasoning":"center of sella outline reconfirmed"}]}""";
+        var response = JsonSerializer.Serialize(new
+        {
+            candidates = new[]
+            {
+                new { content = new { parts = new[] { new { text = generated } } } },
+            },
+        });
+        var handler = new CapturingHandler(response);
+        var provider = new GeminiCephLandmarkDraftProvider(new StubFactory(handler));
+
+        var refined = await provider.RefineAsync(
+            [1, 2, 3, 4], "image/jpeg", "gemini-3.5-flash", TestKey,
+            new CephLandmarkRefineTarget("S", 100, 200), CancellationToken.None);
+
+        refined.Should().NotBeNull();
+        refined!.Key.Should().Be("S");
+        refined.XNormalized.Should().Be(120);
+        refined.YNormalized.Should().Be(210);
+        refined.Reasoning.Should().Contain("sella");
     }
 
     [Fact]
@@ -123,7 +207,8 @@ public class CephAiLandmarkDraftTests
                     user.Object,
                     new Mock<ILogger<CephAiLandmarkDraftService>>().Object);
 
-                var result = await service.GenerateAsync(analysis.Id, 2000, 1000);
+                var result = await service.GenerateAsync(
+                    analysis.Id, 2000, 1000, CephAiPrecision.Draft);
 
                 result.Should().NotBeNull();
                 result!.Landmarks.Should().HaveCount(8);
@@ -174,9 +259,171 @@ public class CephAiLandmarkDraftTests
 
         // The honest "AI not enabled / no key" message must surface — never the
         // generic 500 that an audit-write failure used to mask it behind.
-        var act = async () => await service.GenerateAsync(analysis.Id, 800, 600);
+        var act = async () => await service.GenerateAsync(analysis.Id, 800, 600, CephAiPrecision.Draft);
         (await act.Should().ThrowAsync<AqlanDentalPro.Application.Exceptions.CephAiUnavailableException>())
             .Which.Message.Should().Be(CephAiDraftService.DisabledMessageAr);
+    }
+
+    [Fact]
+    public async Task LandmarkService_RefineLandmark_ScalesPixelCoords_AndKeepsResultUnsaved()
+    {
+        await CephAiDraftTests.WithEnvKeyAsync("GEMINI_API_KEY", TestKey, async () =>
+        {
+            var tempDirectory = Path.Combine(Path.GetTempPath(), $"ceph-ai-refine-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(tempDirectory);
+            var previousUploadsPath = Environment.GetEnvironmentVariable("UPLOADS_PATH");
+            Environment.SetEnvironmentVariable("UPLOADS_PATH", tempDirectory);
+            try
+            {
+                await File.WriteAllBytesAsync(Path.Combine(tempDirectory, "trace.jpg"), [1, 2, 3, 4]);
+                await using var db = CreateDb();
+                var analysis = new CephAnalysis
+                {
+                    Id = Guid.NewGuid(),
+                    OrthoCaseId = Guid.NewGuid(),
+                    AnalysisType = "steiner",
+                    XrayFileUrl = "/uploads/trace.jpg",
+                };
+                db.CephAnalyses.Add(analysis);
+                db.Settings.AddRange(
+                    new Setting { Key = CephAiDraftService.DraftEnabledSettingKey, Value = "true" },
+                    new Setting { Key = CephAiDraftService.ProviderSettingKey, Value = "gemini" },
+                    new Setting { Key = CephAiDraftService.ModelSettingKey, Value = "gemini-3.5-flash" });
+                await db.SaveChangesAsync();
+
+                var generated =
+                    """{"landmarks":[{"key":"S","x":120,"y":210,"confidence":0.9,"reasoning":"center of sella outline reconfirmed"}]}""";
+                var response = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    candidates = new[]
+                    {
+                        new { content = new { parts = new[] { new { text = generated } } } },
+                    },
+                });
+                var handler = new CapturingHandler(response);
+                var factory = new StubFactory(handler);
+                var user = new Mock<ICurrentUserService>();
+                user.Setup(x => x.UserId).Returns(Guid.NewGuid());
+                var configuration = new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["AiSettings:EncryptionKey"] = "unit-test-ai-encryption-key-that-is-long-enough",
+                    })
+                    .Build();
+                var vault = new AiApiKeyVault(
+                    db, configuration, new Mock<ILogger<AiApiKeyVault>>().Object);
+                var settingsService = new CephAiDraftService(
+                    db,
+                    [new GeminiAiDraftProvider(factory)],
+                    user.Object,
+                    vault,
+                    new Mock<ILogger<CephAiDraftService>>().Object);
+                var service = new CephAiLandmarkDraftService(
+                    db,
+                    settingsService,
+                    [new GeminiCephLandmarkDraftProvider(factory)],
+                    vault,
+                    user.Object,
+                    new Mock<ILogger<CephAiLandmarkDraftService>>().Object);
+
+                // Current pixel position (200, 100) on a 2000x1000 image maps to
+                // normalized (100, 100) on the 0..1000 grid. The model returns
+                // (120, 210) which must scale back to (240, 210) in pixels.
+                var result = await service.RefineLandmarkAsync(
+                    analysis.Id, "S", 2000, 1000, 200, 100);
+
+                result.Should().NotBeNull();
+                result!.Landmark.Should().NotBeNull();
+                result.Landmark!.Key.Should().Be("S");
+                result.Landmark.X.Should().Be(240);
+                result.Landmark.Y.Should().Be(210);
+                result.Landmark.IsAiPlaced.Should().BeTrue();
+                result.Landmark.Reasoning.Should().Contain("sella");
+                result.Disclaimer.Should().Contain("مراجعة وتحريك كل نقطة");
+                (await db.CephLandmarks.CountAsync()).Should().Be(0,
+                    "the refined point must NOT be auto-saved");
+                (await db.OrthodonticAiLogs.SingleAsync()).Action
+                    .Should().Be(CephAiLandmarkDraftService.RefineAction);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("UPLOADS_PATH", previousUploadsPath);
+                Directory.Delete(tempDirectory, recursive: true);
+            }
+        });
+    }
+
+    [Fact]
+    public async Task LandmarkService_HighPrecision_KeepsResultUnsaved_AndWritesAudit()
+    {
+        await CephAiDraftTests.WithEnvKeyAsync("GEMINI_API_KEY", TestKey, async () =>
+        {
+            var tempDirectory = Path.Combine(Path.GetTempPath(), $"ceph-ai-high-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(tempDirectory);
+            var previousUploadsPath = Environment.GetEnvironmentVariable("UPLOADS_PATH");
+            Environment.SetEnvironmentVariable("UPLOADS_PATH", tempDirectory);
+            try
+            {
+                await File.WriteAllBytesAsync(Path.Combine(tempDirectory, "trace.jpg"), [1, 2, 3, 4]);
+                await using var db = CreateDb();
+                var analysis = new CephAnalysis
+                {
+                    Id = Guid.NewGuid(),
+                    OrthoCaseId = Guid.NewGuid(),
+                    AnalysisType = "steiner",
+                    XrayFileUrl = "/uploads/trace.jpg",
+                };
+                db.CephAnalyses.Add(analysis);
+                db.Settings.AddRange(
+                    new Setting { Key = CephAiDraftService.DraftEnabledSettingKey, Value = "true" },
+                    new Setting { Key = CephAiDraftService.ProviderSettingKey, Value = "gemini" },
+                    new Setting { Key = CephAiDraftService.ModelSettingKey, Value = "gemini-3.5-flash" });
+                await db.SaveChangesAsync();
+
+                var handler = new CapturingHandler(ResponseWithEightPoints());
+                var factory = new StubFactory(handler);
+                var user = new Mock<ICurrentUserService>();
+                user.Setup(x => x.UserId).Returns(Guid.NewGuid());
+                var configuration = new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["AiSettings:EncryptionKey"] = "unit-test-ai-encryption-key-that-is-long-enough",
+                    })
+                    .Build();
+                var vault = new AiApiKeyVault(
+                    db, configuration, new Mock<ILogger<AiApiKeyVault>>().Object);
+                var settingsService = new CephAiDraftService(
+                    db,
+                    [new GeminiAiDraftProvider(factory)],
+                    user.Object,
+                    vault,
+                    new Mock<ILogger<CephAiDraftService>>().Object);
+                var service = new CephAiLandmarkDraftService(
+                    db,
+                    settingsService,
+                    [new GeminiCephLandmarkDraftProvider(factory)],
+                    vault,
+                    user.Object,
+                    new Mock<ILogger<CephAiLandmarkDraftService>>().Object);
+
+                var result = await service.GenerateAsync(
+                    analysis.Id, 2000, 1000, CephAiPrecision.High);
+
+                result.Should().NotBeNull();
+                result!.Landmarks.Should().HaveCount(8);
+                result.Disclaimer.Should().Contain("مراجعة وتحريك كل نقطة");
+                (await db.CephLandmarks.CountAsync()).Should().Be(0,
+                    "the high-precision draft must remain unsaved");
+                var log = await db.OrthodonticAiLogs.SingleAsync();
+                log.Action.Should().Be(CephAiLandmarkDraftService.Action);
+                log.InputSummary.Should().Contain("precision:high");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("UPLOADS_PATH", previousUploadsPath);
+                Directory.Delete(tempDirectory, recursive: true);
+            }
+        });
     }
 
     private static string ResponseWithEightPoints()

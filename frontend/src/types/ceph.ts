@@ -70,6 +70,13 @@ export interface CephLandmark {
   y: number;
   isAiPlaced: boolean;
   confidence?: number;
+  /**
+   * Optional short note (Arabic or English) explaining WHY the AI placed this
+   * landmark at this position. Surfaced in the canvas tooltip and the side
+   * panel so the orthodontist can read the model's reasoning before accepting
+   * or moving the point. Not persisted on save.
+   */
+  reasoning?: string;
   /** Present when the landmark was created with a LANDMARK_DEFS entry; may be
    *  absent on records loaded from older rows. Consumers should fall back to a
    *  lookup table when they need the group. */

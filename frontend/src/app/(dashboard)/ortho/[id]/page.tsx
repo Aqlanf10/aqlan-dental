@@ -57,6 +57,7 @@ import { OrthoRetentionTab } from "./_components/OrthoRetentionTab";
 import { OrthoModelAnalysisTab } from "./_components/OrthoModelAnalysisTab";
 import { OrthoAiDraftPanel } from "./_components/OrthoAiDraftPanel";
 import { OrthoFinanceTab } from "./_components/OrthoFinanceTab";
+import { OrthoSurgicalPlanningTab } from "./_components/OrthoSurgicalPlanningTab";
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -79,6 +80,7 @@ const TABS: { key: Tab; label: string; icon: typeof Activity }[] = [
   { key: "retention", label: "الاحتفاظ", icon: ShieldCheck },
   { key: "lab", label: "المختبر", icon: FlaskConical },
   { key: "finance", label: "المالية", icon: Wallet },
+  { key: "surgical", label: "التخطيط الجراحي", icon: GitBranch },
   { key: "wizard", label: "المعالج", icon: Sparkles },
   { key: "reports", label: "التقارير", icon: Presentation },
 ];
@@ -294,6 +296,7 @@ export default function OrthoCaseDetailPage() {
           {activeTab === "finance" && (
             <OrthoFinanceTab caseId={id} patientId={orthoCase.patientId} />
           )}
+          {activeTab === "surgical" && <OrthoSurgicalPlanningTab caseId={id} />}
           {activeTab === "wizard" && (
             <OrthoAiDraftPanel
               caseId={id}

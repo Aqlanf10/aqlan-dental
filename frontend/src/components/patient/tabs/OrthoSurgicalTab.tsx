@@ -120,7 +120,7 @@ export function OrthoSurgicalTab({ patientId }: OrthoSurgicalTabProps) {
                 </div>
               </div>
             </div>
-            <Link href={`/ortho-surgical/${c.id}`}
+            <Link href={`/ortho/${c.orthoCaseId}?tab=surgical`}
               className="flex items-center gap-1 text-sm font-medium text-[#3d7ab5] hover:text-[#1a3a5c] transition flex-shrink-0">
               التفاصيل <ChevronLeft className="w-4 h-4" />
             </Link>

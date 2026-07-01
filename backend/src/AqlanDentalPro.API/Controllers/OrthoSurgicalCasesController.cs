@@ -48,6 +48,18 @@ public sealed class CreateSurgeryFromPlanRequest
     public string? TeethInvolved { get; init; }
 }
 
+public sealed class UpsertJointPlanRequest
+{
+    public string? ProcedureType { get; init; }
+    public string? Timing { get; init; }
+    public string? OrthodonticObjectives { get; init; }
+    public string? SurgicalObjectives { get; init; }
+    public string? PreSurgicalRequirements { get; init; }
+    public string? PostSurgicalPlan { get; init; }
+    public string? Risks { get; init; }
+    public string? PatientExplanation { get; init; }
+}
+
 public sealed class CreateOrthoSurgicalCommentRequest
 {
     public string Body { get; init; } = string.Empty;
@@ -620,6 +632,63 @@ public class OrthoSurgicalCasesController(
         return Ok(new { c.Id, review.Decision, status = c.Status.ToString() });
     }
 
+    // ── Joint plan (Sprint A5) ────────────────────────────────────────────────────
+    // Either side (orthodontist/surgeon/admin) can draft/edit the joint plan content
+    // while it is unlocked. Once BOTH approvals land (ApplyApproval below), the plan
+    // is locked — no further edits are possible, matching the "immutable once approved"
+    // rule from ORTHO_SURGICAL_AI_VISION_EXPANSION.md §7 (JointPlanReady / lock).
+    [HttpPut("{id:guid}/joint-plan")]
+    public async Task<IActionResult> UpsertJointPlan(Guid id, [FromBody] UpsertJointPlanRequest req)
+    {
+        if (!await CanAsync("edit")) return Deny();
+
+        var c = await db.OrthoSurgicalCases
+            .Include(x => x.JointPlan)
+            .FirstOrDefaultAsync(x => x.Id == id && x.IsActive);
+        if (c is null) return NotFound(new { message = "الحالة التقويمية الجراحية غير موجودة" });
+
+        var denied = await DenyIfDoctorCannotAccess(c.PatientId);
+        if (denied is not null) return denied;
+
+        if (c.JointPlan?.LockedAt is not null)
+            return BadRequest(new { message = "لا يمكن تعديل الخطة المشتركة بعد اعتماد الطرفين" });
+
+        var plan = c.JointPlan;
+        if (plan is null)
+        {
+            plan = new JointPlan { OrthoSurgicalCaseId = c.Id };
+            db.JointPlans.Add(plan);
+        }
+
+        plan.ProcedureType = req.ProcedureType;
+        plan.Timing = req.Timing;
+        plan.OrthodonticObjectives = req.OrthodonticObjectives;
+        plan.SurgicalObjectives = req.SurgicalObjectives;
+        plan.PreSurgicalRequirements = req.PreSurgicalRequirements;
+        plan.PostSurgicalPlan = req.PostSurgicalPlan;
+        plan.Risks = req.Risks;
+        plan.PatientExplanation = req.PatientExplanation;
+
+        await db.SaveChangesAsync();
+
+        await audit.LogAsync(AuditAction.Update, "OrthoSurgicalCase", c.Id,
+            newData: new { jointPlanUpdated = true });
+
+        return Ok(new
+        {
+            c.Id,
+            plan.ProcedureType,
+            plan.Timing,
+            plan.OrthodonticObjectives,
+            plan.SurgicalObjectives,
+            plan.PreSurgicalRequirements,
+            plan.PostSurgicalPlan,
+            plan.Risks,
+            plan.PatientExplanation,
+            plan.LockedAt
+        });
+    }
+
     // ── Dual approval ──────────────────────────────────────────────────────────────
     [HttpPost("{id:guid}/approve-orthodontist")]
     public async Task<IActionResult> ApproveOrthodontist(Guid id)
@@ -659,9 +728,17 @@ public class OrthoSurgicalCasesController(
         else c.SurgeonApprovedAt = now;
 
         // When BOTH sides have approved, lock the joint plan and advance the status.
+        // A JointPlan may not exist yet if neither side used the joint-plan editing
+        // endpoint before approving — auto-create a bare row so locking never silently
+        // no-ops (A5 fix: previously this branch required c.JointPlan to already exist).
         if (c.OrthodontistApprovedAt is not null && c.SurgeonApprovedAt is not null)
         {
-            if (c.JointPlan is not null && c.JointPlan.LockedAt is null)
+            if (c.JointPlan is null)
+            {
+                c.JointPlan = new JointPlan { OrthoSurgicalCaseId = c.Id };
+                db.JointPlans.Add(c.JointPlan);
+            }
+            if (c.JointPlan.LockedAt is null)
             {
                 c.JointPlan.OrthodontistApprovedAt = c.OrthodontistApprovedAt;
                 c.JointPlan.SurgeonApprovedAt = c.SurgeonApprovedAt;

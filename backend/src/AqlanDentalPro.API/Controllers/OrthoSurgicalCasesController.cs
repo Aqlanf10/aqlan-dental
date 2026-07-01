@@ -764,6 +764,61 @@ public class OrthoSurgicalCasesController(
         });
     }
 
+    // ── Surgery execution summary (Sprint A6) ─────────────────────────────────────
+    // Pure READ over the existing SurgeryCase/PreopReport/OperativeReport/PostopRecord
+    // once create-surgery-case has linked one. Gives an inline glance at execution
+    // status without duplicating the surgery module — the full record stays at
+    // /surgery/{id}, which this only summarizes and links out to.
+    [HttpGet("{id:guid}/surgery-summary")]
+    public async Task<IActionResult> GetSurgerySummary(Guid id)
+    {
+        if (!await CanAsync("view")) return Deny();
+
+        var c = await db.OrthoSurgicalCases.FirstOrDefaultAsync(x => x.Id == id && x.IsActive);
+        if (c is null) return NotFound(new { message = "الحالة التقويمية الجراحية غير موجودة" });
+
+        var denied = await DenyIfDoctorCannotAccess(c.PatientId);
+        if (denied is not null) return denied;
+
+        if (c.SurgeryCaseId is null)
+            return Ok(new { linked = false });
+
+        var surgery = await db.SurgeryCases
+            .Include(s => s.Doctor)
+            .FirstOrDefaultAsync(s => s.Id == c.SurgeryCaseId);
+        if (surgery is null)
+            return Ok(new { linked = false });
+
+        var preop = await db.PreopReports.FirstOrDefaultAsync(p => p.SurgeryCaseId == surgery.Id);
+        var operative = await db.OperativeReports.FirstOrDefaultAsync(o => o.SurgeryCaseId == surgery.Id);
+        var postop = await db.PostopRecords.FirstOrDefaultAsync(p => p.SurgeryCaseId == surgery.Id);
+
+        return Ok(new
+        {
+            Linked = true,
+            surgery.Id,
+            surgery.CaseNumber,
+            surgery.SurgeryType,
+            Status = surgery.Status.ToString(),
+            DoctorName = surgery.Doctor?.Name,
+            Preop = preop is null ? null : new
+            {
+                SurgeryDate = preop.SurgeryDate?.ToString("yyyy-MM-dd"),
+                preop.ConsentSigned
+            },
+            Operative = operative is null ? null : new
+            {
+                SurgeryDateTime = operative.SurgeryDateTime?.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                operative.Outcome,
+                operative.ApprovedAt
+            },
+            Postop = postop is null ? null : new
+            {
+                HasInstructions = !string.IsNullOrWhiteSpace(postop.Instructions)
+            }
+        });
+    }
+
     // ── Create the real SurgeryCase for execution ──────────────────────────────────
     [HttpPost("{id:guid}/create-surgery-case")]
     public async Task<IActionResult> CreateSurgeryCase(Guid id, [FromBody] CreateSurgeryFromPlanRequest req)

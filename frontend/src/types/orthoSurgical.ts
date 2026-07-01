@@ -182,3 +182,26 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   View: "عرض",
   Approve: "اعتماد",
 };
+
+// Sprint A6 — read-only summary of the linked SurgeryCase (preop/operative/postop),
+// via GET /api/ortho-surgical-cases/{id}/surgery-summary. The full record stays owned
+// by the surgery module at /surgery/{id}; this is a glance, not a duplicate.
+export interface OrthoSurgicalSurgerySummary {
+  linked: boolean;
+  id?: string;
+  caseNumber?: string;
+  surgeryType?: string;
+  status?: string;
+  doctorName?: string | null;
+  preop?: { surgeryDate: string | null; consentSigned: boolean } | null;
+  operative?: { surgeryDateTime: string | null; outcome: string | null; approvedAt: string | null } | null;
+  postop?: { hasInstructions: boolean } | null;
+}
+
+export const SURGERY_CASE_STATUS_LABELS: Record<string, string> = {
+  Scheduled: "مقررة",
+  InProgress: "قيد التنفيذ",
+  Completed: "مكتملة",
+  Cancelled: "ملغاة",
+  Postponed: "مؤجلة",
+};

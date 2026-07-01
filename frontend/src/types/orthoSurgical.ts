@@ -151,3 +151,34 @@ export interface OrthoSurgicalReadiness {
   diagnosis: { skeletalClassification: string | null; summary: string | null; approvedAt: string | null } | null;
   ceph: { id: string; isApproved: boolean; analysisDate: string } | null;
 }
+
+// Sprint A4 — the discussion-comments thread (surgeon collaboration).
+export interface OrthoSurgicalComment {
+  id: string;
+  authorUserId: string | null;
+  authorRole: string | null;
+  body: string;
+  createdAt: string;
+}
+
+// Sprint A4 — per-case audit trail, a read-only view of the existing AuditLogs table.
+export interface OrthoSurgicalAuditEntry {
+  id: string;
+  action: string;
+  username: string;
+  createdAt: string;
+}
+
+export const AUTHOR_ROLE_LABELS: Record<string, string> = {
+  Admin: "الإدارة",
+  Orthodontist: "أخصائي التقويم",
+  OralSurgeon: "أخصائي الجراحة",
+};
+
+export const AUDIT_ACTION_LABELS: Record<string, string> = {
+  Create: "إنشاء",
+  Update: "تحديث",
+  Delete: "حذف",
+  View: "عرض",
+  Approve: "اعتماد",
+};

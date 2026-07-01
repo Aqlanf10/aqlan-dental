@@ -48,6 +48,11 @@ public sealed class CreateSurgeryFromPlanRequest
     public string? TeethInvolved { get; init; }
 }
 
+public sealed class CreateOrthoSurgicalCommentRequest
+{
+    public string Body { get; init; } = string.Empty;
+}
+
 /// <summary>
 /// Sprint A1 — the shared Ortho-Surgical (orthognathic) planning workspace API.
 /// A thin workflow controller over the <see cref="OrthoSurgicalCase"/> bridge: it links
@@ -299,6 +304,109 @@ public class OrthoSurgicalCasesController(
                 ceph.AnalysisDate
             }
         });
+    }
+
+    // ── Discussion comments (Sprint A4) ───────────────────────────────────────────
+    // The back-and-forth between orthodontist and surgeon across review rounds.
+    // Distinct from SurgeonReview.Notes (a single upsertable field that gets overwritten
+    // on each review) — comments accumulate and keep the full collaboration history.
+    [HttpGet("{id:guid}/comments")]
+    public async Task<IActionResult> GetComments(Guid id)
+    {
+        if (!await CanAsync("view")) return Deny();
+
+        var c = await db.OrthoSurgicalCases.FirstOrDefaultAsync(x => x.Id == id && x.IsActive);
+        if (c is null) return NotFound(new { message = "الحالة التقويمية الجراحية غير موجودة" });
+
+        var denied = await DenyIfDoctorCannotAccess(c.PatientId);
+        if (denied is not null) return denied;
+
+        var comments = await db.OrthoSurgicalComments
+            .Where(m => m.OrthoSurgicalCaseId == id && m.IsActive)
+            .OrderBy(m => m.CreatedAt)
+            .Select(m => new
+            {
+                m.Id,
+                m.AuthorUserId,
+                m.AuthorRole,
+                m.Body,
+                CreatedAt = m.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ")
+            })
+            .ToListAsync();
+
+        return Ok(new { data = comments });
+    }
+
+    [HttpPost("{id:guid}/comments")]
+    public async Task<IActionResult> AddComment(Guid id, [FromBody] CreateOrthoSurgicalCommentRequest req)
+    {
+        // Same actors who can edit the case (orthodontist/surgeon/admin) can comment on it.
+        if (!await CanAsync("edit")) return Deny();
+
+        var body = req.Body?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(body))
+            return BadRequest(new { message = "نص التعليق مطلوب" });
+        if (body.Length > 2000)
+            return BadRequest(new { message = "التعليق طويل جدًا (الحد الأقصى 2000 حرف)" });
+
+        var c = await db.OrthoSurgicalCases.FirstOrDefaultAsync(x => x.Id == id && x.IsActive);
+        if (c is null) return NotFound(new { message = "الحالة التقويمية الجراحية غير موجودة" });
+
+        var denied = await DenyIfDoctorCannotAccess(c.PatientId);
+        if (denied is not null) return denied;
+
+        var comment = new OrthoSurgicalComment
+        {
+            OrthoSurgicalCaseId = id,
+            AuthorUserId = currentUser.UserId,
+            AuthorRole = currentUser.Role?.ToString(),
+            Body = body
+        };
+        db.OrthoSurgicalComments.Add(comment);
+        await db.SaveChangesAsync();
+
+        await audit.LogAsync(AuditAction.Create, "OrthoSurgicalComment", comment.Id,
+            newData: new { orthoSurgicalCaseId = id });
+
+        return Ok(new
+        {
+            comment.Id,
+            comment.AuthorUserId,
+            comment.AuthorRole,
+            comment.Body,
+            CreatedAt = comment.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        });
+    }
+
+    // ── Audit trail (Sprint A4) ────────────────────────────────────────────────────
+    // Pure READ over the existing AuditLogs table (already written by every action in
+    // this controller via IAuditService) — no new audit mechanism, just a per-case view.
+    [HttpGet("{id:guid}/audit-trail")]
+    public async Task<IActionResult> GetAuditTrail(Guid id)
+    {
+        if (!await CanAsync("view")) return Deny();
+
+        var c = await db.OrthoSurgicalCases.FirstOrDefaultAsync(x => x.Id == id && x.IsActive);
+        if (c is null) return NotFound(new { message = "الحالة التقويمية الجراحية غير موجودة" });
+
+        var denied = await DenyIfDoctorCannotAccess(c.PatientId);
+        if (denied is not null) return denied;
+
+        var entries = await db.AuditLogs
+            .Include(a => a.User)
+            .Where(a => a.Resource == "OrthoSurgicalCase" && a.ResourceId == id)
+            .OrderByDescending(a => a.CreatedAt)
+            .Take(200)
+            .Select(a => new
+            {
+                a.Id,
+                Action = a.Action.ToString(),
+                Username = a.User != null ? a.User.Username : "النظام",
+                CreatedAt = a.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ")
+            })
+            .ToListAsync();
+
+        return Ok(new { data = entries });
     }
 
     // ── Create (from an existing OrthoCase) ───────────────────────────────────────

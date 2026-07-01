@@ -63,6 +63,21 @@ public class OrthoSurgicalCaseConfiguration : IEntityTypeConfiguration<OrthoSurg
             .WithOne(j => j.OrthoSurgicalCase)
             .HasForeignKey<JointPlan>(j => j.OrthoSurgicalCaseId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(c => c.Comments)
+            .WithOne(m => m.OrthoSurgicalCase)
+            .HasForeignKey(m => m.OrthoSurgicalCaseId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public class OrthoSurgicalCommentConfiguration : IEntityTypeConfiguration<OrthoSurgicalComment>
+{
+    public void Configure(EntityTypeBuilder<OrthoSurgicalComment> builder)
+    {
+        builder.Property(m => m.AuthorRole).HasMaxLength(40);
+        builder.Property(m => m.Body).HasMaxLength(2000).IsRequired();
+        builder.HasIndex(m => m.OrthoSurgicalCaseId);
     }
 }
 

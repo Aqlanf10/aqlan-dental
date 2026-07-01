@@ -45,4 +45,5 @@ public class OrthoSurgicalCase : BaseEntity
     public Doctor? Surgeon { get; set; }
     public SurgeonReview? SurgeonReview { get; set; }
     public JointPlan? JointPlan { get; set; }
+    public ICollection<OrthoSurgicalComment> Comments { get; set; } = [];
 }

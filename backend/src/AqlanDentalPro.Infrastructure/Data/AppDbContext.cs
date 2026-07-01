@@ -50,6 +50,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<OrthoSurgicalCase> OrthoSurgicalCases => Set<OrthoSurgicalCase>();
     public DbSet<SurgeonReview> SurgeonReviews => Set<SurgeonReview>();
     public DbSet<JointPlan> JointPlans => Set<JointPlan>();
+    public DbSet<OrthoSurgicalComment> OrthoSurgicalComments => Set<OrthoSurgicalComment>();
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<Receipt> Receipts => Set<Receipt>();

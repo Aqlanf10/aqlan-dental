@@ -65,6 +65,7 @@ public static class StartupDatabaseMaintenance
         await EnsurePatientSegmentsSchemaAsync(app);
         await EnsureOrthoSurgicalSchemaAsync(app);
         await EnsureOrthoSurgicalCommentsSchemaAsync(app);
+        await EnsureOrthoSurgicalVtoSchemaAsync(app);
         await EnsureOrthoSurgicalPermissionsAsync(app);
 
         // ── Gated DB maintenance (ENABLE_STARTUP_DB_MAINTENANCE) ──────
@@ -1810,6 +1811,73 @@ public static class StartupDatabaseMaintenance
         {
             app.Services.GetRequiredService<ILogger<Program>>()
                 .LogWarning(ex, "OrthoSurgicalComments schema hotfix failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// Ortho-Surgical VTO (Visual Treatment Objective) schema (Sprint A9): creates the
+    /// "OrthoSurgicalVtos" table on existing databases. Fresh databases get it from the EF
+    /// model baseline. Idempotent (CREATE TABLE / INDEX / CONSTRAINT IF NOT EXISTS) so it
+    /// runs safely on every startup. FK to OrthoSurgicalCases is ON DELETE CASCADE (a deleted
+    /// case takes its VTO scenarios with it); FK to CephAnalyses is ON DELETE SET NULL (the
+    /// baseline analysis may be archived without losing the stored scenario — predicted
+    /// values are already snapshotted). Non-fatal — mirrors
+    /// <see cref="EnsureOrthoSurgicalSchemaAsync"/>.
+    /// </summary>
+    private static async Task EnsureOrthoSurgicalVtoSchemaAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS "OrthoSurgicalVtos" (
+                    "Id" uuid NOT NULL,
+                    "OrthoSurgicalCaseId" uuid NOT NULL,
+                    "CephAnalysisId" uuid NULL,
+                    "MaxillaMoveMm" numeric(6,2) NULL,
+                    "MandibleMoveMm" numeric(6,2) NULL,
+                    "ChinMoveMm" numeric(6,2) NULL,
+                    "RotationDegree" numeric(6,2) NULL,
+                    "PredictedSNA" numeric(6,2) NULL,
+                    "PredictedSNB" numeric(6,2) NULL,
+                    "PredictedANB" numeric(6,2) NULL,
+                    "PredictedWits" numeric(6,2) NULL,
+                    "PredictedOverjet" numeric(6,2) NULL,
+                    "Notes" character varying(4000) NULL,
+                    "CreatedBy" uuid NULL,
+                    "IsApprovedByOrthodontist" boolean NOT NULL DEFAULT false,
+                    "ApprovedAt" timestamp with time zone NULL,
+                    "ApprovedByUserId" uuid NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "UpdatedAt" timestamp with time zone NOT NULL,
+                    "IsActive" boolean NOT NULL DEFAULT true,
+                    "DeletedAt" timestamp with time zone NULL,
+                    "DeletedBy" uuid NULL,
+                    CONSTRAINT "PK_OrthoSurgicalVtos" PRIMARY KEY ("Id")
+                );
+                CREATE INDEX IF NOT EXISTS "IX_OrthoSurgicalVtos_OrthoSurgicalCaseId"
+                    ON "OrthoSurgicalVtos" ("OrthoSurgicalCaseId");
+
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_OrthoSurgicalVtos_OrthoSurgicalCases_OrthoSurgicalCaseId') THEN
+                        ALTER TABLE "OrthoSurgicalVtos" ADD CONSTRAINT "FK_OrthoSurgicalVtos_OrthoSurgicalCases_OrthoSurgicalCaseId"
+                            FOREIGN KEY ("OrthoSurgicalCaseId") REFERENCES "OrthoSurgicalCases" ("Id") ON DELETE CASCADE;
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'CephAnalyses')
+                       AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_OrthoSurgicalVtos_CephAnalyses_CephAnalysisId') THEN
+                        ALTER TABLE "OrthoSurgicalVtos" ADD CONSTRAINT "FK_OrthoSurgicalVtos_CephAnalyses_CephAnalysisId"
+                            FOREIGN KEY ("CephAnalysisId") REFERENCES "CephAnalyses" ("Id") ON DELETE SET NULL;
+                    END IF;
+                END $$;
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "OrthoSurgicalVto schema hotfix failed (non-fatal)");
         }
     }
 

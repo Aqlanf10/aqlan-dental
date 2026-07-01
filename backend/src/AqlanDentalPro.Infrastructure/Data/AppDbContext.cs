@@ -51,6 +51,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SurgeonReview> SurgeonReviews => Set<SurgeonReview>();
     public DbSet<JointPlan> JointPlans => Set<JointPlan>();
     public DbSet<OrthoSurgicalComment> OrthoSurgicalComments => Set<OrthoSurgicalComment>();
+    // Sprint A9 — Surgical VTO (Visual Treatment Objective) scenarios on an Ortho-Surgical case.
+    public DbSet<OrthoSurgicalVto> OrthoSurgicalVtos => Set<OrthoSurgicalVto>();
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<Receipt> Receipts => Set<Receipt>();

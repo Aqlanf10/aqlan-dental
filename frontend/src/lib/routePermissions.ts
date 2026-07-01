@@ -18,7 +18,18 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   // FE-03: Aligned with sidebar — doctors need to view their own schedules
   { path: '/schedule', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   { path: '/doctor-clinic', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
-  { path: '/ortho', allowedRoles: ['Admin', 'Orthodontist'] },
+  // More specific path first (isRouteAllowed matches with startsWith): '/ortho/new'
+  // (creating a fresh orthodontic case) stays orthodontist-only, while '/ortho/{id}'
+  // must also admit OralSurgeon — a surgeon reaches their linked joint-planning case
+  // via /ortho/{orthoCaseId}?tab=surgical (from /surgery's pending-review list, the
+  // reciprocal link on /surgery/[id], and the patient file's ortho-surgical sub-tab).
+  // Without this, the layout's route guard silently bounces every surgeon back to
+  // /daily-operations before they ever see the shared workspace tab. The ortho case's
+  // OTHER tabs remain protected at the API layer (OrthoCasesController requires the
+  // OrthoAccess policy = Admin/Orthodontist), so this only widens frontend navigation,
+  // not backend authorization.
+  { path: '/ortho/new', allowedRoles: ['Admin', 'Orthodontist'] },
+  { path: '/ortho', allowedRoles: ['Admin', 'Orthodontist', 'OralSurgeon'] },
   { path: '/ceph', allowedRoles: ['Admin', 'Orthodontist'] },
   { path: '/general', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon'] },
   { path: '/surgery', allowedRoles: ['Admin', 'OralSurgeon'] },

@@ -22,6 +22,7 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { path: '/ceph', allowedRoles: ['Admin', 'Orthodontist'] },
   { path: '/general', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon'] },
   { path: '/surgery', allowedRoles: ['Admin', 'OralSurgeon'] },
+  { path: '/ortho-surgical', allowedRoles: ['Admin', 'Orthodontist', 'OralSurgeon'] },
   
   // Communication
   { path: '/referrals', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },

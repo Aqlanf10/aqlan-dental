@@ -83,6 +83,7 @@ const NAV: NavEntry[] = [
   { href: "/ceph",           label: "السيفالومتري",     icon: Activity,        roles: ["Admin","Orthodontist"] },
   { href: "/general",        label: "طب الأسنان العام", icon: Stethoscope,     roles: ["Admin","GeneralDentist"] },
   { href: "/surgery",        label: "الجراحة",          icon: Scissors,        roles: ["Admin","OralSurgeon"] },
+  { href: "/ortho-surgical", label: "التقويم الجراحي",  icon: GitBranch,       roles: ["Admin","Orthodontist","OralSurgeon"], badge: "جديد" },
 
   // ── التواصل ───────────────────────────────────────────────────────────────
   // NAV-CEPH-FIX (audit §4 — Referrals): Reception is not in routePermissions for /referrals

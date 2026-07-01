@@ -39,6 +39,7 @@ import { MessagesTab }         from "@/components/patient/tabs/MessagesTab";
 import { OrthodonticsTab }     from "@/components/patient/tabs/OrthodonticsTab";
 import { GeneralDentistryTab } from "@/components/patient/tabs/GeneralDentistryTab";
 import { SurgeryTab }          from "@/components/patient/tabs/SurgeryTab";
+import { OrthoSurgicalTab }    from "@/components/patient/tabs/OrthoSurgicalTab";
 import { PhotosTab }           from "@/components/patient/tabs/PhotosTab";
 import { RadiographsTab }      from "@/components/patient/tabs/RadiographsTab";
 import { PrescriptionsTab }    from "@/components/patient/tabs/PrescriptionsTab";
@@ -133,7 +134,7 @@ export default function PatientProfilePage() {
   // Consolidated Sub-tabs states
   const [medicalSubTab, setMedicalSubTab] = useState<"medical" | "dental">("medical");
   const [clinicalSubTab, setClinicalSubTab] = useState<"treatment-plan" | "prescriptions" | "referrals">("treatment-plan");
-  const [treatmentSubTab, setTreatmentSubTab] = useState<"general" | "orthodontics" | "surgery">("general");
+  const [treatmentSubTab, setTreatmentSubTab] = useState<"general" | "orthodontics" | "surgery" | "ortho-surgical">("general");
   const [financeSubTab, setFinanceSubTab] = useState<"finance" | "contracts" | "payments">("finance");
   const [documentsSubTab, setDocumentsSubTab] = useState<"photos" | "radiographs" | "documents" | "lab-orders">("photos");
   const [activitySubTab, setActivitySubTab] = useState<"timeline" | "portal" | "messages">("timeline");
@@ -442,7 +443,8 @@ export default function PatientProfilePage() {
               [
                 { key: "general", label: "طب الأسنان العام" },
                 { key: "orthodontics", label: "علاجات التقويم" },
-                { key: "surgery", label: "العمليات الجراحية والزراعة" }
+                { key: "surgery", label: "العمليات الجراحية والزراعة" },
+                { key: "ortho-surgical", label: "التقويم الجراحي" }
               ],
               treatmentSubTab,
               setTreatmentSubTab
@@ -450,6 +452,7 @@ export default function PatientProfilePage() {
             {treatmentSubTab === "general" && <GeneralDentistryTab patientId={id} />}
             {treatmentSubTab === "orthodontics" && <OrthodonticsTab patientId={id} />}
             {treatmentSubTab === "surgery" && <SurgeryTab patientId={id} />}
+            {treatmentSubTab === "ortho-surgical" && <OrthoSurgicalTab patientId={id} />}
           </div>
         );
 

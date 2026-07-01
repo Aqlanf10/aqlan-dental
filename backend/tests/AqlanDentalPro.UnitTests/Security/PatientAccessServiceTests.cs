@@ -252,6 +252,77 @@ public class PatientAccessServiceTests
         (await svcB.CanAccessPatientAsync(patient.Id)).Should().BeFalse();
     }
 
+    // Regression test: the ortho-surgical joint-planning workflow assigns a surgeon (or
+    // orthodontist) to a case via SurgeonId/OrthodontistId on OrthoSurgicalCase — often for a
+    // patient the surgeon is reviewing for the FIRST time (that is the entire point of a
+    // surgical referral/consultation), so none of the 5 pre-existing link types apply yet.
+    // Without recognizing this 6th link, DenyIfDoctorCannotAccess denies the very surgeon the
+    // case was sent to, breaking the send-to-surgeon workflow at its core.
+    [Fact]
+    public async Task CanAccessPatient_DoctorIsAssignedSurgeon_OnOrthoSurgicalCase_ReturnsTrue()
+    {
+        await using var db = CreateDb();
+        var userId = Guid.NewGuid();
+        var (patient, doctor) = await SeedPatientAndDoctor(db, userId); // no primary/appointment/visit/step/referral link
+
+        db.OrthoSurgicalCases.Add(new OrthoSurgicalCase
+        {
+            CaseNumber = "OS-PA-001",
+            PatientId = patient.Id,
+            OrthoCaseId = Guid.NewGuid(),
+            SurgeonId = doctor.Id,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var svc = Build(db, CreateUser(userId, UserRole.OralSurgeon));
+        (await svc.CanAccessPatientAsync(patient.Id)).Should().BeTrue(
+            "an OralSurgeon assigned as SurgeonId on a shared ortho-surgical case must be able " +
+            "to review it even with no prior appointment/visit/referral to this patient");
+    }
+
+    [Fact]
+    public async Task CanAccessPatient_DoctorIsAssignedOrthodontist_OnOrthoSurgicalCase_ReturnsTrue()
+    {
+        await using var db = CreateDb();
+        var userId = Guid.NewGuid();
+        var (patient, doctor) = await SeedPatientAndDoctor(db, userId);
+
+        db.OrthoSurgicalCases.Add(new OrthoSurgicalCase
+        {
+            CaseNumber = "OS-PA-002",
+            PatientId = patient.Id,
+            OrthoCaseId = Guid.NewGuid(),
+            OrthodontistId = doctor.Id,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var svc = Build(db, CreateUser(userId, UserRole.Orthodontist));
+        (await svc.CanAccessPatientAsync(patient.Id)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CanAccessPatient_InactiveOrthoSurgicalCase_ReturnsFalse()
+    {
+        await using var db = CreateDb();
+        var userId = Guid.NewGuid();
+        var (patient, doctor) = await SeedPatientAndDoctor(db, userId);
+
+        db.OrthoSurgicalCases.Add(new OrthoSurgicalCase
+        {
+            CaseNumber = "OS-PA-003",
+            PatientId = patient.Id,
+            OrthoCaseId = Guid.NewGuid(),
+            SurgeonId = doctor.Id,
+            IsActive = false, // soft-deleted — must not grant access
+        });
+        await db.SaveChangesAsync();
+
+        var svc = Build(db, CreateUser(userId, UserRole.OralSurgeon));
+        (await svc.CanAccessPatientAsync(patient.Id)).Should().BeFalse();
+    }
+
     [Fact]
     public async Task CanAccessPatient_DoctorHasInternalReferral_ReturnsTrue()
     {
@@ -456,6 +527,30 @@ public class PatientAccessServiceTests
         await db.SaveChangesAsync();
 
         var svc = Build(db, CreateUser(userId, UserRole.GeneralDentist));
+        var ids = await svc.GetAccessiblePatientIdsAsync();
+
+        ids.Should().NotBeNull();
+        ids!.Should().Contain(patient.Id);
+    }
+
+    [Fact]
+    public async Task GetAccessiblePatientIds_DoctorWithOrthoSurgicalSurgeonLink_ReturnsPatient()
+    {
+        await using var db = CreateDb();
+        var userId = Guid.NewGuid();
+        var (patient, doctor) = await SeedPatientAndDoctor(db, userId);
+
+        db.OrthoSurgicalCases.Add(new OrthoSurgicalCase
+        {
+            CaseNumber = "OS-PA-004",
+            PatientId = patient.Id,
+            OrthoCaseId = Guid.NewGuid(),
+            SurgeonId = doctor.Id,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var svc = Build(db, CreateUser(userId, UserRole.OralSurgeon));
         var ids = await svc.GetAccessiblePatientIdsAsync();
 
         ids.Should().NotBeNull();

@@ -84,6 +84,15 @@ public class PatientAccessService(
         if (await db.InternalReferrals.AnyAsync(r => r.PatientId == patientId && r.ToDoctorId == d && r.IsActive))
             return true;
 
+        // Check ortho-surgical joint-planning link: an OralSurgeon assigned as SurgeonId (or an
+        // Orthodontist as OrthodontistId) on a shared OrthoSurgicalCase has none of the 5 links
+        // above when reviewing a patient for the FIRST time — that is the entire point of a
+        // surgical referral/consultation. Without this, DenyIfDoctorCannotAccess denies the very
+        // surgeon the case was sent to, breaking the send-to-surgeon workflow at its core.
+        if (await db.OrthoSurgicalCases.AnyAsync(c => c.PatientId == patientId && c.IsActive
+                && (c.SurgeonId == d || c.OrthodontistId == d)))
+            return true;
+
         return false;
     }
 
@@ -135,6 +144,13 @@ public class PatientAccessService(
             .Where(r => r.ToDoctorId == d && r.IsActive)
             .Select(r => r.PatientId)
             .ToListAsync(), "InternalReferrals.ToDoctorId");
+
+        // 6. Patients linked via a shared ortho-surgical joint-planning case (as the assigned
+        // surgeon OR orthodontist) — see CanAccessPatientAsync for why this is required.
+        await SafeAddIdsAsync(ids, async () => await db.OrthoSurgicalCases
+            .Where(c => c.IsActive && (c.SurgeonId == d || c.OrthodontistId == d))
+            .Select(c => c.PatientId)
+            .ToListAsync(), "OrthoSurgicalCases.SurgeonId/OrthodontistId");
 
         return ids;
     }

@@ -5,10 +5,10 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowRight, User, GitBranch, Send, ShieldCheck, Loader2, AlertCircle,
-  CheckCircle2, Circle, Stethoscope, Scissors, ClipboardCheck, Play,
+  CheckCircle2, Circle, Stethoscope, Scissors, ClipboardCheck, Play, ListChecks,
 } from "lucide-react";
 import type {
-  OrthoSurgicalCaseDetail, OrthoSurgicalStatus,
+  OrthoSurgicalCaseDetail, OrthoSurgicalStatus, OrthoSurgicalReadiness,
 } from "@/types/orthoSurgical";
 import {
   ORTHO_SURGICAL_STATUS_LABELS, ORTHO_SURGICAL_STATUS_COLORS,
@@ -34,6 +34,7 @@ export default function OrthoSurgicalDetailPage() {
   const isSurgeon = role === "Admin" || role === "OralSurgeon";
 
   const [data, setData] = useState<OrthoSurgicalCaseDetail | null>(null);
+  const [readiness, setReadiness] = useState<OrthoSurgicalReadiness | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -45,8 +46,12 @@ export default function OrthoSurgicalDetailPage() {
   const fetchCase = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await api.get<OrthoSurgicalCaseDetail>(`/api/ortho-surgical-cases/${id}`);
-      setData(res.data);
+      const [caseRes, readinessRes] = await Promise.all([
+        api.get<OrthoSurgicalCaseDetail>(`/api/ortho-surgical-cases/${id}`),
+        api.get<OrthoSurgicalReadiness>(`/api/ortho-surgical-cases/${id}/readiness`).catch(() => null),
+      ]);
+      setData(caseRes.data);
+      setReadiness(readinessRes?.data ?? null);
     } catch {
       toast.error("فشل تحميل الحالة");
     } finally {
@@ -201,6 +206,39 @@ export default function OrthoSurgicalDetailPage() {
           })}
         </ol>
       </div>
+
+      {/* Readiness gates (Sprint A3) — read-only projection of RecordsChecklist/OrthoDiagnosis/CephAnalysis */}
+      {readiness && (
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-sm p-5 space-y-3">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+            <ListChecks className="w-4 h-4 text-[#3d7ab5]" /> جاهزية الحالة
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[
+              { label: "السجلات", ok: readiness.recordsReady },
+              { label: "السيفالو", ok: readiness.cephReady },
+              { label: "التشخيص", ok: readiness.diagnosisReady },
+              { label: "جاهز لمراجعة الجراح", ok: readiness.surgeonReviewReady },
+            ].map((gate) => (
+              <div key={gate.label} className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs",
+                gate.ok ? "bg-emerald-50 text-emerald-700" : "bg-gray-50 text-gray-400"
+              )}>
+                {gate.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}
+                <span className="truncate">{gate.label}</span>
+              </div>
+            ))}
+          </div>
+          {readiness.missing.length > 0 && (
+            <div className="text-xs text-amber-700 bg-amber-50 rounded-lg border border-amber-100 p-3 space-y-1">
+              <p className="font-semibold">ينقص:</p>
+              <ul className="list-disc pr-4 space-y-0.5">
+                {readiness.missing.map((m) => <li key={m}>{m}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Workflow actions (A2 shell: wired to A1 endpoints) */}
       <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-sm p-5 space-y-4">

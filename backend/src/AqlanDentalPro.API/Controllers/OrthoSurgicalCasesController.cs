@@ -203,6 +203,104 @@ public class OrthoSurgicalCasesController(
         });
     }
 
+    // ── Readiness (Sprint A3) ──────────────────────────────────────────────────────
+    // Pure READ over the existing RecordsChecklist / OrthoDiagnosis / CephAnalysis
+    // entities — nothing is duplicated or persisted here. Drives the workspace's
+    // readiness gates (RecordsReady / CephReady / DiagnosisReady / SurgeonReviewReady)
+    // per docs/ortho-module/ORTHO_SURGICAL_AI_VISION_EXPANSION.md §7.
+    [HttpGet("{id:guid}/readiness")]
+    public async Task<IActionResult> GetReadiness(Guid id)
+    {
+        if (!await CanAsync("view")) return Deny();
+
+        var c = await db.OrthoSurgicalCases.FirstOrDefaultAsync(x => x.Id == id && x.IsActive);
+        if (c is null) return NotFound(new { message = "الحالة التقويمية الجراحية غير موجودة" });
+
+        var denied = await DenyIfDoctorCannotAccess(c.PatientId);
+        if (denied is not null) return denied;
+
+        var checklist = await db.RecordsChecklists.FirstOrDefaultAsync(r => r.OrthoCaseId == c.OrthoCaseId);
+        var diagnosis = await db.OrthoDiagnoses.FirstOrDefaultAsync(d => d.OrthoCaseId == c.OrthoCaseId);
+
+        // Prefer the ceph analysis explicitly linked to this case; fall back to the
+        // most recent analysis on the ortho case if none was linked yet.
+        var ceph = c.CephAnalysisId.HasValue
+            ? await db.CephAnalyses.FirstOrDefaultAsync(a => a.Id == c.CephAnalysisId && a.IsActive)
+            : await db.CephAnalyses
+                .Where(a => a.OrthoCaseId == c.OrthoCaseId && a.IsActive)
+                .OrderByDescending(a => a.AnalysisDate)
+                .FirstOrDefaultAsync();
+
+        var missing = new List<string>();
+
+        var recordsCore = checklist is not null
+            && checklist.ExtraoralFrontal && checklist.ExtraoralProfile
+            && checklist.IntraoralFrontal && checklist.IntraoralRight && checklist.IntraoralLeft
+            && checklist.Opg && checklist.LateralCeph && checklist.StudyModels;
+        if (checklist is null) missing.Add("لم تُحفظ قائمة السجلات بعد");
+        else
+        {
+            if (!checklist.ExtraoralFrontal || !checklist.ExtraoralProfile) missing.Add("صور خارج الفم (أمامي/جانبي)");
+            if (!checklist.IntraoralFrontal || !checklist.IntraoralRight || !checklist.IntraoralLeft) missing.Add("صور داخل الفم");
+            if (!checklist.Opg) missing.Add("صورة بانوراما OPG");
+            if (!checklist.LateralCeph) missing.Add("سيفالو جانبي");
+            if (!checklist.StudyModels) missing.Add("نماذج دراسية / مسح داخل الفم");
+        }
+
+        var cephReady = ceph is not null && ceph.IsApproved;
+        if (ceph is null) missing.Add("لا يوجد تحليل سيفالو مرتبط بالحالة");
+        else if (!ceph.IsApproved) missing.Add("تحليل السيفالو لم يُعتمد بعد");
+
+        var diagnosisReady = diagnosis is not null
+            && !string.IsNullOrWhiteSpace(diagnosis.SkeletalClassification)
+            && diagnosis.ApprovedAt is not null;
+        if (diagnosis is null) missing.Add("لا يوجد تشخيص تقويمي محفوظ");
+        else if (diagnosis.ApprovedAt is null) missing.Add("التشخيص التقويمي لم يُعتمد بعد");
+
+        var surgeonReviewReady = recordsCore && cephReady && diagnosisReady;
+
+        return Ok(new
+        {
+            OrthoSurgicalCaseId = c.Id,
+            RecordsReady = recordsCore,
+            CephReady = cephReady,
+            DiagnosisReady = diagnosisReady,
+            SurgeonReviewReady = surgeonReviewReady,
+            Missing = missing,
+            Checklist = checklist is null ? null : new
+            {
+                checklist.ExtraoralFrontal,
+                checklist.ExtraoralProfile,
+                checklist.ExtraoralSmile,
+                checklist.IntraoralFrontal,
+                checklist.IntraoralRight,
+                checklist.IntraoralLeft,
+                checklist.UpperOcclusal,
+                checklist.LowerOcclusal,
+                checklist.Opg,
+                checklist.LateralCeph,
+                checklist.Cbct,
+                checklist.StudyModels,
+                checklist.Consent,
+                checklist.Contract
+            },
+            Diagnosis = diagnosis is null ? null : new
+            {
+                diagnosis.SkeletalClassification,
+                diagnosis.DentalClassification,
+                diagnosis.FacialPattern,
+                diagnosis.Summary,
+                diagnosis.ApprovedAt
+            },
+            Ceph = ceph is null ? null : new
+            {
+                ceph.Id,
+                ceph.IsApproved,
+                ceph.AnalysisDate
+            }
+        });
+    }
+
     // ── Create (from an existing OrthoCase) ───────────────────────────────────────
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateOrthoSurgicalCaseRequest req)

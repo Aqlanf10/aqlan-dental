@@ -137,3 +137,17 @@ export const SURGEON_REVIEW_DECISIONS: { value: string; label: string }[] = [
   { value: "NotCandidate", label: "غير مرشّح للجراحة" },
   { value: "NeedsImaging", label: "يحتاج صورًا إضافية" },
 ];
+
+// Sprint A3 — readiness gates computed by GET /api/ortho-surgical-cases/{id}/readiness.
+// Pure read-only projection over RecordsChecklist / OrthoDiagnosis / CephAnalysis.
+export interface OrthoSurgicalReadiness {
+  orthoSurgicalCaseId: string;
+  recordsReady: boolean;
+  cephReady: boolean;
+  diagnosisReady: boolean;
+  surgeonReviewReady: boolean;
+  missing: string[];
+  checklist: Record<string, boolean> | null;
+  diagnosis: { skeletalClassification: string | null; summary: string | null; approvedAt: string | null } | null;
+  ceph: { id: string; isApproved: boolean; analysisDate: string } | null;
+}

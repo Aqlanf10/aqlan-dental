@@ -107,6 +107,7 @@ public class OrthoSurgicalCasesController(
         [FromQuery] string? status,
         [FromQuery] Guid? surgeonId,
         [FromQuery] Guid? patientId,
+        [FromQuery] Guid? orthoCaseId,
         [FromQuery] bool? pendingSurgeonReview,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
@@ -125,6 +126,7 @@ public class OrthoSurgicalCasesController(
             query = query.Where(c => c.Status == st);
         if (surgeonId.HasValue) query = query.Where(c => c.SurgeonId == surgeonId);
         if (patientId.HasValue) query = query.Where(c => c.PatientId == patientId);
+        if (orthoCaseId.HasValue) query = query.Where(c => c.OrthoCaseId == orthoCaseId);
         if (pendingSurgeonReview == true)
             query = query.Where(c => c.Status == OrthoSurgicalStatus.SentToSurgeon
                                   || c.Status == OrthoSurgicalStatus.SurgeonReviewPending);

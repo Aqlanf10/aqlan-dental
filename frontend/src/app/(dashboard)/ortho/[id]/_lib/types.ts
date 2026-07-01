@@ -25,6 +25,7 @@ export type Tab =
   | "retention"
   | "lab"
   | "finance"
+  | "surgical"
   | "wizard"
   | "reports";
 

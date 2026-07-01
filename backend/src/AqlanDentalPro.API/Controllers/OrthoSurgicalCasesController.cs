@@ -1115,7 +1115,7 @@ public class OrthoSurgicalCasesController(
         if (ceph is null || !ceph.IsApproved)
             return BadRequest(new { message = VtoNoApprovedCephMessageAr });
 
-        var baseline = LoadBaselineMeasurements(ceph, c.OrthoCaseId).GetAwaiter().GetResult();
+        var baseline = await LoadBaselineMeasurements(ceph, c.OrthoCaseId);
         var predicted = ComputePredictedMeasurements(
             req.MaxillaMoveMm, req.MandibleMoveMm, req.ChinMoveMm, req.RotationDegree, baseline);
 

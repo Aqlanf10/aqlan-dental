@@ -7,7 +7,7 @@ import {
   Scissors, User, ArrowRight, CheckCircle, Clock, XCircle,
   PlayCircle, ClipboardList, FileText, Save, AlertCircle,
   Pencil, Plus, Trash2, Loader2, ArrowRightLeft, Pill,
-  Calendar, ShieldCheck, X, FlaskConical,
+  Calendar, ShieldCheck, X, FlaskConical, GitBranch, ExternalLink,
 } from "lucide-react";
 import type {
   SurgeryCase, PreopReport, OperativeReport, PostopRecord, HospitalReferral,
@@ -16,6 +16,7 @@ import type {
   PrescriptionItem, FollowupItem,
 } from "@/types/surgery";
 import { SURGERY_STATUS_LABELS, SURGERY_STATUS_COLORS, REFERRAL_STATUS_LABELS } from "@/types/surgery";
+import type { OrthoSurgicalCaseListItem } from "@/types/orthoSurgical";
 import api from "@/lib/api";
 import { useDoctors } from "@/hooks/useDoctors";
 import { cn, formatArabicDate } from "@/lib/utils";
@@ -137,6 +138,18 @@ export default function SurgeryDetailPage() {
 
   // ── Status transition ───────────────────────────────────────────────────────
   const [transitioningStatus, setTransitioningStatus] = useState<string | null>(null);
+
+  // ── Linked ortho-surgical planning case (reciprocal link) ───────────────────
+  // If this surgery was opened from a shared ortho-surgical joint plan
+  // (create-surgery-case), surface a link back to the ortho case's "جراحة
+  // الفكين" tab so the surgeon isn't stranded here with no way back.
+  const [linkedOrthoSurgical, setLinkedOrthoSurgical] = useState<OrthoSurgicalCaseListItem | null>(null);
+
+  useEffect(() => {
+    api.get<{ data: OrthoSurgicalCaseListItem[] }>("/api/ortho-surgical-cases", { params: { surgeryCaseId: id, pageSize: 1 } })
+      .then((r) => setLinkedOrthoSurgical(r.data?.data?.[0] ?? null))
+      .catch(() => {});
+  }, [id]);
 
   // ── Data fetching ───────────────────────────────────────────────────────────
 
@@ -442,6 +455,24 @@ export default function SurgeryDetailPage() {
         <Scissors className="w-5 h-5 text-[#3d7ab5]" />
         <h1 className="text-2xl font-extrabold text-gray-900">{surgeryCase.surgeryType}</h1>
       </div>
+
+      {/* ── Linked ortho-surgical joint plan (reciprocal link) ────────────────── */}
+      {linkedOrthoSurgical && (
+        <Link
+          href={`/ortho/${linkedOrthoSurgical.orthoCaseId}?tab=surgical`}
+          className="flex items-center justify-between gap-3 bg-[#f7fafd] border border-[#3d7ab5]/30 rounded-xl px-4 py-3 hover:border-[#3d7ab5] transition"
+        >
+          <span className="flex items-center gap-2 text-sm text-gray-700">
+            <GitBranch className="w-4 h-4 text-[#3d7ab5]" />
+            نشأت هذه الجراحة من خطة تقويمية جراحية مشتركة —
+            <span className="font-mono text-xs font-semibold text-[#3d7ab5]">{linkedOrthoSurgical.caseNumber}</span>
+            <span className="text-xs text-gray-500">({linkedOrthoSurgical.statusLabel})</span>
+          </span>
+          <span className="flex items-center gap-1 text-xs font-medium text-[#3d7ab5] flex-shrink-0">
+            فتح الخطة المشتركة <ExternalLink className="w-3 h-3" />
+          </span>
+        </Link>
+      )}
 
       {/* ── Banner ──────────────────────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-sm p-5 space-y-4">

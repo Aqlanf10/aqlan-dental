@@ -18,6 +18,8 @@ import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
+import { CommentsPanel } from "./_components/CommentsPanel";
+import { AuditTrailPanel } from "./_components/AuditTrailPanel";
 
 const primaryBtn =
   "flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] disabled:opacity-60 transition";
@@ -343,6 +345,10 @@ export default function OrthoSurgicalDetailPage() {
           هذه محاكاة تخطيطية مشتركة؛ القرار الجراحي النهائي يعتمد على مراجعة أخصائي جراحة الفم والفكين وموافقة المريض.
         </p>
       </div>
+
+      {/* Discussion + audit trail (Sprint A4) */}
+      <CommentsPanel orthoSurgicalCaseId={data.id} />
+      <AuditTrailPanel orthoSurgicalCaseId={data.id} />
 
       <p className="text-xs text-gray-400">أُنشئت {formatArabicDate(data.createdAt)}</p>
     </div>

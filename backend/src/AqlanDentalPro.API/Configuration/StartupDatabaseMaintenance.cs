@@ -64,6 +64,7 @@ public static class StartupDatabaseMaintenance
         await EnsureInventoryEnhancementsSchemaAsync(app);
         await EnsurePatientSegmentsSchemaAsync(app);
         await EnsureOrthoSurgicalSchemaAsync(app);
+        await EnsureOrthoSurgicalCommentsSchemaAsync(app);
         await EnsureOrthoSurgicalPermissionsAsync(app);
 
         // ── Gated DB maintenance (ENABLE_STARTUP_DB_MAINTENANCE) ──────
@@ -1764,6 +1765,51 @@ public static class StartupDatabaseMaintenance
         {
             app.Services.GetRequiredService<ILogger<Program>>()
                 .LogWarning(ex, "OrthoSurgical schema hotfix failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// Ortho-Surgical discussion-thread schema (Sprint A4): creates "OrthoSurgicalComments"
+    /// on existing databases. Fresh databases get it from the EF model baseline. Idempotent,
+    /// non-fatal — mirrors <see cref="EnsureOrthoSurgicalSchemaAsync"/>.
+    /// </summary>
+    private static async Task EnsureOrthoSurgicalCommentsSchemaAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS "OrthoSurgicalComments" (
+                    "Id" uuid NOT NULL,
+                    "OrthoSurgicalCaseId" uuid NOT NULL,
+                    "AuthorUserId" uuid NULL,
+                    "AuthorRole" character varying(40) NULL,
+                    "Body" character varying(2000) NOT NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "UpdatedAt" timestamp with time zone NOT NULL,
+                    "IsActive" boolean NOT NULL DEFAULT true,
+                    "DeletedAt" timestamp with time zone NULL,
+                    "DeletedBy" uuid NULL,
+                    CONSTRAINT "PK_OrthoSurgicalComments" PRIMARY KEY ("Id")
+                );
+                CREATE INDEX IF NOT EXISTS "IX_OrthoSurgicalComments_OrthoSurgicalCaseId"
+                    ON "OrthoSurgicalComments" ("OrthoSurgicalCaseId");
+
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_OrthoSurgicalComments_OrthoSurgicalCases_OrthoSurgicalCaseId') THEN
+                        ALTER TABLE "OrthoSurgicalComments" ADD CONSTRAINT "FK_OrthoSurgicalComments_OrthoSurgicalCases_OrthoSurgicalCaseId"
+                            FOREIGN KEY ("OrthoSurgicalCaseId") REFERENCES "OrthoSurgicalCases" ("Id") ON DELETE CASCADE;
+                    END IF;
+                END $$;
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "OrthoSurgicalComments schema hotfix failed (non-fatal)");
         }
     }
 

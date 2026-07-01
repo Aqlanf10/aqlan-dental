@@ -23,9 +23,9 @@ public partial class FinanceV3Controller
             var pdf = await pdfService.GenerateCashFlowDisbursementVoucherAsync(id);
             return File(pdf, "application/pdf", $"disbursement-voucher-{id}.pdf");
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            return BadRequest(new { message = ex.Message });
+            return BadRequest(new { message = "تعذر إنشاء سند الصرف — البيانات غير صالحة" });
         }
     }
 
@@ -46,9 +46,9 @@ public partial class FinanceV3Controller
             var pdf = await pdfService.GenerateJournalEntryDisbursementVoucherAsync(id);
             return File(pdf, "application/pdf", $"disbursement-voucher-{id}.pdf");
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            return BadRequest(new { message = ex.Message });
+            return BadRequest(new { message = "تعذر إنشاء سند الصرف — البيانات غير صالحة" });
         }
     }
 }

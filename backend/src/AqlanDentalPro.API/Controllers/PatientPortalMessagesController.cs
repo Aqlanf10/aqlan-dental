@@ -67,7 +67,7 @@ public class PatientPortalMessagesController(
         }
         catch (ServiceException ex)
         {
-            return StatusCode(ex.StatusCode, new { message = ex.Message });
+            return StatusCode(ex.StatusCode, new { message = "حدث خطأ أثناء معالجة طلب البوابة" });
         }
     }
 
@@ -86,7 +86,7 @@ public class PatientPortalMessagesController(
         }
         catch (ServiceException ex)
         {
-            return StatusCode(ex.StatusCode, new { message = ex.Message });
+            return StatusCode(ex.StatusCode, new { message = "حدث خطأ أثناء معالجة طلب البوابة" });
         }
     }
 
@@ -108,7 +108,7 @@ public class PatientPortalMessagesController(
         }
         catch (ServiceException ex)
         {
-            return StatusCode(ex.StatusCode, new { message = ex.Message });
+            return StatusCode(ex.StatusCode, new { message = "حدث خطأ أثناء معالجة طلب البوابة" });
         }
     }
 
@@ -128,17 +128,17 @@ public class PatientPortalMessagesController(
         }
         catch (ServiceException ex)
         {
-            return StatusCode(ex.StatusCode, new { message = ex.Message });
+            return StatusCode(ex.StatusCode, new { message = "حدث خطأ أثناء معالجة طلب البوابة" });
         }
         catch (UnauthorizedAccessException ex)
         {
             logger.LogWarning(ex, "Unauthorized portal message send to conversation {ConversationId}", conversationId);
             return StatusCode(403, new { message = "ليس لديك صلاحية الإرسال في هذه المحادثة" });
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            logger.LogWarning(ex, "Invalid argument in portal message send to conversation {ConversationId}", conversationId);
-            return BadRequest(new { message = ex.Message });
+            logger.LogWarning("Invalid argument in portal message send to conversation {ConversationId}", conversationId);
+            return BadRequest(new { message = "بيانات الرسالة غير صالحة" });
         }
         catch (Exception ex)
         {

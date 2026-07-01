@@ -88,15 +88,15 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
 
             return Ok(result);
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            logger.LogWarning(ex, "Payment creation validation failed");
-            return BadRequest(new { message = ex.Message });
+            logger.LogWarning("Payment creation validation failed");
+            return BadRequest(new { message = "بيانات الدفعة غير صالحة" });
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
-            logger.LogWarning(ex, "Payment creation operation failed");
-            return BadRequest(new { message = ex.Message });
+            logger.LogWarning("Payment creation operation failed");
+            return BadRequest(new { message = "تعذر إنشاء الدفعة — تحقق من البيانات أو الوردية" });
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -119,10 +119,10 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
 
             return Ok(result);
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            logger.LogWarning(ex, "Payment update validation failed for payment {PaymentId}", id);
-            return BadRequest(new { message = ex.Message });
+            logger.LogWarning("Payment update validation failed for payment {PaymentId}", id);
+            return BadRequest(new { message = "بيانات تحديث الدفعة غير صالحة" });
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -218,10 +218,10 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
             var pdfBytes = await pdfService.GeneratePaymentReceiptAsync(id);
             return File(pdfBytes, "application/pdf", $"receipt-{id}.pdf");
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            logger.LogWarning(ex, "Payment receipt PDF generation failed for payment {PaymentId}", id);
-            return NotFound(new { message = ex.Message });
+            logger.LogWarning("Payment receipt PDF generation failed for payment {PaymentId}", id);
+            return NotFound(new { message = "سند القبض غير متاح لهذه الدفعة" });
         }
         catch (Exception ex)
         {

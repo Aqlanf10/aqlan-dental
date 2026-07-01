@@ -21,6 +21,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { CommentsPanel } from "./_components/CommentsPanel";
 import { AuditTrailPanel } from "./_components/AuditTrailPanel";
 import { JointPlanPanel } from "./_components/JointPlanPanel";
+import { SurgeryExecutionPanel } from "./_components/SurgeryExecutionPanel";
 
 const primaryBtn =
   "flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] disabled:opacity-60 transition";
@@ -354,6 +355,9 @@ export default function OrthoSurgicalDetailPage() {
         canEdit={isOrtho || isSurgeon}
         onSaved={fetchCase}
       />
+
+      {/* Surgery execution glance (Sprint A6) */}
+      <SurgeryExecutionPanel orthoSurgicalCaseId={data.id} />
 
       {/* Discussion + audit trail (Sprint A4) */}
       <CommentsPanel orthoSurgicalCaseId={data.id} />

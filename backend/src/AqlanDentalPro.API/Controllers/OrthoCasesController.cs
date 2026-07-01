@@ -146,7 +146,17 @@ public class OrthoCasesController(
         return Ok(result);
     }
 
+    // Per-action override of the class-level OrthoAccess policy: an OralSurgeon reaching this
+    // ortho case's "جراحة الفكين" tab via a shared OrthoSurgicalCase (from /surgery's pending-
+    // review list, the reciprocal link on /surgery/[id], or the patient file's ortho-surgical
+    // sub-tab) needs this basic case header (case number/patient name/status/stage%) to render
+    // the page shell at all — /ortho/[id]/page.tsx blanks the whole page to "الحالة غير موجودة"
+    // when this call fails. The DTO here is intentionally minimal (no diagnosis text, no exam
+    // notes, no financial detail beyond TotalFee) — richer data (GetOverview, clinical exam,
+    // diagnosis, treatment plans, etc.) remains OrthoAccess-only (Admin/Orthodontist), so this
+    // does not widen access to the case's actual clinical content, only its header.
     [HttpGet("{id:guid}")]
+    [Authorize(Policy = "OrthoSurgicalAccess")]
     public async Task<IActionResult> GetById(Guid id)
     {
         var result = await service.GetByIdAsync(id);

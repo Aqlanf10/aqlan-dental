@@ -39,9 +39,12 @@ public class OverdueNotificationJob(IServiceScopeFactory scopeFactory, ILogger<O
         var db            = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
 
-        var today = DateOnly.FromDateTime(DateTime.Today);
-        var todayStart = DateTime.UtcNow.Date;   // بداية اليوم بالتوقيت العالمي
-        var todayEnd = todayStart.AddDays(1);     // نهاية اليوم
+        // FIN-16/CLIN-07 pattern: clinic-local date (Yemen UTC+3), NOT server-local
+        // DateTime.Today — on Railway (UTC) the server date lags Yemen's by up to 3h,
+        // so overdue checks and the dedup window drifted a day behind the clinic's
+        // wall clock (and behind /api/lab-orders/overdue, which already uses ClinicToday).
+        var today = ClinicTimeProvider.ClinicToday();
+        var (todayStart, todayEnd) = ClinicTimeProvider.ToUtcRange(today);
 
         var activeContracts = await db.Contracts
             .Include(c => c.Patient)
@@ -107,9 +110,11 @@ public class OverdueNotificationJob(IServiceScopeFactory scopeFactory, ILogger<O
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
 
-        var today = DateOnly.FromDateTime(DateTime.Today);
-        var todayStart = DateTime.UtcNow.Date;
-        var todayEnd = todayStart.AddDays(1);
+        // Same clinic-timezone rule as CheckOverdueAsync — keeps this job's "overdue"
+        // definition identical to LabOrderQueryService.GetOverdueAsync (ClinicToday),
+        // so notifications never disagree with the /lab/overdue page.
+        var today = ClinicTimeProvider.ClinicToday();
+        var (todayStart, todayEnd) = ClinicTimeProvider.ToUtcRange(today);
 
         // Active lab orders that are overdue (ExpectedDate < today, not delivered/cancelled)
         var overdueOrders = await db.LabOrders

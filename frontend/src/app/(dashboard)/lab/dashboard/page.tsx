@@ -84,7 +84,7 @@ export default function LabDashboardPage() {
   if (isLoading) {
     return (
       <div className="space-y-6 p-6">
-        <h1 className="text-2xl font-bold text-gray-900">لوحة تحكم المختبر</h1>
+        <h1 className="text-2xl font-bold text-gray-900">ملخص المختبر</h1>
         <TableSkeleton rows={4} cols={4} />
       </div>
     );
@@ -105,7 +105,7 @@ export default function LabDashboardPage() {
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">لوحة تحكم المختبر</h1>
+          <h1 className="text-2xl font-bold text-gray-900">ملخص المختبر</h1>
           <p className="text-sm text-gray-500 mt-1">نظرة شاملة على أداء المعامل والطلبات</p>
         </div>
 

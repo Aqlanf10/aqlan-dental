@@ -64,7 +64,7 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { path: '/employees', allowedRoles: ['Admin'] },
   { path: '/branches', allowedRoles: ['Admin'] },
   
-  // System - Admin only
+  // System - lab settings exceptions must precede the generic Admin-only /settings rule.
   { path: '/settings/labs', allowedRoles: ['Admin', 'BranchManager'] },
   { path: '/settings/lab-work-types', allowedRoles: ['Admin', 'BranchManager'] },
   { path: '/settings/lab-pricing', allowedRoles: ['Admin', 'BranchManager'] },
@@ -93,6 +93,8 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
 
 export function isRouteAllowed(pathname: string, userRole: string | null): boolean {
   if (!userRole) return false;
+
+  if (pathname === '/') return userRole === 'Admin';
 
   // Admin has access to everything
   if (userRole === 'Admin') return true;

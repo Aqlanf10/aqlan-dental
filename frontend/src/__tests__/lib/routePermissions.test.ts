@@ -26,6 +26,8 @@ describe('route permissions', () => {
   });
 
   it('keeps Admin override and default deny behavior intact', () => {
+    expect(isRouteAllowed('/', 'Admin')).toBe(true);
+    expect(isRouteAllowed('/', 'Reception')).toBe(false);
     expect(isRouteAllowed('/settings/backup', 'Admin')).toBe(true);
     expect(isRouteAllowed('/unknown-dashboard-route', 'Reception')).toBe(false);
     expect(isRouteAllowed('/daily-operations', null)).toBe(false);

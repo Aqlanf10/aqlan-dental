@@ -62,6 +62,7 @@ public static class StartupDatabaseMaintenance
         await EnsurePaymentCurrencyColumnAsync(app);
         await EnsureMultiCurrencyColumnsAsync(app);
         await EnsureAppointmentEnhancementsSchemaAsync(app);
+        await EnsureServicePackagesConsumablesSchemaAsync(app);
         await EnsureInventoryEnhancementsSchemaAsync(app);
         await EnsurePatientSegmentsSchemaAsync(app);
         await EnsureOrthoSurgicalSchemaAsync(app);
@@ -4575,6 +4576,94 @@ public static class StartupDatabaseMaintenance
                 .LogWarning(ex, "Appointment enhancements (YOLO-S1) schema hotfix failed (non-fatal)");
         }
     }
+
+    /// <summary>
+    /// YOLO-S2: Idempotently adds Contract.PackageId + TreatmentPackageServices +
+    /// ServiceConsumables tables + ClinicServices.Color column (C-08 pattern).
+    /// </summary>
+    private static async Task EnsureServicePackagesConsumablesSchemaAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                ALTER TABLE "Contracts" ADD COLUMN IF NOT EXISTS "PackageId" uuid NULL;
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Contracts_TreatmentPackages_PackageId') THEN
+                        ALTER TABLE "Contracts" ADD CONSTRAINT "FK_Contracts_TreatmentPackages_PackageId"
+                            FOREIGN KEY ("PackageId") REFERENCES "TreatmentPackages"("Id") ON DELETE SET NULL;
+                    END IF;
+                END $$;
+
+                CREATE TABLE IF NOT EXISTS "TreatmentPackageServices" (
+                    "Id" uuid NOT NULL DEFAULT gen_random_uuid(),
+                    "TreatmentPackageId" uuid NOT NULL,
+                    "ClinicServiceId" uuid NOT NULL,
+                    "Quantity" integer NOT NULL DEFAULT 1,
+                    "OverridePrice" numeric(12,2) NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+                    "UpdatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+                    "DeletedAt" timestamp with time zone NULL,
+                    "DeletedBy" uuid NULL,
+                    CONSTRAINT "PK_TreatmentPackageServices" PRIMARY KEY ("Id")
+                );
+                CREATE INDEX IF NOT EXISTS "IX_TreatmentPackageServices_TreatmentPackageId" ON "TreatmentPackageServices" ("TreatmentPackageId");
+                CREATE INDEX IF NOT EXISTS "IX_TreatmentPackageServices_ClinicServiceId" ON "TreatmentPackageServices" ("ClinicServiceId");
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_TreatmentPackageServices_TreatmentPackages_TreatmentPackageId') THEN
+                        ALTER TABLE "TreatmentPackageServices" ADD CONSTRAINT "FK_TreatmentPackageServices_TreatmentPackages_TreatmentPackageId"
+                            FOREIGN KEY ("TreatmentPackageId") REFERENCES "TreatmentPackages"("Id") ON DELETE CASCADE;
+                    END IF;
+                END $$;
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_TreatmentPackageServices_ClinicServices_ClinicServiceId') THEN
+                        ALTER TABLE "TreatmentPackageServices" ADD CONSTRAINT "FK_TreatmentPackageServices_ClinicServices_ClinicServiceId"
+                            FOREIGN KEY ("ClinicServiceId") REFERENCES "ClinicServices"("Id") ON DELETE CASCADE;
+                    END IF;
+                END $$;
+
+                CREATE TABLE IF NOT EXISTS "ServiceConsumables" (
+                    "Id" uuid NOT NULL DEFAULT gen_random_uuid(),
+                    "ClinicServiceId" uuid NOT NULL,
+                    "InventoryItemId" uuid NOT NULL,
+                    "Quantity" numeric(12,2) NOT NULL DEFAULT 1,
+                    "Notes" character varying(500) NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+                    "UpdatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+                    "DeletedAt" timestamp with time zone NULL,
+                    "DeletedBy" uuid NULL,
+                    CONSTRAINT "PK_ServiceConsumables" PRIMARY KEY ("Id")
+                );
+                CREATE INDEX IF NOT EXISTS "IX_ServiceConsumables_ClinicServiceId" ON "ServiceConsumables" ("ClinicServiceId");
+                CREATE INDEX IF NOT EXISTS "IX_ServiceConsumables_InventoryItemId" ON "ServiceConsumables" ("InventoryItemId");
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ServiceConsumables_ClinicServices_ClinicServiceId') THEN
+                        ALTER TABLE "ServiceConsumables" ADD CONSTRAINT "FK_ServiceConsumables_ClinicServices_ClinicServiceId"
+                            FOREIGN KEY ("ClinicServiceId") REFERENCES "ClinicServices"("Id") ON DELETE CASCADE;
+                    END IF;
+                END $$;
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ServiceConsumables_InventoryItems_InventoryItemId') THEN
+                        ALTER TABLE "ServiceConsumables" ADD CONSTRAINT "FK_ServiceConsumables_InventoryItems_InventoryItemId"
+                            FOREIGN KEY ("InventoryItemId") REFERENCES "InventoryItems"("Id") ON DELETE CASCADE;
+                    END IF;
+                END $$;
+
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'Color') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "Color" character varying(20) NULL;
+                END IF;
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "Service packages/consumables (YOLO-S2) schema hotfix failed (non-fatal)");
+        }
+    }
+
 
     /// <summary>
     /// YOLO-S4: Inventory enhancements hotfix — mirrors migration

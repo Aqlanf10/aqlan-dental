@@ -110,6 +110,7 @@ public static class ServiceRegistrationConfiguration
         services.AddScoped<IAiDraftProvider, AqlanDentalPro.Infrastructure.Services.Ai.GeminiAiDraftProvider>();
         services.AddScoped<IAiDraftProvider, AqlanDentalPro.Infrastructure.Services.Ai.AnthropicAiDraftProvider>();
         services.AddScoped<ICephLandmarkDraftProvider, AqlanDentalPro.Infrastructure.Services.Ai.GeminiCephLandmarkDraftProvider>();
+        services.AddScoped<ICephLandmarkDraftProvider, AqlanDentalPro.Infrastructure.Services.Ai.AnthropicCephLandmarkDraftProvider>();
         services.AddHttpClient(CephAiDraftService.HttpClientName, client =>
         {
             client.Timeout = TimeSpan.FromSeconds(60);

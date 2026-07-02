@@ -314,3 +314,116 @@ together in a later PR A4.)
 - Next slices (per TD-021 plan, in order): PR A2 (FinanceReadService),
   PR A3 (ContractService), PR A4 (PaymentService + SupplierRefundService — must
   move together because they share DualWrite* + ResolveTreasuryNoSaveAsync helpers)
+
+---
+
+## TD-021 PR A2 — Extract FinanceReadService from FinanceService (2026-07-03)
+
+Task ID: TD-021-PR-A2
+Agent: Main Agent
+Branch: `refactor/td-021-pr-a2-extract-finance-read-service` (1 commit ahead of `main`)
+Linked plan: `docs/technical-debt/TD-021-god-service-extraction-plan.md` — Part A, PR A2 (read-only cluster)
+
+### Scope
+Second slice of the FinanceService god-service decomposition. Move the entire
+read-only aggregation cluster (4 public methods + 1 private helper) out of the
+(now) 2178-line `FinanceService` into a focused `FinanceReadService` behind its
+own `IFinanceReadService` interface. Pure code move — no business logic change,
+no migration, no schema change.
+
+This slice is classified by the TD-021 plan as the second-safest move (after
+PR A1's InvoiceLedgerService): read-only methods have no cashier-shift gating,
+no treasury mutation, no journal posting — they just aggregate data for display.
+
+### Work Log
+- Read the TD-021 plan + verified PR A1 was complete (InvoiceLedgerService
+  extracted, 2250 tests passing).
+- Created branch `refactor/td-021-pr-a2-extract-finance-read-service` from `main`.
+- Mapped the read cluster's dependencies:
+  - `GetAccountStatementAsync` → uses `GetUnbilledVisitsAmountAsync`, `MapPayment`
+  - `GetSummaryAsync` → uses `GetOverdueContractsAsync`, `GetUnbilledVisitsAmountAsync`, `MapPayment`
+  - `GetPatientFinanceSummaryAsync` → uses `MapPayment`
+  - `GetOverdueContractsAsync` → self-contained (read-only, no shared helpers)
+  - `GetUnbilledVisitsAmountAsync` (private) → only used by read methods → MOVE
+  - `MapPayment` (private static) → shared with write methods → SPLIT to FinanceMappers
+  - `NormalizeCurrency` (private static) → shared with MapPayment + MapContractList + write methods → SPLIT to FinanceMappers
+  - `BaseCurrency` + `SupportedCurrencies` constants → used by NormalizeCurrency → MOVE to FinanceMappers
+- **New file** `Infrastructure/Services/FinanceMappers.cs` (75 lines):
+  - `internal static class` with `MapPayment`, `NormalizeCurrency`, `BaseCurrency`, `SupportedCurrencies`.
+  - Marked internal so it stays an Infrastructure-layer implementation detail
+    (not part of any public contract).
+- **New file** `Application/Interfaces/Services/IFinanceReadService.cs`:
+  - 4 methods: `GetAccountStatementAsync`, `GetSummaryAsync`,
+    `GetPatientFinanceSummaryAsync`, `GetOverdueContractsAsync`.
+  - XML doc explains the move, the slicing rationale, and why GetOverdueContractsAsync
+    moved here (read-only + used by GetSummaryAsync → avoids cross-service dep).
+- **New file** `Infrastructure/Services/FinanceReadService.cs` (446 lines):
+  - Primary constructor: `AppDbContext db, ICurrentUserService currentUser` only.
+  - No `logger`, `notifications`, `commissionService`, `journalEntryService` —
+    read-only, no side effects.
+  - Includes the private `GetUnbilledVisitsAmountAsync` helper (moved from FinanceService).
+  - Uses `FinanceMappers.MapPayment` and `FinanceMappers.NormalizeCurrency`.
+  - Bodies are byte-for-byte identical to the previous FinanceService methods.
+- **Modified** `Infrastructure/Services/FinanceService.cs`:
+  - Removed 4 public methods + `GetUnbilledVisitsAmountAsync` + `MapPayment` + `NormalizeCurrency`.
+  - Replaced all bare `MapPayment`/`NormalizeCurrency`/`BaseCurrency`/`SupportedCurrencies`
+    references with `FinanceMappers.` prefix (via sed).
+  - Kept `MapContractList` as a FinanceService-local static helper (only used by
+    GetContractsAsync + GetContractByIdAsync which stay in FinanceService).
+  - Updated `MapContractList` to call `FinanceMappers.NormalizeCurrency`.
+  - File shrank from 2178 → 1744 lines (-434 lines, -20%).
+- **Modified** `Application/Interfaces/Services/IFinanceService.cs`:
+  - Removed the 4 methods from the interface.
+  - Added inline NOTE pointing callers to `IFinanceReadService`.
+- **Modified production call sites** (3 files):
+  - `PatientJourneyService.cs`: constructor dep changed from `IFinanceService` →
+    `IFinanceReadService` (only used `GetPatientFinanceSummaryAsync`).
+  - `PaymentsController.cs`: added `IFinanceReadService` to primary constructor;
+    `GetPatientFinanceSummary` endpoint now calls `financeReadService`.
+  - `PatientsController.cs`: constructor dep changed from `IFinanceService` →
+    `IFinanceReadService` (only used `GetPatientFinanceSummaryAsync` + `GetAccountStatementAsync`).
+- **Modified** `API/Configuration/ServiceRegistrationConfiguration.cs`:
+  - Added `services.AddScoped<IFinanceReadService, FinanceReadService>()`.
+- **Modified 7 test files** to use the new service:
+  - `Finance/PatientFinanceLedgerTests.cs` — added `CreateFinanceReadService` helper,
+    updated 15 read-method call sites, added `mockFinanceReadService` to 3
+    PaymentsController constructions.
+  - `Finance/FIN13SqlAggregationTests.cs` — added `CreateFinanceReadService` helper,
+    updated 11 read-method call sites.
+  - `Finance/MultiCurrencyPaymentTests.cs` — extended `CreateService` tuple to
+    include `FinanceReadService`, updated `GetSummaryAsync` call.
+  - `Finance/PaymentsPermissionEnforcementTests.cs` — added `Mock<IFinanceReadService>`
+    to `Build` helper, updated `GetPatientFinanceSummaryAsync` verify to use
+    `financeRead`.
+  - `Services/FinanceAccountStatementTests.cs` — `CreateService` now returns
+    `FinanceReadService` directly (all tests in this file exercise read-only logic).
+  - `DailyOperations/PatientJourneyFinancialRulesTests.cs` — changed `Mock<IFinanceService>`
+    to `Mock<IFinanceReadService>` for PatientJourneyService construction.
+  - `Ortho/OrthoDailyOperationsIntegrationTests.cs` — same change for PatientJourneyService.
+  - `Journey/JourneyUpdatedSignalRTests.cs` — added `Mock<IFinanceReadService>` to
+    PaymentsController construction.
+  - `Patients/PatientsControllerListTests.cs` — renamed `financeService:` parameter
+    to `financeReadService:` in PatientsController construction.
+
+### Stage Summary
+- Branch: `refactor/td-021-pr-a2-extract-finance-read-service`
+- Commit: `ae90f944`
+- 18 files changed, +767 / -619
+- 3 new files (interface, implementation, shared mappers)
+- 15 modified files (3 controllers, 1 DI config, 1 interface, 1 service,
+  1 PatientJourneyService, 9 test files)
+- `FinanceService.cs` shrank from 2178 → 1744 lines (cumulative: 2256 → 1744 = -512 lines, -23%)
+- `dotnet build -c Release` — 0 errors, 0 warnings (improved from 61 pre-existing warnings
+  in PR A1 — the FinanceMappers extraction cleaned up some nullable warnings)
+- `dotnet test tests/AqlanDentalPro.UnitTests` — **2250/2250 pass** (unchanged from PR A1)
+- `scripts/check-mojibake.sh` — clean
+- No migrations, no schema changes, no business logic changes — pure code move
+- All Arabic error messages preserved verbatim (NormalizeCurrency's Arabic message
+  now lives in FinanceMappers but is identical)
+- No exception details leaked in HTTP responses
+- Next slices (per TD-021 plan, in order):
+  - PR A3: extract `ContractService` (CRUD + status machine — verify no payment-side
+    private helper is used)
+  - PR A4: extract `PaymentService` + `SupplierRefundService` together (highest-risk
+    slice — they share `DualWrite*` + `ResolveTreasuryNoSaveAsync` helpers; consider
+    a shared internal `LedgerWriter` for the DualWrite helpers)

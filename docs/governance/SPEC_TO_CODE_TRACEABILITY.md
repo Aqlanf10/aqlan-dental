@@ -23,6 +23,15 @@ Initial table based on static repo inspection. Incomplete rows are marked `Needs
 | `MS-REQ-017` | Navigation | Sidebar/routes | `Sidebar.tsx`, `routePermissions.ts`, dashboard layout | Needs completion in future sprint | active | 2026-07-02 | Medium |
 | `MS-REQ-018` | Production | Deployment/CI safety | `Program.cs`, `.github/workflows/ci.yml`, `encoding-guard.yml` | CI | active | 2026-07-02 | High |
 | `001` | Navigation | No duplicate routes | `Sidebar.tsx`, `routePermissions.ts` | Needs completion in future sprint | active | 2026-07-02 | Medium |
+| `NAV-REQ-001` | Navigation | One canonical staff sidebar | `frontend/src/components/layout/Sidebar.tsx` | Needs completion in future sprint | documented | 2026-07-02 | Medium |
+| `NAV-REQ-002` | Navigation | Dashboard and command center ownership | `frontend/src/app/(dashboard)/page.tsx`, `frontend/src/app/(dashboard)/clinic-command-center/page.tsx` | Needs runtime verification | needs owner decision | 2026-07-02 | Medium |
+| `NAV-REQ-003` | Navigation | Explicit root dashboard guard behavior | `frontend/src/lib/routePermissions.ts`, `frontend/src/app/(dashboard)/layout.tsx` | Needs route guard tests | needs review | 2026-07-02 | Medium |
+| `NAV-REQ-004` | Daily operations | Queue and patient journey redirects stay compatibility-only | `frontend/src/app/(dashboard)/clinic-queue/page.tsx`, `frontend/src/app/(dashboard)/patient-journey/page.tsx` | Needs runtime verification | documented | 2026-07-02 | Medium |
+| `NAV-REQ-006` | Lab | Accountant lab subroute access matches visible links | `frontend/src/components/layout/Sidebar.tsx`, `frontend/src/lib/routePermissions.ts` | Needs role smoke/tests | mismatch found | 2026-07-02 | High |
+| `NAV-REQ-007` | Lab/settings | BranchManager lab settings access matches visible links | `frontend/src/components/layout/Sidebar.tsx`, `frontend/src/lib/routePermissions.ts` | Needs role smoke/tests | mismatch found | 2026-07-02 | High |
+| `NAV-REQ-010` | Ortho/surgery | Ortho-surgical route remains contextual or owner-approved visible | `frontend/src/app/(dashboard)/ortho-surgical/page.tsx`, `frontend/src/lib/routePermissions.ts` | Needs runtime verification | needs owner decision | 2026-07-02 | Medium |
+| `NAV-REQ-013` | Finance | Finance remains a single sidebar entry | `frontend/src/app/(dashboard)/finance-v3/page.tsx`, `frontend/src/components/layout/Sidebar.tsx` | Needs completion in future sprint | documented | 2026-07-02 | Low |
+| `NAV-REQ-014` | Daily operations | Daily operations owns reception tabs | `frontend/src/app/(dashboard)/daily-operations/` | Needs runtime verification | documented | 2026-07-02 | Medium |
 | `002` | Daily operations | One reception workflow | daily operations UI/API | DailyOperations/ClinicQueue tests | active | 2026-07-02 | High |
 | `003` | Doctor clinic | Doctor workflow | doctor-clinic UI, patient journey APIs | Needs completion in future sprint | needs review | 2026-07-02 | High |
 | `004` | Orthodontics | Ortho workspace | ortho UI/API/services | Ortho tests | active | 2026-07-02 | High |

@@ -220,3 +220,97 @@ column nullable, the migration fully idempotent.
 - Custom segments use soft-delete (BaseEntity) — reversible, global query filter excludes tombstoned rows.
 - CSV export uses UTF-8 BOM so Excel renders Arabic correctly (mirrors the existing `PatientTable.exportCsv` pattern).
 
+
+---
+
+## TD-021 PR A1 — Extract InvoiceLedgerService from FinanceService (2026-07-03)
+
+Task ID: TD-021-PR-A1
+Agent: Main Agent
+Branch: `refactor/td-021-pr-a1-extract-invoice-ledger-service` (1 commit ahead of `main`)
+Linked plan: `docs/technical-debt/TD-021-god-service-extraction-plan.md` — Part A, PR A1 (lowest-risk, most isolated slice)
+
+### Scope
+First slice of the FinanceService god-service decomposition. Move the two
+invoice-ledger posting methods (`PostInvoiceIssuedEntryAsync` +
+`ReverseInvoiceIssuedEntryAsync`) out of the 2256-line `FinanceService` into a
+focused `InvoiceLedgerService` behind its own `IInvoiceLedgerService` interface.
+Pure code move — no business-logic change, no migration, no schema change.
+
+The TD-021 plan classifies this slice as the safest first move because the two
+methods are self-contained: their only dependencies are `db`,
+`journalEntryService`, `currentUser`, and `logger` — they share no private
+helpers with the rest of FinanceService. (The Payments + Supplier/Refund
+clusters share `DualWrite*` + `ResolveTreasuryNoSaveAsync` and must move
+together in a later PR A4.)
+
+### Work Log
+- Read CLAUDE.md + AGENT_START_HERE.md + ROADMAP.md + REMAINING_TASKS_PLAN.md +
+  TD-021 plan + technical-debt-register.md to understand project state.
+- Verified the other five "remaining tasks" in REMAINING_TASKS_PLAN.md are
+  already done: PatientJourneyController shrank from 2242→165 lines (CLIN-22 done),
+  ortho/[id]/page.tsx shrank from 3469→312 lines with full _components/ split
+  (FE-20 done). The active remaining work is TD-021 (god-service extraction).
+- Created branch `refactor/td-021-pr-a1-extract-invoice-ledger-service` from `main`.
+- **New file** `Application/Interfaces/Services/IInvoiceLedgerService.cs`:
+  - Two methods: `PostInvoiceIssuedEntryAsync(Guid invoiceId)`,
+    `ReverseInvoiceIssuedEntryAsync(Guid invoiceId)`.
+  - XML doc explains the move, the slicing rationale, and points to TD-021.
+- **New file** `Infrastructure/Services/InvoiceLedgerService.cs`:
+  - Primary constructor: `AppDbContext db, ICurrentUserService currentUser,
+    IJournalEntryService journalEntryService, ILogger<InvoiceLedgerService> logger`.
+  - Bodies are byte-for-byte identical to the previous FinanceService methods.
+- **Modified** `Application/Interfaces/Services/IFinanceService.cs`:
+  - Removed the two methods from the interface.
+  - Added an inline NOTE comment pointing callers to `IInvoiceLedgerService`.
+- **Modified** `Infrastructure/Services/FinanceService.cs`:
+  - Deleted the two method bodies (~78 lines).
+  - File shrank from 2256 → 2178 lines.
+- **Modified** `API/Controllers/InvoicesController.cs`:
+  - Issue endpoint: replaced `GetRequiredService<IFinanceService>()` with
+    `GetRequiredService<IInvoiceLedgerService>()`.
+  - Cancel endpoint: same replacement. Both with TD-021 PR A1 traceability comments.
+- **Modified** `API/Controllers/FinanceV3Controller.cs`:
+  - Added `IInvoiceLedgerService invoiceLedgerService` to the primary constructor.
+  - Cancel endpoint: switched from `financeService.ReverseInvoiceIssuedEntryAsync`
+    to `invoiceLedgerService.ReverseInvoiceIssuedEntryAsync`.
+- **Modified** `API/Configuration/ServiceRegistrationConfiguration.cs`:
+  - Added `services.AddScoped<IInvoiceLedgerService, InvoiceLedgerService>()`
+    with comment explaining the extraction.
+- **Modified 7 existing test files** to use the new service:
+  - `Finance/FinanceV3JournalPostingTests.cs` — 1 site
+  - `Finance/FinanceV3AccountingSafetyTests.cs` — 5 sites
+  - `Finance/FinanceV3FinalBlockingTests.cs` — 5 sites (3 mock setups + 2 real calls)
+  - `Finance/FinanceV3ControllerTests.cs` — 1 ctor call
+  - `Finance/FinanceV3IntegrationFixTests.cs` — 1 ctor call
+  - `Finance/DoctorCommissionsTests.cs` — 1 ctor call
+  - `TechnicalDebtCleanupTests.cs` — 2 ctor calls
+- **New file** `Finance/InvoiceLedgerServiceTests.cs` — 5 characterization tests:
+  1. `PostInvoiceIssuedEntry_CreatesBalancedPostedJournalEntry_DebitReceivable_CreditRevenue`
+  2. `PostInvoiceIssuedEntry_WhenInvoiceNotInIssuedStatus_ThrowsArgumentException`
+  3. `PostInvoiceIssuedEntry_WhenInvoiceMissing_ThrowsArgumentException`
+  4. `ReverseInvoiceIssuedEntry_CreatesPostedReversal_ThatNetsOriginalToZero`
+  5. `ReverseInvoiceIssuedEntry_WhenNoOriginalExists_DoesNotThrow_AndPersistsNoReversal`
+  - Per the TD-021 plan: "add characterization tests *before* moving if a slice
+    is thin on coverage." Coverage already existed via FinanceV3* tests, but
+    this file names the contract directly against the new interface so future
+    PRs (A2–A4) cannot silently regress it.
+
+### Stage Summary
+- Branch: `refactor/td-021-pr-a1-extract-invoice-ledger-service`
+- Commit: `f30946b0`
+- 15 files changed, +470 / -169
+- 3 new files (interface, implementation, characterization tests)
+- 12 modified files (2 controllers, 1 DI config, 1 interface, 1 service, 7 test files)
+- `FinanceService.cs` shrank from 2256 → 2178 lines (first slice of the god-service decomposition)
+- `dotnet build -c Release` — 0 errors (61 pre-existing warnings, none new)
+- `dotnet test tests/AqlanDentalPro.UnitTests` — **2250/2250 pass** (was 2245; +5 new characterization tests)
+- `npx tsc --noEmit` (frontend) — clean (frontend untouched, but verified as a sanity check)
+- `npx vitest run` (frontend) — 179/179 pass
+- `scripts/check-mojibake.sh` — clean (Arabic strings preserved correctly)
+- No migrations, no schema changes, no business logic changes — pure code move
+- All Arabic error messages preserved verbatim
+- No exception details leaked in HTTP responses
+- Next slices (per TD-021 plan, in order): PR A2 (FinanceReadService),
+  PR A3 (ContractService), PR A4 (PaymentService + SupplierRefundService — must
+  move together because they share DualWrite* + ResolveTreasuryNoSaveAsync helpers)

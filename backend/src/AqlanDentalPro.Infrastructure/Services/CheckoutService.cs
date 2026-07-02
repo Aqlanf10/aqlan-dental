@@ -1065,11 +1065,25 @@ public class CheckoutService(
 
         var totalInvoiced = invoices.Sum(i => i.TotalAmount);
         var totalPaid = invoices.Sum(i => i.Payments.Sum(p => p.Amount));
-        var outstanding = totalInvoiced - totalPaid;
+        // QA-594: also include performed-but-unbilled visits. Without this, a
+        // patient who had a 50k root-canal session and paid 20k (no invoice)
+        // would pass closure with "الرصيد متساوي" while still owing 30k.
+        var billedVisitIdsSet = invoices
+            .Where(i => i.VisitId.HasValue)
+            .Select(i => i.VisitId!.Value)
+            .ToHashSet();
+        var unbilledVisitRows = await db.Visits
+            .Where(v => v.PatientId == patientId && v.IsActive
+                     && v.AmountDueReference.HasValue && v.AmountDueReference > 0)
+            .ToListAsync();
+        var unbilledVisitsAmount = unbilledVisitRows
+            .Where(v => !billedVisitIdsSet.Contains(v.Id))
+            .Sum(v => v.AmountDueReference ?? 0m);
+        var outstanding = totalInvoiced - totalPaid + unbilledVisitsAmount;
 
         if (outstanding <= 0)
         {
-            return Ok(new { canClose = true, reason = "الرصيد متساوي", outstandingAmount = canViewFinanceAmounts ? 0 : (decimal?)null });
+            return Ok(new { canClose = true, reason = "الرصيد متساوي", outstandingAmount = canViewFinanceAmounts ? 0 : (decimal?)null, unbilledVisitsAmount = canViewFinanceAmounts ? unbilledVisitsAmount : (decimal?)null });
         }
 
         // Check if there's a multi-session treatment plan (active ortho case or in-progress general treatment items)
@@ -1087,6 +1101,7 @@ public class CheckoutService(
                 reason = "خطة علاج متعددة الجلسات",
                 reasonCode = "MULTI_SESSION_PLAN",
                 outstandingAmount = canViewFinanceAmounts ? outstanding : (decimal?)null,
+                unbilledVisitsAmount = canViewFinanceAmounts ? unbilledVisitsAmount : (decimal?)null,
                 requiresAuditLog = true
             });
         }
@@ -1117,6 +1132,7 @@ public class CheckoutService(
                 reason = "موافقة مدير على الدين",
                 reasonCode = "MANAGER_OVERRIDE",
                 outstandingAmount = canViewFinanceAmounts ? outstanding : (decimal?)null,
+                unbilledVisitsAmount = canViewFinanceAmounts ? unbilledVisitsAmount : (decimal?)null,
                 requiresAuditLog = true
             });
         }
@@ -1127,7 +1143,8 @@ public class CheckoutService(
             canClose = false,
             reason = "يوجد مبلغ متبقي. يلزم دفع كامل أو موافقة مدير أو تحويل لخطة أقساط.",
             reasonCode = "OUTSTANDING_BALANCE",
-            outstandingAmount = canViewFinanceAmounts ? outstanding : (decimal?)null
+            outstandingAmount = canViewFinanceAmounts ? outstanding : (decimal?)null,
+            unbilledVisitsAmount = canViewFinanceAmounts ? unbilledVisitsAmount : (decimal?)null
         });
     }
 

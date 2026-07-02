@@ -76,4 +76,12 @@ public class PatientFinanceSummaryDto
     public string FinancialStatus { get; set; } = "no_plan";
     public int ActiveContractsCount { get; set; }
     public int TotalPaymentsCount { get; set; }
+    /// <summary>
+    /// QA-594: Sum of <c>Visit.AmountDueReference</c> for visits that have no
+    /// linked invoice (i.e. sessions performed without a contract or invoice).
+    /// Included in <see cref="TotalTreatmentCost"/> and
+    /// <see cref="OutstandingBalance"/> so that partial payments on unbilled
+    /// sessions are reflected correctly instead of disappearing.
+    /// </summary>
+    public decimal UnbilledVisitsAmount { get; set; }
 }

@@ -1029,10 +1029,12 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         if (branchId.HasValue)
         {
             // Non-admin: only see booking requests whose converted appointment belongs to their branch.
-            // Unconverted requests (no appointment yet) are excluded since we can't determine their branch.
+            // Use a subquery against Appointments since BookingRequest has no navigation to Appointment.
+            var branchAppointmentIds = db.Appointments
+                .Where(a => a.Patient.BranchId == branchId.Value)
+                .Select(a => a.Id);
             bookingsQuery = bookingsQuery.Where(b => b.ConvertedToAppointmentId != null
-                && b.ConvertedToAppointment != null
-                && b.ConvertedToAppointment.Patient.BranchId == branchId.Value);
+                && branchAppointmentIds.Contains(b.ConvertedToAppointmentId.Value));
         }
 
         var bookings = await bookingsQuery

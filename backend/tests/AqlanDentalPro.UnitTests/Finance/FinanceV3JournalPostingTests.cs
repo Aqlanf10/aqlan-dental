@@ -1046,21 +1046,18 @@ public class FinanceV3JournalPostingTests
         db.Invoices.Add(invoice);
         await db.SaveChangesAsync();
 
-        // Use real FinanceService for invoice JE posting
+        // TD-021 PR A1: invoice-ledger posting now lives in InvoiceLedgerService (extracted from FinanceService).
         var currentUser = new Mock<ICurrentUserService>();
         currentUser.SetupGet(c => c.UserId).Returns(userId);
         currentUser.SetupGet(c => c.BranchId).Returns(branchId);
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
 
         var jeService = CreateJournalEntryService(db);
-        var financeService = new FinanceService(
-            db, currentUser.Object,
-            new Mock<INotificationService>().Object,
-            new Mock<ILogger<FinanceService>>().Object,
-            new Mock<ICommissionService>().Object,
-            jeService);
+        var invoiceLedgerService = new InvoiceLedgerService(
+            db, currentUser.Object, jeService,
+            new Mock<ILogger<InvoiceLedgerService>>().Object);
 
-        await financeService.PostInvoiceIssuedEntryAsync(invoice.Id);
+        await invoiceLedgerService.PostInvoiceIssuedEntryAsync(invoice.Id);
 
         var je = await db.JournalEntries
             .Include(e => e.Lines)

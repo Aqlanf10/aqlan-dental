@@ -129,9 +129,9 @@ public class FinanceV3FinalBlockingTests
         db.Invoices.Add(invoice);
         await db.SaveChangesAsync();
 
-        // Use a failing IFinanceService mock to simulate journal creation failure
-        var failingFinanceService = new Mock<IFinanceService>();
-        failingFinanceService
+        // Use a failing IInvoiceLedgerService mock to simulate journal creation failure (TD-021 PR A1)
+        var failingInvoiceLedger = new Mock<IInvoiceLedgerService>();
+        failingInvoiceLedger
             .Setup(f => f.PostInvoiceIssuedEntryAsync(It.IsAny<Guid>()))
             .ThrowsAsync(new InvalidOperationException("Simulated journal creation failure"));
 
@@ -144,7 +144,7 @@ public class FinanceV3FinalBlockingTests
         var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
         try
         {
-            await failingFinanceService.Object.PostInvoiceIssuedEntryAsync(invoice.Id);
+            await failingInvoiceLedger.Object.PostInvoiceIssuedEntryAsync(invoice.Id);
             await db.SaveChangesAsync();
             if (useTx) await tx!.CommitAsync();
         }
@@ -182,9 +182,9 @@ public class FinanceV3FinalBlockingTests
         db.Invoices.Add(invoice);
         await db.SaveChangesAsync();
 
-        // Simulate posting failure by using a mock that throws on PostInvoiceIssuedEntryAsync
-        var failingFinanceService = new Mock<IFinanceService>();
-        failingFinanceService
+        // Simulate posting failure by using a mock that throws on PostInvoiceIssuedEntryAsync (TD-021 PR A1)
+        var failingInvoiceLedger = new Mock<IInvoiceLedgerService>();
+        failingInvoiceLedger
             .Setup(f => f.PostInvoiceIssuedEntryAsync(It.IsAny<Guid>()))
             .ThrowsAsync(new InvalidOperationException("Simulated posting failure"));
 
@@ -195,7 +195,7 @@ public class FinanceV3FinalBlockingTests
         var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
         try
         {
-            await failingFinanceService.Object.PostInvoiceIssuedEntryAsync(invoice.Id);
+            await failingInvoiceLedger.Object.PostInvoiceIssuedEntryAsync(invoice.Id);
             await db.SaveChangesAsync();
             if (useTx) await tx!.CommitAsync();
         }
@@ -249,9 +249,9 @@ public class FinanceV3FinalBlockingTests
         db.JournalEntries.Add(je);
         await db.SaveChangesAsync();
 
-        // Simulate reversal failure
-        var failingFinanceService = new Mock<IFinanceService>();
-        failingFinanceService
+        // Simulate reversal failure (TD-021 PR A1: method moved to IInvoiceLedgerService)
+        var failingInvoiceLedger = new Mock<IInvoiceLedgerService>();
+        failingInvoiceLedger
             .Setup(f => f.ReverseInvoiceIssuedEntryAsync(It.IsAny<Guid>()))
             .ThrowsAsync(new InvalidOperationException("Simulated reversal creation failure"));
 
@@ -263,7 +263,7 @@ public class FinanceV3FinalBlockingTests
         var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
         try
         {
-            await failingFinanceService.Object.ReverseInvoiceIssuedEntryAsync(invoice.Id);
+            await failingInvoiceLedger.Object.ReverseInvoiceIssuedEntryAsync(invoice.Id);
             await db.SaveChangesAsync();
             if (useTx) await tx!.CommitAsync();
         }
@@ -317,9 +317,9 @@ public class FinanceV3FinalBlockingTests
         db.JournalEntries.Add(je);
         await db.SaveChangesAsync();
 
-        // Simulate reversal posting failure
-        var failingFinanceService = new Mock<IFinanceService>();
-        failingFinanceService
+        // Simulate reversal posting failure (TD-021 PR A1: method moved to IInvoiceLedgerService)
+        var failingInvoiceLedger = new Mock<IInvoiceLedgerService>();
+        failingInvoiceLedger
             .Setup(f => f.ReverseInvoiceIssuedEntryAsync(It.IsAny<Guid>()))
             .ThrowsAsync(new InvalidOperationException("Simulated reversal posting failure"));
 
@@ -330,7 +330,7 @@ public class FinanceV3FinalBlockingTests
         var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
         try
         {
-            await failingFinanceService.Object.ReverseInvoiceIssuedEntryAsync(invoice.Id);
+            await failingInvoiceLedger.Object.ReverseInvoiceIssuedEntryAsync(invoice.Id);
             await db.SaveChangesAsync();
             if (useTx) await tx!.CommitAsync();
         }
@@ -373,15 +373,13 @@ public class FinanceV3FinalBlockingTests
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
 
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
-        var financeService = new FinanceService(
-            db, currentUser.Object,
-            new Mock<INotificationService>().Object,
-            new Mock<ILogger<FinanceService>>().Object,
-            new Mock<ICommissionService>().Object,
-            journalEntryService);
+        // TD-021 PR A1: invoice-ledger posting now lives in InvoiceLedgerService (extracted from FinanceService).
+        var invoiceLedgerService = new InvoiceLedgerService(
+            db, currentUser.Object, journalEntryService,
+            new Mock<ILogger<InvoiceLedgerService>>().Object);
 
         // First, post the issuance entry
-        await financeService.PostInvoiceIssuedEntryAsync(invoice.Id);
+        await invoiceLedgerService.PostInvoiceIssuedEntryAsync(invoice.Id);
 
         // Now cancel — set status
         invoice.Status = InvoiceStatus.Cancelled;
@@ -391,7 +389,7 @@ public class FinanceV3FinalBlockingTests
         var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
         try
         {
-            await financeService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
+            await invoiceLedgerService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
             await db.SaveChangesAsync();
             if (useTx) await tx!.CommitAsync();
         }

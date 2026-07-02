@@ -113,6 +113,7 @@ public partial class FinanceV3Controller(
     AppDbContext db,
     ICurrentUserService currentUser,
     IFinanceService financeService,
+    IInvoiceLedgerService invoiceLedgerService,
     IAuditService audit,
     IJournalEntryService journalEntryService,
     ITreasuryResolutionService treasuryResolution,
@@ -319,7 +320,7 @@ public partial class FinanceV3Controller(
                 var cancelTx = useCancelTx ? await db.Database.BeginTransactionAsync() : null;
                 try
                 {
-                    await financeService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
+                    await invoiceLedgerService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
                     await db.SaveChangesAsync();
                     if (useCancelTx) await cancelTx!.CommitAsync();
                 }

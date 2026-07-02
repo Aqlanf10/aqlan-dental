@@ -21,20 +21,8 @@ public interface IFinanceService
     Task<FinanceSummaryDto> GetSummaryAsync();
     Task TryMarkInvoicePaidAsync(Guid invoiceId);
 
-    /// <summary>
-    /// Posts the accrual journal entry for an invoice issuance:
-    /// Debit PatientReceivable / Credit Revenue.
-    /// Called when an invoice transitions from Draft to Issued.
-    /// </summary>
-    Task PostInvoiceIssuedEntryAsync(Guid invoiceId);
-
-    /// <summary>
-    /// Reverses the original invoice issuance JournalEntry for a cancelled invoice.
-    /// Finds the original issuance JE (Debit PatientReceivable / Credit Revenue)
-    /// and creates a reversal entry (Credit PatientReceivable / Debit Revenue).
-    /// Auto-posts the reversal. Used when cancelling an Issued invoice.
-    /// </summary>
-    Task ReverseInvoiceIssuedEntryAsync(Guid invoiceId);
+    // NOTE: PostInvoiceIssuedEntryAsync + ReverseInvoiceIssuedEntryAsync were moved to
+    // IInvoiceLedgerService (TD-021 PR A1). Update call sites to inject IInvoiceLedgerService.
 
     /// <summary>
     /// Finance Phase 1: Pays a supplier bill (partially or fully).

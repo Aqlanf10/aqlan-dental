@@ -400,11 +400,26 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
         var totalContracted = activeContractsList.Sum(c => c.TotalAmount);
         var totalDiscounts = activeContractsList.Sum(c => c.DiscountAmount);
+        // QA-596: include unbilled visits (sessions with AmountDueReference, no invoice)
+        // so the patient portal matches FinanceService.GetPatientFinanceSummaryAsync.
+        var billedVisitIds = await db.Invoices
+            .Where(i => i.PatientId == patientId && i.VisitId.HasValue && i.IsActive)
+            .Select(i => i.VisitId!.Value)
+            .ToListAsync();
+        var billedVisitSet = billedVisitIds.ToHashSet();
+        var unbilledVisitRows = await db.Visits
+            .Where(v => v.PatientId == patientId && v.IsActive
+                     && v.AmountDueReference.HasValue && v.AmountDueReference > 0)
+            .Select(v => new { v.Id, Amount = v.AmountDueReference ?? 0m })
+            .ToListAsync();
+        var unbilledVisitsAmount = unbilledVisitRows
+            .Where(v => !billedVisitSet.Contains(v.Id))
+            .Sum(v => v.Amount);
         // QA-594: Clamp to 0 — a standalone payment (no contract) previously
         // produced a negative outstanding that made it look like the clinic
         // owed the patient money. Negative balances are advances, surfaced
         // separately, not as negative debt.
-        var totalOutstanding = Math.Max(0m, totalContracted - totalDiscounts - totalPaid);
+        var totalOutstanding = Math.Max(0m, totalContracted + unbilledVisitsAmount - totalDiscounts - totalPaid);
         var totalAmount = totalContracted - totalDiscounts;
         var activeContracts = activeContractsList.Count;
 
@@ -677,8 +692,22 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
         var totalContracted = activeContracts.Sum(c => c.TotalAmount);
         var totalDiscounts = activeContracts.Sum(c => c.DiscountAmount);
+        // QA-596: include unbilled visits — see GetPatientOverviewAsync above for rationale.
+        var billedVisitIds2 = await db.Invoices
+            .Where(i => i.PatientId == patientId && i.VisitId.HasValue && i.IsActive)
+            .Select(i => i.VisitId!.Value)
+            .ToListAsync();
+        var billedVisitSet2 = billedVisitIds2.ToHashSet();
+        var unbilledVisitRows2 = await db.Visits
+            .Where(v => v.PatientId == patientId && v.IsActive
+                     && v.AmountDueReference.HasValue && v.AmountDueReference > 0)
+            .Select(v => new { v.Id, Amount = v.AmountDueReference ?? 0m })
+            .ToListAsync();
+        var unbilledVisitsAmount2 = unbilledVisitRows2
+            .Where(v => !billedVisitSet2.Contains(v.Id))
+            .Sum(v => v.Amount);
         // QA-594: Clamp to 0 — see GetPatientOverviewAsync above for rationale.
-        var totalOutstanding = Math.Max(0m, totalContracted - totalDiscounts - totalPaid);
+        var totalOutstanding = Math.Max(0m, totalContracted + unbilledVisitsAmount2 - totalDiscounts - totalPaid);
         var totalAmount = totalContracted - totalDiscounts;
 
         var contractDtos = activeContracts.Select(c => new PatientContractDto

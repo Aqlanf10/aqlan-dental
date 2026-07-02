@@ -14,6 +14,47 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     private const string BaseCurrency = "YER";
     private static readonly HashSet<string> SupportedCurrencies = ["YER", "SAR", "USD"];
 
+    /// <summary>
+    /// QA-596: Shared helper — computes the sum of Visit.AmountDueReference for
+    /// visits that have no linked invoice (via Invoice.VisitId). This represents
+    /// performed work that has not been invoiced/contracted and previously
+    /// vanished from every balance calculation. Used by GetAccountStatementAsync,
+    /// GetFinanceSummaryAsync, and any other balance site that needs to reflect
+    /// provisional debt from unbilled sessions.
+    /// </summary>
+    /// <param name="patientId">If provided, scopes to one patient. If null, aggregates across all patients (with optional branch filter).</param>
+    /// <param name="branchId">If provided, filters visits via Patient.BranchId.</param>
+    private async Task<decimal> GetUnbilledVisitsAmountAsync(Guid? patientId = null, Guid? branchId = null)
+    {
+        // Get the set of visit IDs that have a linked invoice (those are already
+        // counted via invoice totals — must NOT double-count).
+        var billedVisitIdsQuery = db.Invoices
+            .Where(i => i.VisitId.HasValue && i.IsActive);
+        if (patientId.HasValue)
+            billedVisitIdsQuery = billedVisitIdsQuery.Where(i => i.PatientId == patientId.Value);
+        var billedVisitIds = await billedVisitIdsQuery
+            .Select(i => i.VisitId!.Value)
+            .ToListAsync();
+        var billedVisitSet = billedVisitIds.ToHashSet();
+
+        var unbilledVisitsQuery = db.Visits
+            .Where(v => v.IsActive
+                     && v.AmountDueReference.HasValue && v.AmountDueReference > 0);
+        if (patientId.HasValue)
+            unbilledVisitsQuery = unbilledVisitsQuery.Where(v => v.PatientId == patientId.Value);
+
+        var unbilledVisitRows = await unbilledVisitsQuery
+            .Include(v => v.Patient)
+            .ToListAsync();
+
+        if (branchId.HasValue)
+            unbilledVisitRows = unbilledVisitRows.Where(v => v.Patient.BranchId == branchId.Value).ToList();
+
+        return unbilledVisitRows
+            .Where(v => !billedVisitSet.Contains(v.Id))
+            .Sum(v => v.AmountDueReference ?? 0m);
+    }
+
     public async Task<List<ContractListDto>> GetContractsAsync(int page, int pageSize, Guid? patientId, string? status)
     {
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
@@ -631,7 +672,12 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             .Where(p => p.PatientId == patientId && p.IsActive)
             .SumAsync(p => (decimal?)(p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)) ?? 0m;
 
-        var totalRemaining = Math.Max(0m, totalContracted - totalDiscounts - totalPaid);
+        // QA-596: include unbilled visits so the account statement matches
+        // GetPatientFinanceSummaryAsync. Without this, a patient with a 50k
+        // session (no invoice) sees TotalRemaining=0 on their statement.
+        var unbilledVisitsAmount = await GetUnbilledVisitsAmountAsync(patientId);
+
+        var totalRemaining = Math.Max(0m, totalContracted + unbilledVisitsAmount - totalDiscounts - totalPaid);
 
         // ── Contracts list with per-contract paid/remaining computed in SQL ──
         // FIN-13: Project ContractStatementDto directly. The correlated subquery
@@ -678,6 +724,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             TotalDiscounts   = totalDiscounts,
             TotalPaid        = totalPaid,
             TotalRemaining   = totalRemaining,
+            UnbilledVisitsAmount = unbilledVisitsAmount,
             ActiveContracts  = activeContracts,
             CompletedContracts = completedContracts,
             Contracts        = contracts,
@@ -770,11 +817,15 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             })
             .ToListAsync();
 
+        // QA-596: include unbilled visits (sessions with AmountDueReference but no invoice)
+        // so the finance dashboard's TotalOutstanding reflects provisional debt.
+        var unbilledVisitsAmount = await GetUnbilledVisitsAmountAsync(patientId: null, branchId);
+
         return new FinanceSummaryDto
         {
             TodayCollected = todayCollected,
             MonthCollected = monthCollected,
-            TotalOutstanding = contractOutstanding + invoiceOutstanding,
+            TotalOutstanding = contractOutstanding + invoiceOutstanding + unbilledVisitsAmount,
             ActiveContracts = activeContracts,
             UnpaidInvoicesCount = unpaidInvoicesCount,
             DraftInvoicesCount = draftInvoicesCount,

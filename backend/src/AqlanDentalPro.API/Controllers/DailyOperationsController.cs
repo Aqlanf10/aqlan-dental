@@ -162,9 +162,27 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
             //   by definition; including them could mask data inconsistencies.
             //   Formula: Sum of (TotalAmount − Sum of active Payments) for Issued invoices,
             //   floored at 0 per-invoice to avoid negative debt from overpayment.
+            //   QA-596: also include Visit.AmountDueReference for visits created today
+            //   that have no linked invoice — these represent today's unbilled work.
             var newDebts = invoices
                 .Where(i => i.Status == InvoiceStatus.Issued)
                 .Sum(i => Math.Max(0, i.TotalAmount - i.Payments.Sum(p => p.Amount)));
+
+            // QA-596: add today's unbilled visits (sessions with AmountDueReference, no invoice)
+            var billedVisitIdsSet = invoices
+                .Where(i => i.VisitId.HasValue)
+                .Select(i => i.VisitId!.Value)
+                .ToHashSet();
+            var todayUnbilledVisitsAmount = await db.Visits
+                .Where(v => v.IsActive
+                         && v.AmountDueReference.HasValue && v.AmountDueReference > 0
+                         && v.VisitDate == reportDate)
+                .Select(v => new { v.Id, Amount = v.AmountDueReference ?? 0m })
+                .ToListAsync();
+            var todayUnbilledTotal = todayUnbilledVisitsAmount
+                .Where(v => !billedVisitIdsSet.Contains(v.Id))
+                .Sum(v => v.Amount);
+            newDebts += todayUnbilledTotal;
 
             // PartialPayments: count of invoices (created on reportDate) that have received
             //   at least one payment but are NOT fully paid.

@@ -154,6 +154,163 @@ public class CephAiLandmarkDraftTests
         refined.Reasoning.Should().Contain("sella");
     }
 
+    // ─── Anthropic (Claude) vision provider — feature parity with Gemini ──────
+
+    [Fact]
+    public async Task AnthropicProvider_SendsImageAsBase64Block_WithHeaderKey_AndParsesPoints()
+    {
+        var handler = new CapturingHandler(AnthropicResponseWithEightPoints());
+        var provider = new AnthropicCephLandmarkDraftProvider(new StubFactory(handler));
+
+        var result = await provider.GenerateAsync(
+            [1, 2, 3, 4], "image/png", "claude-sonnet-5", TestKey,
+            CephAiPrecision.Draft, CancellationToken.None);
+
+        result.Should().HaveCount(8);
+        result[0].Key.Should().Be("S");
+        result[0].XNormalized.Should().Be(100);
+        // API key travels ONLY in the x-api-key header, never the URL.
+        handler.Request!.Headers.GetValues("x-api-key").Single().Should().Be(TestKey);
+        handler.Request.Headers.GetValues("anthropic-version").Single().Should().Be("2023-06-01");
+        handler.Request.RequestUri!.ToString().Should().NotContain(TestKey);
+        handler.Request.RequestUri!.ToString().Should().Be(AnthropicAiDraftProvider.MessagesUrl);
+        // Anthropic multimodal wire format: base64 image block + text block.
+        handler.Body.Should().Contain("\"type\":\"image\"");
+        handler.Body.Should().Contain("\"media_type\":\"image/png\"");
+        handler.Body.Should().Contain(Convert.ToBase64String([1, 2, 3, 4]));
+    }
+
+    [Fact]
+    public async Task AnthropicProvider_NormalizesJpgMediaType_ToJpeg()
+    {
+        var handler = new CapturingHandler(AnthropicResponseWithEightPoints());
+        var provider = new AnthropicCephLandmarkDraftProvider(new StubFactory(handler));
+
+        await provider.GenerateAsync(
+            [9, 9, 9], "image/jpg", "claude-sonnet-5", TestKey,
+            CephAiPrecision.Draft, CancellationToken.None);
+
+        // Anthropic rejects "image/jpg" — the provider must remap to canonical "image/jpeg".
+        handler.Body.Should().Contain("\"media_type\":\"image/jpeg\"");
+        handler.Body.Should().NotContain("image/jpg\"");
+    }
+
+    [Fact]
+    public async Task AnthropicProvider_HighPrecision_DropsLandmarksUnderConfidenceThreshold()
+    {
+        var generated =
+            """{"landmarks":[{"key":"S","x":100,"y":200,"confidence":0.9},{"key":"N","x":200,"y":200,"confidence":0.85},{"key":"Or","x":300,"y":300,"confidence":0.8},{"key":"Po","x":150,"y":300,"confidence":0.75},{"key":"ANS","x":500,"y":400,"confidence":0.8},{"key":"PNS","x":350,"y":400,"confidence":0.7},{"key":"A","x":520,"y":480,"confidence":0.85},{"key":"B","x":540,"y":600,"confidence":0.85},{"key":"Pog","x":560,"y":650,"confidence":0.85},{"key":"Gn","x":570,"y":670,"confidence":0.4},{"key":"Me","x":575,"y":690,"confidence":0.35}]}""";
+        var handler = new CapturingHandler(WrapAnthropic(generated));
+        var provider = new AnthropicCephLandmarkDraftProvider(new StubFactory(handler));
+
+        var high = await provider.GenerateAsync(
+            [1, 2, 3, 4], "image/png", "claude-sonnet-5", TestKey,
+            CephAiPrecision.High, CancellationToken.None);
+        high.Should().HaveCount(9, "high precision drops confidence < 0.5");
+        high.Select(p => p.Key).Should().NotContain(new[] { "Gn", "Me" });
+    }
+
+    [Fact]
+    public async Task AnthropicProvider_RefineAsync_ReturnsOnlyTheRequestedLandmark()
+    {
+        var generated =
+            """{"landmarks":[{"key":"S","x":120,"y":210,"confidence":0.9,"reasoning":"center of sella outline reconfirmed"}]}""";
+        var handler = new CapturingHandler(WrapAnthropic(generated));
+        var provider = new AnthropicCephLandmarkDraftProvider(new StubFactory(handler));
+
+        var refined = await provider.RefineAsync(
+            [1, 2, 3, 4], "image/png", "claude-sonnet-5", TestKey,
+            new CephLandmarkRefineTarget("S", 100, 200), CancellationToken.None);
+
+        refined.Should().NotBeNull();
+        refined!.Key.Should().Be("S");
+        refined.XNormalized.Should().Be(120);
+        refined.YNormalized.Should().Be(210);
+        refined.Reasoning.Should().Contain("sella");
+    }
+
+    [Fact]
+    public async Task LandmarkService_SelectsAnthropicProvider_WhenConfigured_ReturnsUnsavedDraft()
+    {
+        await CephAiDraftTests.WithEnvKeyAsync("ANTHROPIC_API_KEY", TestKey, async () =>
+        {
+            var tempDirectory = Path.Combine(Path.GetTempPath(), $"ceph-ai-anthropic-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(tempDirectory);
+            var previousUploadsPath = Environment.GetEnvironmentVariable("UPLOADS_PATH");
+            Environment.SetEnvironmentVariable("UPLOADS_PATH", tempDirectory);
+            try
+            {
+                await File.WriteAllBytesAsync(Path.Combine(tempDirectory, "trace.jpg"), [1, 2, 3, 4]);
+                await using var db = CreateDb();
+                var analysis = new CephAnalysis
+                {
+                    Id = Guid.NewGuid(),
+                    OrthoCaseId = Guid.NewGuid(),
+                    AnalysisType = "steiner",
+                    XrayFileUrl = "/uploads/trace.jpg",
+                };
+                db.CephAnalyses.Add(analysis);
+                db.Settings.AddRange(
+                    new Setting { Key = CephAiDraftService.DraftEnabledSettingKey, Value = "true" },
+                    new Setting { Key = CephAiDraftService.ProviderSettingKey, Value = "anthropic" },
+                    new Setting { Key = CephAiDraftService.ModelSettingKey, Value = "claude-sonnet-5" });
+                await db.SaveChangesAsync();
+
+                var handler = new CapturingHandler(AnthropicResponseWithEightPoints());
+                var factory = new StubFactory(handler);
+                var user = new Mock<ICurrentUserService>();
+                user.Setup(x => x.UserId).Returns(Guid.NewGuid());
+                var configuration = new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["AiSettings:EncryptionKey"] = "unit-test-ai-encryption-key-that-is-long-enough",
+                    })
+                    .Build();
+                var vault = new AiApiKeyVault(
+                    db, configuration, new Mock<ILogger<AiApiKeyVault>>().Object);
+                var settingsService = new CephAiDraftService(
+                    db,
+                    [new AnthropicAiDraftProvider(factory)],
+                    user.Object,
+                    vault,
+                    new Mock<ILogger<CephAiDraftService>>().Object);
+                // Both landmark providers are registered — the service must pick
+                // the anthropic one because ai.provider = "anthropic".
+                var service = new CephAiLandmarkDraftService(
+                    db,
+                    settingsService,
+                    [
+                        new GeminiCephLandmarkDraftProvider(factory),
+                        new AnthropicCephLandmarkDraftProvider(factory),
+                    ],
+                    vault,
+                    user.Object,
+                    new Mock<ILogger<CephAiLandmarkDraftService>>().Object);
+
+                var result = await service.GenerateAsync(
+                    analysis.Id, 2000, 1000, CephAiPrecision.Draft);
+
+                result.Should().NotBeNull();
+                result!.Landmarks.Should().HaveCount(8);
+                result.Landmarks[0].X.Should().Be(200);
+                result.Landmarks.Should().OnlyContain(point => point.IsAiPlaced);
+                result.Disclaimer.Should().Contain("مراجعة وتحريك كل نقطة");
+                // Confirm the anthropic wire format was actually used.
+                handler.Body.Should().Contain("\"type\":\"image\"");
+                handler.Request!.Headers.Contains("x-api-key").Should().BeTrue();
+                (await db.CephLandmarks.CountAsync()).Should().Be(0,
+                    "the AI result must remain an unsaved draft");
+                (await db.OrthodonticAiLogs.SingleAsync()).ModelId
+                    .Should().Contain("anthropic");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("UPLOADS_PATH", previousUploadsPath);
+                Directory.Delete(tempDirectory, recursive: true);
+            }
+        });
+    }
+
     [Fact]
     public async Task LandmarkService_ReturnsUnsavedScaledDraft_AndWritesAuditOnly()
     {
@@ -425,6 +582,17 @@ public class CephAiLandmarkDraftTests
             }
         });
     }
+
+    /// <summary>Wrap raw model JSON in Anthropic's Messages API response envelope.</summary>
+    private static string WrapAnthropic(string generatedText) =>
+        System.Text.Json.JsonSerializer.Serialize(new
+        {
+            content = new[] { new { type = "text", text = generatedText } },
+        });
+
+    private static string AnthropicResponseWithEightPoints() =>
+        WrapAnthropic(
+            """{"landmarks":[{"key":"S","x":100,"y":200,"confidence":0.8},{"key":"N","x":200,"y":200,"confidence":0.8},{"key":"Or","x":300,"y":300,"confidence":0.7},{"key":"Po","x":150,"y":300,"confidence":0.7},{"key":"ANS","x":500,"y":400,"confidence":0.8},{"key":"PNS","x":350,"y":400,"confidence":0.7},{"key":"A","x":520,"y":480,"confidence":0.8},{"key":"B","x":540,"y":600,"confidence":0.8}]}""");
 
     private static string ResponseWithEightPoints()
     {

@@ -63,6 +63,7 @@ public static class StartupDatabaseMaintenance
         await EnsureMultiCurrencyColumnsAsync(app);
         await EnsureAppointmentEnhancementsSchemaAsync(app);
         await EnsureVisitOrthoFieldsSchemaAsync(app);
+        await EnsureOrthoImagePreparationSchemaAsync(app);
         await EnsureServicePackagesConsumablesSchemaAsync(app);
         await EnsureInventoryEnhancementsSchemaAsync(app);
         await EnsurePatientSegmentsSchemaAsync(app);
@@ -4582,6 +4583,84 @@ public static class StartupDatabaseMaintenance
                 IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Appointments_OrthoCases_OrthoCaseId') THEN
                     ALTER TABLE "Appointments" ADD CONSTRAINT "FK_Appointments_OrthoCases_OrthoCaseId"
                         FOREIGN KEY ("OrthoCaseId") REFERENCES "OrthoCases" ("Id") ON DELETE SET NULL;
+                END IF;
+            END $$;
+            """);
+    }
+
+    /// <summary>
+    /// ORTHO-DEBT (C-08 pattern): idempotently creates the "OrthoImagePreparations" table that
+    /// migration 20260701000000_AddOrthoImagePreparation introduces, for databases where that
+    /// migration did not apply cleanly (the historical migration chain is known-broken — see
+    /// CLAUDE.md). This table backs the case-presentation image-prep pipeline in
+    /// OrthoCasesController (crop/zoom/rotate/brightness/contrast + the server-side SkiaSharp
+    /// processor) — without it, GET/PUT/DELETE .../photos/{photoId}/preparation throws "relation
+    /// does not exist" and the whole "عرض الحالة" PPTX image pipeline breaks for that photo.
+    /// This gap was flagged (but never closed) in docs/ortho-module/UNIFIED-WORKSPACE-STATUS.md.
+    /// Idempotent (CREATE TABLE/INDEX IF NOT EXISTS), each statement its own transaction so one
+    /// failure never blocks the others. Does NOT touch the migration baseline (C-08 pattern).
+    /// </summary>
+    private static async Task EnsureOrthoImagePreparationSchemaAsync(WebApplication app)
+    {
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        if (!db.Database.IsRelational()) return;
+
+        var logger = app.Services.GetRequiredService<ILogger<Program>>();
+
+        async Task RunAsync(string label, string sql)
+        {
+            try { await db.Database.ExecuteSqlRawAsync(sql); }
+            catch (Exception ex) { logger.LogWarning(ex, "OrthoImagePreparations hotfix step failed (non-fatal): {Step}", label); }
+        }
+
+        await RunAsync("OrthoImagePreparations table", """
+            CREATE TABLE IF NOT EXISTS "OrthoImagePreparations" (
+                "Id" uuid NOT NULL,
+                "OrthoClinicalPhotoId" uuid NOT NULL,
+                "CropX" numeric(6,5) NOT NULL,
+                "CropY" numeric(6,5) NOT NULL,
+                "CropWidth" numeric(6,5) NOT NULL DEFAULT 1,
+                "CropHeight" numeric(6,5) NOT NULL DEFAULT 1,
+                "Zoom" numeric(5,2) NOT NULL DEFAULT 1,
+                "RotationDegrees" integer NOT NULL DEFAULT 0,
+                "Brightness" integer NOT NULL DEFAULT 0,
+                "Contrast" integer NOT NULL DEFAULT 0,
+                "FlipHorizontal" boolean NOT NULL DEFAULT false,
+                "FlipVertical" boolean NOT NULL DEFAULT false,
+                "AspectRatio" character varying(20) NOT NULL DEFAULT 'Original',
+                "Preset" character varying(50) NULL,
+                "Status" character varying(40) NOT NULL DEFAULT 'PreparedForReport',
+                "PreparedImageUrl" character varying(1000) NULL,
+                "PreparedAt" timestamp with time zone NULL,
+                "ApprovedBy" uuid NULL,
+                "ApprovedAt" timestamp with time zone NULL,
+                "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+                "UpdatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+                "IsActive" boolean NOT NULL DEFAULT true,
+                "DeletedAt" timestamp with time zone NULL,
+                "DeletedBy" uuid NULL,
+                CONSTRAINT "PK_OrthoImagePreparations" PRIMARY KEY ("Id")
+            );
+            """);
+
+        await RunAsync("OrthoImagePreparations indexes", """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_OrthoImagePreparations_OrthoClinicalPhotoId"
+                ON "OrthoImagePreparations" ("OrthoClinicalPhotoId");
+            CREATE INDEX IF NOT EXISTS "IX_OrthoImagePreparations_Status"
+                ON "OrthoImagePreparations" ("Status");
+            """);
+
+        // Constraint name matches the migration's EF-truncated form exactly (63 chars,
+        // Postgres's NAMEDATALEN-1 limit) so this guard correctly recognizes a database
+        // where the original migration already applied — and never creates a duplicate
+        // FK under a different (re-truncated) name.
+        await RunAsync("OrthoImagePreparations→OrthoClinicalPhotos FK", """
+            DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'OrthoClinicalPhotos')
+                   AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_OrthoImagePreparations_OrthoClinicalPhotos_OrthoClinicalPho~') THEN
+                    ALTER TABLE "OrthoImagePreparations" ADD CONSTRAINT "FK_OrthoImagePreparations_OrthoClinicalPhotos_OrthoClinicalPho~"
+                        FOREIGN KEY ("OrthoClinicalPhotoId") REFERENCES "OrthoClinicalPhotos" ("Id") ON DELETE CASCADE;
                 END IF;
             END $$;
             """);

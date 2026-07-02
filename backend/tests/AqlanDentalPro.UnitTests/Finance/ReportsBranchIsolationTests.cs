@@ -327,9 +327,8 @@ public class ReportsBranchIsolationTests
 
         // The mock PdfService returns null, which will throw inside the try block → 500.
         // What matters: NOT 403 (the branch check passed).
-        result.Should().NotBeOfType<ObjectResult>()
-            .Or.BeOfType<ObjectResult>()
-            .Which.StatusCode.Should().NotBe(403);
+        if (result is ObjectResult objResult)
+            objResult.StatusCode.Should().NotBe(403, "same-branch patient must pass the branch check");
     }
 
     [Fact]
@@ -343,75 +342,17 @@ public class ReportsBranchIsolationTests
 
         // Admin bypasses the branch check entirely. Mock PdfService returns null
         // → exception → 500. Key: NOT 403.
-        if (result is ObjectResult or)
-            or.StatusCode.Should().NotBe(403);
+        if (result is ObjectResult objResult)
+            objResult.StatusCode.Should().NotBe(403, "admin must bypass the branch check for any branch's patient");
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // AdvancePaymentController.GetAll — non-admin force-scoped, ignores ?branchId=
     // ═══════════════════════════════════════════════════════════════════════════
 
-    private static (AdvancePaymentController controller, Guid branchA, Guid branchB, Guid employeeA, Guid employeeB)
-        BuildAdvanceControllerWithTwoBranches(ICurrentUserService currentUser)
-    {
-        var db = CreateDb();
-        var branchA = Guid.NewGuid();
-        var branchB = Guid.NewGuid();
-        var employeeA = Guid.NewGuid();
-        var employeeB = Guid.NewGuid();
-
-        db.Branches.Add(new Branch { Id = branchA, Name = "فرع أ" });
-        db.Branches.Add(new Branch { Id = branchB, Name = "فرع ب" });
-
-        db.Employees.Add(new Employee { Id = employeeA, UserId = Guid.NewGuid(), FullName = "موظف أ", BranchId = branchA });
-        db.Employees.Add(new Employee { Id = employeeB, UserId = Guid.NewGuid(), FullName = "موظف ب", BranchId = branchB });
-
-        db.AdvancePayments.Add(new AdvancePayment
-        {
-            Id = Guid.NewGuid(),
-            EmployeeId = employeeA,
-            Amount = 5_000m,
-            Reason = "سلفة أ",
-            RequestDate = DateTime.UtcNow,
-            Status = RequestStatus.Pending
-        });
-        db.AdvancePayments.Add(new AdvancePayment
-        {
-            Id = Guid.NewGuid(),
-            EmployeeId = employeeB,
-            Amount = 15_000m,
-            Reason = "سلفة ب",
-            RequestDate = DateTime.UtcNow,
-            Status = RequestStatus.Pending
-        });
-
-        // RolePermissions: allow Accountant to view advances (so CanAsync("view") passes)
-        // RolePermission.Role is stored as string (currentUser.Role?.ToString())
-        db.RolePermissions.Add(new RolePermission
-        {
-            Role = UserRole.Accountant.ToString(),
-            Resource = "finance.expenses",
-            CanView = true,
-            CanCreate = false,
-            CanEdit = false,
-            CanDelete = false,
-            CanApprove = false
-        });
-
-        db.SaveChanges();
-
-        var audit = new Mock<IAuditService>().Object;
-        var journalEntry = new Mock<IJournalEntryService>().Object;
-        var treasuryResolution = new Mock<ITreasuryResolutionService>().Object;
-        var logger = new Mock<ILogger<AdvancePaymentController>>().Object;
-        var controller = new AdvancePaymentController(db, audit, journalEntry, treasuryResolution, currentUser, logger);
-        return (controller, branchA, branchB, employeeA, employeeB);
-    }
-
     [Fact]
     public async Task Advance_GetAll_NonAdmin_ReturnsOnlyOwnBranch()
     {
-        var accountantA = CreateBranchAccountant(Guid.NewGuid(), Guid.NewGuid()); // branchId set later
         // We need the branchId to match what we seed — re-create with the right branch
         await using var db = CreateDb();
         var branchA = Guid.NewGuid();

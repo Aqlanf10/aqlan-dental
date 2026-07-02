@@ -1796,9 +1796,9 @@ public partial class FinanceV3Controller
                 c.Status,
                 StartDate = c.StartDate.HasValue ? c.StartDate.Value.ToString("yyyy-MM-dd") : (string?)null,
                 // QA-597: carry the raw fields needed for overdue calculation (can't do it in SQL)
-                c.DownPayment,
-                RawInstallmentsCount = c.InstallmentsCount,
-                RawInstallmentAmount = c.InstallmentAmount,
+                DownPayment = c.DownPayment,
+                InstallmentsCount = c.InstallmentsCount,
+                InstallmentAmount = c.InstallmentAmount,
                 RawStartDate = c.StartDate,
                 RawStatus = c.Status,
                 PaidAmountRaw = c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)
@@ -1809,18 +1809,18 @@ public partial class FinanceV3Controller
         // Mirrors FinanceService.GetOverdueContractsAsync logic: a contract is
         // overdue when the expected paid (down payment + elapsed installments)
         // exceeds the actual paid amount. Only active installment contracts qualify.
-        var today = ClinicTimeProvider.ClinicToday();
+        // `today` is already declared above (line ~1778).
         var contracts = contractsRaw.Select(c =>
         {
             bool isOverdue = false;
             if (c.RawStatus == ContractStatus.Active
-                && c.RawInstallmentAmount > 0
+                && c.InstallmentAmount > 0
                 && c.RawStartDate.HasValue)
             {
                 var monthsElapsed = ((today.Year - c.RawStartDate.Value.Year) * 12) + (today.Month - c.RawStartDate.Value.Month);
                 if (monthsElapsed > 0)
                 {
-                    var expectedPaid = c.DownPayment + (Math.Min(monthsElapsed, c.RawInstallmentsCount) * (c.RawInstallmentAmount ?? 0));
+                    var expectedPaid = c.DownPayment + (Math.Min(monthsElapsed, c.InstallmentsCount) * (c.InstallmentAmount ?? 0m));
                     isOverdue = expectedPaid - c.PaidAmountRaw > 0;
                 }
             }

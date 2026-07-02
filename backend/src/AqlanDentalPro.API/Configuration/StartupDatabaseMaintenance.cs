@@ -62,6 +62,7 @@ public static class StartupDatabaseMaintenance
         await EnsurePaymentCurrencyColumnAsync(app);
         await EnsureMultiCurrencyColumnsAsync(app);
         await EnsureAppointmentEnhancementsSchemaAsync(app);
+        await EnsureVisitOrthoFieldsSchemaAsync(app);
         await EnsureServicePackagesConsumablesSchemaAsync(app);
         await EnsureInventoryEnhancementsSchemaAsync(app);
         await EnsurePatientSegmentsSchemaAsync(app);
@@ -4462,47 +4463,128 @@ public static class StartupDatabaseMaintenance
     /// cashier open/close flow (it resolves a treasury filtered by Currency and writes a
     /// CashFlowTransaction). All statements use ADD COLUMN IF NOT EXISTS so this is a no-op
     /// once the columns are present. Does NOT touch the migration baseline (C-08 pattern).
+    ///
+    /// QA-598 (PROD 500 FIX): the column-adds and the Treasury unique-index rebuild used to
+    /// run in a SINGLE ExecuteSqlRawAsync. PostgreSQL runs a multi-statement simple query in
+    /// one implicit transaction, so when the "IX_Treasuries_BranchId_Type_Currency_Name_Unique"
+    /// rebuild failed (e.g. two active treasuries collapse to the same BranchId+Type+Currency+
+    /// Name after the NULL→YER backfill), the WHOLE batch rolled back — leaving "Contracts".
+    /// "Currency" (and the other currency columns) absent. Any query materialising a Contract
+    /// then 500'd (dashboard/stats + the whole /api/contracts page). Each column-add now runs
+    /// in its OWN statement/try-catch, fully isolated from the fragile index rebuild, so a
+    /// duplicate-treasury conflict can never again strand the currency columns.
     /// </summary>
     private static async Task EnsureMultiCurrencyColumnsAsync(WebApplication app)
     {
-        try
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        if (!db.Database.IsRelational()) return;
+
+        var logger = app.Services.GetRequiredService<ILogger<Program>>();
+
+        // Each statement runs independently so one failure never rolls back the others.
+        async Task RunAsync(string label, string sql)
         {
-            using var scope = app.Services.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            if (!db.Database.IsRelational()) return;
-
-            await db.Database.ExecuteSqlRawAsync("""
-                ALTER TABLE "Payments"
-                    ADD COLUMN IF NOT EXISTS "Currency" character varying(3) NULL,
-                    ADD COLUMN IF NOT EXISTS "AccountCurrency" character varying(3) NOT NULL DEFAULT 'YER',
-                    ADD COLUMN IF NOT EXISTS "ExchangeRateToAccountCurrency" numeric(18,6) NOT NULL DEFAULT 1,
-                    ADD COLUMN IF NOT EXISTS "AppliedAmount" numeric(12,2) NOT NULL DEFAULT 0,
-                    ADD COLUMN IF NOT EXISTS "ExchangeRateSource" character varying(50);
-
-                ALTER TABLE "Contracts"            ADD COLUMN IF NOT EXISTS "Currency" character varying(3) NOT NULL DEFAULT 'YER';
-                ALTER TABLE "Invoices"             ADD COLUMN IF NOT EXISTS "Currency" character varying(3) NOT NULL DEFAULT 'YER';
-                ALTER TABLE "Treasuries"           ADD COLUMN IF NOT EXISTS "Currency" character varying(3) NOT NULL DEFAULT 'YER';
-                ALTER TABLE "CashFlowTransactions" ADD COLUMN IF NOT EXISTS "Currency" character varying(3) NOT NULL DEFAULT 'YER';
-
-                -- Backfill any pre-existing NULL/empty currency to the base YER so reads are consistent.
-                UPDATE "Treasuries"           SET "Currency" = 'YER' WHERE "Currency" IS NULL OR "Currency" = '';
-                UPDATE "CashFlowTransactions" SET "Currency" = 'YER' WHERE "Currency" IS NULL OR "Currency" = '';
-
-                -- Treasury uniqueness now includes currency (one drawer/account per currency).
-                DROP INDEX IF EXISTS "IX_Treasuries_BranchId_Type_Name_Unique";
-                CREATE UNIQUE INDEX IF NOT EXISTS "IX_Treasuries_BranchId_Type_Currency_Name_Unique"
-                    ON "Treasuries" ("BranchId", "Type", "Currency", "Name") WHERE "IsActive" = true;
-                CREATE INDEX IF NOT EXISTS "IX_Treasuries_BranchId_Type_Currency"
-                    ON "Treasuries" ("BranchId", "Type", "Currency");
-                CREATE INDEX IF NOT EXISTS "IX_CashFlowTransactions_BranchId_Currency_TransactionDate"
-                    ON "CashFlowTransactions" ("BranchId", "Currency", "TransactionDate");
-                """);
+            try { await db.Database.ExecuteSqlRawAsync(sql); }
+            catch (Exception ex) { logger.LogWarning(ex, "Multi-currency hotfix step failed (non-fatal): {Step}", label); }
         }
-        catch (Exception ex)
+
+        // ── Currency columns — each ADD COLUMN IF NOT EXISTS in its own transaction ──
+        await RunAsync("Payments currency columns", """
+            ALTER TABLE "Payments"
+                ADD COLUMN IF NOT EXISTS "Currency" character varying(3) NULL,
+                ADD COLUMN IF NOT EXISTS "AccountCurrency" character varying(3) NOT NULL DEFAULT 'YER',
+                ADD COLUMN IF NOT EXISTS "ExchangeRateToAccountCurrency" numeric(18,6) NOT NULL DEFAULT 1,
+                ADD COLUMN IF NOT EXISTS "AppliedAmount" numeric(12,2) NOT NULL DEFAULT 0,
+                ADD COLUMN IF NOT EXISTS "ExchangeRateSource" character varying(50);
+            """);
+        await RunAsync("Contracts.Currency", """ALTER TABLE "Contracts" ADD COLUMN IF NOT EXISTS "Currency" character varying(3) NOT NULL DEFAULT 'YER';""");
+        await RunAsync("Invoices.Currency", """ALTER TABLE "Invoices" ADD COLUMN IF NOT EXISTS "Currency" character varying(3) NOT NULL DEFAULT 'YER';""");
+        await RunAsync("Treasuries.Currency", """ALTER TABLE "Treasuries" ADD COLUMN IF NOT EXISTS "Currency" character varying(3) NOT NULL DEFAULT 'YER';""");
+        await RunAsync("CashFlowTransactions.Currency", """ALTER TABLE "CashFlowTransactions" ADD COLUMN IF NOT EXISTS "Currency" character varying(3) NOT NULL DEFAULT 'YER';""");
+
+        // ── Backfill NULL/empty currency to the base YER so reads are consistent ──
+        await RunAsync("Currency backfill", """
+            UPDATE "Treasuries"           SET "Currency" = 'YER' WHERE "Currency" IS NULL OR "Currency" = '';
+            UPDATE "CashFlowTransactions" SET "Currency" = 'YER' WHERE "Currency" IS NULL OR "Currency" = '';
+            """);
+
+        // ── Index rebuild — isolated: a duplicate-treasury conflict here must NOT undo the
+        //    column-adds above (that was the original prod-500 root cause). ──
+        await RunAsync("Treasury currency indexes", """
+            DROP INDEX IF EXISTS "IX_Treasuries_BranchId_Type_Name_Unique";
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_Treasuries_BranchId_Type_Currency_Name_Unique"
+                ON "Treasuries" ("BranchId", "Type", "Currency", "Name") WHERE "IsActive" = true;
+            CREATE INDEX IF NOT EXISTS "IX_Treasuries_BranchId_Type_Currency"
+                ON "Treasuries" ("BranchId", "Type", "Currency");
+            CREATE INDEX IF NOT EXISTS "IX_CashFlowTransactions_BranchId_Currency_TransactionDate"
+                ON "CashFlowTransactions" ("BranchId", "Currency", "TransactionDate");
+            """);
+    }
+
+    /// <summary>
+    /// QA-598 (PROD 500 FIX): idempotently adds the ortho-link columns that migrations
+    /// 20260702000000_AddOrthoCaseLinksToAppointmentsAndVisits and
+    /// 20260703000000_AddOrthoVisitFieldsToVisits introduce, for databases where those
+    /// migrations did not apply cleanly (the historical migration chain is known-broken —
+    /// see CLAUDE.md). EF SELECTs every mapped column, so a missing Visits."WireUpper"/
+    /// "WireLower"/"CurrentStage"/"OrthoCaseId" (or Appointments."OrthoCaseId") makes ANY
+    /// query MATERIALISING a full Visit/Appointment throw "column does not exist". That was
+    /// the /api/patient-journey/today 500 (it Includes full Visit + Appointment entities and
+    /// only fails once the day has an appointment with a visit — empty days returned early,
+    /// so the bug hid until the clinic actually had patients). All statements use ADD COLUMN
+    /// IF NOT EXISTS, and each runs in its own transaction so one failure never rolls back
+    /// the others. Does NOT touch the migration baseline (C-08 pattern).
+    /// </summary>
+    private static async Task EnsureVisitOrthoFieldsSchemaAsync(WebApplication app)
+    {
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        if (!db.Database.IsRelational()) return;
+
+        var logger = app.Services.GetRequiredService<ILogger<Program>>();
+
+        async Task RunAsync(string label, string sql)
         {
-            app.Services.GetRequiredService<ILogger<Program>>()
-                .LogWarning(ex, "Multi-currency columns hotfix failed (non-fatal)");
+            try { await db.Database.ExecuteSqlRawAsync(sql); }
+            catch (Exception ex) { logger.LogWarning(ex, "Visit ortho-fields hotfix step failed (non-fatal): {Step}", label); }
         }
+
+        // ── Ortho visit clinical fields (mirrored from OrthoVisit onto the bridging Visit) ──
+        await RunAsync("Visits ortho fields", """
+            ALTER TABLE "Visits"
+                ADD COLUMN IF NOT EXISTS "OrthoCaseId"  uuid NULL,
+                ADD COLUMN IF NOT EXISTS "WireUpper"    text NULL,
+                ADD COLUMN IF NOT EXISTS "WireLower"    text NULL,
+                ADD COLUMN IF NOT EXISTS "CurrentStage" text NULL;
+            """);
+
+        // ── Ortho-case link on appointments ──
+        await RunAsync("Appointments.OrthoCaseId", """ALTER TABLE "Appointments" ADD COLUMN IF NOT EXISTS "OrthoCaseId" uuid NULL;""");
+
+        // ── Supporting indexes ──
+        await RunAsync("Ortho-link indexes", """
+            CREATE INDEX IF NOT EXISTS "IX_Visits_OrthoCaseId" ON "Visits" ("OrthoCaseId");
+            CREATE INDEX IF NOT EXISTS "IX_Appointments_OrthoCaseId" ON "Appointments" ("OrthoCaseId");
+            """);
+
+        // ── FKs to OrthoCases (guarded — added only if absent, ON DELETE SET NULL) ──
+        await RunAsync("Visits→OrthoCases FK", """
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Visits_OrthoCases_OrthoCaseId') THEN
+                    ALTER TABLE "Visits" ADD CONSTRAINT "FK_Visits_OrthoCases_OrthoCaseId"
+                        FOREIGN KEY ("OrthoCaseId") REFERENCES "OrthoCases" ("Id") ON DELETE SET NULL;
+                END IF;
+            END $$;
+            """);
+        await RunAsync("Appointments→OrthoCases FK", """
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Appointments_OrthoCases_OrthoCaseId') THEN
+                    ALTER TABLE "Appointments" ADD CONSTRAINT "FK_Appointments_OrthoCases_OrthoCaseId"
+                        FOREIGN KEY ("OrthoCaseId") REFERENCES "OrthoCases" ("Id") ON DELETE SET NULL;
+                END IF;
+            END $$;
+            """);
     }
 
     /// <summary>

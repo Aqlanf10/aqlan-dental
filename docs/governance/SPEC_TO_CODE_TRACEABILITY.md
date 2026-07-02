@@ -40,3 +40,19 @@ Initial table based on static repo inspection. Incomplete rows are marked `Needs
 | `007` | Lab/inventory | Lab-inventory integration | lab/inventory UI/API | Lab/Inventory tests | partial | 2026-07-02 | High |
 | `008` | Users/roles | Auth and permissions | auth/users/policies/route guard | Auth/Authorization tests | active | 2026-07-02 | Critical |
 | `009` | Reports | Reports/PDF | reports/print/PDF services | PDF tests | active | 2026-07-02 | High |
+
+## Production Owner QA — Round 1 Continuation (2026-07-02)
+
+Live production QA (admin) beyond the initial round. After the `ClinicServices.Color`
+fix deployed, `/api/dashboard/stats` still 500'd, exposing two further schema-drift
+500s on the two most-used operational screens, both fixed as idempotent startup
+hotfixes (C-08 pattern, no migration). Two additional 500s (enum-type drift) were
+investigated and documented for a follow-up round (owner decision needed).
+
+| ID | Module | Finding | Code | Status | Fixed here | Runtime verify | Owner decision |
+|----|--------|---------|------|--------|-----------|----------------|----------------|
+| `QA1C-01` | Finance/Schema | `Contracts."Currency"` missing → `/api/dashboard/stats` + `/api/contracts` 500 (batched DDL rollback on the Treasury unique-index step) | `StartupDatabaseMaintenance.EnsureMultiCurrencyColumnsAsync` | fixed | yes | yes (post-deploy 200) | no |
+| `QA1C-02` | Ortho/Journey | `Visits."WireUpper"/"WireLower"/"CurrentStage"`/`OrthoCaseId` missing (no hotfix) → `/api/patient-journey/today` 500 when a day has an appointment+visit | `StartupDatabaseMaintenance.EnsureVisitOrthoFieldsSchemaAsync` (new) | fixed | yes | yes (post-deploy 200) | no |
+| `QA1C-03` | Inventory | `/api/suppliers` 500 — likely enum-type drift on `Suppliers."Type"` (not a missing column) | `SuppliersController.GetAll` | documented | no | n/a | yes |
+| `QA1C-04` | Finance | `/api/finance-v3/expenses` 500 — likely enum-type drift on `OperationalExpenses."Category"/"ApprovalStatus"` | `FinanceV3Controller.GetExpenses` | documented | no | n/a | yes |
+| `QA1C-05` | Navigation | Full admin sidebar crawl: no blank pages, no unexpected 404/redirect; only 500s were QA1C-01/02 screens | `Sidebar.tsx`, all dashboard routes | verified | n/a | n/a | no |

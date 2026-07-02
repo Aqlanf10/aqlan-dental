@@ -83,8 +83,8 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   // '/appointments/recall' must precede '/appointments' (Reception needs access here)
   { path: '/appointments/recall', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   { path: '/appointments', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
-  { path: '/clinic-queue', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
-  { path: '/patient-journey', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
+  { path: '/clinic-queue', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
+  { path: '/patient-journey', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
 
   // FE-02: Previously missing — booking-requests fell through to default-allow. Admin + Reception
   // confirm public booking requests (the public /home/book flow creates them).

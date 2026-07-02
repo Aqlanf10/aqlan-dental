@@ -649,4 +649,161 @@ public class PatientFinanceLedgerTests
         var notFoundResult = (NotFoundObjectResult)result;
         notFoundResult.Value.Should().BeEquivalentTo(new { message = "المريض غير موجود" });
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // QA-594: Unbilled visit + partial payment scenario
+    // Owner scenario: root-canal session 50,000 + partial payment 20,000
+    // without creating a contract or invoice. Previously the remaining 30,000
+    // vanished from every balance view. Now it must show correctly.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Seed a patient with a Visit (AmountDueReference = sessionCost) and an
+    /// unlinked Payment (Amount = paidAmount). No contract, no invoice.
+    /// </summary>
+    private static (Guid branchId, Guid patientId, ICurrentUserService currentUser) SeedPatientWithUnbilledVisit(
+        AppDbContext db, decimal sessionCost, decimal paidAmount)
+    {
+        var branchId = Guid.NewGuid();
+        var patientId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var currentUser = CreateAdminUser(userId, branchId);
+
+        db.Branches.Add(new Branch { Id = branchId, Name = "الفرع الرئيسي" });
+        db.Patients.Add(new Patient { Id = patientId, FirstName = "اختبار", LastName = "النظام", BranchId = branchId, PatientNumber = "P-QA-594" });
+        db.Users.Add(new User { Id = userId, Username = "admin-qa", BranchId = branchId });
+
+        if (sessionCost > 0)
+        {
+            db.Visits.Add(new Visit
+            {
+                Id = Guid.NewGuid(),
+                PatientId = patientId,
+                VisitDate = DateOnly.FromDateTime(DateTime.Today),
+                VisitType = "عصب",
+                AmountDueReference = sessionCost,
+                CheckoutStatus = "ReadyForCheckout",
+                IsActive = true
+            });
+        }
+
+        if (paidAmount != 0)
+        {
+            db.Payments.Add(new Payment
+            {
+                Id = Guid.NewGuid(),
+                PatientId = patientId,
+                ContractId = null,
+                InvoiceId = null,
+                Amount = paidAmount,
+                AppliedAmount = paidAmount,
+                PaymentDate = DateOnly.FromDateTime(DateTime.Today),
+                PaymentMethod = "cash",
+                AccountCurrency = "YER",
+                ExchangeRateToAccountCurrency = 1m,
+                IsActive = true
+            });
+        }
+
+        db.SaveChanges();
+        return (branchId, patientId, currentUser);
+    }
+
+    [Fact]
+    public async Task QA594_UnbilledVisit_WithPartialPayment_OutstandingReflectsRemaining()
+    {
+        // Scenario: 50,000 root-canal session + 20,000 partial payment, no
+        // contract, no invoice. Expected outstanding = 30,000.
+        await using var db = CreateDb();
+        var (_, patientId, currentUser) = SeedPatientWithUnbilledVisit(db, sessionCost: 50_000m, paidAmount: 20_000m);
+        var service = CreateFinanceService(db, currentUser);
+
+        var summary = await service.GetPatientFinanceSummaryAsync(patientId);
+
+        summary.Should().NotBeNull();
+        summary.UnbilledVisitsAmount.Should().Be(50_000m, "the visit has AmountDueReference = 50,000 with no linked invoice");
+        summary.TotalTreatmentCost.Should().Be(50_000m, "unbilled visit cost is now included in total");
+        summary.TotalPaid.Should().Be(20_000m, "standalone payment is counted");
+        summary.OutstandingBalance.Should().Be(30_000m, "50,000 - 20,000 = 30,000 remaining debt");
+        summary.FinancialStatus.Should().Be("on_track", "debt exists and is not overdue");
+    }
+
+    [Fact]
+    public async Task QA594_UnbilledVisit_NoPayment_OutstandingEqualsFullAmount()
+    {
+        // Scenario: 50,000 session, no payment. Expected outstanding = 50,000.
+        await using var db = CreateDb();
+        var (_, patientId, currentUser) = SeedPatientWithUnbilledVisit(db, sessionCost: 50_000m, paidAmount: 0m);
+        var service = CreateFinanceService(db, currentUser);
+
+        var summary = await service.GetPatientFinanceSummaryAsync(patientId);
+
+        summary.UnbilledVisitsAmount.Should().Be(50_000m);
+        summary.TotalTreatmentCost.Should().Be(50_000m);
+        summary.TotalPaid.Should().Be(0m);
+        summary.OutstandingBalance.Should().Be(50_000m, "no payment → full amount outstanding");
+    }
+
+    [Fact]
+    public async Task QA594_BilledVisit_NotDoubleCountedInBalance()
+    {
+        // Scenario: 50,000 session WITH a linked Issued invoice of 50,000 +
+        // 20,000 payment linked to that invoice. Expected outstanding = 30,000
+        // (NOT 80,000 — the visit must not be double-counted with its invoice).
+        await using var db = CreateDb();
+        var (branchId, patientId, currentUser) = SeedPatientWithUnbilledVisit(db, sessionCost: 50_000m, paidAmount: 0m);
+
+        var visitId = db.Visits.First().Id;
+        var invoiceId = Guid.NewGuid();
+        db.Invoices.Add(new Invoice
+        {
+            Id = invoiceId,
+            PatientId = patientId,
+            VisitId = visitId, // ← linked to the visit
+            InvoiceNumber = "INV-QA-001",
+            Status = InvoiceStatus.Issued,
+            Subtotal = 50_000m,
+            TotalAmount = 50_000m,
+            IsActive = true
+        });
+        db.Payments.Add(new Payment
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patientId,
+            InvoiceId = invoiceId,
+            Amount = 20_000m,
+            AppliedAmount = 20_000m,
+            PaymentDate = DateOnly.FromDateTime(DateTime.Today),
+            PaymentMethod = "cash",
+            AccountCurrency = "YER",
+            ExchangeRateToAccountCurrency = 1m,
+            IsActive = true
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateFinanceService(db, currentUser);
+        var summary = await service.GetPatientFinanceSummaryAsync(patientId);
+
+        summary.UnbilledVisitsAmount.Should().Be(0m, "visit is billed via the linked invoice → not unbilled");
+        summary.TotalTreatmentCost.Should().Be(50_000m, "only the invoice counts, not visit + invoice");
+        summary.TotalPaid.Should().Be(20_000m);
+        summary.OutstandingBalance.Should().Be(30_000m, "50,000 invoice - 20,000 payment");
+    }
+
+    [Fact]
+    public async Task QA594_UnlinkedPayment_NoContractOrInvoice_OutstandingNotNegative()
+    {
+        // Scenario: 20,000 payment, no contract, no invoice, no visit.
+        // Expected outstanding = 0 (clamped, NOT -20,000).
+        await using var db = CreateDb();
+        var (_, patientId, currentUser) = SeedPatientWithUnbilledVisit(db, sessionCost: 0m, paidAmount: 20_000m);
+        var service = CreateFinanceService(db, currentUser);
+
+        var summary = await service.GetPatientFinanceSummaryAsync(patientId);
+
+        summary.TotalTreatmentCost.Should().Be(0m);
+        summary.TotalPaid.Should().Be(20_000m);
+        summary.OutstandingBalance.Should().Be(0m, "must clamp to 0, not go negative");
+        summary.FinancialStatus.Should().Be("no_plan", "no obligation tracked → no_plan");
+    }
 }

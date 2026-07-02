@@ -173,6 +173,7 @@ export function PaymentModal({
     handleSubmit,
     reset,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -185,6 +186,14 @@ export function PaymentModal({
       invoiceId: invoiceId ?? "",
     },
   });
+
+  // QA-594: watch link fields to surface a warning when the payment is
+  // recorded without an invoice or contract. Unlinked payments are allowed
+  // (transitional) but they will not reduce any tracked debt — staff must
+  // know this before submitting.
+  const watchedInvoiceId = watch("invoiceId");
+  const watchedContractId = watch("contractId");
+  const isUnlinkedPayment = isFull && !watchedInvoiceId && !watchedContractId;
 
   // Reset whenever the modal opens or the presets change.
   useEffect(() => {
@@ -504,6 +513,26 @@ export function PaymentModal({
                   {...register("notes")}
                 />
               </div>
+
+              {/* QA-594: unlinked-payment warning */}
+              {isUnlinkedPayment && (
+                <div
+                  className="flex items-start gap-2 p-2.5 rounded-xl text-[11px] leading-relaxed"
+                  style={{
+                    background: "#fef3c7",
+                    border: "1px solid #f59e0b",
+                    color: "#78350f",
+                  }}
+                >
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>تنبيه:</strong> هذه الدفعة بدون ربط بفاتورة أو عقد.
+                    سيُسجَّل المبلغ في الخزينة، لكن لن يُخصم من أي دين متتبَّع —
+                    قد يظهر رصيد المريض غير صحيح. يُنصح بإنشاء فاتورة للجلسة أولاً
+                    ثم ربط الدفعة بها.
+                  </span>
+                </div>
+              )}
             </>
           )}
 

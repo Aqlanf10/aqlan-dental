@@ -400,7 +400,11 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
         var totalContracted = activeContractsList.Sum(c => c.TotalAmount);
         var totalDiscounts = activeContractsList.Sum(c => c.DiscountAmount);
-        var totalOutstanding = totalContracted - totalDiscounts - totalPaid;
+        // QA-594: Clamp to 0 — a standalone payment (no contract) previously
+        // produced a negative outstanding that made it look like the clinic
+        // owed the patient money. Negative balances are advances, surfaced
+        // separately, not as negative debt.
+        var totalOutstanding = Math.Max(0m, totalContracted - totalDiscounts - totalPaid);
         var totalAmount = totalContracted - totalDiscounts;
         var activeContracts = activeContractsList.Count;
 
@@ -673,7 +677,8 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
         var totalContracted = activeContracts.Sum(c => c.TotalAmount);
         var totalDiscounts = activeContracts.Sum(c => c.DiscountAmount);
-        var totalOutstanding = totalContracted - totalDiscounts - totalPaid;
+        // QA-594: Clamp to 0 — see GetPatientOverviewAsync above for rationale.
+        var totalOutstanding = Math.Max(0m, totalContracted - totalDiscounts - totalPaid);
         var totalAmount = totalContracted - totalDiscounts;
 
         var contractDtos = activeContracts.Select(c => new PatientContractDto

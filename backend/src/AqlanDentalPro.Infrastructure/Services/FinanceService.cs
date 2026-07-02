@@ -1192,8 +1192,28 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                      && i.IsActive)
             .SumAsync(i => (decimal?)i.TotalAmount) ?? 0m;
 
+        // ── QA-594: Unbilled visits cost ───────────────────────────────────
+        // Sessions performed without a linked invoice (and no contract) used
+        // to disappear from the outstanding balance. Include
+        // Visit.AmountDueReference for visits that have no invoice referencing
+        // them via Invoice.VisitId, so partial payments on a 50k root-canal
+        // session are correctly reflected as a 30k remaining debt.
+        var billedVisitIds = await db.Invoices
+            .Where(i => i.PatientId == patientId && i.VisitId.HasValue && i.IsActive)
+            .Select(i => i.VisitId!.Value)
+            .ToListAsync();
+        var billedVisitIdsSet = billedVisitIds.ToHashSet();
+
+        var unbilledVisitRows = await db.Visits
+            .Where(v => v.PatientId == patientId && v.IsActive
+                     && v.AmountDueReference.HasValue && v.AmountDueReference > 0)
+            .ToListAsync(); // client-side filter to apply HashSet membership cleanly
+        var unbilledVisitsCost = unbilledVisitRows
+            .Where(v => !billedVisitIdsSet.Contains(v.Id))
+            .Sum(v => v.AmountDueReference ?? 0m);
+
         // ── Combined totals ─────────────────────────────────────────────────
-        var totalCost      = contractCost + invoiceCost;
+        var totalCost      = contractCost + invoiceCost + unbilledVisitsCost;
         var totalPaid      = await db.Payments
             .Where(p => p.PatientId == patientId && p.IsActive)
             .SumAsync(p => (decimal?)(p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)) ?? 0m;
@@ -1255,7 +1275,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             LatestPayment        = latestPayment == null ? null : MapPayment(latestPayment),
             FinancialStatus      = status,
             ActiveContractsCount = activeContractsCount,
-            TotalPaymentsCount   = totalPaymentsCount
+            TotalPaymentsCount   = totalPaymentsCount,
+            UnbilledVisitsAmount = unbilledVisitsCost
         };
     }
 

@@ -1046,6 +1046,25 @@ public partial class FinanceV3Controller
             .Where(c => c.PatientId == patientId && c.IsActive)
             .SumAsync(c => (decimal?)c.DiscountAmount) ?? 0;
 
+        // QA-594: Unbilled visits — sessions with AmountDueReference > 0 and no
+        // invoice linked via Invoice.VisitId. These represent performed work
+        // that has not been invoiced/contracted and previously vanished from
+        // the patient's balance. Included in EntityBalance so the finance
+        // dashboard matches FinanceService.GetPatientFinanceSummaryAsync.
+        var billedVisitIdsSet = await db.Invoices
+            .Where(i => i.PatientId == patientId && i.VisitId.HasValue && i.IsActive)
+            .Select(i => i.VisitId!.Value)
+            .ToListAsync();
+        var billedVisitHash = billedVisitIdsSet.ToHashSet();
+
+        var unbilledVisitRows = await db.Visits
+            .Where(v => v.PatientId == patientId && v.IsActive
+                     && v.AmountDueReference.HasValue && v.AmountDueReference > 0)
+            .ToListAsync();
+        var unbilledVisitsAmount = unbilledVisitRows
+            .Where(v => !billedVisitHash.Contains(v.Id))
+            .Sum(v => v.AmountDueReference ?? 0m);
+
         var netPaid = totalPaid + totalRefunds; // refunds are negative
         // Sprint Patient-Finance-Ledger: EntityBalance now includes contract totals
         // so it matches the patient-facing outstanding balance from FinanceService
@@ -1053,7 +1072,8 @@ public partial class FinanceV3Controller
         // uses Math.Max(0, totalCost - totalPaid)). Previously EntityBalance could be negative
         // (clinic owes patient) while the service returned 0 — causing the portal and the
         // finance dashboard to show different outstanding balances for the same patient.
-        var entityBalance = Math.Max(0m, (totalInvoiced + totalContracted) - netPaid);
+        // QA-594: also include unbilled visits so EntityBalance reflects session debt.
+        var entityBalance = Math.Max(0m, (totalInvoiced + totalContracted + unbilledVisitsAmount) - netPaid);
 
         // Contract outstanding
         var contractOutstanding = await db.Contracts
@@ -1069,14 +1089,15 @@ public partial class FinanceV3Controller
             PatientNumber = patient.PatientNumber,
             TotalInvoiced = totalInvoiced,
             TotalContracted = totalContracted, // Sprint Patient-Finance-Ledger: new field
+            UnbilledVisitsAmount = unbilledVisitsAmount, // QA-594: performed but not invoiced
             TotalPaid = totalPaid,
             TotalRefunds = Math.Abs(totalRefunds),
             NetPaid = netPaid,
             TotalDiscounts = totalDiscounts,
             Balance = journalNetBalance, // JournalLine-based canonical balance
-            EntityBalance = entityBalance, // Entity-based balance for reconciliation (now includes contracts)
+            EntityBalance = entityBalance, // Entity-based balance for reconciliation (now includes contracts + unbilled visits)
             ContractOutstanding = contractOutstanding,
-            HasOutstanding = journalNetBalance > 0,
+            HasOutstanding = journalNetBalance > 0 || unbilledVisitsAmount > 0,
             JournalReceivable = journalReceivable,
             JournalAdvance = journalAdvance
         });

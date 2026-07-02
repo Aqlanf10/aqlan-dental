@@ -298,6 +298,35 @@ export function CompleteVisitModal({
           {/* 3. Operational Quick Actions */}
           <div>
             <div className="text-[11px] font-bold text-gray-400 mb-2">إجراءات تحصيل سريعة</div>
+
+            {/* QA-594: unbilled-amount warning — surfaces the contract/invoice
+                confusion when a session has a due amount but no billing
+                document. Encourages staff to either create an invoice or
+                record a payment so the patient balance stays accurate. */}
+            {isReceptionMode && (() => {
+              const dueNum = parseFloat(amountDue || "0") || 0;
+              if (dueNum <= 0) return null;
+              return (
+                <div
+                  className="flex items-start gap-2 p-2.5 rounded-xl text-[11px] leading-relaxed mb-2"
+                  style={{
+                    background: "#fef3c7",
+                    border: "1px solid #f59e0b",
+                    color: "#78350f",
+                  }}
+                >
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>تنبيه محاسبي:</strong> هذه الزيارة لها مبلغ مستحق{" "}
+                    <strong>{fmtRial(dueNum)}</strong> بدون فاتورة أو عقد.
+                    لتجنب لبس الرصيد، يُنصح بإنشاء فاتورة بهذا المبلغ ثم ربط
+                    الدفعة بها. إن أغلقت الزيارة الآن، سيظهر المبلغ كـ«دين مؤقت»
+                    في كشف حساب المريض حتى يتم فوترته.
+                  </span>
+                </div>
+              );
+            })()}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {/* Draft Invoice Action */}
               <button

@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
-public class FinanceService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications, ILogger<FinanceService> logger, ICommissionService commissionService, IJournalEntryService journalEntryService)
+public class FinanceService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications, ILogger<FinanceService> logger, ICommissionService commissionService, IJournalEntryService journalEntryService, IContractService contractService)
     : IFinanceService
 {
     // TD-021 PR A2: FinanceMappers.BaseCurrency + FinanceMappers.SupportedCurrencies moved to FinanceMappers.
@@ -16,68 +16,9 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     // only used by read methods). FinanceMappers.MapPayment + FinanceMappers.NormalizeCurrency moved to FinanceMappers
     // (shared between FinanceService write methods and FinanceReadService read methods).
 
-    public async Task<List<ContractListDto>> GetContractsAsync(int page, int pageSize, Guid? patientId, string? status)
-    {
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
-
-        var query = db.Contracts
-            .Include(c => c.Patient)
-            .Include(c => c.Payments)
-            .Include(c => c.Package) // YOLO-S2: package name + color for display
-            .AsQueryable();
-
-        if (branchId.HasValue) query = query.Where(c => c.Patient.BranchId == branchId.Value);
-        if (patientId.HasValue) query = query.Where(c => c.PatientId == patientId);
-        if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<ContractStatus>(status, true, out var contractStatus))
-            query = query.Where(c => c.Status == contractStatus);
-
-        return await query
-            .OrderByDescending(c => c.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .Select(c => MapContractList(c))
-            .ToListAsync();
-    }
-
-    public async Task<ContractDetailDto?> GetContractByIdAsync(Guid id)
-    {
-        var c = await db.Contracts
-            .Include(c => c.Patient)
-            .Include(c => c.Payments)
-                .ThenInclude(p => p.Doctor)
-            .Include(c => c.Package) // YOLO-S2: package name + color for display
-            .FirstOrDefaultAsync(c => c.Id == id);
-
-        if (c == null) return null;
-
-        var dto = new ContractDetailDto
-        {
-            Id = c.Id,
-            PatientId = c.PatientId,
-            PatientName = c.Patient.FirstName + " " + c.Patient.LastName,
-            PatientNumber = c.Patient.PatientNumber,
-            Specialty = c.Specialty,
-            Currency = FinanceMappers.NormalizeCurrency(c.Currency),
-            TotalAmount = c.TotalAmount,
-            DownPayment = c.DownPayment,
-            PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
-            RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
-            InstallmentsCount = c.InstallmentsCount,
-            InstallmentAmount = c.InstallmentAmount,
-            StartDate = c.StartDate?.ToString("yyyy-MM-dd"),
-            Status = c.Status.ToString(),
-            DiscountAmount = c.DiscountAmount,
-            DiscountReason = c.DiscountReason,
-            Notes = c.Notes,
-            Payments = c.Payments.OrderByDescending(p => p.PaymentDate).Select(FinanceMappers.MapPayment).ToList(),
-            // YOLO-S2: package link
-            PackageId = c.PackageId,
-            PackageName = c.Package?.Name,
-            PackageColor = c.Package?.Color,
-        };
-
-        return dto;
-    }
+    // TD-021 PR A3: GetContractsAsync + GetContractByIdAsync moved to ContractService.
+    // FinanceService injects IContractService so CreateContractAsync + UpdateContractStatusAsync
+    // can call contractService.GetContractByIdAsync for their return value.
 
     public async Task<ContractDetailDto> CreateContractAsync(CreateContractRequest req)
     {
@@ -129,7 +70,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             });
         }
 
-        return (await GetContractByIdAsync(contract.Id))!;
+        return (await contractService.GetContractByIdAsync(contract.Id))!;
     }
 
     public async Task<PaymentDto?> GetPaymentByIdAsync(Guid id)
@@ -376,48 +317,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         return dto;
     }
 
-    public async Task<ContractDetailDto?> UpdateContractAsync(Guid id, UpdateContractRequest req)
-    {
-        var contract = await db.Contracts.FindAsync(id);
-        if (contract == null) return null;
-
-        // Phase 0B: Validate that TotalAmount is not reduced below what's already been paid
-        {
-            var alreadyPaid = await db.Payments
-                .Where(p => p.ContractId == id && p.IsActive)
-                .SumAsync(p => (decimal?)(p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)) ?? 0m;
-            if (req.TotalAmount < alreadyPaid)
-                throw new ArgumentException($"لا يمكن تقليل إجمالي العقد ({req.TotalAmount:N0} ر.ي) إلى أقل من المبلغ المدفوع فعلياً ({alreadyPaid:N0} ر.ي).");
-        }
-
-        contract.Specialty        = req.Specialty;
-        contract.Currency         = FinanceMappers.NormalizeCurrency(req.Currency ?? contract.Currency);
-        contract.TotalAmount      = req.TotalAmount;
-        contract.InstallmentsCount = req.InstallmentsCount;
-        contract.InstallmentAmount = req.InstallmentAmount;
-        contract.StartDate        = req.StartDate != null ? DateOnly.Parse(req.StartDate) : contract.StartDate;
-        contract.DiscountAmount   = req.DiscountAmount;
-        contract.DiscountReason   = req.DiscountReason;
-        contract.Notes            = req.Notes;
-        contract.UpdatedAt        = DateTime.UtcNow;
-
-        // YOLO-S2: update the package link. Resolve Guid.Empty → null ("clear").
-        // null on the request body leaves the existing value unchanged (PATCH semantics).
-        if (req.PackageId.HasValue)
-        {
-            var newPkgId = req.PackageId.Value == Guid.Empty ? null : (Guid?)req.PackageId.Value;
-            if (newPkgId.HasValue && newPkgId != contract.PackageId)
-            {
-                var pkgExists = await db.TreatmentPackages.AnyAsync(p => p.Id == newPkgId.Value && p.IsActive);
-                if (!pkgExists)
-                    throw new ArgumentException("الباقة المحددة غير موجودة أو معطّلة");
-            }
-            contract.PackageId = newPkgId;
-        }
-
-        await db.SaveChangesAsync();
-        return await GetContractByIdAsync(id);
-    }
+    // TD-021 PR A3: UpdateContractAsync moved to ContractService.
 
     public async Task<ContractDetailDto?> UpdateContractStatusAsync(Guid id, string status)
     {
@@ -528,7 +428,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             await db.SaveChangesAsync();
         }
 
-        return await GetContractByIdAsync(id);
+        return await contractService.GetContractByIdAsync(id);
     }
 
     // TD-021 PR A2: GetAccountStatementAsync + GetSummaryAsync moved to FinanceReadService
@@ -1187,33 +1087,12 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         logger.LogInformation("Credit note {CreditNoteId} refund processed for {Amount:N0} by user {UserId}", creditNoteId, creditNote.Amount, currentUserId);
     }
 
-    // TD-021 PR A2: MapContractList, FinanceMappers.MapPayment, FinanceMappers.NormalizeCurrency moved to FinanceMappers
+    // TD-021 PR A2: FinanceMappers.MapPayment + FinanceMappers.NormalizeCurrency moved to FinanceMappers
     // (shared static helpers — used by both FinanceService write methods and FinanceReadService
-    // read methods). Call sites now use FinanceMappers.MapPayment / FinanceMappers.NormalizeCurrency.
-    // MapContractList stays as a FinanceService-local static helper below because it is only
-    // used by GetContractsAsync + GetContractByIdAsync (both still in FinanceService).
-
-    private static ContractListDto MapContractList(Contract c) => new()
-    {
-        Id = c.Id,
-        PatientId = c.PatientId,
-        PatientName = c.Patient.FirstName + " " + c.Patient.LastName,
-        PatientNumber = c.Patient.PatientNumber,
-        Specialty = c.Specialty,
-        Currency = FinanceMappers.NormalizeCurrency(c.Currency),
-        TotalAmount = c.TotalAmount,
-        DownPayment = c.DownPayment,
-        PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
-        RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
-        InstallmentsCount = c.InstallmentsCount,
-        InstallmentAmount = c.InstallmentAmount,
-        StartDate = c.StartDate?.ToString("yyyy-MM-dd"),
-        Status = c.Status.ToString(),
-        // YOLO-S2: package link (display-only — pricing still driven by TotalAmount)
-        PackageId = c.PackageId,
-        PackageName = c.Package?.Name,
-        PackageColor = c.Package?.Color,
-    };
+    // read methods). Call sites use FinanceMappers.MapPayment / FinanceMappers.NormalizeCurrency.
+    // TD-021 PR A3: MapContractList moved to ContractService (only used by GetContractsAsync
+    // which also moved). FinanceMappers.MapPayment + FinanceMappers.NormalizeCurrency remain
+    // in FinanceMappers for shared use.
 
     private static string ResolveAccountCurrency(string? requestedCurrency, Invoice? invoice, Contract? contract)
     {

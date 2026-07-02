@@ -171,7 +171,7 @@ public class HotfixCashFlowCategoryAndNotificationTests
         var commissionService = new Mock<ICommissionService>();
         var journalEntryService = CreateDefaultJournalEntryServiceMock();
 
-        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
+        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object, new ContractService(db, currentUser.Object));
 
         return (service, branchId, cashierId, notifications, logger);
     }

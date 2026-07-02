@@ -149,7 +149,7 @@ public class MultiCurrencyPaymentTests
                     ReversalOfEntryId = originalId,
                 });
 
-        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
+        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object, new ContractService(db, currentUser.Object));
         // TD-021 PR A2: read-side finance service extracted from FinanceService.
         var readService = new FinanceReadService(db, currentUser.Object);
         return (service, readService, branchId, cashierId);

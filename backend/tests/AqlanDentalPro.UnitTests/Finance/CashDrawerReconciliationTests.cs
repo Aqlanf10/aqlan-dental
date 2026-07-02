@@ -676,7 +676,7 @@ public class CashDrawerReconciliationTests
                 };
             });
 
-        var service = new FinanceService(db, currentUserNoBranch.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
+        var service = new FinanceService(db, currentUserNoBranch.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object, new ContractService(db, currentUserNoBranch.Object));
 
         var patientId = Guid.NewGuid();
         db.Patients.Add(new Patient
@@ -807,7 +807,7 @@ public class CashDrawerReconciliationTests
                 };
             });
 
-        var service = new FinanceService(db, currentUserEmptyBranch.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
+        var service = new FinanceService(db, currentUserEmptyBranch.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object, new ContractService(db, currentUserEmptyBranch.Object));
 
         var act = () => service.RefundPaymentAsync(paymentId, "test refund");
 

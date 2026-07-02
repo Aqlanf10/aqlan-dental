@@ -47,6 +47,12 @@ public static class ServiceRegistrationConfiguration
         // helpers (MapPayment, NormalizeCurrency) live in FinanceMappers and are used by
         // both FinanceService (write) and FinanceReadService (read).
         services.AddScoped<IFinanceReadService, FinanceReadService>();
+        // TD-021 PR A3: contract service extracted from FinanceService. Owns the clean
+        // read + write contract methods (GetContracts, GetContractById, UpdateContract).
+        // CreateContractAsync + UpdateContractStatusAsync stay in FinanceService because
+        // they depend on payment-side helpers (will move with PR A4 — PaymentService cluster).
+        // FinanceService injects IContractService for the return value of those two methods.
+        services.AddScoped<IContractService, ContractService>();
         // FIN-SETTINGS: read helper for the finance.* Settings namespace.
         services.AddScoped<FinanceSettingsReader>();
         services.AddScoped<IJournalEntryService, JournalEntryService>();

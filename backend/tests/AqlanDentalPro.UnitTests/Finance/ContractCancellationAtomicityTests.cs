@@ -94,7 +94,7 @@ public class ContractCancellationAtomicityTests
 
         var journalEntryService = journalEntryServiceOverride ?? CreateDefaultJournalEntryServiceMock();
 
-        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
+        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object, new ContractService(db, currentUser.Object));
 
         return (service, branchId, cashierId);
     }

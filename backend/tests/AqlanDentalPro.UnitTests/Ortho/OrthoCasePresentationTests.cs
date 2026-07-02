@@ -288,10 +288,19 @@ public class OrthoCasePresentationTests
         {
             Environment.SetEnvironmentVariable("UPLOADS_PATH", uploads);
             var name = $"{Guid.NewGuid():N}.webp";
-            using (var bmp = new SkiaSharp.SKBitmap(12, 8))
+            // QA-597: Use a larger bitmap (100×100) — 12×8 was too small and caused
+            // intermittent SkiaSharp WebP encode failures on some Linux runners.
+            using (var bmp = new SkiaSharp.SKBitmap(100, 100))
             using (var img = SkiaSharp.SKImage.FromBitmap(bmp))
             using (var data = img.Encode(SkiaSharp.SKEncodedImageFormat.Webp, 90))
-                await File.WriteAllBytesAsync(Path.Combine(uploads, name), data.ToArray());
+            {
+                var webpBytes = data.ToArray();
+                // Fail fast with a clear message if SkiaSharp couldn't encode WebP
+                // (happens when libwebp is missing on the host). Previously this
+                // produced a 0-byte file and the assertion failure was cryptic.
+                webpBytes.Length.Should().BeGreaterThan(0, "SkiaSharp must produce a non-empty WebP — install libwebp-dev on Linux");
+                await File.WriteAllBytesAsync(Path.Combine(uploads, name), webpBytes);
+            }
 
             db.OrthoClinicalPhotos.Add(new OrthoClinicalPhoto
             {

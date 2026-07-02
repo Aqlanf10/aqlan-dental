@@ -1795,25 +1795,51 @@ public partial class FinanceV3Controller
                 OutstandingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
                 c.Status,
                 StartDate = c.StartDate.HasValue ? c.StartDate.Value.ToString("yyyy-MM-dd") : (string?)null,
-                IsOverdue = false
+                // QA-597: carry the raw fields needed for overdue calculation (can't do it in SQL)
+                DownPayment = c.DownPayment,
+                InstallmentsCount = c.InstallmentsCount,
+                InstallmentAmount = c.InstallmentAmount,
+                RawStartDate = c.StartDate,
+                RawStatus = c.Status,
+                PaidAmountRaw = c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)
             })
             .ToListAsync();
 
-        var contracts = contractsRaw.Select(c => new
+        // QA-597: compute IsOverdue dynamically (was hardcoded false).
+        // Mirrors FinanceService.GetOverdueContractsAsync logic: a contract is
+        // overdue when the expected paid (down payment + elapsed installments)
+        // exceeds the actual paid amount. Only active installment contracts qualify.
+        // `today` is already declared above (line ~1778).
+        var contracts = contractsRaw.Select(c =>
         {
-            c.Id,
-            c.PatientId,
-            c.PatientName,
-            c.PatientNumber,
-            c.ContractNumber,
-            c.Specialty,
-            c.TotalAmount,
-            c.DiscountAmount,
-            c.PaidAmount,
-            c.OutstandingAmount,
-            Status = c.Status.ToString(),
-            c.StartDate,
-            c.IsOverdue
+            bool isOverdue = false;
+            if (c.RawStatus == ContractStatus.Active
+                && c.InstallmentAmount > 0
+                && c.RawStartDate.HasValue)
+            {
+                var monthsElapsed = ((today.Year - c.RawStartDate.Value.Year) * 12) + (today.Month - c.RawStartDate.Value.Month);
+                if (monthsElapsed > 0)
+                {
+                    var expectedPaid = c.DownPayment + (Math.Min(monthsElapsed, c.InstallmentsCount) * (c.InstallmentAmount ?? 0m));
+                    isOverdue = expectedPaid - c.PaidAmountRaw > 0;
+                }
+            }
+            return new
+            {
+                c.Id,
+                c.PatientId,
+                c.PatientName,
+                c.PatientNumber,
+                c.ContractNumber,
+                c.Specialty,
+                c.TotalAmount,
+                c.DiscountAmount,
+                c.PaidAmount,
+                c.OutstandingAmount,
+                Status = c.RawStatus.ToString(),
+                c.StartDate,
+                IsOverdue = isOverdue
+            };
         }).ToList();
 
         return Ok(new { data = contracts, total, page, pageSize });

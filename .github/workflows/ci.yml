@@ -17,6 +17,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install native image codec dependencies
+        # QA-597: SkiaSharp on Linux needs libwebp for WebP decode/encode.
+        # Without it, OrthoCasePresentationTests.WebpPhoto_IsTranscodedAndEmbedded
+        # fails intermittently when SkiaSharp falls back to a stub codec.
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libwebp-dev
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:

@@ -167,7 +167,8 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var byMethod = await db.Payments
             .Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate
                 && (!branchId.HasValue || p.BranchId == branchId.Value))
-            .GroupBy(p => p.PaymentMethod ?? "cash")
+            // QA-597: normalize to lowercase so "Cash" and "cash" group together
+            .GroupBy(p => (p.PaymentMethod ?? "cash").ToLower())
             .Select(g => new { method = g.Key, total = g.Sum(p => p.Amount) })
             .ToListAsync();
 
@@ -1013,12 +1014,28 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, ClinicTimeProvider.ClinicToday(), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
-        // QA-595: Branch isolation — non-admin without branch is denied.
-        // TODO QA-596: BookingRequest has no BranchId field (and no PatientId) — cannot filter further without schema change.
+        // QA-595/QA-597: Branch isolation — non-admin without branch is denied.
+        // Filter applied below via ConvertedToAppointment.Patient.BranchId.
         if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
 
-        var bookings = await db.BookingRequests
-            .Where(b => b.IsActive && DateOnly.FromDateTime(b.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(b.CreatedAt.Date) <= toDate)
+        // QA-596 follow-up: BookingRequest has no BranchId field. For non-admin
+        // callers, filter to booking requests that were converted to appointments
+        // for patients in their own branch. Unconverted requests can't be scoped
+        // without a schema change, so they're excluded for non-admin callers
+        // (admin sees all). This closes the TODO QA-596 from PR #595.
+        var bookingsQuery = db.BookingRequests
+            .Where(b => b.IsActive && DateOnly.FromDateTime(b.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(b.CreatedAt.Date) <= toDate);
+
+        if (branchId.HasValue)
+        {
+            // Non-admin: only see booking requests whose converted appointment belongs to their branch.
+            // Unconverted requests (no appointment yet) are excluded since we can't determine their branch.
+            bookingsQuery = bookingsQuery.Where(b => b.ConvertedToAppointmentId != null
+                && b.ConvertedToAppointment != null
+                && b.ConvertedToAppointment.Patient.BranchId == branchId.Value);
+        }
+
+        var bookings = await bookingsQuery
             .Select(b => new { b.Status, b.ServiceType, b.ConvertedToAppointmentId })
             .ToListAsync();
 

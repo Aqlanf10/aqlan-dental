@@ -55,17 +55,18 @@ public class PaymentsPermissionEnforcementTests
         db.SaveChanges();
     }
 
-    private static (PaymentsController controller, Mock<IFinanceService> finance, Mock<IPdfService> pdf)
+    private static (PaymentsController controller, Mock<IFinanceService> finance, Mock<IFinanceReadService> financeRead, Mock<IPdfService> pdf)
         Build(AppDbContext db, ICurrentUserService user)
     {
         var finance = new Mock<IFinanceService>();
+        var financeRead = new Mock<IFinanceReadService>();
         var pdf = new Mock<IPdfService>();
         var audit = new Mock<IAuditService>();
         var push = new Mock<IRealTimePushService>();
         var controller = new PaymentsController(
-            finance.Object, pdf.Object, audit.Object, user, db, push.Object,
+            finance.Object, financeRead.Object, pdf.Object, audit.Object, user, db, push.Object,
             NullLogger<PaymentsController>.Instance);
-        return (controller, finance, pdf);
+        return (controller, finance, financeRead, pdf);
     }
 
     private static int? StatusOf(IActionResult result) =>
@@ -76,7 +77,7 @@ public class PaymentsPermissionEnforcementTests
     {
         await using var db = CreateDb();
         Grant(db, "Reception", "finance.payments", view: true, create: true); // edit NOT granted
-        var (controller, finance, _) = Build(db, User(UserRole.Reception));
+        var (controller, finance, financeRead, _) = Build(db, User(UserRole.Reception));
         finance.Setup(f => f.CreatePaymentAsync(It.IsAny<CreatePaymentRequest>()))
             .ReturnsAsync(new PaymentDto { Id = Guid.NewGuid(), Amount = 1000m, PaymentMethod = "cash" });
 
@@ -95,7 +96,7 @@ public class PaymentsPermissionEnforcementTests
     {
         await using var db = CreateDb();
         Grant(db, "Reception", "finance.payments", view: true, create: true); // edit = false
-        var (controller, finance, _) = Build(db, User(UserRole.Reception));
+        var (controller, finance, financeRead, _) = Build(db, User(UserRole.Reception));
 
         var result = await controller.UpdatePayment(Guid.NewGuid(), new UpdatePaymentRequest());
 
@@ -109,12 +110,12 @@ public class PaymentsPermissionEnforcementTests
     {
         await using var db = CreateDb();
         Grant(db, "Reception", "finance.payments", view: true, create: true); // no patient_balance row at all
-        var (controller, finance, _) = Build(db, User(UserRole.Reception));
+        var (controller, finance, financeRead, _) = Build(db, User(UserRole.Reception));
 
         var result = await controller.GetPatientFinanceSummary(Guid.NewGuid());
 
         StatusOf(result).Should().Be(403, "Reception is not granted finance.patient_balance.view");
-        finance.Verify(f => f.GetPatientFinanceSummaryAsync(It.IsAny<Guid>()), Times.Never);
+        financeRead.Verify(f => f.GetPatientFinanceSummaryAsync(It.IsAny<Guid>()), Times.Never);
     }
 
     [Fact]
@@ -122,7 +123,7 @@ public class PaymentsPermissionEnforcementTests
     {
         await using var db = CreateDb();
         Grant(db, "Reception", "finance.receipts", view: true, create: true);
-        var (controller, _, pdf) = Build(db, User(UserRole.Reception));
+        var (controller, _, _, pdf) = Build(db, User(UserRole.Reception));
         pdf.Setup(p => p.GeneratePaymentReceiptAsync(It.IsAny<Guid>()))
             .ReturnsAsync(new byte[] { 0x25, 0x50, 0x44, 0x46 });
 
@@ -135,7 +136,7 @@ public class PaymentsPermissionEnforcementTests
     public async Task Admin_BypassesGuard_EvenWithNoRolePermissionRows()
     {
         await using var db = CreateDb(); // no RolePermissions seeded
-        var (controller, finance, _) = Build(db, User(UserRole.Admin));
+        var (controller, finance, financeRead, _) = Build(db, User(UserRole.Admin));
         finance.Setup(f => f.GetPaymentsAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Guid?>()))
             .ReturnsAsync(new List<PaymentDto>());
 

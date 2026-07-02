@@ -42,6 +42,11 @@ public static class ServiceRegistrationConfiguration
         // (db + journalEntryService + currentUser + logger only) — first slice of the
         // FinanceService god-service decomposition. See docs/technical-debt/TD-021-god-service-extraction-plan.md.
         services.AddScoped<IInvoiceLedgerService, InvoiceLedgerService>();
+        // TD-021 PR A2: read-side finance service extracted from FinanceService. Owns all
+        // read-only aggregation queries (statements, summaries, overdue). Shared static
+        // helpers (MapPayment, NormalizeCurrency) live in FinanceMappers and are used by
+        // both FinanceService (write) and FinanceReadService (read).
+        services.AddScoped<IFinanceReadService, FinanceReadService>();
         // FIN-SETTINGS: read helper for the finance.* Settings namespace.
         services.AddScoped<FinanceSettingsReader>();
         services.AddScoped<IJournalEntryService, JournalEntryService>();

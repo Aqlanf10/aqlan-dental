@@ -20,7 +20,7 @@ namespace AqlanDentalPro.Infrastructure.Services;
 public class PatientJourneyService(
     AppDbContext db,
     IPatientAccessService patientAccessService,
-    IFinanceService financeService,
+    IFinanceReadService financeReadService,
     ILogger<PatientJourneyService> logger)
 {
     // ─── 1. GET /api/patient-journey/today ────────────────────────────────────
@@ -582,9 +582,10 @@ public class PatientJourneyService(
 
             if (hasAnyFinanceAccess)
             {
-                // FIX-3: Use central FinanceService.GetPatientFinanceSummaryAsync()
+                // FIX-3: Use central FinanceReadService.GetPatientFinanceSummaryAsync()
                 // instead of duplicating financial calculations here.
-                var centralSummary = await financeService.GetPatientFinanceSummaryAsync(patientId);
+                // (TD-021 PR A2: moved from FinanceService to FinanceReadService.)
+                var centralSummary = await financeReadService.GetPatientFinanceSummaryAsync(patientId);
 
                 if (hasFullFinanceAccess)
                 {

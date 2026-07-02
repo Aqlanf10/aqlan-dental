@@ -9,20 +9,19 @@ public interface IFinanceService
     Task<ContractDetailDto> CreateContractAsync(CreateContractRequest req);
     Task<ContractDetailDto?> UpdateContractAsync(Guid id, UpdateContractRequest req);
     Task<ContractDetailDto?> UpdateContractStatusAsync(Guid id, string status);
-    Task<List<OverdueContractDto>> GetOverdueContractsAsync();
     Task<List<PaymentDto>> GetPaymentsAsync(int page, int pageSize, Guid? patientId);
     Task<PaymentDto?> GetPaymentByIdAsync(Guid id);
     Task<PaymentDto> CreatePaymentAsync(CreatePaymentRequest req);
     Task<PaymentDto?> UpdatePaymentAsync(Guid id, UpdatePaymentRequest req);
     Task<bool> DeletePaymentAsync(Guid id);
     Task<PaymentDto?> RefundPaymentAsync(Guid id, string? reason, decimal? partialAmount = null);
-    Task<AccountStatementDto?> GetAccountStatementAsync(Guid patientId);
-    Task<PatientFinanceSummaryDto> GetPatientFinanceSummaryAsync(Guid patientId);
-    Task<FinanceSummaryDto> GetSummaryAsync();
     Task TryMarkInvoicePaidAsync(Guid invoiceId);
 
     // NOTE: PostInvoiceIssuedEntryAsync + ReverseInvoiceIssuedEntryAsync were moved to
     // IInvoiceLedgerService (TD-021 PR A1). Update call sites to inject IInvoiceLedgerService.
+    // NOTE: GetAccountStatementAsync, GetSummaryAsync, GetPatientFinanceSummaryAsync, and
+    // GetOverdueContractsAsync were moved to IFinanceReadService (TD-021 PR A2). Update
+    // call sites to inject IFinanceReadService.
 
     /// <summary>
     /// Finance Phase 1: Pays a supplier bill (partially or fully).

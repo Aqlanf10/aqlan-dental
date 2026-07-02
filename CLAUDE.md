@@ -1,5 +1,19 @@
 # CLAUDE.md — Aqlan Dental Pro
 
+## SpecKit Governance — Mandatory Before Editing
+
+Before any code or behavior change, read and follow:
+
+- `.specify/constitution.md`
+- `.specify/agent-policy.md`
+- `.specify/model-routing-policy.md`
+- `.specify/spec-drift-policy.md`
+- `specs/000-master-system/module-map.md`
+- `docs/governance/SPEC_KIT_WORKFLOW.md`
+- `docs/governance/CHEAP_MODEL_SAFE_MODE.md`
+
+No implementation without a linked spec ID. If the requested feature has no spec, create or update the spec first. If unsure, write a report, not code.
+
 ذاكرة المشروع الدائمة لوكلاء Claude. اقرأ هذا الملف أولًا في كل جلسة.
 
 ## سياق المالك وأولوياته (مهم جدًا)

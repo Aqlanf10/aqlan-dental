@@ -14,6 +14,34 @@ namespace AqlanDentalPro.API.Controllers;
 [Authorize(Policy = "ReportsAccess")]
 public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<ReportsController> logger, ICurrentUserService currentUser) : ControllerBase
 {
+    // ─── QA-595: Branch scoping helper ────────────────────────────────────────
+    // Returns null for Admin (consolidated view across all branches), or the
+    // caller's BranchId for non-admin users. Returns 403 via the out param if
+    // a non-admin user has no branch assigned — prevents Guid.Empty writes.
+    // Usage:
+    //   if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid;
+    //   ... .Where(x => !branchId.HasValue || x.BranchId == branchId.Value)
+    private bool TryGetBranchScope(out Guid? branchId, out IActionResult? forbid)
+    {
+        branchId = null;
+        forbid = null;
+        if (currentUser.IsAdmin)
+        {
+            // Admin: consolidated view (null = no filter)
+            // If admin has a branch assigned, still show consolidated for reports
+            branchId = null;
+            return true;
+        }
+        if (currentUser.BranchId.HasValue && currentUser.BranchId.Value != Guid.Empty)
+        {
+            branchId = currentUser.BranchId.Value;
+            return true;
+        }
+        // Non-admin without branch — deny rather than leak cross-branch data
+        forbid = StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
+        return false;
+    }
+
     [HttpGet("center-summary")]
     public async Task<IActionResult> GetCenterSummary([FromQuery] string? from, [FromQuery] string? to)
     {
@@ -23,12 +51,15 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, ClinicTimeProvider.ClinicToday(), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
-        var totalPatients = await db.Patients.CountAsync();
-        var newPatients = await db.Patients.CountAsync(p => DateOnly.FromDateTime(p.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(p.CreatedAt.Date) <= toDate);
-        var totalAppointments = await db.Appointments.CountAsync(a => a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate);
-        var completedAppointments = await db.Appointments.CountAsync(a => a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate && a.Status == Domain.Enums.AppointmentStatus.Completed);
-        var activeOrthoCases = await db.OrthoCases.CountAsync(c => c.Status == OrthoCaseStatus.Active);
-        var totalRevenue = await db.Payments.Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate).SumAsync(p => (decimal?)p.Amount) ?? 0;
+        // QA-595: Branch isolation — non-admin sees only their branch
+        if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
+
+        var totalPatients = await db.Patients.CountAsync(p => !branchId.HasValue || p.BranchId == branchId.Value);
+        var newPatients = await db.Patients.CountAsync(p => (!branchId.HasValue || p.BranchId == branchId.Value) && DateOnly.FromDateTime(p.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(p.CreatedAt.Date) <= toDate);
+        var totalAppointments = await db.Appointments.CountAsync(a => a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate && (!branchId.HasValue || a.BranchId == branchId.Value));
+        var completedAppointments = await db.Appointments.CountAsync(a => a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate && a.Status == Domain.Enums.AppointmentStatus.Completed && (!branchId.HasValue || a.BranchId == branchId.Value));
+        var activeOrthoCases = await db.OrthoCases.CountAsync(c => c.Status == OrthoCaseStatus.Active && (!branchId.HasValue || c.BranchId == branchId.Value));
+        var totalRevenue = await db.Payments.Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate && (!branchId.HasValue || p.BranchId == branchId.Value)).SumAsync(p => (decimal?)p.Amount) ?? 0;
 
         return Ok(new
         {
@@ -52,29 +83,36 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, ClinicTimeProvider.ClinicToday(), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
+        // QA-595: Branch isolation
+        if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
+
         var doctorIds = await db.Doctors.Where(d => d.IsActive).Select(d => d.Id).ToListAsync();
 
         // Batch all 5 metrics in single GROUP BY queries instead of N×5 round-trips
         var appointmentStats = await db.Appointments
-            .Where(a => doctorIds.Contains(a.DoctorId) && a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate)
+            .Where(a => doctorIds.Contains(a.DoctorId) && a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate
+                && (!branchId.HasValue || a.BranchId == branchId.Value))
             .GroupBy(a => a.DoctorId)
             .Select(g => new { DoctorId = g.Key, Count = g.Count(), Completed = g.Count(a => a.Status == Domain.Enums.AppointmentStatus.Completed) })
             .ToListAsync();
 
         var orthoStats = await db.OrthoCases
-            .Where(c => c.DoctorId != null && doctorIds.Contains(c.DoctorId.Value) && c.Status == OrthoCaseStatus.Active)
+            .Where(c => c.DoctorId != null && doctorIds.Contains(c.DoctorId.Value) && c.Status == OrthoCaseStatus.Active
+                && (!branchId.HasValue || c.BranchId == branchId.Value))
             .GroupBy(c => c.DoctorId!.Value)
             .Select(g => new { DoctorId = g.Key, Count = g.Count() })
             .ToListAsync();
 
         var treatmentStats = await db.GeneralTreatments
-            .Where(t => t.DoctorId != null && doctorIds.Contains(t.DoctorId.Value) && DateOnly.FromDateTime(t.CreatedAt.Date) >= fromDate)
+            .Where(t => t.DoctorId != null && doctorIds.Contains(t.DoctorId.Value) && DateOnly.FromDateTime(t.CreatedAt.Date) >= fromDate
+                && (!branchId.HasValue || t.Patient.BranchId == branchId.Value))
             .GroupBy(t => t.DoctorId!.Value)
             .Select(g => new { DoctorId = g.Key, Count = g.Count() })
             .ToListAsync();
 
         var revenueStats = await db.Payments
-            .Where(p => p.DoctorId != null && doctorIds.Contains(p.DoctorId.Value) && p.PaymentDate >= fromDate && p.PaymentDate <= toDate)
+            .Where(p => p.DoctorId != null && doctorIds.Contains(p.DoctorId.Value) && p.PaymentDate >= fromDate && p.PaymentDate <= toDate
+                && (!branchId.HasValue || p.BranchId == branchId.Value))
             .GroupBy(p => p.DoctorId!.Value)
             .Select(g => new { DoctorId = g.Key, Revenue = g.Sum(p => p.Amount) })
             .ToListAsync();
@@ -106,9 +144,13 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, ClinicTimeProvider.ClinicToday(), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
+        // QA-595: Branch isolation — previously `branchId` was computed but never applied (dead code).
+        if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
+
         // Fetch raw groups then format DateOnly in memory (EF can't translate DateOnly.ToString)
         var paymentsRaw = await db.Payments
-            .Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate)
+            .Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate
+                && (!branchId.HasValue || p.BranchId == branchId.Value))
             .GroupBy(p => p.PaymentDate)
             .Select(g => new { date = g.Key, total = g.Sum(p => p.Amount), count = g.Count() })
             .OrderBy(x => x.date)
@@ -116,13 +158,15 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var payments = paymentsRaw.Select(x => new { date = x.date.ToString("yyyy-MM-dd"), x.total, x.count }).ToList();
 
         var bySpecialty = await db.Payments
-            .Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate)
+            .Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate
+                && (!branchId.HasValue || p.BranchId == branchId.Value))
             .GroupBy(p => p.Specialty ?? "other")
             .Select(g => new { specialty = g.Key, total = g.Sum(p => p.Amount), count = g.Count() })
             .ToListAsync();
 
         var byMethod = await db.Payments
-            .Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate)
+            .Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate
+                && (!branchId.HasValue || p.BranchId == branchId.Value))
             .GroupBy(p => p.PaymentMethod ?? "cash")
             .Select(g => new { method = g.Key, total = g.Sum(p => p.Amount) })
             .ToListAsync();
@@ -130,31 +174,34 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var totalCollected = payments.Sum(p => p.total);
 
         // Phase 0B: Include CashFlowTransaction-based expenses, refunds, and supplier payments
-        // for a complete financial picture (not just patient payments)
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
-        
+        // for a complete financial picture (not just patient payments).
+        // QA-595: `branchId` is now actually applied to these queries (was dead code before).
         var totalExpenses = await db.CashFlowTransactions
             .Where(t => t.Type == TransactionType.Outflow && t.IsActive
                 && t.TransactionDate >= fromDate && t.TransactionDate <= toDate
-                && t.Category == FinancialCategory.OperationalExpense)
+                && t.Category == FinancialCategory.OperationalExpense
+                && (!branchId.HasValue || t.BranchId == branchId.Value))
             .SumAsync(t => (decimal?)t.Amount) ?? 0;
-            
+
         var totalRefunds = await db.CashFlowTransactions
             .Where(t => t.Type == TransactionType.Outflow && t.IsActive
                 && t.TransactionDate >= fromDate && t.TransactionDate <= toDate
-                && t.Category == FinancialCategory.Refund)
+                && t.Category == FinancialCategory.Refund
+                && (!branchId.HasValue || t.BranchId == branchId.Value))
             .SumAsync(t => (decimal?)t.Amount) ?? 0;
-            
+
         var totalSupplierPayments = await db.CashFlowTransactions
             .Where(t => t.Type == TransactionType.Outflow && t.IsActive
                 && t.TransactionDate >= fromDate && t.TransactionDate <= toDate
-                && t.Category == FinancialCategory.SupplierPayment)
+                && t.Category == FinancialCategory.SupplierPayment
+                && (!branchId.HasValue || t.BranchId == branchId.Value))
             .SumAsync(t => (decimal?)t.Amount) ?? 0;
-            
+
         var totalSalaryAdvances = await db.CashFlowTransactions
             .Where(t => t.Type == TransactionType.Outflow && t.IsActive
                 && t.TransactionDate >= fromDate && t.TransactionDate <= toDate
-                && t.Category == FinancialCategory.SalaryAdvance)
+                && t.Category == FinancialCategory.SalaryAdvance
+                && (!branchId.HasValue || t.BranchId == branchId.Value))
             .SumAsync(t => (decimal?)t.Amount) ?? 0;
 
         var netProfit = totalCollected - totalExpenses - totalRefunds - totalSupplierPayments - totalSalaryAdvances;
@@ -175,11 +222,14 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, ClinicTimeProvider.ClinicToday(), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
+        // QA-595: Branch isolation — non-admin sees only their branch
+        if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
+
         var today = ClinicTimeProvider.ClinicToday();
 
         // Age distribution
         var patients = await db.Patients
-            .Where(p => p.IsActive && p.DateOfBirth != null)
+            .Where(p => p.IsActive && p.DateOfBirth != null && (!branchId.HasValue || p.BranchId == branchId.Value))
             .Select(p => new { p.Id, p.DateOfBirth, p.Gender, p.ReferralSource, p.CreatedAt })
             .ToListAsync();
 
@@ -228,7 +278,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         // New patients per month (last 12 months)
         var twelveMonthsAgo = today.AddMonths(-12);
         var newPatientsRaw = await db.Patients
-            .Where(p => p.IsActive && DateOnly.FromDateTime(p.CreatedAt.Date) >= twelveMonthsAgo)
+            .Where(p => p.IsActive && DateOnly.FromDateTime(p.CreatedAt.Date) >= twelveMonthsAgo && (!branchId.HasValue || p.BranchId == branchId.Value))
             .GroupBy(p => new { DateOnly.FromDateTime(p.CreatedAt.Date).Year, DateOnly.FromDateTime(p.CreatedAt.Date).Month })
             .Select(g => new { g.Key.Year, g.Key.Month, Count = g.Count() })
             .ToListAsync();
@@ -240,7 +290,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
 
         // Active patients (at least 1 appointment in period)
         var activePatientIds = await db.Appointments
-            .Where(a => a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate)
+            .Where(a => a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate && (!branchId.HasValue || a.BranchId == branchId.Value))
             .Select(a => a.PatientId)
             .Distinct()
             .CountAsync();
@@ -266,8 +316,11 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, ClinicTimeProvider.ClinicToday(), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
+        // QA-595: Branch isolation — non-admin sees only their branch
+        if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
+
         var appointments = await db.Appointments
-            .Where(a => a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate)
+            .Where(a => a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate && (!branchId.HasValue || a.BranchId == branchId.Value))
             .Select(a => new { a.Status, a.StartTime, a.AppointmentDate, a.AppointmentType })
             .ToListAsync();
 
@@ -347,13 +400,16 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, ClinicTimeProvider.ClinicToday(), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
+        // QA-595: Branch isolation — non-admin sees only their branch
+        if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
+
         var today = ClinicTimeProvider.ClinicToday();
 
         // Active contracts where paid < total
         var contracts = await db.Contracts
             .Include(c => c.Patient)
             .Include(c => c.Payments)
-            .Where(c => c.IsActive && c.Status == ContractStatus.Active && c.TotalAmount > 0)
+            .Where(c => c.IsActive && c.Status == ContractStatus.Active && c.TotalAmount > 0 && (!branchId.HasValue || c.Patient.BranchId == branchId.Value))
             .ToListAsync();
 
         var overdueList = new List<object>();
@@ -433,16 +489,19 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, ClinicTimeProvider.ClinicToday(), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
+        // QA-595: Branch isolation — non-admin sees only their branch
+        if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
+
         // Cases by status
         var casesByStatus = await db.OrthoCases
-            .Where(c => c.IsActive)
+            .Where(c => c.IsActive && (!branchId.HasValue || c.BranchId == branchId.Value))
             .GroupBy(c => c.Status.ToString())
             .Select(g => new { status = g.Key, count = g.Count() })
             .ToListAsync();
 
         // Average treatment duration for completed cases
         var completedCases = await db.OrthoCases
-            .Where(c => c.IsActive && c.Status == OrthoCaseStatus.Completed && c.StartDate.HasValue)
+            .Where(c => c.IsActive && c.Status == OrthoCaseStatus.Completed && c.StartDate.HasValue && (!branchId.HasValue || c.BranchId == branchId.Value))
             .Select(c => new { c.StartDate, c.CreatedAt })
             .ToListAsync();
 
@@ -453,7 +512,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
 
         // Cases per doctor
         var casesPerDoctor = await db.OrthoCases
-            .Where(c => c.IsActive && c.DoctorId != null)
+            .Where(c => c.IsActive && c.DoctorId != null && (!branchId.HasValue || c.BranchId == branchId.Value))
             .GroupBy(c => c.DoctorId!.Value)
             .Select(g => new { doctorId = g.Key, count = g.Count() })
             .ToListAsync();
@@ -473,7 +532,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
 
         // Revenue from ortho payments
         var orthoRevenue = await db.Payments
-            .Where(p => p.IsActive && p.Specialty == "Orthodontics" && p.PaymentDate >= fromDate && p.PaymentDate <= toDate)
+            .Where(p => p.IsActive && p.Specialty == "Orthodontics" && p.PaymentDate >= fromDate && p.PaymentDate <= toDate && (!branchId.HasValue || p.BranchId == branchId.Value))
             .SumAsync(p => (decimal?)p.Amount) ?? 0;
 
         return Ok(new
@@ -496,9 +555,12 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, ClinicTimeProvider.ClinicToday(), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
+        // QA-595: Branch isolation — non-admin sees only their branch
+        if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
+
         // Cases by type
         var casesByType = await db.SurgeryCases
-            .Where(c => c.IsActive && DateOnly.FromDateTime(c.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(c.CreatedAt.Date) <= toDate)
+            .Where(c => c.IsActive && DateOnly.FromDateTime(c.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(c.CreatedAt.Date) <= toDate && (!branchId.HasValue || c.Patient.BranchId == branchId.Value))
             .GroupBy(c => c.SurgeryType)
             .Select(g => new { type = g.Key, count = g.Count() })
             .OrderByDescending(x => x.count)
@@ -506,7 +568,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
 
         // Cases per doctor
         var casesPerDoctorRaw = await db.SurgeryCases
-            .Where(c => c.IsActive && c.DoctorId != null && DateOnly.FromDateTime(c.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(c.CreatedAt.Date) <= toDate)
+            .Where(c => c.IsActive && c.DoctorId != null && DateOnly.FromDateTime(c.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(c.CreatedAt.Date) <= toDate && (!branchId.HasValue || c.Patient.BranchId == branchId.Value))
             .GroupBy(c => c.DoctorId!.Value)
             .Select(g => new { doctorId = g.Key, count = g.Count() })
             .ToListAsync();
@@ -526,7 +588,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
 
         // Monthly trend
         var monthlyRaw = await db.SurgeryCases
-            .Where(c => c.IsActive && DateOnly.FromDateTime(c.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(c.CreatedAt.Date) <= toDate)
+            .Where(c => c.IsActive && DateOnly.FromDateTime(c.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(c.CreatedAt.Date) <= toDate && (!branchId.HasValue || c.Patient.BranchId == branchId.Value))
             .GroupBy(c => new { DateOnly.FromDateTime(c.CreatedAt.Date).Year, DateOnly.FromDateTime(c.CreatedAt.Date).Month })
             .Select(g => new { g.Key.Year, g.Key.Month, count = g.Count() })
             .ToListAsync();
@@ -555,9 +617,12 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, ClinicTimeProvider.ClinicToday(), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
+        // QA-595: Branch isolation — non-admin sees only their branch
+        if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
+
         // Current period
         var currentTotal = await db.Payments
-            .Where(p => p.IsActive && p.PaymentDate >= fromDate && p.PaymentDate <= toDate)
+            .Where(p => p.IsActive && p.PaymentDate >= fromDate && p.PaymentDate <= toDate && (!branchId.HasValue || p.BranchId == branchId.Value))
             .SumAsync(p => (decimal?)p.Amount) ?? 0;
 
         // Previous period (same duration before `from`)
@@ -567,7 +632,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var prevToDate = fromDate.AddDays(-1);
 
         var previousTotal = await db.Payments
-            .Where(p => p.IsActive && p.PaymentDate >= prevFromDate && p.PaymentDate <= prevToDate)
+            .Where(p => p.IsActive && p.PaymentDate >= prevFromDate && p.PaymentDate <= prevToDate && (!branchId.HasValue || p.BranchId == branchId.Value))
             .SumAsync(p => (decimal?)p.Amount) ?? 0;
 
         var percentageChange = previousTotal > 0
@@ -576,13 +641,13 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
 
         // Month-over-month breakdown
         var currentMonthly = await db.Payments
-            .Where(p => p.IsActive && p.PaymentDate >= fromDate && p.PaymentDate <= toDate)
+            .Where(p => p.IsActive && p.PaymentDate >= fromDate && p.PaymentDate <= toDate && (!branchId.HasValue || p.BranchId == branchId.Value))
             .GroupBy(p => new { p.PaymentDate.Year, p.PaymentDate.Month })
             .Select(g => new { g.Key.Year, g.Key.Month, total = g.Sum(p => p.Amount) })
             .ToListAsync();
 
         var previousMonthly = await db.Payments
-            .Where(p => p.IsActive && p.PaymentDate >= prevFromDate && p.PaymentDate <= prevToDate)
+            .Where(p => p.IsActive && p.PaymentDate >= prevFromDate && p.PaymentDate <= prevToDate && (!branchId.HasValue || p.BranchId == branchId.Value))
             .GroupBy(p => new { p.PaymentDate.Year, p.PaymentDate.Month })
             .Select(g => new { g.Key.Year, g.Key.Month, total = g.Sum(p => p.Amount) })
             .ToListAsync();
@@ -599,13 +664,13 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
 
         // By specialty comparison
         var currentBySpecialty = await db.Payments
-            .Where(p => p.IsActive && p.PaymentDate >= fromDate && p.PaymentDate <= toDate)
+            .Where(p => p.IsActive && p.PaymentDate >= fromDate && p.PaymentDate <= toDate && (!branchId.HasValue || p.BranchId == branchId.Value))
             .GroupBy(p => p.Specialty ?? "أخرى")
             .Select(g => new { specialty = g.Key, total = g.Sum(p => p.Amount) })
             .ToListAsync();
 
         var previousBySpecialty = await db.Payments
-            .Where(p => p.IsActive && p.PaymentDate >= prevFromDate && p.PaymentDate <= prevToDate)
+            .Where(p => p.IsActive && p.PaymentDate >= prevFromDate && p.PaymentDate <= prevToDate && (!branchId.HasValue || p.BranchId == branchId.Value))
             .GroupBy(p => p.Specialty ?? "أخرى")
             .Select(g => new { specialty = g.Key, total = g.Sum(p => p.Amount) })
             .ToListAsync();
@@ -642,8 +707,11 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, ClinicTimeProvider.ClinicToday(), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
+        // QA-595: Branch isolation — non-admin sees only their branch
+        if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
+
         var steps = await db.PatientTreatmentPlanSteps
-            .Where(s => s.IsActive && DateOnly.FromDateTime(s.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(s.CreatedAt.Date) <= toDate)
+            .Where(s => s.IsActive && DateOnly.FromDateTime(s.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(s.CreatedAt.Date) <= toDate && (!branchId.HasValue || s.Patient.BranchId == branchId.Value))
             .Select(s => new { s.Status, s.ResponsibleDoctorId })
             .ToListAsync();
 
@@ -719,18 +787,21 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, ClinicTimeProvider.ClinicToday(), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
+        // QA-595: Branch isolation — non-admin sees only their branch
+        if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
+
         var today = ClinicTimeProvider.ClinicToday();
 
         // Orders by status
         var ordersByStatus = await db.LabOrders
-            .Where(o => o.IsActive && DateOnly.FromDateTime(o.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(o.CreatedAt.Date) <= toDate)
+            .Where(o => o.IsActive && DateOnly.FromDateTime(o.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(o.CreatedAt.Date) <= toDate && (!branchId.HasValue || o.BranchId == branchId.Value))
             .GroupBy(o => o.Status ?? "unknown")
             .Select(g => new { status = g.Key, count = g.Count() })
             .ToListAsync();
 
         // Per-doctor count
         var perDoctorRaw = await db.LabOrders
-            .Where(o => o.IsActive && o.DoctorId != null && DateOnly.FromDateTime(o.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(o.CreatedAt.Date) <= toDate)
+            .Where(o => o.IsActive && o.DoctorId != null && DateOnly.FromDateTime(o.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(o.CreatedAt.Date) <= toDate && (!branchId.HasValue || o.BranchId == branchId.Value))
             .GroupBy(o => o.DoctorId!.Value)
             .Select(g => new { doctorId = g.Key, count = g.Count() })
             .ToListAsync();
@@ -750,7 +821,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
 
         // Overdue orders: ExpectedDate < today AND not received
         var overdueCount = await db.LabOrders
-            .Where(o => o.IsActive && o.ExpectedDate != null && o.ExpectedDate < today && o.ReceivedDate == null && o.Status != "received" && o.Status != "cancelled")
+            .Where(o => o.IsActive && o.ExpectedDate != null && o.ExpectedDate < today && o.ReceivedDate == null && o.Status != "received" && o.Status != "cancelled" && (!branchId.HasValue || o.BranchId == branchId.Value))
             .CountAsync();
 
         return Ok(new
@@ -772,8 +843,11 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, ClinicTimeProvider.ClinicToday(), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
+        // QA-595: Branch isolation — non-admin sees only their branch
+        if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
+
         var prescriptions = await db.Prescriptions
-            .Where(p => p.IsActive && DateOnly.FromDateTime(p.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(p.CreatedAt.Date) <= toDate)
+            .Where(p => p.IsActive && DateOnly.FromDateTime(p.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(p.CreatedAt.Date) <= toDate && (!branchId.HasValue || p.Patient.BranchId == branchId.Value))
             .Select(p => new { p.DoctorId, p.Drugs, p.CreatedAt })
             .ToListAsync();
 
@@ -855,15 +929,18 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, ClinicTimeProvider.ClinicToday(), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
+        // QA-595: Branch isolation — non-admin sees only their branch
+        if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
+
         // New vs returning patients in period
         var patientFirstAppointment = await db.Appointments
-            .Where(a => a.IsActive)
+            .Where(a => a.IsActive && (!branchId.HasValue || a.BranchId == branchId.Value))
             .GroupBy(a => a.PatientId)
             .Select(g => new { PatientId = g.Key, FirstDate = g.Min(a => a.AppointmentDate) })
             .ToListAsync();
 
         var patientsInPeriod = await db.Appointments
-            .Where(a => a.IsActive && a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate)
+            .Where(a => a.IsActive && a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate && (!branchId.HasValue || a.BranchId == branchId.Value))
             .Select(a => a.PatientId)
             .Distinct()
             .ToListAsync();
@@ -879,7 +956,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
 
         // Average days between visits
         var visitDates = await db.Appointments
-            .Where(a => a.IsActive && a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate && a.Status == Domain.Enums.AppointmentStatus.Completed)
+            .Where(a => a.IsActive && a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate && a.Status == Domain.Enums.AppointmentStatus.Completed && (!branchId.HasValue || a.BranchId == branchId.Value))
             .GroupBy(a => a.PatientId)
             .Where(g => g.Count() >= 2)
             .Select(g => g.Select(a => a.AppointmentDate).OrderBy(d => d).ToList())
@@ -907,13 +984,13 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var ninetyDaysAgo = today.AddDays(-90);
 
         var recentPatientIds = await db.Appointments
-            .Where(a => a.IsActive && a.AppointmentDate >= ninetyDaysAgo)
+            .Where(a => a.IsActive && a.AppointmentDate >= ninetyDaysAgo && (!branchId.HasValue || a.BranchId == branchId.Value))
             .Select(a => a.PatientId)
             .Distinct()
             .ToListAsync();
 
         var churnRiskCount = await db.Patients
-            .Where(p => p.IsActive && !recentPatientIds.Contains(p.Id))
+            .Where(p => p.IsActive && !recentPatientIds.Contains(p.Id) && (!branchId.HasValue || p.BranchId == branchId.Value))
             .CountAsync();
 
         return Ok(new
@@ -935,6 +1012,10 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         if (fromErr != null) return fromErr;
         var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, ClinicTimeProvider.ClinicToday(), "تاريخ النهاية");
         if (toErr != null) return toErr;
+
+        // QA-595: Branch isolation — non-admin without branch is denied.
+        // TODO QA-596: BookingRequest has no BranchId field (and no PatientId) — cannot filter further without schema change.
+        if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
 
         var bookings = await db.BookingRequests
             .Where(b => b.IsActive && DateOnly.FromDateTime(b.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(b.CreatedAt.Date) <= toDate)
@@ -1003,7 +1084,12 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [HttpGet("export/patients")]
     public async Task<IActionResult> ExportPatients()
     {
+        // QA-595: Branch isolation — without this, an Accountant from branch A
+        // could download a CSV of every patient in branch B (PII leak).
+        if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
+
         var patients = await db.Patients
+            .Where(p => !branchId.HasValue || p.BranchId == branchId.Value)
             .OrderByDescending(p => p.CreatedAt)
             .Select(p => new
             {
@@ -1040,9 +1126,13 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, ClinicTimeProvider.ClinicToday(), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
+        // QA-595: Branch isolation — payments CSV contains patient name + number + amount (sensitive).
+        if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
+
         var payments = await db.Payments
             .Include(p => p.Patient)
-            .Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate)
+            .Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate
+                && (!branchId.HasValue || p.BranchId == branchId.Value))
             .OrderByDescending(p => p.PaymentDate)
             .Select(p => new
             {
@@ -1081,10 +1171,14 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, ClinicTimeProvider.ClinicToday(), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
+        // QA-595: Branch isolation — appointments CSV contains patient PII.
+        if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
+
         var appts = await db.Appointments
             .Include(a => a.Patient)
             .Include(a => a.Doctor)
-            .Where(a => a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate)
+            .Where(a => a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate
+                && (!branchId.HasValue || a.BranchId == branchId.Value))
             .OrderByDescending(a => a.AppointmentDate)
             .Select(a => new
             {
@@ -1119,6 +1213,23 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [HttpGet("pdf/financial-statement/{patientId:guid}")]
     public async Task<IActionResult> GetFinancialStatementPdf(Guid patientId)
     {
+        // QA-595: Branch isolation — verify the patient belongs to the caller's
+        // branch before generating the PDF. Previously an Accountant from branch
+        // A could request a financial statement for any patientId in branch B.
+        if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
+
+        if (branchId.HasValue)
+        {
+            var patientBranch = await db.Patients
+                .Where(p => p.Id == patientId)
+                .Select(p => p.BranchId)
+                .FirstOrDefaultAsync();
+            if (patientBranch == null)
+                return NotFound(new { message = "المريض غير موجود" });
+            if (patientBranch != branchId.Value)
+                return StatusCode(403, new { message = "ليس لديك صلاحية الوصول إلى بيانات مريض من فرع آخر" });
+        }
+
         try
         {
             var pdfBytes = await pdfService.GenerateFinancialStatementAsync(patientId);

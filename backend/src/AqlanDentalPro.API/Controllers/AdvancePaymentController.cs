@@ -57,6 +57,21 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
+        // QA-595: Branch isolation — non-admin callers are force-scoped to their
+        // own branch regardless of the ?branchId= query param they pass. Admins
+        // can still request a specific branch or consolidated (null) view.
+        Guid? effectiveBranchId;
+        if (currentUser.IsAdmin)
+        {
+            effectiveBranchId = branchId; // admin may pass any branch or null for consolidated
+        }
+        else
+        {
+            if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
+                return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
+            effectiveBranchId = currentUser.BranchId.Value; // non-admin: ignore caller-supplied branchId
+        }
+
         var query = db.AdvancePayments
             .Include(a => a.Employee)
             .AsQueryable();
@@ -67,8 +82,8 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
         if (status.HasValue)
             query = query.Where(a => a.Status == status.Value);
 
-        if (branchId.HasValue)
-            query = query.Where(a => a.Employee.BranchId == branchId.Value);
+        if (effectiveBranchId.HasValue)
+            query = query.Where(a => a.Employee.BranchId == effectiveBranchId.Value);
 
         var total = await query.CountAsync();
 

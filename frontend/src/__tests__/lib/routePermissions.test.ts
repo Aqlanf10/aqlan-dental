@@ -32,4 +32,11 @@ describe('route permissions', () => {
     expect(isRouteAllowed('/unknown-dashboard-route', 'Reception')).toBe(false);
     expect(isRouteAllowed('/daily-operations', null)).toBe(false);
   });
+
+  it('does not allow similarly named paths through prefix matching', () => {
+    expect(isRouteAllowed('/labyrinth', 'BranchManager')).toBe(false);
+    expect(isRouteAllowed('/settings-labs', 'BranchManager')).toBe(false);
+    expect(isRouteAllowed('/appointments-recall', 'Reception')).toBe(false);
+    expect(isRouteAllowed('/patients-archive', 'Reception')).toBe(false);
+  });
 });

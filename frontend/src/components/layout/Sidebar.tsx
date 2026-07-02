@@ -239,6 +239,10 @@ function isVisible(entry: { roles: string[]; permission?: string }, userRole: st
   return true;
 }
 
+function isActiveRoute(pathname: string, href: string): boolean {
+  return pathname === href || (href !== "/" && pathname.startsWith(`${href}/`));
+}
+
 /* ─── Collapsible group ─────────────────────────────────────────────────────── */
 function NavGroupItem({
   group, userRole, pathname, user,
@@ -248,7 +252,7 @@ function NavGroupItem({
   const visibleChildren = group.children.filter(
     (c) => isVisible(c, userRole, user),
   );
-  const isChildActive = visibleChildren.some((c) => pathname.startsWith(c.href));
+  const isChildActive = visibleChildren.some((c) => isActiveRoute(pathname, c.href));
   const [open, setOpen] = useState(isChildActive);
 
   if (visibleChildren.length === 0) return null;
@@ -289,7 +293,7 @@ function NavGroupItem({
               href={child.href}
               label={child.label}
               icon={child.icon}
-              isCurrent={child.href === "/" ? pathname === "/" : pathname.startsWith(child.href)}
+              isCurrent={isActiveRoute(pathname, child.href)}
               indent
               badge={child.badge}
             />
@@ -394,7 +398,7 @@ export function Sidebar() {
             const visible = isVisible(leaf, userRole, user);
             if (!visible) return null;
 
-            const isCurrent = leaf.href === "/" ? pathname === "/" : pathname.startsWith(leaf.href);
+            const isCurrent = isActiveRoute(pathname, leaf.href);
             const unreadCount = leaf.href === "/messages" ? unreadData?.totalUnread : undefined;
 
             // Dynamically customize labels for Doctor roles

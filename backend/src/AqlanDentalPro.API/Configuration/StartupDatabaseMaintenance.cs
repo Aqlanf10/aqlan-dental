@@ -763,6 +763,13 @@ public static class StartupDatabaseMaintenance
                         END IF;
                     END IF;
 
+                    -- YOLO-S2: Color column (nullable hex string for calendar/queue display)
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicServices') THEN
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'Color') THEN
+                            ALTER TABLE "ClinicServices" ADD COLUMN "Color" character varying(20) NULL;
+                        END IF;
+                    END IF;
+
                     -- ── Create ClinicRooms table if not exists ──────────────────
                     IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ClinicRooms') THEN
                         CREATE TABLE "ClinicRooms" (

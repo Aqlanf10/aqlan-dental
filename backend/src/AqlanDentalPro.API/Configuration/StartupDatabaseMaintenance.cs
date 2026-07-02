@@ -61,6 +61,7 @@ public static class StartupDatabaseMaintenance
         await EnsureCephApprovalColumnsAsync(app);
         await EnsurePaymentCurrencyColumnAsync(app);
         await EnsureMultiCurrencyColumnsAsync(app);
+        await EnsureFinanceEnumColumnTypesAsync(app);
         await EnsureAppointmentEnhancementsSchemaAsync(app);
         await EnsureVisitOrthoFieldsSchemaAsync(app);
         await EnsureOrthoImagePreparationSchemaAsync(app);
@@ -3226,7 +3227,7 @@ public static class StartupDatabaseMaintenance
                         "Description" character varying(500) NOT NULL,
                         "TotalAmount" numeric(12,2) NOT NULL,
                         "PaidAmount" numeric(12,2) NOT NULL DEFAULT 0,
-                        "Status" integer NOT NULL DEFAULT 0,
+                        "Status" character varying(20) NOT NULL DEFAULT 'Unpaid',
                         "BillDate" date NOT NULL,
                         "DueDate" date NULL,
                         "PurchaseOrderId" uuid NULL,
@@ -3291,7 +3292,7 @@ public static class StartupDatabaseMaintenance
                         "PatientId" uuid NOT NULL,
                         "Amount" numeric(12,2) NOT NULL,
                         "Reason" character varying(500) NOT NULL DEFAULT '',
-                        "Status" integer NOT NULL DEFAULT 0,
+                        "Status" character varying(20) NOT NULL DEFAULT 'Draft',
                         "RefundPaymentId" uuid NULL,
                         "BranchId" uuid NOT NULL,
                         "CreatedBy" uuid NOT NULL,
@@ -3308,11 +3309,18 @@ public static class StartupDatabaseMaintenance
                 await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_CreditNotes_BranchId" ON "CreditNotes" ("BranchId")""");
                 await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_CreditNotes_Status" ON "CreditNotes" ("Status")""");
 
-                // Supplier.Type column (integer enum: 0=DentalLab, 1=MedicalVendor, 2=GeneralService)
+                // Supplier.Type column — varchar enum names, matching the current EF config
+                // (HasConversion<string>()). QA-602: this used to ADD COLUMN as integer (the
+                // pre-Phase1 storage), which made EF reads throw InvalidCastException on any
+                // DB whose Type column came from this hotfix instead of migration 20260618 —
+                // that broke BOTH /api/suppliers AND /api/finance-v3/expenses (its
+                // Include(e => e.Supplier) materialises the full Supplier row). The
+                // int→varchar conversion for already-drifted DBs lives in
+                // EnsureFinanceEnumColumnTypesAsync.
                 await db.Database.ExecuteSqlRawAsync("""
                     DO $$ BEGIN
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Suppliers' AND column_name = 'Type') THEN
-                            ALTER TABLE "Suppliers" ADD COLUMN "Type" integer NOT NULL DEFAULT 1;
+                            ALTER TABLE "Suppliers" ADD COLUMN "Type" character varying(30) NOT NULL DEFAULT 'MedicalVendor';
                         END IF;
                     END $$;
                 """);
@@ -4520,6 +4528,119 @@ public static class StartupDatabaseMaintenance
                 ON "Treasuries" ("BranchId", "Type", "Currency");
             CREATE INDEX IF NOT EXISTS "IX_CashFlowTransactions_BranchId_Currency_TransactionDate"
                 ON "CashFlowTransactions" ("BranchId", "Currency", "TransactionDate");
+            """);
+    }
+
+    /// <summary>
+    /// QA-602 (PROD 500 FIX): normalises finance enum columns that are stored as INTEGER on
+    /// drifted databases while the current EF model expects VARCHAR (HasConversion&lt;string&gt;()).
+    ///
+    /// Root cause chain: an older startup hotfix in this file used to ADD "Suppliers"."Type"
+    /// as integer (the pre-20260618 storage), and the SupplierBills/CreditNotes CREATE TABLE
+    /// blocks used integer Status columns. Migration 20260618_FixEnumColumnTypesPhase1
+    /// converts them to varchar — but on databases where that migration never applied (the
+    /// historical chain is known-broken, see CLAUDE.md) the integer columns survive, and any
+    /// EF read of those entities throws InvalidCastException. In production this 500'd BOTH
+    /// GET /api/suppliers (full Supplier materialisation) AND GET /api/finance-v3/expenses
+    /// (its Include(e =&gt; e.Supplier) pulls the Supplier row into every page load).
+    ///
+    /// The conversions mirror the already-approved Phase1 migration's guarded CASE mappings,
+    /// with two deliberate corrections:
+    ///  1. CreditNotes.Status maps to the CURRENT CreditNoteStatus members
+    ///     (Draft/Approved/Refunded) — Phase1 predates an enum rename and would emit
+    ///     'Issued'/'Applied' strings the current model cannot parse.
+    ///  2. Each conversion re-SETs a proper string DEFAULT afterwards — PostgreSQL silently
+    ///     re-casts an integer default (e.g. 1) to the STRING '1' during ALTER TYPE (verified
+    ///     on Postgres 16), which would poison future default-valued inserts.
+    /// Each step is guarded (converts only when data_type='integer'), runs in its own
+    /// transaction, and is a no-op on healthy databases. C-08 pattern — no migration change.
+    /// </summary>
+    private static async Task EnsureFinanceEnumColumnTypesAsync(WebApplication app)
+    {
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        if (!db.Database.IsRelational()) return;
+
+        var logger = app.Services.GetRequiredService<ILogger<Program>>();
+
+        async Task RunAsync(string label, string sql)
+        {
+            try { await db.Database.ExecuteSqlRawAsync(sql); }
+            catch (Exception ex) { logger.LogWarning(ex, "Finance enum-type hotfix step failed (non-fatal): {Step}", label); }
+        }
+
+        // ── Suppliers.Type: integer → varchar(30) with enum-name values ──
+        await RunAsync("Suppliers.Type int→varchar", """
+            DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'Suppliers' AND column_name = 'Type' AND data_type = 'integer') THEN
+                    ALTER TABLE "Suppliers" ALTER COLUMN "Type" TYPE character varying(30) USING CASE
+                        WHEN "Type" = 0 THEN 'DentalLab'
+                        WHEN "Type" = 1 THEN 'MedicalVendor'
+                        WHEN "Type" = 2 THEN 'GeneralService'
+                        ELSE 'MedicalVendor'
+                    END;
+                    ALTER TABLE "Suppliers" ALTER COLUMN "Type" SET DEFAULT 'MedicalVendor';
+                END IF;
+                -- Defensive: heal numeric-string leftovers (a prior conversion without the
+                -- SET DEFAULT fix stamps '1' on default-valued inserts).
+                IF EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'Suppliers' AND column_name = 'Type' AND data_type = 'character varying') THEN
+                    UPDATE "Suppliers" SET "Type" = CASE "Type"
+                        WHEN '0' THEN 'DentalLab' WHEN '1' THEN 'MedicalVendor' WHEN '2' THEN 'GeneralService' END
+                    WHERE "Type" IN ('0','1','2');
+                END IF;
+            END $$;
+            """);
+
+        // ── SupplierBills.Status: integer → varchar(20) ──
+        await RunAsync("SupplierBills.Status int→varchar", """
+            DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'SupplierBills' AND column_name = 'Status' AND data_type = 'integer') THEN
+                    ALTER TABLE "SupplierBills" ALTER COLUMN "Status" TYPE character varying(20) USING CASE
+                        WHEN "Status" = 0 THEN 'Unpaid'
+                        WHEN "Status" = 1 THEN 'PartiallyPaid'
+                        WHEN "Status" = 2 THEN 'FullyPaid'
+                        WHEN "Status" = 3 THEN 'Cancelled'
+                        ELSE 'Unpaid'
+                    END;
+                    ALTER TABLE "SupplierBills" ALTER COLUMN "Status" SET DEFAULT 'Unpaid';
+                END IF;
+                IF EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'SupplierBills' AND column_name = 'Status' AND data_type = 'character varying') THEN
+                    UPDATE "SupplierBills" SET "Status" = CASE "Status"
+                        WHEN '0' THEN 'Unpaid' WHEN '1' THEN 'PartiallyPaid' WHEN '2' THEN 'FullyPaid' WHEN '3' THEN 'Cancelled' END
+                    WHERE "Status" IN ('0','1','2','3');
+                END IF;
+            END $$;
+            """);
+
+        // ── CreditNotes.Status: integer → varchar(20), CURRENT enum members ──
+        await RunAsync("CreditNotes.Status int→varchar", """
+            DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'CreditNotes' AND column_name = 'Status' AND data_type = 'integer') THEN
+                    ALTER TABLE "CreditNotes" ALTER COLUMN "Status" TYPE character varying(20) USING CASE
+                        WHEN "Status" = 0 THEN 'Draft'
+                        WHEN "Status" = 1 THEN 'Approved'
+                        WHEN "Status" = 2 THEN 'Refunded'
+                        ELSE 'Draft'
+                    END;
+                    ALTER TABLE "CreditNotes" ALTER COLUMN "Status" SET DEFAULT 'Draft';
+                END IF;
+                IF EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'CreditNotes' AND column_name = 'Status' AND data_type = 'character varying') THEN
+                    UPDATE "CreditNotes" SET "Status" = CASE "Status"
+                        WHEN '0' THEN 'Draft' WHEN '1' THEN 'Approved' WHEN '2' THEN 'Refunded'
+                        -- Pre-rename Phase1 values (enum was later renamed; the current model
+                        -- cannot parse these): Issued≈Approved, Applied≈Refunded. No current
+                        -- member corresponds to Cancelled — map to Draft (the record stays
+                        -- visible for manual review instead of crashing every list read).
+                        WHEN 'Issued' THEN 'Approved' WHEN 'Applied' THEN 'Refunded' WHEN 'Cancelled' THEN 'Draft' END
+                    WHERE "Status" IN ('0','1','2','Issued','Applied','Cancelled');
+                END IF;
+            END $$;
             """);
     }
 

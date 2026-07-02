@@ -208,21 +208,18 @@ public class FinanceV3AccountingSafetyTests
         db.Invoices.Add(invoice);
         await db.SaveChangesAsync();
 
-        // Post the invoice issuance entry
+        // Post the invoice issuance entry (TD-021 PR A1: moved to InvoiceLedgerService)
         var currentUser = new Mock<ICurrentUserService>();
         currentUser.SetupGet(c => c.UserId).Returns(cashierId);
         currentUser.SetupGet(c => c.BranchId).Returns(branchId);
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
 
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
-        var financeService = new FinanceService(
-            db, currentUser.Object,
-            new Mock<INotificationService>().Object,
-            new Mock<ILogger<FinanceService>>().Object,
-            new Mock<ICommissionService>().Object,
-            journalEntryService);
+        var invoiceLedgerService = new InvoiceLedgerService(
+            db, currentUser.Object, journalEntryService,
+            new Mock<ILogger<InvoiceLedgerService>>().Object);
 
-        await financeService.PostInvoiceIssuedEntryAsync(invoice.Id);
+        await invoiceLedgerService.PostInvoiceIssuedEntryAsync(invoice.Id);
 
         // Verify JournalEntry was created
         var je = await db.JournalEntries
@@ -1813,20 +1810,18 @@ public class FinanceV3AccountingSafetyTests
         await db.SaveChangesAsync();
 
         // Post the invoice issuance entry (Debit PatientReceivable / Credit Revenue)
+        // TD-021 PR A1: invoice-ledger posting now lives in InvoiceLedgerService (extracted from FinanceService).
         var currentUser = new Mock<ICurrentUserService>();
         currentUser.SetupGet(c => c.UserId).Returns(cashierId);
         currentUser.SetupGet(c => c.BranchId).Returns(branchId);
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
 
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
-        var financeService = new FinanceService(
-            db, currentUser.Object,
-            new Mock<INotificationService>().Object,
-            new Mock<ILogger<FinanceService>>().Object,
-            new Mock<ICommissionService>().Object,
-            journalEntryService);
+        var invoiceLedgerService = new InvoiceLedgerService(
+            db, currentUser.Object, journalEntryService,
+            new Mock<ILogger<InvoiceLedgerService>>().Object);
 
-        await financeService.PostInvoiceIssuedEntryAsync(invoice.Id);
+        await invoiceLedgerService.PostInvoiceIssuedEntryAsync(invoice.Id);
 
         // Verify original JE exists
         var originalJE = await db.JournalEntries
@@ -1837,7 +1832,7 @@ public class FinanceV3AccountingSafetyTests
         originalJE.Should().NotBeNull("issuance entry must exist");
 
         // Reverse the invoice issuance entry
-        await financeService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
+        await invoiceLedgerService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
 
         // Verify reversal JE was created
         var reversalJE = await db.JournalEntries
@@ -1939,21 +1934,18 @@ public class FinanceV3AccountingSafetyTests
         db.Invoices.Add(invoice);
         await db.SaveChangesAsync();
 
-        // Post the invoice issuance entry
+        // Post the invoice issuance entry (TD-021 PR A1: moved to InvoiceLedgerService)
         var currentUser = new Mock<ICurrentUserService>();
         currentUser.SetupGet(c => c.UserId).Returns(cashierId);
         currentUser.SetupGet(c => c.BranchId).Returns(branchId);
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
 
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
-        var financeService = new FinanceService(
-            db, currentUser.Object,
-            new Mock<INotificationService>().Object,
-            new Mock<ILogger<FinanceService>>().Object,
-            new Mock<ICommissionService>().Object,
-            journalEntryService);
+        var invoiceLedgerService = new InvoiceLedgerService(
+            db, currentUser.Object, journalEntryService,
+            new Mock<ILogger<InvoiceLedgerService>>().Object);
 
-        await financeService.PostInvoiceIssuedEntryAsync(invoice.Id);
+        await invoiceLedgerService.PostInvoiceIssuedEntryAsync(invoice.Id);
 
         // Verify accrued revenue from JournalLines
         var accruedRevenue = await db.JournalLines
@@ -2200,14 +2192,15 @@ public class FinanceV3AccountingSafetyTests
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
 
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
-        var financeService = new FinanceService(db, currentUser.Object,
-            new Mock<INotificationService>().Object, new Mock<ILogger<FinanceService>>().Object,
-            new Mock<ICommissionService>().Object, journalEntryService);
+        // TD-021 PR A1: invoice-ledger posting now lives in InvoiceLedgerService (extracted from FinanceService).
+        var invoiceLedgerService = new InvoiceLedgerService(
+            db, currentUser.Object, journalEntryService,
+            new Mock<ILogger<InvoiceLedgerService>>().Object);
 
-        await financeService.PostInvoiceIssuedEntryAsync(invoice.Id);
+        await invoiceLedgerService.PostInvoiceIssuedEntryAsync(invoice.Id);
 
         // Now reverse (as the Cancel endpoint would do)
-        await financeService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
+        await invoiceLedgerService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
 
         // Verify reversal exists and is posted
         var reversal = await db.JournalEntries
@@ -2255,14 +2248,15 @@ public class FinanceV3AccountingSafetyTests
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
 
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
-        var financeService = new FinanceService(db, currentUser.Object,
-            new Mock<INotificationService>().Object, new Mock<ILogger<FinanceService>>().Object,
-            new Mock<ICommissionService>().Object, journalEntryService);
+        // TD-021 PR A1: invoice-ledger posting now lives in InvoiceLedgerService (extracted from FinanceService).
+        var invoiceLedgerService = new InvoiceLedgerService(
+            db, currentUser.Object, journalEntryService,
+            new Mock<ILogger<InvoiceLedgerService>>().Object);
 
-        await financeService.PostInvoiceIssuedEntryAsync(invoice.Id);
+        await invoiceLedgerService.PostInvoiceIssuedEntryAsync(invoice.Id);
 
         // First reversal succeeds
-        await financeService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
+        await invoiceLedgerService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
 
         // Check if a reversal already exists (simulating the idempotency guard)
         var existingReversal = await db.JournalEntries

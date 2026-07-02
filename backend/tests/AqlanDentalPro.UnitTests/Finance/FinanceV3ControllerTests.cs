@@ -83,7 +83,7 @@ public class FinanceV3ControllerTests
         var audit = new Mock<IAuditService>().Object;
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
         var logger = new Mock<ILogger<FinanceV3Controller>>().Object;
-        return new FinanceV3Controller(db, currentUser, financeService, audit, journalEntryService, treasuryResolution, logger);
+        return new FinanceV3Controller(db, currentUser, financeService, new Mock<IInvoiceLedgerService>().Object, audit, journalEntryService, treasuryResolution, logger);
     }
 
     private static TreasuriesController BuildTreasuriesController(AppDbContext db, ICurrentUserService? currentUser = null, IAuditService? audit = null)

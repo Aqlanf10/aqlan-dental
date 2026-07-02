@@ -168,7 +168,7 @@ public class TechnicalDebtCleanupTests
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
         var logger = new Mock<ILogger<FinanceV3Controller>>().Object;
 
-        var controller = new FinanceV3Controller(db, nonAdminUser, financeService, audit, journalEntryService, treasuryResolution, logger);
+        var controller = new FinanceV3Controller(db, nonAdminUser, financeService, new Mock<IInvoiceLedgerService>().Object, audit, journalEntryService, treasuryResolution, logger);
 
         // Use reflection to invoke the private method
         var method = typeof(FinanceV3Controller).GetMethod("ResolveBranchIdAsync",
@@ -197,7 +197,7 @@ public class TechnicalDebtCleanupTests
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
         var logger = new Mock<ILogger<FinanceV3Controller>>().Object;
 
-        var controller = new FinanceV3Controller(db, nonAdminUser, financeService, audit, journalEntryService, treasuryResolution, logger);
+        var controller = new FinanceV3Controller(db, nonAdminUser, financeService, new Mock<IInvoiceLedgerService>().Object, audit, journalEntryService, treasuryResolution, logger);
 
         var method = typeof(FinanceV3Controller).GetMethod("ResolveBranchIdAsync",
             BindingFlags.NonPublic | BindingFlags.Instance);

@@ -706,13 +706,14 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
             // Wrap status change + accrual journal creation + journal posting in one
             // explicit transaction so any failure rolls everything back and the invoice
             // remains Draft (atomic operation, Blocker 1).
-            var financeService = HttpContext.RequestServices.GetRequiredService<IFinanceService>();
+            // TD-021 PR A1: invoice-ledger posting extracted from FinanceService → IInvoiceLedgerService.
+            var invoiceLedgerService = HttpContext.RequestServices.GetRequiredService<IInvoiceLedgerService>();
 
             var useTx = db.Database.IsRelational();
             var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
             try
             {
-                await financeService.PostInvoiceIssuedEntryAsync(invoice.Id);
+                await invoiceLedgerService.PostInvoiceIssuedEntryAsync(invoice.Id);
                 await db.SaveChangesAsync();
                 if (useTx) await tx!.CommitAsync();
             }
@@ -803,14 +804,15 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
 
                 if (!existingReversal)
                 {
-                    var financeService = HttpContext.RequestServices.GetRequiredService<IFinanceService>();
+                    // TD-021 PR A1: invoice-ledger reversal extracted from FinanceService → IInvoiceLedgerService.
+                    var invoiceLedgerService = HttpContext.RequestServices.GetRequiredService<IInvoiceLedgerService>();
 
                     var useCancelTx = db.Database.IsRelational();
                     var cancelTx = useCancelTx ? await db.Database.BeginTransactionAsync() : null;
                     try
                     {
                         // Status change + reversal creation + linking + posting + save — all atomic
-                        await financeService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
+                        await invoiceLedgerService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
                         await db.SaveChangesAsync();
                         if (useCancelTx) await cancelTx!.CommitAsync();
                     }

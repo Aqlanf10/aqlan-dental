@@ -38,6 +38,10 @@ public static class ServiceRegistrationConfiguration
         services.AddScoped<DashboardService>();
         services.AddScoped<OrthoService>();
         services.AddScoped<IFinanceService, FinanceService>();
+        // TD-021 PR A1: invoice-ledger posting extracted from FinanceService. Self-contained
+        // (db + journalEntryService + currentUser + logger only) — first slice of the
+        // FinanceService god-service decomposition. See docs/technical-debt/TD-021-god-service-extraction-plan.md.
+        services.AddScoped<IInvoiceLedgerService, InvoiceLedgerService>();
         // FIN-SETTINGS: read helper for the finance.* Settings namespace.
         services.AddScoped<FinanceSettingsReader>();
         services.AddScoped<IJournalEntryService, JournalEntryService>();

@@ -69,7 +69,7 @@ public class MultiCurrencyPaymentTests
         return session;
     }
 
-    private static (FinanceService service, Guid branchId, Guid cashierId) CreateService(AppDbContext db)
+    private static (FinanceService service, FinanceReadService readService, Guid branchId, Guid cashierId) CreateService(AppDbContext db)
     {
         var (branchId, cashierId) = SeedBranchAndUser(db);
 
@@ -149,8 +149,10 @@ public class MultiCurrencyPaymentTests
                     ReversalOfEntryId = originalId,
                 });
 
-        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
-        return (service, branchId, cashierId);
+        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object, new ContractService(db, currentUser.Object));
+        // TD-021 PR A2: read-side finance service extracted from FinanceService.
+        var readService = new FinanceReadService(db, currentUser.Object);
+        return (service, readService, branchId, cashierId);
     }
 
     private static Patient SeedPatient(AppDbContext db, Guid branchId)
@@ -174,7 +176,7 @@ public class MultiCurrencyPaymentTests
     public async Task CreatePayment_WithSAR_PersistsCurrency()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, readService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         CreateOpenSession(db, cashierId, branchId);
 
@@ -212,7 +214,7 @@ public class MultiCurrencyPaymentTests
     public async Task CreatePayment_WithoutCurrency_DefaultsToYER()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, readService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         CreateOpenSession(db, cashierId, branchId);
 
@@ -273,7 +275,7 @@ public class MultiCurrencyPaymentTests
     public async Task TreasurySum_ExcludesForeignCurrency()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, readService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         CreateOpenSession(db, cashierId, branchId);
 
@@ -320,7 +322,7 @@ public class MultiCurrencyPaymentTests
     public async Task DashboardSum_ExcludesForeignCurrency()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, readService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         CreateOpenSession(db, cashierId, branchId);
 
@@ -353,7 +355,7 @@ public class MultiCurrencyPaymentTests
             AccountCurrency = "USD"
         });
 
-        var summary = await service.GetSummaryAsync();
+        var summary = await readService.GetSummaryAsync();
 
         // todayCollected should be 5,000 — not 8,100 (5,000 + 3,000 + 100).
         summary.TodayCollected.Should().Be(5_000m,

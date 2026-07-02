@@ -111,7 +111,7 @@ public class PatientFinanceLedgerTests
                 };
             });
 
-        return new FinanceService(db, currentUser, notifications, logger, commissionService, journalEntryServiceMock.Object);
+        return new FinanceService(db, currentUser, notifications, logger, commissionService, journalEntryServiceMock.Object, new ContractService(db, currentUser));
     }
 
     /// <summary>

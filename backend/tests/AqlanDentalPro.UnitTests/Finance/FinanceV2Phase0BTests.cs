@@ -69,7 +69,7 @@ public class FinanceV2Phase0BTests
         return session;
     }
 
-    private static (FinanceService service, Guid branchId, Guid cashierId) CreateService(AppDbContext db)
+    private static (FinanceService service, ContractService contractService, Guid branchId, Guid cashierId) CreateService(AppDbContext db)
     {
         var (branchId, cashierId) = SeedBranchAndUser(db);
 
@@ -152,9 +152,12 @@ public class FinanceV2Phase0BTests
                 };
             });
 
-        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
+        // TD-021 PR A3: ContractService extracted from FinanceService — extract the instance
+        // so tests that call UpdateContractAsync can use it directly.
+        var contractService = new ContractService(db, currentUser.Object);
+        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object, contractService);
 
-        return (service, branchId, cashierId);
+        return (service, contractService, branchId, cashierId);
     }
 
     private static Patient SeedPatient(AppDbContext db, Guid branchId)
@@ -178,7 +181,7 @@ public class FinanceV2Phase0BTests
     public async Task UpdatePaymentAsync_ChangeAmount_ThrowsArgumentException()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -205,7 +208,7 @@ public class FinanceV2Phase0BTests
     public async Task UpdatePaymentAsync_ChangePaymentMethod_ThrowsArgumentException()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -230,7 +233,7 @@ public class FinanceV2Phase0BTests
     public async Task UpdatePaymentAsync_ChangePaymentDate_ThrowsArgumentException()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -255,7 +258,7 @@ public class FinanceV2Phase0BTests
     public async Task UpdatePaymentAsync_UpdateNotes_Succeeds()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -280,7 +283,7 @@ public class FinanceV2Phase0BTests
     public async Task UpdatePaymentAsync_UpdateServiceDescription_Succeeds()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -308,7 +311,7 @@ public class FinanceV2Phase0BTests
     public async Task DeletePaymentAsync_ClosedSession_ThrowsArgumentException()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -336,7 +339,7 @@ public class FinanceV2Phase0BTests
     public async Task DeletePaymentAsync_OpenSession_Succeeds()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -459,7 +462,7 @@ public class FinanceV2Phase0BTests
                 };
             });
 
-        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
+        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object, new ContractService(db, currentUser.Object));
 
         // Deleting a payment with no linked CashFlowTransaction should succeed
         var result = await service.DeletePaymentAsync(paymentId);
@@ -477,7 +480,7 @@ public class FinanceV2Phase0BTests
     public async Task UpdateContractAsync_TotalBelowPaid_ThrowsArgumentException()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -492,7 +495,7 @@ public class FinanceV2Phase0BTests
         });
 
         // Attempt to reduce TotalAmount below what's been paid (50,000)
-        var act = () => service.UpdateContractAsync(contractDto.Id, new UpdateContractRequest
+        var act = () => contractService.UpdateContractAsync(contractDto.Id, new UpdateContractRequest
         {
             TotalAmount = 30_000m,  // below paid 50,000
             InstallmentsCount = 5,
@@ -507,7 +510,7 @@ public class FinanceV2Phase0BTests
     public async Task UpdateContractAsync_TotalAbovePaid_Succeeds()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -522,7 +525,7 @@ public class FinanceV2Phase0BTests
         });
 
         // Update TotalAmount to above what's been paid — should succeed
-        var result = await service.UpdateContractAsync(contractDto.Id, new UpdateContractRequest
+        var result = await contractService.UpdateContractAsync(contractDto.Id, new UpdateContractRequest
         {
             TotalAmount = 200_000m,  // above paid 50,000
             InstallmentsCount = 5,
@@ -539,7 +542,7 @@ public class FinanceV2Phase0BTests
     public async Task CreatePaymentAsync_ZeroAmount_ThrowsArgumentException()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -559,7 +562,7 @@ public class FinanceV2Phase0BTests
     public async Task CreatePaymentAsync_NegativeAmount_ThrowsArgumentException()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -581,7 +584,7 @@ public class FinanceV2Phase0BTests
     public async Task RefundPaymentAsync_DoubleRefund_ThrowsArgumentException()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -608,7 +611,7 @@ public class FinanceV2Phase0BTests
     public async Task RefundPaymentAsync_FirstRefund_Succeeds()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -635,7 +638,7 @@ public class FinanceV2Phase0BTests
     public async Task CancelContract_SoftDeletesCashFlowTransactions()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -686,7 +689,7 @@ public class FinanceV2Phase0BTests
     public async Task CancelContract_ReversesTreasuryBalance()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 

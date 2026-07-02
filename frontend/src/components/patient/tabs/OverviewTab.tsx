@@ -27,6 +27,8 @@ interface PatientSummary {
   activeOrthoCases: number;
   totalPaid: number | null;
   totalOutstanding: number | null;
+  /** QA-596: performed sessions with AmountDueReference but no linked invoice. Included in totalOutstanding. */
+  unbilledVisitsAmount?: number | null;
   prescriptionsCount: number;
   // Extended fields
   lastVisitDate?: string;
@@ -408,6 +410,12 @@ export function OverviewTab({ patientId, summary, patient, canViewFinance = fals
             <p className="text-xs text-[#94a3b8] mt-0.5">
               مدفوع: {summary?.totalPaid != null ? `${summary.totalPaid.toLocaleString()} ر.ي` : "—"}
             </p>
+            {/* QA-596: surface unbilled sessions as provisional debt */}
+            {summary?.unbilledVisitsAmount != null && summary.unbilledVisitsAmount > 0 && (
+              <p className="text-[10px] text-amber-700 mt-1 leading-snug" title="جلسات أُجريت بدون فاتورة أو عقد — يُنصح بإنشاء فاتورة لها">
+                منها {summary.unbilledVisitsAmount.toLocaleString()} ر.ي من جلسات غير مفوترة
+              </p>
+            )}
           </div>
         ) : null}
 

@@ -437,7 +437,7 @@ public class PatientsController(
             });
         }
 
-        // Align with canonical finance-summary (contracts + invoices + orphan payments).
+        // Align with canonical finance-summary (contracts + invoices + orphan payments + unbilled visits).
         var financeSummary = await financeService.GetPatientFinanceSummaryAsync(id);
         var totalPaid = financeSummary.TotalPaid;
         var totalOutstanding = financeSummary.OutstandingBalance;
@@ -453,6 +453,9 @@ public class PatientsController(
             activeOrthoCases,
             totalPaid,
             totalOutstanding,
+            // QA-596: surface unbilled sessions so the frontend can show them as
+            // provisional debt (separate line under the outstanding balance card).
+            unbilledVisitsAmount = financeSummary.UnbilledVisitsAmount,
             prescriptionsCount
         });
     }

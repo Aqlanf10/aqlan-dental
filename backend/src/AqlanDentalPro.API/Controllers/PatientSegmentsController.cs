@@ -110,9 +110,11 @@ public class PatientSegmentsController(AppDbContext db) : ControllerBase
             select oc.PatientId
         ).Distinct().CountAsync();
 
-        // Patients with outstanding balance > 0 (contracts + non-draft invoices − payments).
+        // Patients with outstanding balance > 0 (contracts + non-draft invoices + unbilled visits − payments).
         // Computed server-side; mirrors FinanceService.GetPatientFinanceSummaryAsync math
-        // but aggregated across all patients in one query.
+        // but aggregated across all patients in one query. QA-596: now includes
+        // Visit.AmountDueReference for sessions with no linked invoice, so patients
+        // with unbilled sessions appear in the "مرضى عليهم مبالغ" segment.
         var contractSpend = await db.Contracts
             .Where(c => c.IsActive && c.PatientId != Guid.Empty)
             .GroupBy(c => c.PatientId)
@@ -131,20 +133,55 @@ public class PatientSegmentsController(AppDbContext db) : ControllerBase
             .GroupBy(p => p.PatientId)
             .Select(g => new { PatientId = g.Key, Total = g.Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount) })
             .ToListAsync();
+        // QA-596: unbilled visits — sessions with AmountDueReference and no linked invoice.
+        // Build the set of billed visit IDs (visits that already have an invoice via Invoice.VisitId)
+        // and exclude them to avoid double-counting with invoiceSpend above.
+        var billedVisitIds = await db.Invoices
+            .Where(i => i.VisitId.HasValue && i.IsActive && i.PatientId != Guid.Empty)
+            .Select(i => i.VisitId!.Value)
+            .ToListAsync();
+        var billedVisitSet = billedVisitIds.ToHashSet();
+        var unbilledVisitRows = await db.Visits
+            .Where(v => v.IsActive && v.PatientId != Guid.Empty
+                     && v.AmountDueReference.HasValue && v.AmountDueReference > 0)
+            .Select(v => new { v.PatientId, v.Id, Amount = v.AmountDueReference ?? 0m })
+            .ToListAsync();
+        var unbilledVisitsByPatient = unbilledVisitRows
+            .Where(v => !billedVisitSet.Contains(v.Id))
+            .GroupBy(v => v.PatientId)
+            .Select(g => new { PatientId = g.Key, Total = g.Sum(v => v.Amount) })
+            .ToList();
 
         var spendByPatient = new Dictionary<Guid, decimal>();
         foreach (var c in contractSpend)
             spendByPatient[c.PatientId] = c.Total;
         foreach (var i in invoiceSpend)
             spendByPatient[i.PatientId] = (spendByPatient.TryGetValue(i.PatientId, out var v) ? v : 0m) + i.Total;
+        // QA-596: subtract billed visit amounts from unbilled aggregate to avoid double-count,
+        // then add the per-patient unbilled total to the outstanding calculation.
+        var unbilledNetByPatient = new Dictionary<Guid, decimal>();
+        foreach (var u in unbilledVisitsByPatient)
+            unbilledNetByPatient[u.PatientId] = u.Total;
         var outstandingPatientIds = spendByPatient
             .Where(kv =>
             {
                 var paid = paymentsByPatient.FirstOrDefault(p => p.PatientId == kv.Key)?.Total ?? 0m;
-                return Math.Max(0m, kv.Value - paid) > 0m;
+                var unbilled = unbilledNetByPatient.TryGetValue(kv.Key, out var u) ? u : 0m;
+                return Math.Max(0m, kv.Value + unbilled - paid) > 0m;
             })
             .Select(kv => kv.Key)
             .ToHashSet();
+        // Also include patients who have ONLY unbilled visits (no contract/invoice) —
+        // they wouldn't be in spendByPatient but still owe money.
+        var onlyUnbilledPatientIds = unbilledNetByPatient
+            .Where(kv =>
+            {
+                if (spendByPatient.ContainsKey(kv.Key)) return false;
+                var paid = paymentsByPatient.FirstOrDefault(p => p.PatientId == kv.Key)?.Total ?? 0m;
+                return Math.Max(0m, kv.Value - paid) > 0m;
+            })
+            .Select(kv => kv.Key);
+        outstandingPatientIds = [..outstandingPatientIds, ..onlyUnbilledPatientIds];
         var outstandingCount = outstandingPatientIds.Count;
 
         // Patients with no visit in last 90 days (must have at least one visit ever
@@ -336,8 +373,24 @@ public class PatientSegmentsController(AppDbContext db) : ControllerBase
                 .GroupBy(p => p.PatientId)
                 .Select(g => new { PatientId = g.Key, Total = g.Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount) })
                 .ToListAsync();
+            // QA-596: unbilled visits (sessions with AmountDueReference, no linked invoice)
+            var billedVisitIds = await db.Invoices
+                .Where(i => i.VisitId.HasValue && i.IsActive)
+                .Select(i => i.VisitId!.Value)
+                .ToListAsync();
+            var billedVisitSet = billedVisitIds.ToHashSet();
+            var unbilledVisitRows = await db.Visits
+                .Where(v => v.IsActive && v.AmountDueReference.HasValue && v.AmountDueReference > 0)
+                .Select(v => new { v.PatientId, v.Id, Amount = v.AmountDueReference ?? 0m })
+                .ToListAsync();
+            var unbilledByPatient = unbilledVisitRows
+                .Where(v => !billedVisitSet.Contains(v.Id))
+                .GroupBy(v => v.PatientId)
+                .ToDictionary(g => g.Key, g => g.Sum(v => v.Amount));
+
             var patientIds = contractSpend.Select(c => c.PatientId)
                 .Concat(invoiceSpend.Select(i => i.PatientId))
+                .Concat(unbilledByPatient.Keys)
                 .Distinct()
                 .ToList();
             var patients = await db.Patients
@@ -349,8 +402,9 @@ public class PatientSegmentsController(AppDbContext db) : ControllerBase
             {
                 var billed = (contractSpend.FirstOrDefault(c => c.PatientId == pid)?.Total ?? 0m)
                            + (invoiceSpend.FirstOrDefault(i => i.PatientId == pid)?.Total ?? 0m);
+                var unbilled = unbilledByPatient.TryGetValue(pid, out var u) ? u : 0m;
                 var paid = payments.FirstOrDefault(p => p.PatientId == pid)?.Total ?? 0m;
-                var outstanding = Math.Max(0m, billed - paid);
+                var outstanding = Math.Max(0m, billed + unbilled - paid);
                 if (outstanding <= 0m) continue;
                 patients.TryGetValue(pid, out var p);
                 result.Add(new

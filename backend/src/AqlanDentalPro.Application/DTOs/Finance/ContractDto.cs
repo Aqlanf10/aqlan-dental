@@ -42,6 +42,8 @@ public class AccountStatementDto
     public decimal TotalDiscounts { get; set; }
     public decimal TotalPaid { get; set; }
     public decimal TotalRemaining { get; set; }
+    /// <summary>QA-596: performed sessions with AmountDueReference but no linked invoice. Included in TotalRemaining.</summary>
+    public decimal UnbilledVisitsAmount { get; set; }
     public int ActiveContracts { get; set; }
     public int CompletedContracts { get; set; }
     public List<ContractStatementDto> Contracts { get; set; } = [];

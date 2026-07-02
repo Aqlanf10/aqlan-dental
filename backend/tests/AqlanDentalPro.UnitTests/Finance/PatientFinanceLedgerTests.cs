@@ -806,4 +806,97 @@ public class PatientFinanceLedgerTests
         summary.OutstandingBalance.Should().Be(0m, "must clamp to 0, not go negative");
         summary.FinancialStatus.Should().Be("no_plan", "no obligation tracked → no_plan");
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // QA-596: Account statement consistency with GetPatientFinanceSummaryAsync
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task QA596_AccountStatement_IncludesUnbilledVisits()
+    {
+        // Scenario: 50,000 unbilled visit + 20,000 payment (no contract, no invoice).
+        // Account statement's TotalRemaining must be 30,000, NOT 0.
+        await using var db = CreateDb();
+        var (_, patientId, currentUser) = SeedPatientWithUnbilledVisit(db, sessionCost: 50_000m, paidAmount: 20_000m);
+        var service = CreateFinanceService(db, currentUser);
+
+        var statement = await service.GetAccountStatementAsync(patientId);
+
+        statement.Should().NotBeNull();
+        statement!.TotalRemaining.Should().Be(30_000m, "QA-596: account statement now includes unbilled visits");
+        statement.UnbilledVisitsAmount.Should().Be(50_000m, "unbilled visits amount is surfaced as a dedicated field");
+        statement.TotalPaid.Should().Be(20_000m);
+        statement.TotalContracted.Should().Be(0m, "no contracts");
+    }
+
+    [Fact]
+    public async Task QA596_AccountStatement_BilledVisitNotDoubleCounted()
+    {
+        // Scenario: 50,000 visit WITH a linked Issued invoice of 50,000 + 20,000 payment.
+        // Account statement must show 30,000 (NOT 80,000 — visit must not be double-counted).
+        await using var db = CreateDb();
+        var (branchId, patientId, currentUser) = SeedPatientWithUnbilledVisit(db, sessionCost: 50_000m, paidAmount: 0m);
+
+        var visitId = db.Visits.First().Id;
+        db.Invoices.Add(new Invoice
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patientId,
+            VisitId = visitId,
+            InvoiceNumber = "INV-QA596-001",
+            Status = InvoiceStatus.Issued,
+            Subtotal = 50_000m,
+            TotalAmount = 50_000m,
+            IsActive = true
+        });
+        db.Payments.Add(new Payment
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patientId,
+            Amount = 20_000m,
+            AppliedAmount = 20_000m,
+            PaymentDate = DateOnly.FromDateTime(DateTime.Today),
+            PaymentMethod = "cash",
+            AccountCurrency = "YER",
+            ExchangeRateToAccountCurrency = 1m,
+            IsActive = true
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateFinanceService(db, currentUser);
+        var statement = await service.GetAccountStatementAsync(patientId);
+
+        statement!.TotalRemaining.Should().Be(30_000m, "50,000 invoice - 20,000 payment (visit not double-counted)");
+        statement.UnbilledVisitsAmount.Should().Be(0m, "visit has a linked invoice → not unbilled");
+    }
+
+    [Fact]
+    public async Task QA596_FinanceSummary_IncludesUnbilledVisitsAcrossBranch()
+    {
+        // Scenario: two patients, each with a 25,000 unbilled visit. TotalOutstanding
+        // on the finance dashboard summary should be 50,000 (sum of unbilled visits).
+        await using var db = CreateDb();
+        var (_, patientA, currentUserA) = SeedPatientWithUnbilledVisit(db, sessionCost: 25_000m, paidAmount: 0m);
+
+        // Seed second patient in same branch
+        var branchId = db.Patients.First().BranchId!.Value;
+        var patientB = Guid.NewGuid();
+        db.Patients.Add(new Patient { Id = patientB, FirstName = "مريض", LastName = "ب", BranchId = branchId, PatientNumber = "P-B-QA596" });
+        db.Visits.Add(new Visit
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patientB,
+            VisitDate = DateOnly.FromDateTime(DateTime.Today),
+            VisitType = "عصب",
+            AmountDueReference = 25_000m,
+            CheckoutStatus = "ReadyForCheckout",
+            IsActive = true
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateFinanceService(db, currentUserA);
+        var summary = await service.GetSummaryAsync();
+
+        summary.TotalOutstanding.Should().Be(50_000m, "QA-596: dashboard now includes unbilled visits across patients (25k × 2)");
+    }
 }

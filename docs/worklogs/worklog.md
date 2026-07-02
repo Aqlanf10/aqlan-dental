@@ -427,3 +427,112 @@ no treasury mutation, no journal posting — they just aggregate data for displa
   - PR A4: extract `PaymentService` + `SupplierRefundService` together (highest-risk
     slice — they share `DualWrite*` + `ResolveTreasuryNoSaveAsync` helpers; consider
     a shared internal `LedgerWriter` for the DualWrite helpers)
+
+---
+
+## TD-021 PR A3 — Extract ContractService from FinanceService (2026-07-03)
+
+Task ID: TD-021-PR-A3
+Agent: Main Agent
+Branch: `refactor/td-021-pr-a3-extract-contract-service` (1 commit ahead of `main`)
+Linked plan: `docs/technical-debt/TD-021-god-service-extraction-plan.md` — Part A, PR A3 (contracts cluster)
+
+### Scope
+Third slice of the FinanceService god-service decomposition. Move the self-contained
+contract methods out of the (now) 1744-line `FinanceService` into a focused
+`ContractService` behind its own `IContractService` interface. Pure code move —
+no business logic change, no migration, no schema change.
+
+### Discovery during implementation
+The TD-021 plan assumed PR A3 would move the entire contracts cluster
+("CRUD + status machine"). During implementation, I discovered that 3 of the 5
+contract methods are entangled with payment-side helpers:
+
+- `CreateContractAsync` calls `CreatePaymentAsync` (down payment creation)
+- `UpdateContractStatusAsync` cancellation path calls `UpdateTreasuryBalanceNoSaveAsync`,
+  `DualWriteReversalEntryAsync`, `TryMarkInvoicePaidAsync`
+- `TryReconcileContractStatusAsync` is called FROM `CreatePaymentAsync`,
+  `DeletePaymentAsync`, `RefundPaymentAsync`
+
+Per the plan's guiding rule: "Never move a method whose private helpers are
+shared with methods that stay behind — split or duplicate-then-converge instead."
+
+So PR A3 moves only the 3 self-contained methods. The 3 entangled methods stay
+in FinanceService and will move naturally with PR A4 (PaymentService cluster).
+
+### Work Log
+- Read the TD-021 plan + verified PR A2 was complete (FinanceReadService extracted,
+  2250 tests passing).
+- Created branch `refactor/td-021-pr-a3-extract-contract-service` from `main`.
+- Mapped the contract cluster's dependencies:
+  - `GetContractsAsync` → uses `MapContractList` (private static) + `currentUser` → MOVE
+  - `GetContractByIdAsync` → uses `FinanceMappers.NormalizeCurrency` + `FinanceMappers.MapPayment` → MOVE
+  - `UpdateContractAsync` → uses `FinanceMappers.NormalizeCurrency` + calls `GetContractByIdAsync` → MOVE
+  - `CreateContractAsync` → calls `CreatePaymentAsync` (down payment) → KEEP (entangled)
+  - `UpdateContractStatusAsync` → calls payment reversal helpers → KEEP (entangled)
+  - `TryReconcileContractStatusAsync` → called from payment methods → KEEP (entangled)
+  - `MapContractList` → only used by `GetContractsAsync` → MOVE as private static
+- **New file** `Application/Interfaces/Services/IContractService.cs`:
+  - 3 methods: `GetContractsAsync`, `GetContractByIdAsync`, `UpdateContractAsync`.
+  - XML doc explains the move, the discovery, and why 3 methods stay in FinanceService.
+- **New file** `Infrastructure/Services/ContractService.cs` (165 lines):
+  - Primary constructor: `AppDbContext db, ICurrentUserService currentUser` only.
+  - Bodies are byte-for-byte identical to the previous FinanceService methods.
+  - Includes `MapContractList` as a private static helper (moved from FinanceService).
+  - Uses `FinanceMappers.NormalizeCurrency` + `FinanceMappers.MapPayment` (shared).
+- **Modified** `Infrastructure/Services/FinanceService.cs`:
+  - Removed 3 public methods + `MapContractList` private helper.
+  - Added `IContractService contractService` to primary constructor (7th param).
+  - Updated 2 internal `GetContractByIdAsync` calls → `contractService.GetContractByIdAsync`.
+  - File shrank from 1744 → 1623 lines (-121 lines, -7%).
+- **Modified** `Application/Interfaces/Services/IFinanceService.cs`:
+  - Removed the 3 methods from the interface.
+  - Added inline NOTE explaining why CreateContractAsync + UpdateContractStatusAsync stay.
+- **Modified** `API/Controllers/ContractsController.cs`:
+  - Added `IContractService contractService` to primary constructor (2nd param).
+  - Updated 3 call sites: GetList, GetById, Update now call `contractService.*`.
+  - Create + UpdateStatus still call `service.*` (IFinanceService).
+- **Modified** `API/Configuration/ServiceRegistrationConfiguration.cs`:
+  - Added `services.AddScoped<IContractService, ContractService>()`.
+- **Modified 15 test files** to pass `ContractService` to `FinanceService` constructor:
+  - Used a Python script to automatically insert `new ContractService(db, currentUserVar)`
+    as the 7th argument in all `new FinanceService(...)` calls across 15 test files.
+  - `Finance/ContractsPermissionEnforcementTests.cs` — added `Mock<IContractService>`
+    to Build helper, updated `finance.Verify(f => f.UpdateContractAsync(...))` →
+    `contract.Verify(c => c.UpdateContractAsync(...))`, same for GetContractsAsync.
+  - `Finance/FinanceV2Phase0BTests.cs` — extended `CreateService` tuple to include
+    `ContractService`, updated 2 `service.UpdateContractAsync` calls to
+    `contractService.UpdateContractAsync`.
+
+### Stage Summary
+- Branch: `refactor/td-021-pr-a3-extract-contract-service`
+- Commit: `30bdcde6`
+- 22 files changed, +303 / -198
+- 2 new files (interface, implementation)
+- 20 modified files (1 controller, 1 DI config, 1 interface, 1 service, 16 test files)
+- `FinanceService.cs` shrank from 1744 → 1623 lines
+- `dotnet build -c Release` — 0 errors, 0 warnings
+- `dotnet test tests/AqlanDentalPro.UnitTests` — **2250/2250 pass** (unchanged from PR A2)
+- `scripts/check-mojibake.sh` — clean
+- No migrations, no schema changes, no business logic changes — pure code move
+- All Arabic error messages preserved verbatim
+- No exception details leaked in HTTP responses
+- Dependency graph is clean: ContractService → (db, currentUser, FinanceMappers static);
+  FinanceService → (db, currentUser, ..., IContractService). One-way dep, no cycle.
+
+### FinanceService decomposition progress
+| Stage | Lines | Delta |
+|-------|-------|-------|
+| Before TD-021 | 2256 | — |
+| After PR A1 (InvoiceLedger) | 2178 | -78 |
+| After PR A2 (FinanceRead) | 1744 | -434 |
+| After PR A3 (Contract) | 1623 | -121 |
+| **Cumulative** | — | **-633 (-28%)** |
+
+### Next slice
+PR A4: extract `PaymentService` + `SupplierRefundService` together (highest-risk
+slice — they share `DualWrite*` + `ResolveTreasuryNoSaveAsync` helpers; consider
+a shared internal `LedgerWriter` for the DualWrite helpers). When PR A4 moves
+the payment cluster, the 3 entangled contract methods (CreateContractAsync,
+UpdateContractStatusAsync, TryReconcileContractStatusAsync) will move with it
+or become bridges to the new PaymentService.

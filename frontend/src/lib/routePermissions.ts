@@ -12,7 +12,7 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   // Main pages
   { path: '/clinic-command-center', allowedRoles: ['Admin'] },
   { path: '/daily-operations', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
-  { path: '/patients', allowedRoles: ['Admin', 'Reception', 'Accountant', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
+  { path: '/patients', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   
   // Clinical pages - doctors only
   // FE-03: Aligned with sidebar — doctors need to view their own schedules
@@ -31,7 +31,7 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { path: '/ortho/new', allowedRoles: ['Admin', 'Orthodontist'] },
   { path: '/ortho', allowedRoles: ['Admin', 'Orthodontist', 'OralSurgeon'] },
   { path: '/ceph', allowedRoles: ['Admin', 'Orthodontist'] },
-  { path: '/general', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon'] },
+  { path: '/general', allowedRoles: ['Admin', 'GeneralDentist'] },
   { path: '/surgery', allowedRoles: ['Admin', 'OralSurgeon'] },
   { path: '/ortho-surgical', allowedRoles: ['Admin', 'Orthodontist', 'OralSurgeon'] },
   
@@ -65,11 +65,17 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { path: '/branches', allowedRoles: ['Admin'] },
   
   // System - Admin only
+  { path: '/settings/labs', allowedRoles: ['Admin', 'BranchManager'] },
+  { path: '/settings/lab-work-types', allowedRoles: ['Admin', 'BranchManager'] },
+  { path: '/settings/lab-pricing', allowedRoles: ['Admin', 'BranchManager'] },
   { path: '/settings', allowedRoles: ['Admin'] },
 
   // Additional sidebar routes
   { path: '/prescriptions', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   // FE-03: Aligned with sidebar — all clinical staff use lab orders
+  { path: '/lab/dashboard', allowedRoles: ['Admin', 'BranchManager', 'Accountant'] },
+  { path: '/lab/reports', allowedRoles: ['Admin', 'BranchManager', 'Accountant'] },
+  { path: '/lab/payables', allowedRoles: ['Admin', 'BranchManager', 'Accountant'] },
   { path: '/lab', allowedRoles: ['Admin', 'Reception', 'Orthodontist', 'GeneralDentist', 'OralSurgeon', 'Assistant', 'BranchManager'] },
   { path: '/doctors', allowedRoles: ['Admin'] },
   { path: '/hr', allowedRoles: ['Admin'] },

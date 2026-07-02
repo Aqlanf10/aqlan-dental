@@ -1,0 +1,33 @@
+import { describe, expect, it } from 'vitest';
+import { isRouteAllowed } from '@/lib/routePermissions';
+
+describe('route permissions', () => {
+  it('allows Accountant to reach approved lab subroutes without opening all lab orders', () => {
+    expect(isRouteAllowed('/lab/dashboard', 'Accountant')).toBe(true);
+    expect(isRouteAllowed('/lab/reports', 'Accountant')).toBe(true);
+    expect(isRouteAllowed('/lab/payables', 'Accountant')).toBe(true);
+    expect(isRouteAllowed('/lab', 'Accountant')).toBe(false);
+    expect(isRouteAllowed('/lab/overdue', 'Accountant')).toBe(false);
+  });
+
+  it('allows BranchManager to reach approved lab settings without opening all settings', () => {
+    expect(isRouteAllowed('/settings/labs', 'BranchManager')).toBe(true);
+    expect(isRouteAllowed('/settings/lab-work-types', 'BranchManager')).toBe(true);
+    expect(isRouteAllowed('/settings/lab-pricing', 'BranchManager')).toBe(true);
+    expect(isRouteAllowed('/settings', 'BranchManager')).toBe(false);
+    expect(isRouteAllowed('/settings/backup', 'BranchManager')).toBe(false);
+  });
+
+  it('keeps sidebar-hidden patient/general access closed for mismatched roles', () => {
+    expect(isRouteAllowed('/patients', 'Accountant')).toBe(false);
+    expect(isRouteAllowed('/patients/123', 'Accountant')).toBe(false);
+    expect(isRouteAllowed('/general', 'OralSurgeon')).toBe(false);
+    expect(isRouteAllowed('/general/123', 'OralSurgeon')).toBe(false);
+  });
+
+  it('keeps Admin override and default deny behavior intact', () => {
+    expect(isRouteAllowed('/settings/backup', 'Admin')).toBe(true);
+    expect(isRouteAllowed('/unknown-dashboard-route', 'Reception')).toBe(false);
+    expect(isRouteAllowed('/daily-operations', null)).toBe(false);
+  });
+});

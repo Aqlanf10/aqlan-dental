@@ -18,7 +18,7 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   // FE-03: Aligned with sidebar — doctors need to view their own schedules
   { path: '/schedule', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   { path: '/doctor-clinic', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
-  // More specific path first (isRouteAllowed matches with startsWith): '/ortho/new'
+  // More specific path first (isRouteAllowed matches exact paths or child routes): '/ortho/new'
   // (creating a fresh orthodontic case) stays orthodontist-only, while '/ortho/{id}'
   // must also admit OralSurgeon — a surgeon reaches their linked joint-planning case
   // via /ortho/{orthoCaseId}?tab=surgical (from /surgery's pending-review list, the
@@ -56,7 +56,7 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { path: '/patient-segments', allowedRoles: ['Admin'] },
   
   // Reports - specific roles
-  // More specific path first (startsWith matching) — same roles as /reports
+  // More specific path first — same roles as /reports
   { path: '/reports/operations', allowedRoles: ['Admin', 'Accountant'] },
   { path: '/reports', allowedRoles: ['Admin', 'Accountant'] },
   
@@ -64,7 +64,7 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { path: '/employees', allowedRoles: ['Admin'] },
   { path: '/branches', allowedRoles: ['Admin'] },
   
-  // System - Admin only
+  // System - lab settings exceptions must precede the generic Admin-only /settings rule.
   { path: '/settings/labs', allowedRoles: ['Admin', 'BranchManager'] },
   { path: '/settings/lab-work-types', allowedRoles: ['Admin', 'BranchManager'] },
   { path: '/settings/lab-pricing', allowedRoles: ['Admin', 'BranchManager'] },
@@ -79,12 +79,12 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { path: '/lab', allowedRoles: ['Admin', 'Reception', 'Orthodontist', 'GeneralDentist', 'OralSurgeon', 'Assistant', 'BranchManager'] },
   { path: '/doctors', allowedRoles: ['Admin'] },
   { path: '/hr', allowedRoles: ['Admin'] },
-  // More specific path first: isRouteAllowed matches with startsWith, so
+  // More specific path first: isRouteAllowed matches exact paths or child routes, so
   // '/appointments/recall' must precede '/appointments' (Reception needs access here)
   { path: '/appointments/recall', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   { path: '/appointments', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
-  { path: '/clinic-queue', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
-  { path: '/patient-journey', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
+  { path: '/clinic-queue', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
+  { path: '/patient-journey', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
 
   // FE-02: Previously missing — booking-requests fell through to default-allow. Admin + Reception
   // confirm public booking requests (the public /home/book flow creates them).
@@ -94,11 +94,14 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
 export function isRouteAllowed(pathname: string, userRole: string | null): boolean {
   if (!userRole) return false;
 
+  if (pathname === '/') return userRole === 'Admin';
+
   // Admin has access to everything
   if (userRole === 'Admin') return true;
 
-  // Find matching permission for this route
-  const matched = ROUTE_PERMISSIONS.find(p => pathname.startsWith(p.path));
+  // Find matching permission for this route. Match exact paths and nested child routes only,
+  // so `/patients/123` matches `/patients` but `/patients-archive` does not.
+  const matched = ROUTE_PERMISSIONS.find(p => isRouteMatch(pathname, p.path));
   // FE-02 / SEC-17 FIX: Default DENY if no specific rule matches. Previously this returned
   // true (default-allow), which let any authenticated user reach admin-only screens like
   // /commissions, /booking-requests, /settings/audit, /settings/backup, /surgery/[id]/edit,
@@ -108,4 +111,8 @@ export function isRouteAllowed(pathname: string, userRole: string | null): boole
   if (!matched) return false;
 
   return matched.allowedRoles.includes(userRole);
+}
+
+function isRouteMatch(pathname: string, routePath: string): boolean {
+  return pathname === routePath || pathname.startsWith(`${routePath}/`);
 }

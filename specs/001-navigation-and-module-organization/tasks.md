@@ -2,7 +2,24 @@
 
 Spec ID: `001-navigation-and-module-organization`
 
-These tasks are future implementation tasks. This sprint does not implement them.
+These tasks started as implementation follow-ups after the documentation-only audit.
+
+## Implementation Status
+
+- `NAV-TASK-001` done in #590/#591: Accountant can open the approved lab summary/report/payables routes without opening all lab orders.
+- `NAV-TASK-002` done in #590/#591: BranchManager lab settings access is aligned with specific settings-lab route rules, while generic `/settings` remains Admin-only.
+- `NAV-TASK-003` done in #590: `/` remains the canonical dashboard; `/clinic-command-center` is hidden from the global sidebar.
+- `NAV-TASK-004` done in #590: dashboard queue shortcuts target `/daily-operations?tab=queue`.
+- `NAV-TASK-005` done in #591: root dashboard route guard behavior is explicit and tested.
+- `NAV-TASK-006` done in #591: Accountant direct `/patients` access remains closed, matching the sidebar.
+- `NAV-TASK-007` done in #591: OralSurgeon direct `/general` access remains closed, matching the sidebar.
+- `NAV-TASK-008` done in #591/spec map: `/ortho-surgical` stays a contextual shared workspace, not a global sidebar module.
+- `NAV-TASK-009` done in #591: `/lab/dashboard` is labeled as a lab summary surface.
+- `NAV-TASK-010` done in #591: lab settings are kept canonical in the settings hub.
+- `NAV-TASK-011` done in #591: prescriptions are grouped with doctor clinic navigation.
+- `NAV-TASK-012` covered by route permission regression tests for the implemented mismatches; a generated inventory report can be added later if desired.
+- `NAV-TASK-013` remains a manual runtime checklist item for a future browser pass across all roles.
+- `NAV-TASK-014` done in #591: module ownership notes reflect the implemented navigation decisions.
 
 | Task ID | Goal | Files allowed to edit | Files forbidden to edit | Model allowed | Tests required | Acceptance criteria | Risk |
 |---|---|---|---|---|---|---|---|

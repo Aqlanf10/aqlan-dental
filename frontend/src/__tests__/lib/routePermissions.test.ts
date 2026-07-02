@@ -25,9 +25,25 @@ describe('route permissions', () => {
     expect(isRouteAllowed('/general/123', 'OralSurgeon')).toBe(false);
   });
 
+  it('lets Reception reach daily-operations redirect stubs', () => {
+    expect(isRouteAllowed('/clinic-queue', 'Reception')).toBe(true);
+    expect(isRouteAllowed('/patient-journey', 'Reception')).toBe(true);
+    expect(isRouteAllowed('/patient-journey/123', 'Reception')).toBe(true);
+  });
+
   it('keeps Admin override and default deny behavior intact', () => {
+    expect(isRouteAllowed('/', 'Admin')).toBe(true);
+    expect(isRouteAllowed('/', 'Reception')).toBe(false);
     expect(isRouteAllowed('/settings/backup', 'Admin')).toBe(true);
     expect(isRouteAllowed('/unknown-dashboard-route', 'Reception')).toBe(false);
     expect(isRouteAllowed('/daily-operations', null)).toBe(false);
+  });
+
+  it('does not allow similarly named paths through prefix matching', () => {
+    expect(isRouteAllowed('/labyrinth', 'BranchManager')).toBe(false);
+    expect(isRouteAllowed('/settings-labs', 'BranchManager')).toBe(false);
+    expect(isRouteAllowed('/appointments-recall', 'Reception')).toBe(false);
+    expect(isRouteAllowed('/clinic-queue-old', 'Reception')).toBe(false);
+    expect(isRouteAllowed('/patients-archive', 'Reception')).toBe(false);
   });
 });

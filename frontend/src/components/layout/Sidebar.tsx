@@ -76,6 +76,7 @@ const NAV: NavEntry[] = [
   { href: "/booking-requests", label: "طلبات الحجز", icon: CalendarPlus, roles: ["Admin", "Reception"], permission: PERMISSION_KEYS.BOOKING_REQUESTS_VIEW },
   { href: "/schedule",       label: "جداول الأطباء",   icon: Clock,           roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"] },
   { href: "/doctor-clinic",  label: "عيادة الطبيب",    icon: Stethoscope,     roles: ["Admin","GeneralDentist","OralSurgeon","Orthodontist"] },
+  { href: "/prescriptions",  label: "الوصفات الطبية",  icon: Pill,            roles: ["Admin","GeneralDentist","OralSurgeon","Orthodontist"] },
 
   // ── تخصصات ───────────────────────────────────────────────────────────────
   { href: "/ortho",          label: "التقويم",          icon: GitBranch,       roles: ["Admin","Orthodontist"],                                       section: "تخصصات", badge: "محدّث" },
@@ -110,7 +111,6 @@ const NAV: NavEntry[] = [
       { href: "/inventory/purchases", label: "أوامر الشراء", icon: ShoppingCart, roles: ["Admin"] },
     ],
   },
-  { href: "/prescriptions",  label: "الوصفات الطبية",  icon: Pill,            roles: ["Admin","GeneralDentist","OralSurgeon","Orthodontist"] },
   {
     kind: "group",
     label: "المعامل",
@@ -118,13 +118,10 @@ const NAV: NavEntry[] = [
     roles: ["Admin", "Reception", "Orthodontist", "GeneralDentist", "OralSurgeon", "Assistant", "BranchManager", "Accountant"],
     children: [
       { href: "/lab", label: "طلبات المعمل", icon: FlaskConical, roles: ["Admin", "Reception", "Orthodontist", "GeneralDentist", "OralSurgeon", "Assistant", "BranchManager"], permission: PERMISSION_KEYS.LAB_ORDERS_VIEW },
-      { href: "/lab/dashboard", label: "لوحة المعامل", icon: BarChart2, roles: ["Admin", "BranchManager", "Accountant"], permission: PERMISSION_KEYS.LAB_REPORTS_VIEW },
+      { href: "/lab/dashboard", label: "ملخص المعامل", icon: BarChart2, roles: ["Admin", "BranchManager", "Accountant"], permission: PERMISSION_KEYS.LAB_REPORTS_VIEW },
       { href: "/lab/overdue", label: "طلبات متأخرة", icon: Clock, roles: ["Admin", "Reception", "Orthodontist", "BranchManager"], permission: PERMISSION_KEYS.LAB_ORDERS_VIEW },
       { href: "/lab/reports", label: "تقارير المعامل", icon: BarChart2, roles: ["Admin", "BranchManager", "Accountant"], permission: PERMISSION_KEYS.LAB_REPORTS_VIEW },
       { href: "/lab/payables", label: "مستحقات المعامل", icon: DollarSign, roles: ["Admin", "BranchManager", "Accountant"], permission: PERMISSION_KEYS.LAB_PAYABLES_VIEW },
-      { href: "/settings/labs", label: "إدارة المعامل", icon: Settings, roles: ["Admin", "BranchManager"], permission: PERMISSION_KEYS.LABS_VIEW },
-      { href: "/settings/lab-work-types", label: "أنواع الأعمال", icon: ClipboardList, roles: ["Admin", "BranchManager"], permission: PERMISSION_KEYS.LAB_WORK_TYPES_VIEW },
-      { href: "/settings/lab-pricing", label: "تسعير المعامل", icon: Banknote, roles: ["Admin", "BranchManager"], permission: PERMISSION_KEYS.LAB_WORK_PRICES_VIEW },
     ],
   },
 
@@ -242,6 +239,10 @@ function isVisible(entry: { roles: string[]; permission?: string }, userRole: st
   return true;
 }
 
+function isActiveRoute(pathname: string, href: string): boolean {
+  return pathname === href || (href !== "/" && pathname.startsWith(`${href}/`));
+}
+
 /* ─── Collapsible group ─────────────────────────────────────────────────────── */
 function NavGroupItem({
   group, userRole, pathname, user,
@@ -251,7 +252,7 @@ function NavGroupItem({
   const visibleChildren = group.children.filter(
     (c) => isVisible(c, userRole, user),
   );
-  const isChildActive = visibleChildren.some((c) => pathname.startsWith(c.href));
+  const isChildActive = visibleChildren.some((c) => isActiveRoute(pathname, c.href));
   const [open, setOpen] = useState(isChildActive);
 
   if (visibleChildren.length === 0) return null;
@@ -292,7 +293,7 @@ function NavGroupItem({
               href={child.href}
               label={child.label}
               icon={child.icon}
-              isCurrent={child.href === "/" ? pathname === "/" : pathname.startsWith(child.href)}
+              isCurrent={isActiveRoute(pathname, child.href)}
               indent
               badge={child.badge}
             />
@@ -397,7 +398,7 @@ export function Sidebar() {
             const visible = isVisible(leaf, userRole, user);
             if (!visible) return null;
 
-            const isCurrent = leaf.href === "/" ? pathname === "/" : pathname.startsWith(leaf.href);
+            const isCurrent = isActiveRoute(pathname, leaf.href);
             const unreadCount = leaf.href === "/messages" ? unreadData?.totalUnread : undefined;
 
             // Dynamically customize labels for Doctor roles

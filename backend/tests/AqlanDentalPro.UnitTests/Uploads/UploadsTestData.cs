@@ -3,6 +3,7 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Moq;
+using System.Reflection;
 
 namespace AqlanDentalPro.UnitTests.Uploads;
 
@@ -39,12 +40,22 @@ internal static class UploadsTestData
         Path.GetTempPath(),
         "aqlan-test-uploads-" + Guid.NewGuid().ToString("N")[..8]);
 
+    private static readonly FieldInfo ResolvedPathField =
+        typeof(UploadsController).GetField("_resolvedPath", BindingFlags.NonPublic | BindingFlags.Static)
+        ?? throw new InvalidOperationException("UploadsController._resolvedPath was not found.");
+
     static UploadsTestData()
     {
-        // Set the env var BEFORE any test constructs the controller. The static cache
-        // in UploadsController.ResolveUploadsDirectory will pick this up on first call.
+        EnsureSharedUploadsPath();
+    }
+
+    private static void EnsureSharedUploadsPath()
+    {
+        // CI can construct UploadsController in a different test before this helper runs,
+        // so pin the controller cache to this fixture's directory every time we build one.
         Directory.CreateDirectory(SharedUploadsDir);
         Environment.SetEnvironmentVariable("UPLOADS_PATH", SharedUploadsDir);
+        ResolvedPathField.SetValue(null, SharedUploadsDir);
     }
 
     /// <summary>
@@ -82,6 +93,8 @@ internal static class UploadsTestData
         Mock<IHttpClientFactory>? httpClientFactoryMock = null,
         Mock<ILogger<UploadsController>>? loggerMock = null)
     {
+        EnsureSharedUploadsPath();
+
         currentUserMock ??= new Mock<ICurrentUserService>();
         httpClientFactoryMock ??= new Mock<IHttpClientFactory>();
         loggerMock ??= new Mock<ILogger<UploadsController>>();
@@ -98,6 +111,8 @@ internal static class UploadsTestData
     /// </summary>
     public static void CleanSharedDir()
     {
+        EnsureSharedUploadsPath();
+
         if (!Directory.Exists(SharedUploadsDir)) return;
         foreach (var file in Directory.EnumerateFiles(SharedUploadsDir))
         {

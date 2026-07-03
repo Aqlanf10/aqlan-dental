@@ -80,6 +80,105 @@ export interface DentalModelAnalysisResult {
   warnings: string[];
 }
 
+// ─── QA-599: New analyses ported from the Aqlan Ortho Model Analysis Android app ──
+
+export interface ArchPerimeterResult {
+  spaceAvailable: number;
+  spaceRequired: number;
+  discrepancy: number;
+  diagnosis: string;
+  comment: string;
+}
+
+export interface AshleyHoweResult {
+  basalArchPercent: number;
+  interpretation: string;
+  expansionPossibility: string;
+}
+
+export interface LinderHarthResult {
+  incisorSum: number;
+  predictedInterpremolarWidth: number;
+  predictedIntermolarWidth: number;
+  measuredInterpremolarWidth: number | null;
+  measuredIntermolarWidth: number | null;
+  premolarDifference: number | null;
+  molarDifference: number | null;
+  premolarDiagnosis: string;
+  molarDiagnosis: string;
+}
+
+export interface PeckPeckToothResult {
+  toothName: string;
+  mdWidth: number;
+  flWidth: number;
+  index: number;
+  diagnosis: string;
+}
+
+export interface PeckPeckResult {
+  teeth: PeckPeckToothResult[];
+}
+
+export interface KorkhausResult {
+  incisorSum: number;
+  predictedArchLength: number;
+  measuredArchLength: number | null;
+  difference: number | null;
+  diagnosis: string;
+}
+
+export interface NanceMixedResult {
+  maxAvailable: number | null;
+  maxRequired: number | null;
+  maxDiscrepancy: number | null;
+  maxDiagnosis: string;
+  mandAvailable: number | null;
+  mandRequired: number | null;
+  mandDiscrepancy: number | null;
+  mandDiagnosis: string;
+}
+
+/** QA-599: Extended result including all new analyses. */
+export interface DentalModelAnalysisResultExtended {
+  base: DentalModelAnalysisResult;
+  archPerimeter: ArchPerimeterResult | null;
+  careys: ArchPerimeterResult | null;
+  ashleyHowe: AshleyHoweResult | null;
+  linderHarth: LinderHarthResult | null;
+  peckPeck: PeckPeckResult | null;
+  korkhaus: KorkhausResult | null;
+  nanceMixed: NanceMixedResult | null;
+}
+
+/** QA-599: New input fields for the extended analyses. */
+export interface ExtendedAnalysisInput {
+  ashleyHoweTtm?: number | null;
+  ashleyHowePmd?: number | null;
+  ashleyHowePmbaw?: number | null;
+  linderHarthSi?: number | null;
+  linderHarthMeasuredPmv?: number | null;
+  linderHarthMeasuredMv?: number | null;
+  peckMd31?: number | null;
+  peckFl31?: number | null;
+  peckMd32?: number | null;
+  peckFl32?: number | null;
+  peckMd41?: number | null;
+  peckFl41?: number | null;
+  peckMd42?: number | null;
+  peckFl42?: number | null;
+  korkhausSi?: number | null;
+  korkhausMeasuredLength?: number | null;
+  nanceMaxAvailable?: number | null;
+  nanceMaxRequired?: number | null;
+  nanceMandAvailable?: number | null;
+  nanceMandRequired?: number | null;
+  archPerimeterAvailable?: number | null;
+  archPerimeterRequired?: number | null;
+  careysAvailable?: number | null;
+  careysRequired?: number | null;
+}
+
 export interface DentalModelAnalysisRecord {
   id: string;
   orthoCaseId: string;

@@ -75,14 +75,15 @@ public class PatientsControllerListTests
         var mockAudit = new Mock<IAuditService>().Object;
         logger ??= new Mock<ILogger<PatientsController>>().Object;
 
-        // PatientService and FinanceService are not invoked on the doctor-empty
+        // PatientService and FinanceReadService are not invoked on the doctor-empty
         // or access-failure paths, so we pass null — the primary constructor
         // simply stores them and they are never dereferenced in these code paths.
+        // TD-021 PR A2: PatientsController now depends on IFinanceReadService (renamed from financeService).
         return new PatientsController(
             service: null!,
             db: db,
             portalService: mockPortal,
-            financeService: null!,
+            financeReadService: null!,
             currentUser: currentUser,
             patientAccess: patientAccess,
             audit: mockAudit,

@@ -65,8 +65,12 @@ public class ContractService(
         {
             Id = c.Id,
             PatientId = c.PatientId,
-            PatientName = c.Patient.FirstName + " " + c.Patient.LastName,
-            PatientNumber = c.Patient.PatientNumber,
+            // Patient may be null here even though the FK is required: EF Core's global
+            // soft-delete query filter applies to Include-d navigations too, so a contract
+            // whose patient was later soft-deleted loads with Patient == null (LEFT JOIN
+            // filtered out), not an excluded row. Never crash a financial record over this.
+            PatientName = c.Patient != null ? $"{c.Patient.FirstName} {c.Patient.LastName}" : "مريض محذوف",
+            PatientNumber = c.Patient?.PatientNumber ?? "—",
             Specialty = c.Specialty,
             Currency = FinanceMappers.NormalizeCurrency(c.Currency),
             TotalAmount = c.TotalAmount,
@@ -145,8 +149,10 @@ public class ContractService(
     {
         Id = c.Id,
         PatientId = c.PatientId,
-        PatientName = c.Patient.FirstName + " " + c.Patient.LastName,
-        PatientNumber = c.Patient.PatientNumber,
+        // See the same null-guard note in GetContractByIdAsync above — Patient can be
+        // null here for a soft-deleted patient even though the FK is required.
+        PatientName = c.Patient != null ? $"{c.Patient.FirstName} {c.Patient.LastName}" : "مريض محذوف",
+        PatientNumber = c.Patient?.PatientNumber ?? "—",
         Specialty = c.Specialty,
         Currency = FinanceMappers.NormalizeCurrency(c.Currency),
         TotalAmount = c.TotalAmount,

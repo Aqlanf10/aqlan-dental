@@ -192,4 +192,208 @@ public class DentalModelAnalysisCalculatorTests
             input.ToothWidths[code] = perTooth;
         return input.ToothWidths;
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // QA-599: Tests for the 7 new analyses ported from the Android app
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void QA599_ArchPerimeter_SevereCrowding_ReturnsCorrectDiagnosis()
+    {
+        var result = DentalModelAnalysisCalculator.CalculateArchPerimeter(70m, 80m);
+        result.Should().NotBeNull();
+        result!.Discrepancy.Should().Be(-10m);
+        result.Diagnosis.Should().Contain("تزاحم");
+        result.Comment.Should().Contain("تزاحم شديد");
+    }
+
+    [Fact]
+    public void QA599_ArchPerimeter_MildCrowding_ReturnsCorrectComment()
+    {
+        var result = DentalModelAnalysisCalculator.CalculateArchPerimeter(78m, 80m);
+        result!.Discrepancy.Should().Be(-2m);
+        result.Comment.Should().Contain("تزاحم خفيف");
+        result.Comment.Should().Contain("IPR");
+    }
+
+    [Fact]
+    public void QA599_ArchPerimeter_Spacing_ReturnsCorrectDiagnosis()
+    {
+        var result = DentalModelAnalysisCalculator.CalculateArchPerimeter(85m, 80m);
+        result!.Discrepancy.Should().Be(5m);
+        result.Diagnosis.Should().Contain("فراغات");
+    }
+
+    [Fact]
+    public void QA599_ArchPerimeter_NullInput_ReturnsNull()
+    {
+        DentalModelAnalysisCalculator.CalculateArchPerimeter(null, 80m).Should().BeNull();
+        DentalModelAnalysisCalculator.CalculateArchPerimeter(80m, null).Should().BeNull();
+        DentalModelAnalysisCalculator.CalculateArchPerimeter(0m, 80m).Should().BeNull();
+    }
+
+    [Fact]
+    public void QA599_AshleyHowe_Below44Percent_ReturnsDeficiency()
+    {
+        var result = DentalModelAnalysisCalculator.CalculateAshleyHowe(40m, 16m, 17m);
+        result!.BasalArchPercent.Should().Be(42.5m);
+        result.Interpretation.Should().Contain("نقص");
+        result.ExpansionPossibility.Should().Contain("ممكن"); // 17 > 16
+    }
+
+    [Fact]
+    public void QA599_AshleyHowe_Above44Percent_ReturnsAcceptable()
+    {
+        var result = DentalModelAnalysisCalculator.CalculateAshleyHowe(40m, 18m, 19m);
+        result!.BasalArchPercent.Should().Be(47.5m);
+        result.Interpretation.Should().Contain("مناسب");
+    }
+
+    [Fact]
+    public void QA599_AshleyHowe_PmbawLessThanPmd_ExpansionLimited()
+    {
+        var result = DentalModelAnalysisCalculator.CalculateAshleyHowe(40m, 20m, 18m);
+        result!.ExpansionPossibility.Should().Contain("محدود");
+    }
+
+    [Fact]
+    public void QA599_LinderHarth_ComputesCorrectCoefficients()
+    {
+        // SI=34 → CPV = 34×100/85 = 40, CMV = 34×100/65 = 52.31
+        var result = DentalModelAnalysisCalculator.CalculateLinderHarth(34m, 38m, 50m);
+        result!.PredictedInterpremolarWidth.Should().Be(40m);
+        result.PredictedIntermolarWidth.Should().BeApproximately(52.31m, 0.01m);
+        result.PremolarDifference.Should().Be(2m); // 40 - 38 = 2 → tight
+        result.PremolarDiagnosis.Should().Contain("توسعة");
+    }
+
+    [Fact]
+    public void QA599_LinderHarth_NullSi_ReturnsNull()
+    {
+        DentalModelAnalysisCalculator.CalculateLinderHarth(null, 38m, 50m).Should().BeNull();
+    }
+
+    [Fact]
+    public void QA599_PeckPeck_AllFourIncisors_ComputesIndices()
+    {
+        // Central: MD=8, FL=8.5 → index = 94.1% (> 91 → wide)
+        // Lateral: MD=7, FL=7.5 → index = 93.3% (< 94 → ok)
+        var result = DentalModelAnalysisCalculator.CalculatePeckPeck(
+            md31: 8m, fl31: 8.5m,
+            md32: 7m, fl32: 7.5m,
+            md41: 8m, fl41: 8.5m,
+            md42: 7m, fl42: 7.5m);
+        result!.Teeth.Should().HaveCount(4);
+        result.Teeth[0].Index.Should().BeApproximately(94.12m, 0.01m);
+        result.Teeth[0].Diagnosis.Should().Contain("عريض");
+        result.Teeth[1].Index.Should().BeApproximately(93.33m, 0.01m);
+        result.Teeth[1].Diagnosis.Should().Contain("متناسقة");
+    }
+
+    [Fact]
+    public void QA599_PeckPeck_AllNull_ReturnsNull()
+    {
+        DentalModelAnalysisCalculator.CalculatePeckPeck(null, null, null, null, null, null, null, null)
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void QA599_Korkhaus_ComputesPredictedLength()
+    {
+        // SI=32 → predicted = 32×100/160 = 20
+        var result = DentalModelAnalysisCalculator.CalculateKorkhaus(32m, 22m);
+        result!.PredictedArchLength.Should().Be(20m);
+        result.Difference.Should().Be(2m);
+        result.Diagnosis.Should().Contain("أكبر");
+    }
+
+    [Fact]
+    public void QA599_Korkhaus_NullSi_ReturnsNull()
+    {
+        DentalModelAnalysisCalculator.CalculateKorkhaus(null, 22m).Should().BeNull();
+    }
+
+    [Fact]
+    public void QA599_NanceMixed_BothArches_ComputesDiscrepancies()
+    {
+        var result = DentalModelAnalysisCalculator.CalculateNanceMixed(
+            maxAvailable: 70m, maxRequired: 75m,
+            mandAvailable: 65m, mandRequired: 60m);
+        result!.MaxDiscrepancy.Should().Be(-5m);
+        result.MaxDiagnosis.Should().Contain("نقص");
+        result.MandDiscrepancy.Should().Be(5m);
+        result.MandDiagnosis.Should().Contain("فراغ");
+    }
+
+    [Fact]
+    public void QA599_NanceMixed_OnlyMax_ReturnsWithoutMand()
+    {
+        var result = DentalModelAnalysisCalculator.CalculateNanceMixed(
+            maxAvailable: 70m, maxRequired: 70m,
+            mandAvailable: null, mandRequired: null);
+        result!.MaxDiscrepancy.Should().Be(0m);
+        result.MandDiscrepancy.Should().BeNull();
+    }
+
+    [Fact]
+    public void QA599_NanceMixed_AllNull_ReturnsNull()
+    {
+        DentalModelAnalysisCalculator.CalculateNanceMixed(null, null, null, null)
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void QA599_HuckabaY1_ComputesCompensatedWidth()
+    {
+        // X1=8, X2=10, Y2=7.5 → Y1 = 8×7.5/10 = 6
+        var result = DentalModelAnalysisCalculator.CalculateHuckabaY1(8m, 10m, 7.5m);
+        result.Should().Be(6m);
+    }
+
+    [Fact]
+    public void QA599_HuckabaY1_ZeroX2_ReturnsNull()
+    {
+        DentalModelAnalysisCalculator.CalculateHuckabaY1(8m, 0m, 7.5m).Should().BeNull();
+    }
+
+    [Fact]
+    public void QA599_CalculateExtended_AllFieldsNull_ReturnsNullAnalyses()
+    {
+        var input = CompleteInput();
+        var baseResult = DentalModelAnalysisCalculator.Calculate(input);
+        var extended = DentalModelAnalysisCalculator.CalculateExtended(input, baseResult);
+        extended.ArchPerimeter.Should().BeNull();
+        extended.Careys.Should().BeNull();
+        extended.AshleyHowe.Should().BeNull();
+        extended.LinderHarth.Should().BeNull();
+        extended.PeckPeck.Should().BeNull();
+        extended.Korkhaus.Should().BeNull();
+        extended.NanceMixed.Should().BeNull();
+        extended.Base.Should().Be(baseResult);
+    }
+
+    [Fact]
+    public void QA599_CalculateExtended_WithAllFields_ReturnsAllResults()
+    {
+        var input = CompleteInput();
+        var baseResult = DentalModelAnalysisCalculator.Calculate(input);
+        var extended = DentalModelAnalysisCalculator.CalculateExtended(
+            input, baseResult,
+            ashleyHoweTtm: 40m, ashleyHowePmd: 16m, ashleyHowePmbaw: 17m,
+            linderHarthSi: 34m, linderHarthMeasuredPmv: 38m, linderHarthMeasuredMv: 50m,
+            peckMd31: 8m, peckFl31: 8.5m, peckMd32: 7m, peckFl32: 7.5m,
+            peckMd41: 8m, peckFl41: 8.5m, peckMd42: 7m, peckFl42: 7.5m,
+            korkhausSi: 32m, korkhausMeasuredLength: 22m,
+            nanceMaxAvailable: 70m, nanceMaxRequired: 75m,
+            nanceMandAvailable: 65m, nanceMandRequired: 60m,
+            archPerimeterAvailable: 70m, archPerimeterRequired: 80m,
+            careysAvailable: 78m, careysRequired: 80m);
+        extended.ArchPerimeter.Should().NotBeNull();
+        extended.Careys.Should().NotBeNull();
+        extended.AshleyHowe.Should().NotBeNull();
+        extended.LinderHarth.Should().NotBeNull();
+        extended.PeckPeck.Should().NotBeNull();
+        extended.Korkhaus.Should().NotBeNull();
+        extended.NanceMixed.Should().NotBeNull();
+    }
 }

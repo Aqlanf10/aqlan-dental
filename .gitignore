@@ -95,3 +95,9 @@ public/uploads/
 agent-ctx/
 frontend/bun.lock
 backend/tools/
+
+# ===========================
+# Agent runtime — never project content (accidentally committed in #604/#606)
+# ===========================
+/skills/
+/tool-results/

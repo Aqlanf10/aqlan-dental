@@ -56,3 +56,27 @@ investigated and documented for a follow-up round (owner decision needed).
 | `QA1C-03` | Inventory | `/api/suppliers` 500 — likely enum-type drift on `Suppliers."Type"` (not a missing column) | `SuppliersController.GetAll` | documented | no | n/a | yes |
 | `QA1C-04` | Finance | `/api/finance-v3/expenses` 500 — likely enum-type drift on `OperationalExpenses."Category"/"ApprovalStatus"` | `FinanceV3Controller.GetExpenses` | documented | no | n/a | yes |
 | `QA1C-05` | Navigation | Full admin sidebar crawl: no blank pages, no unexpected 404/redirect; only 500s were QA1C-01/02 screens | `Sidebar.tsx`, all dashboard routes | verified | n/a | n/a | no |
+
+## Production Owner QA — Round 2 (2026-07-03)
+
+Live production QA (admin, real browser). Root-caused why QA1C-01/02's fixes and
+QA1C-03/04's fix (landed separately as QA-602 between rounds) were still visibly
+broken in production: a same-day TD-021 refactor (FinanceService decomposition,
+PRs #603-#607) had a **squash-merge that silently dropped the actual code**
+(`FinanceReadService`/`IFinanceReadService` + 3 call-site updates) for PR #604,
+leaving `main` unable to compile since `dotnet build` errored on
+`IFinanceService.GetPatientFinanceSummaryAsync` not existing. Every Railway deploy
+attempt after that commit failed, so production kept serving a stale image from
+*before* QA1C-01/02/QA-602's fixes — that stale image is what QA round 2 actually
+tested against, not current `main`.
+
+| ID | Module | Finding | Code | Status | Fixed here | Runtime verify | Owner decision |
+|----|--------|---------|------|--------|-----------|----------------|----------------|
+| `QA2-01` | Finance/Build | `main` failed to build (`CS1061` on `IFinanceService.GetPatientFinanceSummaryAsync`) since TD-021 PR #604's squash merge dropped `FinanceReadService`/`IFinanceReadService` and 3 call-site updates — blocked every Railway deploy since | `FinanceReadService.cs`, `IFinanceReadService.cs` (restored), `PatientJourneyService.cs`, `PaymentsController.cs`, `PatientsController.cs` | fixed (PR #608, merged) | yes | pending (Railway redeploy in progress at time of writing) | no |
+| `QA2-02` | Repo hygiene | Same TD-021 merge committed the entire global Claude Code `skills/` directory (1028 files, 61MB) + a stray `tool-results/` debug file into the project | `.gitignore` (+`/skills/`, +`/tool-results/`), 1029 files removed from tracking | fixed (PR #608, merged) | yes | yes (repo size back to normal) | no |
+| `QA2-03` | Finance/Schema | `ContractService.GetContractsAsync`/`GetContractByIdAsync` did `c.Patient.FirstName` unconditionally; EF Core's global soft-delete filter nulls `Contract.Patient` (not excludes the row) for a contract whose patient was later soft-deleted, even though the FK is required — latent `NullReferenceException` risk independent of QA1C-01 | `ContractService.cs` (null-guard, `"مريض محذوف"` fallback) | fixed (PR #608, merged) | yes | yes (regression test + full suite green) | no |
+| `QA2-04` | Daily operations | `/api/dashboard/stats`, `/api/patient-journey/{id}/daily-summary` (blocks arrival check-in), and `/api/suppliers` all still 500 live — **not new bugs**, these are QA1C-01/02 and QA-602's already-merged fixes on `main`, simply not yet deployed because of QA2-01 | `StartupDatabaseMaintenance.cs` (already fixed on `main`) | already fixed, awaiting deploy | no (no new code needed) | pending Railway redeploy | no |
+| `QA2-05` | Appointments | Full booking workflow verified end-to-end live: create patient → book appointment (doctor-schedule-aware slot picker correctly blocked a day the doctor is off) → appointment persists with correct patient/doctor enrichment on `GetById` and range queries | `AppointmentsController.cs`, `appointments/new` page | verified, no bug | n/a | n/a | no |
+| `QA2-06` | Daily operations | Arrival check-in (`تسجيل وصول`) surfaces a clear Arabic toast (`فشل إتمام العملية`) on failure rather than failing silently — good UX; underlying failure is QA2-04 | `daily-operations` UI | verified (error handling), blocked by QA2-04 | n/a | pending Railway redeploy | no |
+| `QA2-07` | Communication | SignalR WebSocket (`/hubs/messaging`) still fails to connect in production console on every page — same known Railway/Vercel WS-proxy limitation as QA1C; system degrades gracefully (polling), not user-blocking | `useSignalRMessaging.ts`, `useSignalRClinicQueue.ts`, `usePortalSignalR.ts` | documented, unchanged | no | n/a | yes (owner: is realtime push worth a dedicated WS ingress?) |
+| `QA2-08` | Appointments UI | Minor: appointment color `<input type="color">` receives an empty string default, producing a harmless browser console warning (`does not conform to #rrggbb`) — cosmetic only | `appointments/new` page | documented, not fixed | no | n/a | no (low severity, optional cleanup) |

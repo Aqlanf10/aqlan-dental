@@ -13,7 +13,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api")]
 [Authorize(Policy = "FinanceAccess")]
-public class PaymentsController(IFinanceService service, IPdfService pdfService, IAuditService audit, ICurrentUserService currentUser, AppDbContext db, IRealTimePushService pushService, ILogger<PaymentsController> logger) : ControllerBase
+public class PaymentsController(IFinanceService service, IFinanceReadService financeReadService, IPdfService pdfService, IAuditService audit, ICurrentUserService currentUser, AppDbContext db, IRealTimePushService pushService, ILogger<PaymentsController> logger) : ControllerBase
 {
     // FIN-PERM: the class-level FinanceAccess policy (Admin + Reception + Accountant)
     // is the coarse gate; the granular finance.* permission (RolePermissions, owner-
@@ -184,7 +184,7 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
     public async Task<IActionResult> GetPatientFinanceSummary(Guid patientId)
     {
         if (!await CanAsync("finance.patient_balance", "view")) return Deny();
-        var result = await service.GetPatientFinanceSummaryAsync(patientId);
+        var result = await financeReadService.GetPatientFinanceSummaryAsync(patientId);
         return Ok(result);
     }
 

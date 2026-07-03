@@ -208,7 +208,7 @@ public class OrthoDailyOperationsIntegrationTests
         currentUser.SetupGet(x => x.IsAdmin).Returns(true);
 
         var commission = new Mock<ICommissionService>();
-        var finance = new Mock<IFinanceService>();
+        var finance = new Mock<IFinanceReadService>(); // TD-021 PR A2: PatientJourneyService now depends on IFinanceReadService
         var audit = new Mock<IAuditService>();
 
         var journeyService = new PatientJourneyService(

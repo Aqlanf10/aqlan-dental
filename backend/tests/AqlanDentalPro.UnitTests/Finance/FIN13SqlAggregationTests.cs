@@ -40,6 +40,14 @@ public class FIN13SqlAggregationTests
         return new FinanceService(db, currentUser, notifications, logger, commissionService, journalEntryServiceMock.Object, new ContractService(db, currentUser));
     }
 
+    /// <summary>
+    /// TD-021 PR A2: read-side finance service extracted from FinanceService.
+    /// Used by tests that call GetPatientFinanceSummaryAsync, GetAccountStatementAsync,
+    /// GetSummaryAsync, or GetOverdueContractsAsync.
+    /// </summary>
+    private static FinanceReadService CreateFinanceReadService(AppDbContext db, ICurrentUserService currentUser)
+        => new(db, currentUser);
+
     private static (Guid branchId, Guid patientId, Guid userId, ICurrentUserService currentUser) SeedPatient(AppDbContext db)
     {
         var branchId = Guid.NewGuid();
@@ -67,6 +75,8 @@ public class FIN13SqlAggregationTests
         await using var db = CreateDb();
         var (branchId, patientId, userId, currentUser) = SeedPatient(db);
         var service = CreateFinanceService(db, currentUser);
+
+        var readService = CreateFinanceReadService(db, currentUser);
 
         var contractId = Guid.NewGuid();
         db.Contracts.Add(new Contract
@@ -114,7 +124,7 @@ public class FIN13SqlAggregationTests
 
         await db.SaveChangesAsync();
 
-        var summary = await service.GetPatientFinanceSummaryAsync(patientId);
+        var summary = await readService.GetPatientFinanceSummaryAsync(patientId);
 
         summary.Should().NotBeNull();
         summary.TotalTreatmentCost.Should().Be(14_000m);
@@ -132,12 +142,14 @@ public class FIN13SqlAggregationTests
         await using var db = CreateDb();
         var (_, patientId, _, currentUser) = SeedPatient(db);
         var service = CreateFinanceService(db, currentUser);
+
+        var readService = CreateFinanceReadService(db, currentUser);
         await db.SaveChangesAsync();
 
-        var act = () => service.GetPatientFinanceSummaryAsync(patientId);
+        var act = () => readService.GetPatientFinanceSummaryAsync(patientId);
         await act.Should().NotThrowAsync();
 
-        var summary = await service.GetPatientFinanceSummaryAsync(patientId);
+        var summary = await readService.GetPatientFinanceSummaryAsync(patientId);
         summary.Should().NotBeNull();
         summary.TotalTreatmentCost.Should().Be(0m);
         summary.TotalPaid.Should().Be(0m);
@@ -156,6 +168,8 @@ public class FIN13SqlAggregationTests
         var (branchId, patientId, userId, currentUser) = SeedPatient(db);
         var service = CreateFinanceService(db, currentUser);
 
+        var readService = CreateFinanceReadService(db, currentUser);
+
         var c1 = Guid.NewGuid();
         var c2 = Guid.NewGuid();
         db.Contracts.Add(new Contract { Id = c1, PatientId = patientId, Specialty = "Ortho", TotalAmount = 10_000m, DiscountAmount = 1_000m, Status = ContractStatus.Active, StartDate = new DateOnly(2024, 1, 1), CreatedBy = userId });
@@ -171,7 +185,7 @@ public class FIN13SqlAggregationTests
 
         await db.SaveChangesAsync();
 
-        var statement = await service.GetAccountStatementAsync(patientId);
+        var statement = await readService.GetAccountStatementAsync(patientId);
 
         statement.Should().NotBeNull();
         statement!.TotalContracted.Should().Be(17_200m);
@@ -195,12 +209,14 @@ public class FIN13SqlAggregationTests
         await using var db = CreateDb();
         var (_, patientId, _, currentUser) = SeedPatient(db);
         var service = CreateFinanceService(db, currentUser);
+
+        var readService = CreateFinanceReadService(db, currentUser);
         await db.SaveChangesAsync();
 
-        var act = () => service.GetAccountStatementAsync(patientId);
+        var act = () => readService.GetAccountStatementAsync(patientId);
         await act.Should().NotThrowAsync();
 
-        var statement = await service.GetAccountStatementAsync(patientId);
+        var statement = await readService.GetAccountStatementAsync(patientId);
         statement.Should().NotBeNull();
         statement!.TotalContracted.Should().Be(0m);
         statement.TotalDiscounts.Should().Be(0m);
@@ -218,6 +234,8 @@ public class FIN13SqlAggregationTests
         await using var db = CreateDb();
         var (branchId, patientId, userId, currentUser) = SeedPatient(db);
         var service = CreateFinanceService(db, currentUser);
+
+        var readService = CreateFinanceReadService(db, currentUser);
 
         var contractStartDate = ClinicTimeProvider.ClinicToday().AddMonths(-6);
         var contractId = Guid.NewGuid();
@@ -238,7 +256,7 @@ public class FIN13SqlAggregationTests
         db.Payments.Add(new Payment { Id = Guid.NewGuid(), PatientId = patientId, ContractId = contractId, Amount = 1_000m, PaymentDate = contractStartDate, IsActive = true, BranchId = branchId, ReceivedBy = userId });
         await db.SaveChangesAsync();
 
-        var overdue = await service.GetOverdueContractsAsync();
+        var overdue = await readService.GetOverdueContractsAsync();
 
         overdue.Should().ContainSingle();
         var dto = overdue[0];
@@ -255,12 +273,14 @@ public class FIN13SqlAggregationTests
         await using var db = CreateDb();
         var (_, _, _, currentUser) = SeedPatient(db);
         var service = CreateFinanceService(db, currentUser);
+
+        var readService = CreateFinanceReadService(db, currentUser);
         await db.SaveChangesAsync();
 
-        var act = () => service.GetOverdueContractsAsync();
+        var act = () => readService.GetOverdueContractsAsync();
         await act.Should().NotThrowAsync();
 
-        var overdue = await service.GetOverdueContractsAsync();
+        var overdue = await readService.GetOverdueContractsAsync();
         overdue.Should().BeEmpty();
     }
 
@@ -270,12 +290,14 @@ public class FIN13SqlAggregationTests
         await using var db = CreateDb();
         var (_, _, _, currentUser) = SeedPatient(db);
         var service = CreateFinanceService(db, currentUser);
+
+        var readService = CreateFinanceReadService(db, currentUser);
         await db.SaveChangesAsync();
 
-        var act = () => service.GetSummaryAsync();
+        var act = () => readService.GetSummaryAsync();
         await act.Should().NotThrowAsync();
 
-        var summary = await service.GetSummaryAsync();
+        var summary = await readService.GetSummaryAsync();
         summary.Should().NotBeNull();
         summary.TodayCollected.Should().Be(0m);
         summary.MonthCollected.Should().Be(0m);

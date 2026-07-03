@@ -331,7 +331,7 @@ public class JourneyUpdatedSignalRTests
 
         await using var db = CreateDb();
         var controller = new PaymentsController(
-            finance.Object, pdf.Object, audit.Object,
+            finance.Object, new Mock<IFinanceReadService>().Object, pdf.Object, audit.Object,
             currentUser.Object, db, push.Object,
             NullLogger<PaymentsController>.Instance);
 

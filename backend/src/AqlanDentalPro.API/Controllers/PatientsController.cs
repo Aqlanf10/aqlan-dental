@@ -18,7 +18,7 @@ public class PatientsController(
     PatientService service,
     AppDbContext db,
     IPatientPortalService portalService,
-    IFinanceService financeService,
+    IFinanceReadService financeReadService,
     ICurrentUserService currentUser,
     IPatientAccessService patientAccess,
     IAuditService audit,
@@ -438,7 +438,7 @@ public class PatientsController(
         }
 
         // Align with canonical finance-summary (contracts + invoices + orphan payments + unbilled visits).
-        var financeSummary = await financeService.GetPatientFinanceSummaryAsync(id);
+        var financeSummary = await financeReadService.GetPatientFinanceSummaryAsync(id);
         var totalPaid = financeSummary.TotalPaid;
         var totalOutstanding = financeSummary.OutstandingBalance;
 
@@ -555,7 +555,7 @@ public class PatientsController(
     [Authorize(Policy = "FinanceAccess")]
     public async Task<IActionResult> GetAccountStatement(Guid id)
     {
-        var result = await financeService.GetAccountStatementAsync(id);
+        var result = await financeReadService.GetAccountStatementAsync(id);
         return result == null ? NotFound(new { message = "المريض غير موجود" }) : Ok(result);
     }
 

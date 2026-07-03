@@ -197,7 +197,7 @@ public class PatientJourneyFinancialRulesTests
         db.RolePermissions.Add(new RolePermission { Role = "Reception", Resource = "finance.payments", CanView = true, CanCreate = true });
         await db.SaveChangesAsync();
 
-        var finance = new Mock<IFinanceService>();
+        var finance = new Mock<IFinanceReadService>();
         finance.Setup(f => f.GetPatientFinanceSummaryAsync(patient.Id))
             .ReturnsAsync(new PatientFinanceSummaryDto
             {
@@ -229,7 +229,7 @@ public class PatientJourneyFinancialRulesTests
         db.Patients.Add(patient);
         await db.SaveChangesAsync(); // no RolePermissions seeded for Reception
 
-        var finance = new Mock<IFinanceService>();
+        var finance = new Mock<IFinanceReadService>();
         var result = await BuildService(db, finance).GetDailySummaryAsync(PrincipalInRole("Reception"), patient.Id);
 
         ExtractFinanceSummary(result).Should().BeNull("without finance.payments the cashier sees no balance");
@@ -245,7 +245,7 @@ public class PatientJourneyFinancialRulesTests
         db.Patients.Add(patient);
         await db.SaveChangesAsync(); // no RolePermissions seeded — Admin must still bypass
 
-        var finance = new Mock<IFinanceService>();
+        var finance = new Mock<IFinanceReadService>();
         finance.Setup(f => f.GetPatientFinanceSummaryAsync(patient.Id))
             .ReturnsAsync(new PatientFinanceSummaryDto { TotalTreatmentCost = 2000m, OutstandingBalance = 500m, FinancialStatus = "on_track" });
 
@@ -256,7 +256,7 @@ public class PatientJourneyFinancialRulesTests
         HasProperty(fin!, "TotalTreatmentCost").Should().BeTrue("Admin gets the full summary even with no RolePermission rows");
     }
 
-    private static PatientJourneyService BuildService(AppDbContext db, Mock<IFinanceService> finance)
+    private static PatientJourneyService BuildService(AppDbContext db, Mock<IFinanceReadService> finance)
     {
         var access = new Mock<IPatientAccessService>();
         access.SetupGet(x => x.IsDoctor).Returns(false);
@@ -305,7 +305,7 @@ public class PatientJourneyFinancialRulesTests
         currentUser.SetupGet(x => x.IsAdmin).Returns(true);
 
         var commission = new Mock<ICommissionService>();
-        var finance = new Mock<IFinanceService>();
+        var finance = new Mock<IFinanceReadService>();
         var audit = new Mock<IAuditService>();
 
         // CLIN-22: controller is now a thin delegate over PatientJourneyService + CheckoutService.

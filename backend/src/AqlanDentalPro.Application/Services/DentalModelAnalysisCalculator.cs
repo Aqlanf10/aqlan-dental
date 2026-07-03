@@ -80,6 +80,74 @@ public sealed record DentalModelAnalysisResult(
     List<HuckabaToothResult> Huckaba,
     List<string> Warnings);
 
+// ─── QA-599: New analyses ported from the Aqlan Ortho Model Analysis Android app ──
+
+/// <summary>Arch Perimeter / Carey's Analysis — space available vs required.</summary>
+public sealed record ArchPerimeterResult(
+    decimal SpaceAvailable,
+    decimal SpaceRequired,
+    decimal Discrepancy,
+    string Diagnosis,
+    string Comment);
+
+/// <summary>Ashley Howe Analysis — basal arch width as % of TTM, 44% threshold.</summary>
+public sealed record AshleyHoweResult(
+    decimal BasalArchPercent,
+    string Interpretation,
+    string ExpansionPossibility);
+
+/// <summary>Linder Harth Analysis — like Pont but with 85/65 coefficients instead of 80/64.</summary>
+public sealed record LinderHarthResult(
+    decimal IncisorSum,
+    decimal PredictedInterpremolarWidth,
+    decimal PredictedIntermolarWidth,
+    decimal? MeasuredInterpremolarWidth,
+    decimal? MeasuredIntermolarWidth,
+    decimal? PremolarDifference,
+    decimal? MolarDifference,
+    string PremolarDiagnosis,
+    string MolarDiagnosis);
+
+/// <summary>Peck &amp; Peck Index — MD/FL ratio for lower incisors (88-92% central, 90-95% lateral).</summary>
+public sealed record PeckPeckToothResult(
+    string ToothName,
+    decimal MdWidth,
+    decimal FlWidth,
+    decimal Index,
+    string Diagnosis);
+
+public sealed record PeckPeckResult(List<PeckPeckToothResult> Teeth);
+
+/// <summary>Korkhaus Analysis — predicted arch length from sum of 4 upper incisors.</summary>
+public sealed record KorkhausResult(
+    decimal IncisorSum,
+    decimal PredictedArchLength,
+    decimal? MeasuredArchLength,
+    decimal? Difference,
+    string Diagnosis);
+
+/// <summary>Nance Mixed Dentition — available vs required space per arch.</summary>
+public sealed record NanceMixedResult(
+    decimal? MaxAvailable,
+    decimal? MaxRequired,
+    decimal? MaxDiscrepancy,
+    string MaxDiagnosis,
+    decimal? MandAvailable,
+    decimal? MandRequired,
+    decimal? MandDiscrepancy,
+    string MandDiagnosis);
+
+/// <summary>Extended result including all QA-599 analyses.</summary>
+public sealed record DentalModelAnalysisResultExtended(
+    DentalModelAnalysisResult Base,
+    ArchPerimeterResult? ArchPerimeter,
+    ArchPerimeterResult? Careys,
+    AshleyHoweResult? AshleyHowe,
+    LinderHarthResult? LinderHarth,
+    PeckPeckResult? PeckPeck,
+    KorkhausResult? Korkhaus,
+    NanceMixedResult? NanceMixed);
+
 public static class DentalModelAnalysisCalculator
 {
     private static readonly string[] UpperOverall =
@@ -327,4 +395,221 @@ public static class DentalModelAnalysisCalculator
 
     private static decimal Round(decimal value) =>
         Math.Round(value, 2, MidpointRounding.AwayFromZero);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // QA-599: New analyses ported from the Aqlan Ortho Model Analysis Android app
+    // All formulas and Arabic diagnostic comments are ported verbatim from
+    // Calculations.kt to ensure clinical consistency between platforms.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Arch Perimeter / Carey's Analysis — space available vs required.
+    /// Discrepancy = available − required. Negative = crowding, positive = spacing.
+    /// </summary>
+    public static ArchPerimeterResult? CalculateArchPerimeter(decimal? spaceAvailable, decimal? spaceRequired)
+    {
+        if (spaceAvailable is null or <= 0 || spaceRequired is null or <= 0) return null;
+        var discrepancy = Round(spaceAvailable.Value - spaceRequired.Value);
+        var diagnosis = discrepancy < 0
+            ? "تزاحم (Crowding)"
+            : discrepancy > 0
+                ? "فراغات (Spacing)"
+                : "متطابق (Normal / Adequate Space)";
+        var comment = discrepancy < -5.0m
+            ? "تزاحم شديد (Severe Crowding). قد يتطلب قلع ضواحك (Extraction of first premolars) بالتنسيق مع رأي الأخصائي."
+            : discrepancy < -2.5m
+                ? "تزاحم متوسط (Borderline Crowding). قد يتطلب توسيعاً أو قلعاً لضواحك ثانية، أو دراسة مسافة لي واي."
+                : discrepancy < 0m
+                    ? "تزاحم خفيف (Mild Crowding). يمكن معالجته عبر السنفرة البينية (IPR / Proximal stripping) أو توسيع بسيط."
+                    : discrepancy > 0m
+                        ? "تفارق خفيف إلى متوسط للأسنان. يتطلب إرجاع القواطع أو إغلاق الفراغات تجميلياً."
+                        : "القوس مثالي ومطابق للمادة السنية.";
+        return new ArchPerimeterResult(
+            Round(spaceAvailable.Value),
+            Round(spaceRequired.Value),
+            discrepancy,
+            diagnosis,
+            comment);
+    }
+
+    /// <summary>
+    /// Ashley Howe Analysis — basal arch width as % of TTM.
+    /// PMBAW / TTM × 100. If &lt; 44% → basal arch deficiency. If PMBAW > PMD → expansion possible.
+    /// </summary>
+    public static AshleyHoweResult? CalculateAshleyHowe(decimal? ttm, decimal? pmd, decimal? pmbaw)
+    {
+        if (ttm is null or <= 0 || pmd is null || pmbaw is null) return null;
+        var pct = Round((pmbaw.Value / ttm.Value) * 100m);
+        var expansionPossible = pmbaw.Value > pmd.Value
+            ? "التوسيع مفضل وممكن (Expansion is possible / favorable)"
+            : "التوسيع محدود أو غير ملائم (Expansion is limited / unfavorable)";
+        var interpretation = pct < 44m
+            ? "نقص في عرض قاعدة الفك (Basal arch width deficiency - أقل من 44%)."
+            : "نطاق عرض قاعدة الفك مناسب ومقبول (Arch width acceptable - 44% أو أكثر).";
+        return new AshleyHoweResult(pct, interpretation, expansionPossible);
+    }
+
+    /// <summary>
+    /// Linder Harth Analysis — like Pont but with 85/65 coefficients instead of 80/64.
+    /// CPV = SI × 100 / 85, CMV = SI × 100 / 65.
+    /// </summary>
+    public static LinderHarthResult? CalculateLinderHarth(
+        decimal? si, decimal? measuredPmv, decimal? measuredMv)
+    {
+        if (si is null or <= 0) return null;
+        var cpv = Round(si.Value * 100m / 85m);
+        var cmv = Round(si.Value * 100m / 65m);
+        decimal? pmDiff = measuredPmv.HasValue ? Round(cpv - measuredPmv.Value) : null;
+        decimal? mDiff = measuredMv.HasValue ? Round(cmv - measuredMv.Value) : null;
+
+        var pmDiagnosis = pmDiff switch
+        {
+            > 1.0m => $"تضيق ليندر-هارث في الضواحك، يحتاج توسعة: {pmDiff.Value:0.0} مم.",
+            < -1.0m => $"كفاية أو زيادة في مقاس الضواحك بـ {Math.Abs(pmDiff.Value):0.0} مم.",
+            _ => "عرض الضواحك مثالي طبقاً للقواطع."
+        };
+        var mDiagnosis = mDiff switch
+        {
+            > 1.0m => $"تضيق ليندر-هارث في الأرحاء، يحتاج توسعة: {mDiff.Value:0.0} مم.",
+            < -1.0m => $"كفاية وزيادة في مقاس الأرحاء بـ {Math.Abs(mDiff.Value):0.0} مم.",
+            _ => "عرض الأرحاء مثالي طبقاً للقواطع."
+        };
+
+        return new LinderHarthResult(
+            Round(si.Value), cpv, cmv,
+            measuredPmv, measuredMv, pmDiff, mDiff, pmDiagnosis, mDiagnosis);
+    }
+
+    /// <summary>
+    /// Peck &amp; Peck Index — MD/FL ratio for lower incisors.
+    /// Central incisor normal: 88-92%, Lateral incisor normal: 90-95%.
+    /// </summary>
+    public static PeckPeckResult? CalculatePeckPeck(
+        decimal? md31, decimal? fl31,
+        decimal? md32, decimal? fl32,
+        decimal? md41, decimal? fl41,
+        decimal? md42, decimal? fl42)
+    {
+        var teeth = new List<PeckPeckToothResult>();
+        AddPeckTooth(teeth, "القاطع المركزي السفلي الأيسر (31)", md31, fl31, 91m);
+        AddPeckTooth(teeth, "القاطع الجانبي السفلي الأيسر (32)", md32, fl32, 94m);
+        AddPeckTooth(teeth, "القاطع المركزي السفلي الأيمن (41)", md41, fl41, 91m);
+        AddPeckTooth(teeth, "القاطع الجانبي السفلي الأيمن (42)", md42, fl42, 94m);
+        return teeth.Count == 0 ? null : new PeckPeckResult(teeth);
+    }
+
+    private static void AddPeckTooth(
+        List<PeckPeckToothResult> teeth, string name,
+        decimal? md, decimal? fl, decimal limit)
+    {
+        if (md is null or <= 0 || fl is null or <= 0) return;
+        var idx = Round((md.Value / fl.Value) * 100m);
+        var diag = idx > limit
+            ? "المقاس MD عريض جداً بالنسبة لـ FL. ننصح بإجراء سنفرة بينية (Slenderization/IPR) لتناسق الشكل."
+            : "أبعاد السن متناسقة تجميلياً ووظيفياً.";
+        teeth.Add(new PeckPeckToothResult(name, Round(md.Value), Round(fl.Value), idx, diag));
+    }
+
+    /// <summary>
+    /// Korkhaus Analysis — predicted arch length from sum of 4 upper incisors.
+    /// Predicted = SI × 100 / 160 (simplified Korkhaus formula).
+    /// </summary>
+    public static KorkhausResult? CalculateKorkhaus(decimal? si, decimal? measuredLength)
+    {
+        if (si is null or <= 0) return null;
+        var predicted = Round(si.Value * 100m / 160m);
+        decimal? diff = measuredLength.HasValue ? Round(measuredLength.Value - predicted) : null;
+        var diagnosis = diff switch
+        {
+            > 1.0m => $"طول القوس أكبر من المتوقع بـ {diff.Value:0.0} مم — قد يشير إلى تباعد أو بروز.",
+            < -1.0m => $"طول القوس أقصر من المتوقع بـ {Math.Abs(diff.Value):0.0} مم — قد يشير إلى تزاحم.",
+            _ => "طول القوس مطابق للمتوقع طبقاً لمجموع القواطع."
+        };
+        return new KorkhausResult(Round(si.Value), predicted, measuredLength, diff, diagnosis);
+    }
+
+    /// <summary>
+    /// Nance Mixed Dentition — available vs required space per arch.
+    /// Discrepancy = available − required. Negative = crowding.
+    /// </summary>
+    public static NanceMixedResult? CalculateNanceMixed(
+        decimal? maxAvailable, decimal? maxRequired,
+        decimal? mandAvailable, decimal? mandRequired)
+    {
+        if (maxAvailable is null && mandAvailable is null) return null;
+
+        decimal? maxDisc = null, mandDisc = null;
+        string maxDiag = "", mandDiag = "";
+
+        if (maxAvailable.HasValue && maxRequired.HasValue)
+        {
+            maxDisc = Round(maxAvailable.Value - maxRequired.Value);
+            maxDiag = maxDisc < 0
+                ? $"نقص في مساحة الفك العلوي: {maxDisc.Value:0.0} مم"
+                : maxDisc > 0
+                    ? $"فراغ متاح بالفك العلوي: {maxDisc.Value:0.0} مم"
+                    : "مساحة مطابقة للعلوي";
+        }
+
+        if (mandAvailable.HasValue && mandRequired.HasValue)
+        {
+            mandDisc = Round(mandAvailable.Value - mandRequired.Value);
+            mandDiag = mandDisc < 0
+                ? $"نقص في مساحة الفك السفلي: {mandDisc.Value:0.0} مم"
+                : mandDisc > 0
+                    ? $"فراغ متاح بالفك السفلي: {mandDisc.Value:0.0} مم"
+                    : "مساحة مطابقة للسفلي";
+        }
+
+        return new NanceMixedResult(
+            maxAvailable, maxRequired, maxDisc, maxDiag,
+            mandAvailable, mandRequired, mandDisc, mandDiag);
+    }
+
+    /// <summary>
+    /// Huckaba radiographic compensation formula: Y1 = X1 × Y2 / X2.
+    /// Used to estimate the actual width of an unerupted tooth from a radiograph.
+    /// </summary>
+    public static decimal? CalculateHuckabaY1(decimal? x1, decimal? x2, decimal? y2)
+    {
+        if (x1 is null or <= 0 || x2 is null or <= 0 || y2 is null) return null;
+        return Round((x1.Value * y2.Value) / x2.Value);
+    }
+
+    /// <summary>
+    /// QA-599: Calculates all new analyses in one call and wraps them in an
+    /// extended result. The caller passes the same input used for the base
+    /// calculation; this method extracts the relevant fields and delegates to
+    /// each individual calculation method.
+    /// </summary>
+    public static DentalModelAnalysisResultExtended CalculateExtended(
+        DentalModelAnalysisInput input,
+        DentalModelAnalysisResult baseResult,
+        decimal? ashleyHoweTtm = null,
+        decimal? ashleyHowePmd = null,
+        decimal? ashleyHowePmbaw = null,
+        decimal? linderHarthSi = null,
+        decimal? linderHarthMeasuredPmv = null,
+        decimal? linderHarthMeasuredMv = null,
+        decimal? peckMd31 = null, decimal? peckFl31 = null,
+        decimal? peckMd32 = null, decimal? peckFl32 = null,
+        decimal? peckMd41 = null, decimal? peckFl41 = null,
+        decimal? peckMd42 = null, decimal? peckFl42 = null,
+        decimal? korkhausSi = null,
+        decimal? korkhausMeasuredLength = null,
+        decimal? nanceMaxAvailable = null, decimal? nanceMaxRequired = null,
+        decimal? nanceMandAvailable = null, decimal? nanceMandRequired = null,
+        decimal? archPerimeterAvailable = null, decimal? archPerimeterRequired = null,
+        decimal? careysAvailable = null, decimal? careysRequired = null)
+    {
+        return new DentalModelAnalysisResultExtended(
+            Base: baseResult,
+            ArchPerimeter: CalculateArchPerimeter(archPerimeterAvailable, archPerimeterRequired),
+            Careys: CalculateArchPerimeter(careysAvailable, careysRequired),
+            AshleyHowe: CalculateAshleyHowe(ashleyHoweTtm, ashleyHowePmd, ashleyHowePmbaw),
+            LinderHarth: CalculateLinderHarth(linderHarthSi, linderHarthMeasuredPmv, linderHarthMeasuredMv),
+            PeckPeck: CalculatePeckPeck(peckMd31, peckFl31, peckMd32, peckFl32, peckMd41, peckFl41, peckMd42, peckFl42),
+            Korkhaus: CalculateKorkhaus(korkhausSi, korkhausMeasuredLength),
+            NanceMixed: CalculateNanceMixed(nanceMaxAvailable, nanceMaxRequired, nanceMandAvailable, nanceMandRequired));
+    }
 }

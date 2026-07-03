@@ -48,6 +48,7 @@ export function CreateContractModal({
   const [selectedPatientId, setSelectedPatientId] = useState(initialPatientId ?? "");
   const [selectedPatientName, setSelectedPatientName] = useState(initialPatientName ?? "");
   const [specialty, setSpecialty] = useState("");
+  const [currency, setCurrency] = useState("YER");
   const [totalAmount, setTotalAmount] = useState<number>(0);
   const [downPayment, setDownPayment] = useState<number>(0);
   const [installmentsCount, setInstallmentsCount] = useState<number>(1);
@@ -67,6 +68,7 @@ export function CreateContractModal({
       setSelectedPatientId(initialPatientId ?? "");
       setSelectedPatientName(initialPatientName ?? "");
       setSpecialty("");
+      setCurrency("YER");
       setTotalAmount(0);
       setDownPayment(0);
       setInstallmentsCount(1);
@@ -93,6 +95,8 @@ export function CreateContractModal({
   const calculatedInstallment = installmentsCount > 0 && netAmount > 0
     ? Math.ceil(netAmount / installmentsCount)
     : 0;
+  const currencyLabel = currency === "SAR" ? "ريال سعودي" : currency === "USD" ? "دولار" : "ريال";
+  const currencySymbol = currency === "SAR" ? "ر.س" : currency === "USD" ? "$" : "ر.ي";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,6 +123,7 @@ export function CreateContractModal({
       const payload = {
         patientId: selectedPatientId,
         specialty: specialty || null,
+        currency,
         totalAmount,
         downPayment,
         installmentsCount,
@@ -182,6 +187,19 @@ export function CreateContractModal({
             </select>
           </div>
 
+          <div>
+            <label style={labelStyle}>عملة العقد</label>
+            <select
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              style={inputStyle}
+            >
+              <option value="YER">يمني</option>
+              <option value="SAR">سعودي</option>
+              <option value="USD">دولار</option>
+            </select>
+          </div>
+
           {/* YOLO-S2: optional TreatmentPackage link */}
           <div>
             <label style={labelStyle}>باقة العلاج (اختياري)</label>
@@ -222,7 +240,7 @@ export function CreateContractModal({
           </div>
 
           <div>
-            <label style={labelStyle}>الإجمالي المالي (ريال) <span style={{ color: tokens.dangerBorder }}>*</span></label>
+            <label style={labelStyle}>الإجمالي المالي ({currencyLabel}) <span style={{ color: tokens.dangerBorder }}>*</span></label>
             <input
               type="number"
               min={0}
@@ -234,7 +252,7 @@ export function CreateContractModal({
           </div>
 
           <div>
-            <label style={labelStyle}>الخصم (ريال)</label>
+            <label style={labelStyle}>الخصم ({currencyLabel})</label>
             <input
               type="number"
               min={0}
@@ -259,7 +277,7 @@ export function CreateContractModal({
           )}
 
           <div>
-            <label style={labelStyle}>الدفعة الأولى (ريال)</label>
+            <label style={labelStyle}>الدفعة الأولى ({currencyLabel})</label>
             <input
               type="number"
               min={0}
@@ -286,15 +304,15 @@ export function CreateContractModal({
               <div className="grid grid-cols-3 gap-3 text-center text-xs font-bold" style={{ color: tokens.infoText }}>
                 <div>
                   <p className="opacity-75">المبلغ الصافي</p>
-                  <p className="text-sm font-black mt-0.5">{(totalAmount - discountAmount).toLocaleString()} ر.ي</p>
+                  <p className="text-sm font-black mt-0.5">{(totalAmount - discountAmount).toLocaleString()} {currencySymbol}</p>
                 </div>
                 <div>
                   <p className="opacity-75">المتبقي للأقساط</p>
-                  <p className="text-sm font-black mt-0.5">{netAmount.toLocaleString()} ر.ي</p>
+                  <p className="text-sm font-black mt-0.5">{netAmount.toLocaleString()} {currencySymbol}</p>
                 </div>
                 <div>
                   <p className="opacity-75">قيمة القسط الشهري</p>
-                  <p className="text-sm font-black mt-0.5">{calculatedInstallment.toLocaleString()} ر.ي</p>
+                  <p className="text-sm font-black mt-0.5">{calculatedInstallment.toLocaleString()} {currencySymbol}</p>
                 </div>
               </div>
             </div>

@@ -459,8 +459,8 @@ public static class DentalModelAnalysisCalculator
         if (si is null or <= 0) return null;
         var cpv = Round(si.Value * 100m / 85m);
         var cmv = Round(si.Value * 100m / 65m);
-        var pmDiff = measuredPmv.HasValue ? Round(cpv - measuredPmv.Value) : null;
-        var mDiff = measuredMv.HasValue ? Round(cmv - measuredMv.Value) : null;
+        decimal? pmDiff = measuredPmv.HasValue ? Round(cpv - measuredPmv.Value) : null;
+        decimal? mDiff = measuredMv.HasValue ? Round(cmv - measuredMv.Value) : null;
 
         var pmDiagnosis = pmDiff switch
         {
@@ -518,7 +518,7 @@ public static class DentalModelAnalysisCalculator
     {
         if (si is null or <= 0) return null;
         var predicted = Round(si.Value * 100m / 160m);
-        var diff = measuredLength.HasValue ? Round(measuredLength.Value - predicted) : null;
+        decimal? diff = measuredLength.HasValue ? Round(measuredLength.Value - predicted) : null;
         var diagnosis = diff switch
         {
             > 1.0m => $"طول القوس أكبر من المتوقع بـ {diff.Value:0.0} مم — قد يشير إلى تباعد أو بروز.",

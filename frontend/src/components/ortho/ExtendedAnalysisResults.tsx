@@ -80,7 +80,7 @@ export function ExtendedAnalysisResults({ result }: { result: DentalModelAnalysi
   if (!hasAny) {
     return (
       <div className="rounded-xl border border-dashed border-gray-200 py-8 text-center text-sm text-gray-400">
-        لم تُدخل أي قياسات للتحاليل الموسّعة (Arch Perimeter, Carey's, Ashley Howe, Linder Harth, Peck & Peck, Korkhaus, Nance).
+        لم تُدخل أي قياسات للتحاليل الموسّعة (Arch Perimeter, Carey&apos;s, Ashley Howe, Linder Harth, Peck & Peck, Korkhaus, Nance).
       </div>
     );
   }

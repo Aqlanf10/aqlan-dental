@@ -72,7 +72,7 @@ public class FinanceV3IntegrationFixTests
         var notifications = new Mock<INotificationService>().Object;
         var commissionService = new Mock<ICommissionService>().Object;
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
-        var financeService = new FinanceService(db, currentUser, notifications, new Mock<ILogger<FinanceService>>().Object, commissionService, journalEntryService);
+        var financeService = new FinanceService(db, currentUser, notifications, new Mock<ILogger<FinanceService>>().Object, commissionService, journalEntryService, new ContractService(db, currentUser));
         var audit = new Mock<IAuditService>().Object;
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
         var logger = new Mock<ILogger<FinanceV3Controller>>().Object;
@@ -378,7 +378,7 @@ public class FinanceV3IntegrationFixTests
         var notifications = new Mock<INotificationService>().Object;
         var commissionService = new Mock<ICommissionService>().Object;
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
-        var financeService = new FinanceService(db, adminEmptyBranch, notifications, new Mock<ILogger<FinanceService>>().Object, commissionService, journalEntryService);
+        var financeService = new FinanceService(db, adminEmptyBranch, notifications, new Mock<ILogger<FinanceService>>().Object, commissionService, journalEntryService, new ContractService(db, adminEmptyBranch));
 
         var request = new CreatePaymentRequest
         {
@@ -632,7 +632,7 @@ public class FinanceV3IntegrationFixTests
         var notifications = new Mock<INotificationService>().Object;
         var commissionService = new Mock<ICommissionService>().Object;
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
-        var financeService = new FinanceService(db, adminUser, notifications, new Mock<ILogger<FinanceService>>().Object, commissionService, journalEntryService);
+        var financeService = new FinanceService(db, adminUser, notifications, new Mock<ILogger<FinanceService>>().Object, commissionService, journalEntryService, new ContractService(db, adminUser));
 
         var payment = await financeService.CreatePaymentAsync(new CreatePaymentRequest
         {

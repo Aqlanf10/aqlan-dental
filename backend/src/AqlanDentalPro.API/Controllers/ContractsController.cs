@@ -12,7 +12,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/contracts")]
 [Authorize(Policy = "FinanceAccess")]
-public class ContractsController(IFinanceService service, FinanceSettingsReader financeSettings, AppDbContext db, ICurrentUserService currentUser) : ControllerBase
+public class ContractsController(IFinanceService service, IContractService contractService, FinanceSettingsReader financeSettings, AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
     // FIN-PERM: the class-level FinanceAccess policy (Admin + Reception + Accountant)
     // is the coarse gate; the granular finance.contracts permission (RolePermissions,
@@ -35,7 +35,8 @@ public class ContractsController(IFinanceService service, FinanceSettingsReader 
         // FIN-PERM: finance.contracts.view
         if (!await CanAsync("view")) return Deny();
 
-        var result = await service.GetContractsAsync(page, pageSize, patientId, status);
+        // TD-021 PR A3: GetContractsAsync moved to ContractService.
+        var result = await contractService.GetContractsAsync(page, pageSize, patientId, status);
         return Ok(result);
     }
 
@@ -45,7 +46,8 @@ public class ContractsController(IFinanceService service, FinanceSettingsReader 
         // FIN-PERM: finance.contracts.view
         if (!await CanAsync("view")) return Deny();
 
-        var result = await service.GetContractByIdAsync(id);
+        // TD-021 PR A3: GetContractByIdAsync moved to ContractService.
+        var result = await contractService.GetContractByIdAsync(id);
         return result == null ? NotFound(new { message = "العقد غير موجود" }) : Ok(result);
     }
 
@@ -80,7 +82,8 @@ public class ContractsController(IFinanceService service, FinanceSettingsReader 
         if (!string.IsNullOrWhiteSpace(req.StartDate) && !DateOnly.TryParse(req.StartDate, out _))
             return BadRequest(new { message = "تاريخ البدء غير صالح" });
 
-        var result = await service.UpdateContractAsync(id, req);
+        // TD-021 PR A3: UpdateContractAsync moved to ContractService.
+        var result = await contractService.UpdateContractAsync(id, req);
         return result == null ? NotFound(new { message = "العقد غير موجود" }) : Ok(result);
     }
 

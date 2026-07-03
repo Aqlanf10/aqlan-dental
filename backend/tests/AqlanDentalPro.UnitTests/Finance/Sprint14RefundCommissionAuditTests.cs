@@ -161,7 +161,7 @@ public class Sprint14RefundCommissionAuditTests
                 };
             });
 
-        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
+        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object, new ContractService(db, currentUser.Object));
 
         return (service, branchId, cashierId);
     }

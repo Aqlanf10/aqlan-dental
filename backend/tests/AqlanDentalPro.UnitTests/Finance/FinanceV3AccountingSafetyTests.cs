@@ -113,7 +113,7 @@ public class FinanceV3AccountingSafetyTests
         var commissionService = new Mock<ICommissionService>();
 
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
-        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService);
+        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService, new ContractService(db, currentUser.Object));
 
         return (service, branchId, cashierId);
     }
@@ -726,7 +726,7 @@ public class FinanceV3AccountingSafetyTests
             new Mock<INotificationService>().Object,
             new Mock<ILogger<FinanceService>>().Object,
             new Mock<ICommissionService>().Object,
-            new Mock<IJournalEntryService>().Object);
+            new Mock<IJournalEntryService>().Object, new ContractService(db, currentUser.Object));
 
         var patient = SeedPatient(db, branchId);
 
@@ -812,7 +812,7 @@ public class FinanceV3AccountingSafetyTests
             new Mock<INotificationService>().Object,
             new Mock<ILogger<FinanceService>>().Object,
             new Mock<ICommissionService>().Object,
-            journalEntryService);
+            journalEntryService, new ContractService(db, currentUser.Object));
 
         var patient = SeedPatient(db, branchId);
         CreateOpenSession(db, cashierId, branchId);
@@ -877,7 +877,7 @@ public class FinanceV3AccountingSafetyTests
             new Mock<INotificationService>().Object,
             new Mock<ILogger<FinanceService>>().Object,
             new Mock<ICommissionService>().Object,
-            failingJournalService.Object);
+            failingJournalService.Object, new ContractService(db, currentUser.Object));
 
         var act = () => service.CreatePaymentAsync(new CreatePaymentRequest
         {
@@ -1758,7 +1758,7 @@ public class FinanceV3AccountingSafetyTests
             new Mock<INotificationService>().Object,
             new Mock<ILogger<FinanceService>>().Object,
             new Mock<ICommissionService>().Object,
-            failingJournalService.Object);
+            failingJournalService.Object, new ContractService(db, currentUser.Object));
 
         var act = () => service.CreatePaymentAsync(new CreatePaymentRequest
         {

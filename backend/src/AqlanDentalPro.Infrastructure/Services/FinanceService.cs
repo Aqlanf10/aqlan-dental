@@ -8,115 +8,17 @@ using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
-public class FinanceService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications, ILogger<FinanceService> logger, ICommissionService commissionService, IJournalEntryService journalEntryService)
+public class FinanceService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications, ILogger<FinanceService> logger, ICommissionService commissionService, IJournalEntryService journalEntryService, IContractService contractService)
     : IFinanceService
 {
-    private const string BaseCurrency = "YER";
-    private static readonly HashSet<string> SupportedCurrencies = ["YER", "SAR", "USD"];
+    // TD-021 PR A2: FinanceMappers.BaseCurrency + FinanceMappers.SupportedCurrencies moved to FinanceMappers.
+    // GetUnbilledVisitsAmountAsync moved to FinanceReadService (read-only helper,
+    // only used by read methods). FinanceMappers.MapPayment + FinanceMappers.NormalizeCurrency moved to FinanceMappers
+    // (shared between FinanceService write methods and FinanceReadService read methods).
 
-    /// <summary>
-    /// QA-596: Shared helper — computes the sum of Visit.AmountDueReference for
-    /// visits that have no linked invoice (via Invoice.VisitId). This represents
-    /// performed work that has not been invoiced/contracted and previously
-    /// vanished from every balance calculation. Used by GetAccountStatementAsync,
-    /// GetFinanceSummaryAsync, and any other balance site that needs to reflect
-    /// provisional debt from unbilled sessions.
-    /// </summary>
-    /// <param name="patientId">If provided, scopes to one patient. If null, aggregates across all patients (with optional branch filter).</param>
-    /// <param name="branchId">If provided, filters visits via Patient.BranchId.</param>
-    private async Task<decimal> GetUnbilledVisitsAmountAsync(Guid? patientId = null, Guid? branchId = null)
-    {
-        // Get the set of visit IDs that have a linked invoice (those are already
-        // counted via invoice totals — must NOT double-count).
-        var billedVisitIdsQuery = db.Invoices
-            .Where(i => i.VisitId.HasValue && i.IsActive);
-        if (patientId.HasValue)
-            billedVisitIdsQuery = billedVisitIdsQuery.Where(i => i.PatientId == patientId.Value);
-        var billedVisitIds = await billedVisitIdsQuery
-            .Select(i => i.VisitId!.Value)
-            .ToListAsync();
-        var billedVisitSet = billedVisitIds.ToHashSet();
-
-        var unbilledVisitsQuery = db.Visits
-            .Where(v => v.IsActive
-                     && v.AmountDueReference.HasValue && v.AmountDueReference > 0);
-        if (patientId.HasValue)
-            unbilledVisitsQuery = unbilledVisitsQuery.Where(v => v.PatientId == patientId.Value);
-
-        var unbilledVisitRows = await unbilledVisitsQuery
-            .Include(v => v.Patient)
-            .ToListAsync();
-
-        if (branchId.HasValue)
-            unbilledVisitRows = unbilledVisitRows.Where(v => v.Patient.BranchId == branchId.Value).ToList();
-
-        return unbilledVisitRows
-            .Where(v => !billedVisitSet.Contains(v.Id))
-            .Sum(v => v.AmountDueReference ?? 0m);
-    }
-
-    public async Task<List<ContractListDto>> GetContractsAsync(int page, int pageSize, Guid? patientId, string? status)
-    {
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
-
-        var query = db.Contracts
-            .Include(c => c.Patient)
-            .Include(c => c.Payments)
-            .Include(c => c.Package) // YOLO-S2: package name + color for display
-            .AsQueryable();
-
-        if (branchId.HasValue) query = query.Where(c => c.Patient.BranchId == branchId.Value);
-        if (patientId.HasValue) query = query.Where(c => c.PatientId == patientId);
-        if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<ContractStatus>(status, true, out var contractStatus))
-            query = query.Where(c => c.Status == contractStatus);
-
-        return await query
-            .OrderByDescending(c => c.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .Select(c => MapContractList(c))
-            .ToListAsync();
-    }
-
-    public async Task<ContractDetailDto?> GetContractByIdAsync(Guid id)
-    {
-        var c = await db.Contracts
-            .Include(c => c.Patient)
-            .Include(c => c.Payments)
-                .ThenInclude(p => p.Doctor)
-            .Include(c => c.Package) // YOLO-S2: package name + color for display
-            .FirstOrDefaultAsync(c => c.Id == id);
-
-        if (c == null) return null;
-
-        var dto = new ContractDetailDto
-        {
-            Id = c.Id,
-            PatientId = c.PatientId,
-            PatientName = c.Patient.FirstName + " " + c.Patient.LastName,
-            PatientNumber = c.Patient.PatientNumber,
-            Specialty = c.Specialty,
-            Currency = NormalizeCurrency(c.Currency),
-            TotalAmount = c.TotalAmount,
-            DownPayment = c.DownPayment,
-            PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
-            RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
-            InstallmentsCount = c.InstallmentsCount,
-            InstallmentAmount = c.InstallmentAmount,
-            StartDate = c.StartDate?.ToString("yyyy-MM-dd"),
-            Status = c.Status.ToString(),
-            DiscountAmount = c.DiscountAmount,
-            DiscountReason = c.DiscountReason,
-            Notes = c.Notes,
-            Payments = c.Payments.OrderByDescending(p => p.PaymentDate).Select(MapPayment).ToList(),
-            // YOLO-S2: package link
-            PackageId = c.PackageId,
-            PackageName = c.Package?.Name,
-            PackageColor = c.Package?.Color,
-        };
-
-        return dto;
-    }
+    // TD-021 PR A3: GetContractsAsync + GetContractByIdAsync moved to ContractService.
+    // FinanceService injects IContractService so CreateContractAsync + UpdateContractStatusAsync
+    // can call contractService.GetContractByIdAsync for their return value.
 
     public async Task<ContractDetailDto> CreateContractAsync(CreateContractRequest req)
     {
@@ -136,7 +38,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             PatientId = req.PatientId,
             Specialty = req.Specialty,
             RelatedCaseId = req.RelatedCaseId,
-            Currency = NormalizeCurrency(req.Currency),
+            Currency = FinanceMappers.NormalizeCurrency(req.Currency),
             TotalAmount = req.TotalAmount,
             DownPayment = req.DownPayment,
             InstallmentsCount = req.InstallmentsCount,
@@ -161,14 +63,14 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 PatientId = req.PatientId,
                 ContractId = contract.Id,
                 Amount = req.DownPayment,
-                Currency = NormalizeCurrency(req.Currency),
-                AccountCurrency = NormalizeCurrency(req.Currency),
+                Currency = FinanceMappers.NormalizeCurrency(req.Currency),
+                AccountCurrency = FinanceMappers.NormalizeCurrency(req.Currency),
                 PaymentMethod = req.DownPaymentMethod ?? "cash", // Sprint Patient-Finance-Ledger: was hardcoded "cash"
                 ServiceDescription = "دفعة أولى"
             });
         }
 
-        return (await GetContractByIdAsync(contract.Id))!;
+        return (await contractService.GetContractByIdAsync(contract.Id))!;
     }
 
     public async Task<PaymentDto?> GetPaymentByIdAsync(Guid id)
@@ -177,71 +79,11 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             .Include(p => p.Patient)
             .Include(p => p.Doctor)
             .FirstOrDefaultAsync(p => p.Id == id);
-        return p == null ? null : MapPayment(p);
+        return p == null ? null : FinanceMappers.MapPayment(p);
     }
 
-    public async Task<List<OverdueContractDto>> GetOverdueContractsAsync()
-    {
-        var today = ClinicTimeProvider.ClinicToday();
-
-        // FIN-13: Project only the fields needed for the overdue calculation + the
-        // per-contract PaidAmount (computed in SQL via correlated subquery).
-        // Previously this loaded Contracts.Include(c => c.Payments).ToListAsync()
-        // which fetched every Payment row for every active installment contract.
-        // The month-since-StartDate calc remains in C# (EF can't translate DateOnly
-        // year/month arithmetic cleanly) but operates on a tiny projected set.
-        var candidates = await db.Contracts
-            .Where(c => c.Status == ContractStatus.Active && c.InstallmentAmount > 0 && c.StartDate != null)
-            .Select(c => new
-            {
-                c.Id,
-                c.PatientId,
-                PatientName   = c.Patient.FirstName + " " + c.Patient.LastName,
-                PatientNumber = c.Patient.PatientNumber,
-                Phone         = c.Patient.Phone,
-                c.Specialty,
-                c.TotalAmount,
-                c.DiscountAmount,
-                c.DownPayment,
-                c.StartDate,
-                c.InstallmentsCount,
-                c.InstallmentAmount,
-                PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)
-            })
-            .ToListAsync();
-
-        var overdue = new List<OverdueContractDto>();
-
-        foreach (var c in candidates)
-        {
-            var monthsElapsed = ((today.Year - c.StartDate!.Value.Year) * 12) + (today.Month - c.StartDate.Value.Month);
-            if (monthsElapsed <= 0) continue;
-
-            var expectedPaid = c.DownPayment + (Math.Min(monthsElapsed, c.InstallmentsCount) * (c.InstallmentAmount ?? 0));
-            var overdueAmt   = expectedPaid - c.PaidAmount;
-
-            if (overdueAmt > 0)
-            {
-                overdue.Add(new OverdueContractDto
-                {
-                    ContractId     = c.Id,
-                    PatientId      = c.PatientId,
-                    PatientName    = c.PatientName,
-                    PatientNumber  = c.PatientNumber,
-                    Phone          = c.Phone,
-                    Specialty      = c.Specialty,
-                    TotalAmount    = c.TotalAmount,
-                    PaidAmount     = c.PaidAmount,
-                    OverdueAmount  = overdueAmt,
-                    RemainingAmount= c.TotalAmount - c.DiscountAmount - c.PaidAmount,
-                    MonthsElapsed  = monthsElapsed,
-                    StartDate      = c.StartDate?.ToString("yyyy-MM-dd")
-                });
-            }
-        }
-
-        return overdue.OrderByDescending(o => o.OverdueAmount).ToList();
-    }
+    // TD-021 PR A2: GetOverdueContractsAsync moved to FinanceReadService (read-only,
+    // used internally by GetSummaryAsync which also moved).
 
     public async Task<List<PaymentDto>> GetPaymentsAsync(int page, int pageSize, Guid? patientId)
     {
@@ -260,7 +102,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             .OrderByDescending(p => p.PaymentDate).ThenByDescending(p => p.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(p => MapPayment(p))
+            .Select(p => FinanceMappers.MapPayment(p))
             .ToListAsync();
     }
 
@@ -330,7 +172,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 throw new ArgumentException("المريض في الدفعة لا يطابق المريض في العقد");
         }
 
-        var paymentCurrency = NormalizeCurrency(req.Currency);
+        var paymentCurrency = FinanceMappers.NormalizeCurrency(req.Currency);
         var accountCurrency = ResolveAccountCurrency(req.AccountCurrency, invoice, contract);
         var exchange = await ResolveExchangeRateAsync(paymentCurrency, accountCurrency, req.ExchangeRateToAccountCurrency);
         var exchangeRateSource = string.IsNullOrWhiteSpace(req.ExchangeRateSource)
@@ -451,7 +293,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (payment.InvoiceId.HasValue)
             await db.Entry(payment).Reference(p => p.Invoice).LoadAsync();
 
-        var dto = MapPayment(payment);
+        var dto = FinanceMappers.MapPayment(payment);
 
         // Notify accountants and admins — fire-and-forget replaced with direct await
         // to avoid DbContext concurrent operation. If the notification service shares
@@ -475,48 +317,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         return dto;
     }
 
-    public async Task<ContractDetailDto?> UpdateContractAsync(Guid id, UpdateContractRequest req)
-    {
-        var contract = await db.Contracts.FindAsync(id);
-        if (contract == null) return null;
-
-        // Phase 0B: Validate that TotalAmount is not reduced below what's already been paid
-        {
-            var alreadyPaid = await db.Payments
-                .Where(p => p.ContractId == id && p.IsActive)
-                .SumAsync(p => (decimal?)(p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)) ?? 0m;
-            if (req.TotalAmount < alreadyPaid)
-                throw new ArgumentException($"لا يمكن تقليل إجمالي العقد ({req.TotalAmount:N0} ر.ي) إلى أقل من المبلغ المدفوع فعلياً ({alreadyPaid:N0} ر.ي).");
-        }
-
-        contract.Specialty        = req.Specialty;
-        contract.Currency         = NormalizeCurrency(req.Currency ?? contract.Currency);
-        contract.TotalAmount      = req.TotalAmount;
-        contract.InstallmentsCount = req.InstallmentsCount;
-        contract.InstallmentAmount = req.InstallmentAmount;
-        contract.StartDate        = req.StartDate != null ? DateOnly.Parse(req.StartDate) : contract.StartDate;
-        contract.DiscountAmount   = req.DiscountAmount;
-        contract.DiscountReason   = req.DiscountReason;
-        contract.Notes            = req.Notes;
-        contract.UpdatedAt        = DateTime.UtcNow;
-
-        // YOLO-S2: update the package link. Resolve Guid.Empty → null ("clear").
-        // null on the request body leaves the existing value unchanged (PATCH semantics).
-        if (req.PackageId.HasValue)
-        {
-            var newPkgId = req.PackageId.Value == Guid.Empty ? null : (Guid?)req.PackageId.Value;
-            if (newPkgId.HasValue && newPkgId != contract.PackageId)
-            {
-                var pkgExists = await db.TreatmentPackages.AnyAsync(p => p.Id == newPkgId.Value && p.IsActive);
-                if (!pkgExists)
-                    throw new ArgumentException("الباقة المحددة غير موجودة أو معطّلة");
-            }
-            contract.PackageId = newPkgId;
-        }
-
-        await db.SaveChangesAsync();
-        return await GetContractByIdAsync(id);
-    }
+    // TD-021 PR A3: UpdateContractAsync moved to ContractService.
 
     public async Task<ContractDetailDto?> UpdateContractStatusAsync(Guid id, string status)
     {
@@ -627,214 +428,11 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             await db.SaveChangesAsync();
         }
 
-        return await GetContractByIdAsync(id);
+        return await contractService.GetContractByIdAsync(id);
     }
 
-    public async Task<AccountStatementDto?> GetAccountStatementAsync(Guid patientId)
-    {
-        var patient = await db.Patients.FindAsync(patientId);
-        if (patient == null) return null;
-
-        // FIN-13: All summary aggregations now execute server-side as SQL SUM(...)
-        // (replaces in-memory .Sum() over ToListAsync-loaded entities). Each query
-        // returns a single scalar, so we move less data across the wire.
-
-        // Sprint Patient-Finance-Ledger: Exclude Draft invoices — same as GetPatientFinanceSummaryAsync
-        var invoicesPredicate = new Func<IQueryable<Invoice>, IQueryable<Invoice>>(q => q
-            .Where(i => i.PatientId == patientId
-                     && i.Status != InvoiceStatus.Cancelled
-                     && i.Status != InvoiceStatus.Draft
-                     && i.IsActive));
-
-        var totalContractedFromContracts = await db.Contracts
-            .Where(c => c.PatientId == patientId)
-            .SumAsync(c => (decimal?)c.TotalAmount) ?? 0m;
-
-        var totalContractedFromInvoices = await invoicesPredicate(db.Invoices)
-            .SumAsync(i => (decimal?)(i.Subtotal + (i.TaxAmount ?? 0m))) ?? 0m;
-
-        var totalContracted = totalContractedFromContracts + totalContractedFromInvoices;
-
-        var totalDiscountsFromContracts = await db.Contracts
-            .Where(c => c.PatientId == patientId)
-            .SumAsync(c => (decimal?)c.DiscountAmount) ?? 0m;
-
-        var totalDiscountsFromInvoices = await invoicesPredicate(db.Invoices)
-            .SumAsync(i => (decimal?)i.DiscountAmount) ?? 0m;
-
-        var totalDiscounts = totalDiscountsFromContracts + totalDiscountsFromInvoices;
-
-        // FIX: Calculate totalPaid from ALL active payments for the patient,
-        // not just contract-linked ones. Unlinked/orphan payments must still
-        // count in the overall patient summary so the balance is accurate.
-        // Each payment is counted exactly once via the direct Payments query.
-        var totalPaid = await db.Payments
-            .Where(p => p.PatientId == patientId && p.IsActive)
-            .SumAsync(p => (decimal?)(p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)) ?? 0m;
-
-        // QA-596: include unbilled visits so the account statement matches
-        // GetPatientFinanceSummaryAsync. Without this, a patient with a 50k
-        // session (no invoice) sees TotalRemaining=0 on their statement.
-        var unbilledVisitsAmount = await GetUnbilledVisitsAmountAsync(patientId);
-
-        var totalRemaining = Math.Max(0m, totalContracted + unbilledVisitsAmount - totalDiscounts - totalPaid);
-
-        // ── Contracts list with per-contract paid/remaining computed in SQL ──
-        // FIN-13: Project ContractStatementDto directly. The correlated subquery
-        // `c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)` is translated to
-        // `(SELECT COALESCE(SUM(p.Amount), 0) FROM Payments p WHERE p.ContractId = c.Id AND p.IsActive)`
-        // — avoids loading any Payment rows into memory.
-        var contracts = await db.Contracts
-            .Where(c => c.PatientId == patientId)
-            .OrderByDescending(c => c.CreatedAt)
-            .Select(c => new ContractStatementDto
-            {
-                Id              = c.Id,
-                Specialty       = c.Specialty,
-                TotalAmount     = c.TotalAmount,
-                DiscountAmount  = c.DiscountAmount,
-                PaidAmount      = c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
-                RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
-                StartDate       = c.StartDate.HasValue ? c.StartDate.Value.ToString("yyyy-MM-dd") : null,
-                Status          = c.Status.ToString(),
-                InstallmentsCount  = c.InstallmentsCount,
-                InstallmentAmount  = c.InstallmentAmount
-            })
-            .ToListAsync();
-
-        var activeContracts     = await db.Contracts.CountAsync(c => c.PatientId == patientId && c.Status == ContractStatus.Active);
-        var completedContracts  = await db.Contracts.CountAsync(c => c.PatientId == patientId && c.Status == ContractStatus.Completed);
-
-        // FIX: Filter recentPayments to active only — inactive/refunded/cancelled
-        // payments should not appear in the recent list.
-        var recentPayments = await db.Payments
-            .Include(p => p.Patient)
-            .Include(p => p.Doctor)
-            .Where(p => p.PatientId == patientId && p.IsActive)
-            .OrderByDescending(p => p.PaymentDate).ThenByDescending(p => p.CreatedAt)
-            .Take(20)
-            .ToListAsync();
-
-        return new AccountStatementDto
-        {
-            PatientId        = patientId,
-            PatientName      = patient.FirstName + " " + patient.LastName,
-            PatientNumber    = patient.PatientNumber,
-            TotalContracted  = totalContracted,
-            TotalDiscounts   = totalDiscounts,
-            TotalPaid        = totalPaid,
-            TotalRemaining   = totalRemaining,
-            UnbilledVisitsAmount = unbilledVisitsAmount,
-            ActiveContracts  = activeContracts,
-            CompletedContracts = completedContracts,
-            Contracts        = contracts,
-            RecentPayments   = recentPayments.Select(p => MapPayment(p)).ToList()
-        };
-    }
-
-    public async Task<FinanceSummaryDto> GetSummaryAsync()
-    {
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
-        var today = ClinicTimeProvider.ClinicToday();
-        var monthStart = new DateOnly(today.Year, today.Month, 1);
-
-        var todayQuery = db.Payments.Where(p => p.PaymentDate == today && p.IsActive && (p.AccountCurrency == null || p.AccountCurrency == "YER"));
-        if (branchId.HasValue) todayQuery = todayQuery.Where(p => p.BranchId == branchId);
-        var todayCollected = await todayQuery.SumAsync(p => (decimal?)(p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)) ?? 0;
-
-        var monthQuery = db.Payments.Where(p => p.PaymentDate >= monthStart && p.IsActive && (p.AccountCurrency == null || p.AccountCurrency == "YER"));
-        if (branchId.HasValue) monthQuery = monthQuery.Where(p => p.BranchId == branchId);
-        var monthCollected = await monthQuery.SumAsync(p => (decimal?)(p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)) ?? 0;
-
-        // Contract-based outstanding
-        var contractQuery = db.Contracts.Include(c => c.Payments).Where(c => c.Status == ContractStatus.Active);
-        if (branchId.HasValue) contractQuery = contractQuery.Where(c => c.Patient.BranchId == branchId);
-        var contractOutstanding = await contractQuery
-            .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount))
-            .SumAsync(r => (decimal?)r) ?? 0;
-
-        // Invoice-based outstanding (Issued invoices not fully paid)
-        var invoiceQuery = db.Invoices.Include(i => i.Payments)
-            .Where(i => i.Status == InvoiceStatus.Issued && i.IsActive);
-        if (branchId.HasValue) invoiceQuery = invoiceQuery.Where(i => i.Patient.BranchId == branchId);
-        var invoiceOutstanding = await invoiceQuery
-            .Select(i => i.TotalAmount - i.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount))
-            .SumAsync(r => (decimal?)r) ?? 0;
-
-        var activeContractsQuery = db.Contracts.Where(c => c.Status == ContractStatus.Active);
-        if (branchId.HasValue) activeContractsQuery = activeContractsQuery.Where(c => c.Patient.BranchId == branchId);
-        var activeContracts = await activeContractsQuery.CountAsync();
-
-        // ── Extended Sprint 1 Dashboard Stats ──
-        var unpaidInvoicesQuery = db.Invoices.Where(i => i.Status == InvoiceStatus.Issued && i.IsActive);
-        if (branchId.HasValue) unpaidInvoicesQuery = unpaidInvoicesQuery.Where(i => i.Patient.BranchId == branchId);
-        var unpaidInvoicesCount = await unpaidInvoicesQuery.CountAsync();
-
-        var draftInvoicesQuery = db.Invoices.Where(i => i.Status == InvoiceStatus.Draft && i.IsActive);
-        if (branchId.HasValue) draftInvoicesQuery = draftInvoicesQuery.Where(i => i.Patient.BranchId == branchId);
-        var draftInvoicesCount = await draftInvoicesQuery.CountAsync();
-
-        // Overdue amount
-        var overdueContracts = await GetOverdueContractsAsync();
-        var overdueAmount = overdueContracts.Sum(o => o.OverdueAmount);
-
-        // Pending doctor commissions (calculated or approved or pending, but not paid)
-        var commissionQuery = db.InvoiceLineItems
-            .Where(l => l.IsActive && l.CommissionStatus != CommissionStatus.Paid && l.DoctorCommissionAmount > 0);
-        if (branchId.HasValue) commissionQuery = commissionQuery.Where(l => l.Invoice.Patient.BranchId == branchId);
-        var pendingCommissionsAmount = await commissionQuery.SumAsync(l => l.DoctorCommissionAmount);
-
-        var recentQuery = db.Payments
-            .Include(p => p.Patient)
-            .Include(p => p.Doctor)
-            .Where(p => p.IsActive);
-        if (branchId.HasValue) recentQuery = recentQuery.Where(p => p.BranchId == branchId);
-        var recentPayments = await recentQuery
-            .OrderByDescending(p => p.PaymentDate).ThenByDescending(p => p.CreatedAt)
-            .Take(10)
-            .Select(p => MapPayment(p))
-            .ToListAsync();
-
-        // Recent invoices
-        var recentInvoicesQuery = db.Invoices
-            .Include(i => i.Patient)
-            .Where(i => i.IsActive);
-        if (branchId.HasValue) recentInvoicesQuery = recentInvoicesQuery.Where(i => i.Patient.BranchId == branchId);
-        var recentInvoices = await recentInvoicesQuery
-            .OrderByDescending(i => i.CreatedAt)
-            .Take(10)
-            .Select(i => new RecentInvoiceDto
-            {
-                Id = i.Id,
-                InvoiceNumber = i.InvoiceNumber,
-                PatientName = i.Patient != null ? (i.Patient.FirstName + " " + i.Patient.LastName).Trim() : "مريض",
-                TotalAmount = i.TotalAmount,
-                Status = i.Status.ToString(),
-                StatusArabic = i.Status == InvoiceStatus.Draft ? "مسودة" :
-                               i.Status == InvoiceStatus.Issued ? "مصدرة" :
-                               i.Status == InvoiceStatus.Paid ? "مدفوعة" : "ملغاة",
-                CreatedAt = i.CreatedAt
-            })
-            .ToListAsync();
-
-        // QA-596: include unbilled visits (sessions with AmountDueReference but no invoice)
-        // so the finance dashboard's TotalOutstanding reflects provisional debt.
-        var unbilledVisitsAmount = await GetUnbilledVisitsAmountAsync(patientId: null, branchId);
-
-        return new FinanceSummaryDto
-        {
-            TodayCollected = todayCollected,
-            MonthCollected = monthCollected,
-            TotalOutstanding = contractOutstanding + invoiceOutstanding + unbilledVisitsAmount,
-            ActiveContracts = activeContracts,
-            UnpaidInvoicesCount = unpaidInvoicesCount,
-            DraftInvoicesCount = draftInvoicesCount,
-            OverdueAmount = overdueAmount,
-            PendingCommissionsAmount = pendingCommissionsAmount,
-            RecentPayments = recentPayments,
-            RecentInvoices = recentInvoices
-        };
-    }
+    // TD-021 PR A2: GetAccountStatementAsync + GetSummaryAsync moved to FinanceReadService
+    // (read-only aggregation queries — statements/summary cluster).
 
     public async Task<PaymentDto?> UpdatePaymentAsync(Guid id, UpdatePaymentRequest req)
     {
@@ -864,7 +462,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         await db.Entry(payment).Reference(p => p.Patient).LoadAsync();
         await db.Entry(payment).Reference(p => p.Doctor).LoadAsync();
-        return MapPayment(payment);
+        return FinanceMappers.MapPayment(payment);
     }
 
     public async Task<bool> DeletePaymentAsync(Guid id)
@@ -1023,8 +621,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             ContractId         = payment.ContractId,
             InvoiceId          = payment.InvoiceId,
             Amount             = -refundAmount,
-            Currency           = NormalizeCurrency(payment.Currency),
-            AccountCurrency    = NormalizeCurrency(payment.AccountCurrency),
+            Currency           = FinanceMappers.NormalizeCurrency(payment.Currency),
+            AccountCurrency    = FinanceMappers.NormalizeCurrency(payment.AccountCurrency),
             ExchangeRateToAccountCurrency = payment.ExchangeRateToAccountCurrency == 0 ? 1m : payment.ExchangeRateToAccountCurrency,
             AppliedAmount      = -Math.Round(refundAmount * (payment.ExchangeRateToAccountCurrency == 0 ? 1m : payment.ExchangeRateToAccountCurrency), 2, MidpointRounding.AwayFromZero),
             ExchangeRateSource = payment.ExchangeRateSource,
@@ -1051,7 +649,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             Type = TransactionType.Outflow,
             Category = FinancialCategory.Refund,
             Amount = refundAmount, // the actual refund amount (positive for outflow recording)
-            Currency = NormalizeCurrency(payment.Currency),
+            Currency = FinanceMappers.NormalizeCurrency(payment.Currency),
             PaymentMethod = refund.PaymentMethod ?? "cash",
             TransactionDate = refund.PaymentDate,
             ReferenceId = refund.Id,
@@ -1134,7 +732,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         await db.Entry(refund).Reference(p => p.Patient).LoadAsync();
         await db.Entry(refund).Reference(p => p.Doctor).LoadAsync();
-        return MapPayment(refund);
+        return FinanceMappers.MapPayment(refund);
     }
 
     /// <summary>
@@ -1221,115 +819,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         await db.SaveChangesAsync();
     }
 
-    public async Task<PatientFinanceSummaryDto> GetPatientFinanceSummaryAsync(Guid patientId)
-    {
-        // ── Contract-based cost (server-side aggregation, FIN-13) ───────────
-        // Previously: loaded all contracts (+ Payments collection) into memory then
-        //             `contracts.Sum(c => c.TotalAmount - c.DiscountAmount)`.
-        // Now:        single SQL `SELECT SUM(TotalAmount - DiscountAmount) FROM Contracts
-        //             WHERE PatientId = @patientId` (returns 0 for empty set).
-        var contractCost = await db.Contracts
-            .Where(c => c.PatientId == patientId)
-            .SumAsync(c => (decimal?)(c.TotalAmount - c.DiscountAmount)) ?? 0m;
-
-        // ── Invoice-based financials (new invoice system) ───────────────────
-        // Sprint Patient-Finance-Ledger: Exclude Draft invoices from outstanding balance.
-        // Draft invoices are not yet committed — only Issued and Paid represent actual obligation.
-        // This aligns with FinanceV3 GetPatientBalance which also excludes Drafts.
-        var invoiceCost = await db.Invoices
-            .Where(i => i.PatientId == patientId
-                     && i.Status != InvoiceStatus.Cancelled
-                     && i.Status != InvoiceStatus.Draft
-                     && i.IsActive)
-            .SumAsync(i => (decimal?)i.TotalAmount) ?? 0m;
-
-        // ── QA-594: Unbilled visits cost ───────────────────────────────────
-        // Sessions performed without a linked invoice (and no contract) used
-        // to disappear from the outstanding balance. Include
-        // Visit.AmountDueReference for visits that have no invoice referencing
-        // them via Invoice.VisitId, so partial payments on a 50k root-canal
-        // session are correctly reflected as a 30k remaining debt.
-        var billedVisitIds = await db.Invoices
-            .Where(i => i.PatientId == patientId && i.VisitId.HasValue && i.IsActive)
-            .Select(i => i.VisitId!.Value)
-            .ToListAsync();
-        var billedVisitIdsSet = billedVisitIds.ToHashSet();
-
-        var unbilledVisitRows = await db.Visits
-            .Where(v => v.PatientId == patientId && v.IsActive
-                     && v.AmountDueReference.HasValue && v.AmountDueReference > 0)
-            .ToListAsync(); // client-side filter to apply HashSet membership cleanly
-        var unbilledVisitsCost = unbilledVisitRows
-            .Where(v => !billedVisitIdsSet.Contains(v.Id))
-            .Sum(v => v.AmountDueReference ?? 0m);
-
-        // ── Combined totals ─────────────────────────────────────────────────
-        var totalCost      = contractCost + invoiceCost + unbilledVisitsCost;
-        var totalPaid      = await db.Payments
-            .Where(p => p.PatientId == patientId && p.IsActive)
-            .SumAsync(p => (decimal?)(p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)) ?? 0m;
-        var outstanding    = Math.Max(0m, totalCost - totalPaid);
-
-        // ── Overdue amount ──────────────────────────────────────────────────
-        // FIN-13: Project only the fields needed for the date math + the per-contract
-        // paid total (computed in SQL via correlated subquery). Avoids loading the
-        // full Payment collection for every contract. The month-since-StartDate calc
-        // stays in C# because EF can't translate DateOnly year/month arithmetic cleanly.
-        var today          = ClinicTimeProvider.ClinicToday();
-        var overdueCandidates = await db.Contracts
-            .Where(c => c.PatientId == patientId
-                     && c.Status == ContractStatus.Active
-                     && c.InstallmentAmount > 0
-                     && c.StartDate != null)
-            .Select(c => new
-            {
-                c.StartDate,
-                c.InstallmentsCount,
-                c.InstallmentAmount,
-                c.DownPayment,
-                PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)
-            })
-            .ToListAsync();
-
-        var overdueAmount  = 0m;
-        foreach (var c in overdueCandidates)
-        {
-            var months   = ((today.Year - c.StartDate!.Value.Year) * 12) + (today.Month - c.StartDate.Value.Month);
-            var expected = c.DownPayment + Math.Min(months, c.InstallmentsCount) * (c.InstallmentAmount ?? 0);
-            if (expected > c.PaidAmount) overdueAmount += expected - c.PaidAmount;
-        }
-
-        var latestPayment = await db.Payments
-            .Include(p => p.Patient)
-            .Include(p => p.Doctor)
-            .Where(p => p.PatientId == patientId && p.IsActive)
-            .OrderByDescending(p => p.PaymentDate).ThenByDescending(p => p.CreatedAt)
-            .FirstOrDefaultAsync();
-
-        var totalPaymentsCount = await db.Payments
-            .CountAsync(p => p.PatientId == patientId && p.IsActive);
-
-        var activeContractsCount = await db.Contracts
-            .CountAsync(c => c.PatientId == patientId && c.Status == ContractStatus.Active);
-
-        var status = totalCost == 0 ? "no_plan"
-            : outstanding <= 0 ? "paid"
-            : overdueAmount > 0 ? "overdue"
-            : "on_track";
-
-        return new PatientFinanceSummaryDto
-        {
-            TotalTreatmentCost   = totalCost,
-            TotalPaid            = totalPaid,
-            OutstandingBalance   = outstanding,
-            OverdueAmount        = overdueAmount,
-            LatestPayment        = latestPayment == null ? null : MapPayment(latestPayment),
-            FinancialStatus      = status,
-            ActiveContractsCount = activeContractsCount,
-            TotalPaymentsCount   = totalPaymentsCount,
-            UnbilledVisitsAmount = unbilledVisitsCost
-        };
-    }
+    // TD-021 PR A2: GetPatientFinanceSummaryAsync moved to FinanceReadService
+    // (read-only aggregation — statements/summary cluster).
 
     // ─── Finance Phase 1: Supplier Payables & Credit Notes ─────────────────
 
@@ -1596,70 +1087,24 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         logger.LogInformation("Credit note {CreditNoteId} refund processed for {Amount:N0} by user {UserId}", creditNoteId, creditNote.Amount, currentUserId);
     }
 
-    private static ContractListDto MapContractList(Contract c) => new()
-    {
-        Id = c.Id,
-        PatientId = c.PatientId,
-        PatientName = c.Patient.FirstName + " " + c.Patient.LastName,
-        PatientNumber = c.Patient.PatientNumber,
-        Specialty = c.Specialty,
-        Currency = NormalizeCurrency(c.Currency),
-        TotalAmount = c.TotalAmount,
-        DownPayment = c.DownPayment,
-        PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
-        RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
-        InstallmentsCount = c.InstallmentsCount,
-        InstallmentAmount = c.InstallmentAmount,
-        StartDate = c.StartDate?.ToString("yyyy-MM-dd"),
-        Status = c.Status.ToString(),
-        // YOLO-S2: package link (display-only — pricing still driven by TotalAmount)
-        PackageId = c.PackageId,
-        PackageName = c.Package?.Name,
-        PackageColor = c.Package?.Color,
-    };
-
-    private static PaymentDto MapPayment(Payment p) => new()
-    {
-        Id = p.Id,
-        PatientId = p.PatientId,
-        PatientName = string.Join(" ", new[] { p.Patient?.FirstName, p.Patient?.LastName }.Where(n => !string.IsNullOrEmpty(n))),
-        ContractId = p.ContractId,
-        InvoiceId = p.InvoiceId,
-        InvoiceNumber = p.Invoice?.InvoiceNumber,
-        Amount = p.Amount,
-        Currency = p.Currency,
-        AccountCurrency = NormalizeCurrency(p.AccountCurrency),
-        ExchangeRateToAccountCurrency = p.ExchangeRateToAccountCurrency == 0 ? 1m : p.ExchangeRateToAccountCurrency,
-        AppliedAmount = p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount,
-        ExchangeRateSource = p.ExchangeRateSource,
-        PaymentDate = p.PaymentDate.ToString("yyyy-MM-dd"),
-        PaymentMethod = p.PaymentMethod,
-        ServiceDescription = p.ServiceDescription,
-        Specialty = p.Specialty,
-        DoctorName = p.Doctor?.Name,
-        ReceiptNumber = p.ReceiptNumber,
-        Notes = p.Notes
-    };
-
-    private static string NormalizeCurrency(string? currency)
-    {
-        var code = string.IsNullOrWhiteSpace(currency) ? BaseCurrency : currency.Trim().ToUpperInvariant();
-        if (!SupportedCurrencies.Contains(code))
-            throw new ArgumentException("العملة يجب أن تكون YER أو SAR أو USD");
-        return code;
-    }
+    // TD-021 PR A2: FinanceMappers.MapPayment + FinanceMappers.NormalizeCurrency moved to FinanceMappers
+    // (shared static helpers — used by both FinanceService write methods and FinanceReadService
+    // read methods). Call sites use FinanceMappers.MapPayment / FinanceMappers.NormalizeCurrency.
+    // TD-021 PR A3: MapContractList moved to ContractService (only used by GetContractsAsync
+    // which also moved). FinanceMappers.MapPayment + FinanceMappers.NormalizeCurrency remain
+    // in FinanceMappers for shared use.
 
     private static string ResolveAccountCurrency(string? requestedCurrency, Invoice? invoice, Contract? contract)
     {
-        if (invoice != null) return NormalizeCurrency(invoice.Currency);
-        if (contract != null) return NormalizeCurrency(contract.Currency);
-        return NormalizeCurrency(requestedCurrency);
+        if (invoice != null) return FinanceMappers.NormalizeCurrency(invoice.Currency);
+        if (contract != null) return FinanceMappers.NormalizeCurrency(contract.Currency);
+        return FinanceMappers.NormalizeCurrency(requestedCurrency);
     }
 
     private async Task<decimal> ResolveExchangeRateAsync(string paymentCurrency, string accountCurrency, decimal? directRate)
     {
-        paymentCurrency = NormalizeCurrency(paymentCurrency);
-        accountCurrency = NormalizeCurrency(accountCurrency);
+        paymentCurrency = FinanceMappers.NormalizeCurrency(paymentCurrency);
+        accountCurrency = FinanceMappers.NormalizeCurrency(accountCurrency);
         if (paymentCurrency == accountCurrency) return 1m;
         if (directRate.HasValue && directRate.Value > 0m) return directRate.Value;
 
@@ -1671,8 +1116,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
     private async Task<decimal> GetCurrencyToYerRateAsync(string currency)
     {
-        currency = NormalizeCurrency(currency);
-        if (currency == BaseCurrency) return 1m;
+        currency = FinanceMappers.NormalizeCurrency(currency);
+        if (currency == FinanceMappers.BaseCurrency) return 1m;
 
         var key = $"finance.exchange_rate.{currency}_YER";
         var value = await db.Settings
@@ -1906,7 +1351,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             throw new ArgumentException("BranchId is required for treasury balance update");
 
         var normalizedPaymentMethod = NormalizePaymentMethod(paymentMethod);
-        var normalizedCurrency = NormalizeCurrency(currency);
+        var normalizedCurrency = FinanceMappers.NormalizeCurrency(currency);
         var type = (normalizedPaymentMethod == "card" || normalizedPaymentMethod == "bank")
             ? TreasuryType.Bank
             : TreasuryType.Vault;
@@ -1934,7 +1379,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (treasury == null)
         {
             // Only use default name when auto-creating a new treasury
-            var defaultName = normalizedCurrency == BaseCurrency
+            var defaultName = normalizedCurrency == FinanceMappers.BaseCurrency
                 ? (type == TreasuryType.Bank ? "حساب بنكي" : "درج كاشير")
                 : $"{(type == TreasuryType.Bank ? "حساب بنكي" : "درج كاشير")} - {normalizedCurrency}";
             treasury = new Treasury
@@ -1970,7 +1415,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             throw new ArgumentException("BranchId is required for treasury resolution and cannot be Guid.Empty");
 
         var normalizedPaymentMethod = NormalizePaymentMethod(paymentMethod);
-        var normalizedCurrency = NormalizeCurrency(currency);
+        var normalizedCurrency = FinanceMappers.NormalizeCurrency(currency);
         var type = (normalizedPaymentMethod == "card" || normalizedPaymentMethod == "bank")
             ? TreasuryType.Bank
             : TreasuryType.Vault;
@@ -1981,7 +1426,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         if (treasury == null)
         {
-            var defaultName = normalizedCurrency == BaseCurrency
+            var defaultName = normalizedCurrency == FinanceMappers.BaseCurrency
                 ? (type == TreasuryType.Bank ? "حساب بنكي" : "درج كاشير")
                 : $"{(type == TreasuryType.Bank ? "حساب بنكي" : "درج كاشير")} - {normalizedCurrency}";
             treasury = new Treasury
@@ -2009,7 +1454,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (branchId == Guid.Empty)
             throw new ArgumentException("BranchId is required for treasury resolution and cannot be Guid.Empty");
 
-        var normalizedCurrency = NormalizeCurrency(currency);
+        var normalizedCurrency = FinanceMappers.NormalizeCurrency(currency);
         var type = (paymentMethod == "card" || paymentMethod == "bank_transfer" || paymentMethod == "bank")
             ? TreasuryType.Bank
             : TreasuryType.Vault;
@@ -2033,7 +1478,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         if (treasury == null)
         {
-            var defaultName = normalizedCurrency == BaseCurrency
+            var defaultName = normalizedCurrency == FinanceMappers.BaseCurrency
                 ? (type == TreasuryType.Bank ? "حساب بنكي" : "درج كاشير")
                 : $"{(type == TreasuryType.Bank ? "حساب بنكي" : "درج كاشير")} - {normalizedCurrency}";
             treasury = new Treasury
@@ -2077,7 +1522,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         var lines = new List<(JournalAccountType, Guid, decimal, decimal, string?)>
         {
-            (JournalAccountType.Treasury, treasury.Id, appliedAmount, 0m, $"تحصيل دفعة - سند قبض {payment.ReceiptNumber} ({payment.Amount:N2} {NormalizeCurrency(payment.Currency)})"),
+            (JournalAccountType.Treasury, treasury.Id, appliedAmount, 0m, $"تحصيل دفعة - سند قبض {payment.ReceiptNumber} ({payment.Amount:N2} {FinanceMappers.NormalizeCurrency(payment.Currency)})"),
             (creditAccountType, payment.PatientId, 0m, appliedAmount, creditDescription)
         };
 

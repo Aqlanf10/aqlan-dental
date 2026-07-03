@@ -37,7 +37,7 @@ public class FIN13SqlAggregationTests
         var logger = new Mock<ILogger<FinanceService>>().Object;
         var commissionService = new Mock<ICommissionService>().Object;
         var journalEntryServiceMock = new Mock<IJournalEntryService>();
-        return new FinanceService(db, currentUser, notifications, logger, commissionService, journalEntryServiceMock.Object);
+        return new FinanceService(db, currentUser, notifications, logger, commissionService, journalEntryServiceMock.Object, new ContractService(db, currentUser));
     }
 
     private static (Guid branchId, Guid patientId, Guid userId, ICurrentUserService currentUser) SeedPatient(AppDbContext db)

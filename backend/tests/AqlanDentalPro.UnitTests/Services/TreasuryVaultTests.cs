@@ -103,7 +103,7 @@ public class TreasuryVaultTests
                 };
             });
 
-        return new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
+        return new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object, new ContractService(db, currentUser.Object));
     }
 
     [Fact]

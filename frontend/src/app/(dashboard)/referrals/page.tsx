@@ -40,14 +40,21 @@ const PRIORITY_COLORS: Record<string, string> = {
 export default function ReferralsPage() {
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [filter, setFilter] = useState("");
 
   const load = () => {
     setLoading(true);
+    setLoadError(false);
     const params = filter ? `?status=${filter}` : "";
-    api.get<Referral[]>(`/api/referrals${params}`)
-      .then((r) => setReferrals(r.data))
-      .catch(() => {})
+    // The API returns a paginated envelope { data, total, page, pageSize } —
+    // unwrap it (and tolerate a bare array for backward compatibility).
+    api.get<{ data: Referral[] } | Referral[]>(`/api/referrals${params}`)
+      .then((r) => {
+        const payload = r.data;
+        setReferrals(Array.isArray(payload) ? payload : payload?.data ?? []);
+      })
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   };
 
@@ -94,6 +101,15 @@ export default function ReferralsPage() {
       {loading ? (
         <div className="space-y-2 animate-pulse">
           {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-20 bg-gray-100 rounded-xl" />)}
+        </div>
+      ) : loadError ? (
+        <div className="text-center py-16 bg-red-50 border border-red-200 rounded-xl">
+          <AlertTriangle className="w-10 h-10 mx-auto mb-3 text-red-400" />
+          <p className="text-sm font-bold text-red-700">تعذر تحميل الإحالات من الخادم</p>
+          <button onClick={load}
+            className="mt-3 px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:opacity-90 transition">
+            إعادة المحاولة
+          </button>
         </div>
       ) : referrals.length === 0 ? (
         <div className="text-center py-20 text-gray-400">

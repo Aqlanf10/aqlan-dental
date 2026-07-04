@@ -180,7 +180,7 @@ export default function DailyOperationsPage() {
   });
 
   // ── Data ──
-  const { data: items = [], isLoading: itemsLoading, refetch: refetchItems } = useTodayJourneyItems({
+  const { data: items = [], isLoading: itemsLoading, isError: itemsError, refetch: refetchItems } = useTodayJourneyItems({
     date: filterDate,
     status: filterStatus || undefined,
     doctorId: filterDoctor || undefined,
@@ -1316,6 +1316,23 @@ export default function DailyOperationsPage() {
 
           {/* ── Left Area: Active Tab View (75%) ── */}
           <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
+
+            {/* Honest failure state: without this, a 500 from patient-journey/today
+                renders as "لا توجد مواعيد" and reception believes the day is empty. */}
+            {itemsError && (
+              <div className="flex-shrink-0 mx-3 mt-3 px-4 py-3 rounded-xl border flex items-center justify-between gap-3 flex-wrap"
+                style={{ background: "#fef2f2", borderColor: "#fecaca" }}>
+                <div className="flex items-center gap-2 text-xs font-bold" style={{ color: "#b91c1c" }}>
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  تعذر تحميل مواعيد اليوم من الخادم — القوائم المعروضة غير مكتملة، لا تعتمد عليها
+                </div>
+                <button onClick={() => refetchItems()}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold text-white flex-shrink-0 transition hover:opacity-90"
+                  style={{ background: "#b91c1c" }}>
+                  إعادة المحاولة
+                </button>
+              </div>
+            )}
 
             {/* Tab: وصول اليوم (appointments) */}
             {activeModule === "appointments" && (

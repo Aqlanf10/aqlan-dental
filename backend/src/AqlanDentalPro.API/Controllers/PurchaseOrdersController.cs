@@ -220,7 +220,16 @@ public class PurchaseOrdersController(AppDbContext db, ILogger<PurchaseOrdersCon
 
     private static bool IsReadSchemaCompatibilityFailure(Exception ex)
     {
-        var pg = ex.InnerException as PostgresException;
+        // EF Core surfaces read-query PostgresException directly (unwrapped), and
+        // enum-type drift (integer column vs string HasConversion) throws
+        // InvalidCastException — the previous inner-only check missed both, so the
+        // fallback never fired on the exact failures it was written for.
+        if (ex is InvalidCastException || ex.InnerException is InvalidCastException)
+            return true;
+
+        var pg = ex as PostgresException
+            ?? ex.InnerException as PostgresException
+            ?? ex.InnerException?.InnerException as PostgresException;
         return pg?.SqlState is "42P01" or "42703" or "42804" or "42883" or "22P02";
     }
 

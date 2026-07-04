@@ -9,6 +9,7 @@ Evidence: `frontend/src/app/(dashboard)/daily-operations/`, `DailyOperationsCont
 - `DO-REQ-003`: Finance actions inside daily operations SHALL respect cashier/finance access.
 - `DO-REQ-004`: Patient records accessed here SHALL respect patient privacy and backend guards.
 - `DO-REQ-005`: Arabic error messages SHALL be used for blocked actions.
+- `DO-REQ-006`: WHEN the today-journey data source fails THEN the board SHALL show an explicit Arabic failure notice with a retry action, and SHALL NOT present the day as empty ("لا توجد مواعيد") — a failed load is not an empty day. (Added by QA round 3 — `QA3-02`; implemented in `daily-operations/page.tsx`.)
 
 ## Target State
 

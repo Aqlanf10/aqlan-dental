@@ -1182,6 +1182,71 @@ public partial class FinanceV3Controller(
         });
     }
 
+    // ─── GET /api/finance-v3/diagnostic/schema-columns — QA4-08 whole-table type inspection ──
+    /// <summary>
+    /// Admin-only diagnostic: column names and data types (information_schema
+    /// only — never row data) for a fixed whitelist of the tables involved in
+    /// the live production 500s. Generalizes diagnostic/cashflow-columns: that
+    /// endpoint proved CashFlowTransactions enum columns drifted to integer,
+    /// but the surviving failures (contracts, dashboard/stats,
+    /// patient-journey/today, expenses) materialize OTHER tables whose actual
+    /// column types were previously unknowable remotely. The table list is
+    /// hardcoded — no user input reaches the SQL.
+    /// </summary>
+    [HttpGet("diagnostic/schema-columns")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> GetSchemaColumnsDiagnostic()
+    {
+        try
+        {
+            // Fixed whitelist — the entities materialized by the endpoints that
+            // are still failing in production, plus their Include() companions.
+            string[] tables =
+            [
+                "Contracts", "Payments", "Visits", "Appointments", "Patients",
+                "ClinicQueueItems", "OperationalExpenses", "Suppliers",
+                "CashFlowTransactions", "Invoices", "Treasuries", "LabOrders", "Doctors",
+            ];
+
+            var columns = new List<object>();
+            var conn = db.Database.GetDbConnection();
+            await conn.OpenAsync();
+            try
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    SELECT table_name, column_name, data_type, is_nullable
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = ANY(@tables)
+                    ORDER BY table_name, ordinal_position";
+                var p = cmd.CreateParameter();
+                p.ParameterName = "tables";
+                p.Value = tables;
+                cmd.Parameters.Add(p);
+
+                using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    columns.Add(new
+                    {
+                        table = reader.GetString(0),
+                        column = reader.GetString(1),
+                        dataType = reader.GetString(2),
+                        nullable = reader.GetString(3) == "YES",
+                    });
+                }
+            }
+            finally { await conn.CloseAsync(); }
+
+            return Ok(new { tables, columns });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Finance diagnostic (schema columns) failed");
+            return StatusCode(500, new { message = "تعذّر تنفيذ التشخيص حاليًا" });
+        }
+    }
+
     // ─── POST /api/finance-v3/diagnostic/apply-cashflow-hotfix — Apply CashFlow Category/Type migration manually ──
     /// <summary>
     /// Manually applies the CashFlow Category/Type varchar-to-integer migration.

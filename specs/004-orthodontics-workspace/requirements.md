@@ -9,6 +9,7 @@ Evidence: `frontend/src/app/(dashboard)/ortho/`, `frontend/src/components/ortho/
 - `ORTHO-REQ-003`: Ortho AI SHALL be draft/supporting only, not an automatic clinical decision.
 - `ORTHO-REQ-004`: Ortho finance SHALL not bypass FinanceV3 rules.
 - `ORTHO-REQ-005`: Lab orders linked to ortho SHALL use existing lab owners.
+- `ORTHO-REQ-006`: When case-header overview data fails to load, the workspace SHALL show a visible Arabic error state with retry — never silent "—" placeholders (QA4-01).
 
 ## Target State
 

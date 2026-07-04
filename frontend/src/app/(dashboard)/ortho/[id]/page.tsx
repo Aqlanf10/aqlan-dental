@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   Activity,
+  AlertTriangle,
   Calendar,
   Camera,
   FileText,
@@ -93,7 +94,7 @@ export default function OrthoCaseDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { activeTab, setActiveTab } = useActiveTab(TABS);
   const { data: orthoCase, isLoading } = useOrthoCase(id);
-  const { data: overview } = useOrthoOverview(id);
+  const { data: overview, isError: overviewError, refetch: refetchOverview } = useOrthoOverview(id);
   const { data: stages = [] } = useOrthoStages(id);
   const { data: visits = [] } = useOrthoVisits(id);
   const [localStages, setLocalStages] = useState<TreatmentStage[]>([]);
@@ -193,6 +194,23 @@ export default function OrthoCaseDetailPage() {
             {stageProgress}%
           </span>
         </div>
+
+        {/* QA4-01: when the overview API fails, say so instead of showing
+            misleading "—" dashes in every stat (same philosophy as QA3-02) */}
+        {overviewError && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2"
+            style={{ background: "#fef2f2", borderColor: "#fecaca" }}>
+            <div className="flex items-center gap-2 text-xs font-bold" style={{ color: "#b91c1c" }}>
+              <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+              تعذر تحميل ملخص الحالة من الخادم — المؤشرات أدناه غير متوفرة مؤقتاً، لا تعتمد على الشرطات
+            </div>
+            <button onClick={() => refetchOverview()}
+              className="flex-shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold text-white transition hover:opacity-90"
+              style={{ background: "#b91c1c" }}>
+              إعادة المحاولة
+            </button>
+          </div>
+        )}
 
         {/* Quick case stats */}
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">

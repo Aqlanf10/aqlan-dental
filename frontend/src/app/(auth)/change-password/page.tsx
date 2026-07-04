@@ -159,7 +159,7 @@ export default function StaffChangePasswordPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form method="post" onSubmit={handleSubmit} className="space-y-4">
             {error && (
               <div
                 className="text-[13px] px-3 py-2 rounded-lg"

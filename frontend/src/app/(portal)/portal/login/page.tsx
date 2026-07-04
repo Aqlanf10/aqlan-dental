@@ -149,7 +149,7 @@ export default function PortalLoginPage() {
                 <p className="text-sm text-[#64748b] mt-1">أدخل اسم المستخدم وكلمة المرور</p>
               </div>
 
-              <form onSubmit={handleLogin} className="space-y-4">
+              <form method="post" onSubmit={handleLogin} className="space-y-4">
                 {error && (
                   <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">
                     {error}
@@ -235,7 +235,7 @@ export default function PortalLoginPage() {
                 <p className="text-sm text-[#64748b] mt-1">أدخل رقم هاتفك المسجل لإرسال رمز التحقق عبر واتساب</p>
               </div>
 
-              <form onSubmit={handleForgotPassword} className="space-y-4">
+              <form method="post" onSubmit={handleForgotPassword} className="space-y-4">
                 {error && (
                   <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">
                     {error}
@@ -299,7 +299,7 @@ export default function PortalLoginPage() {
                 </div>
               )}
 
-              <form onSubmit={handleResetPassword} className="space-y-4">
+              <form method="post" onSubmit={handleResetPassword} className="space-y-4">
                 {error && (
                   <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">
                     {error}

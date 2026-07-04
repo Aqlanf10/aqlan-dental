@@ -53,11 +53,26 @@ public static class StartupDatabaseMaintenance
         // check can pass and the old instance is retired) while the
         // pipeline finishes in the background. All hotfixes are idempotent
         // and individually try/caught, so background completion is safe.
-        var pipeline = RunHotfixPipelineAsync(app, configuration);
+        StartupHotfixJournal.MarkPipelineStarted();
+        async Task RunJournaledPipelineAsync()
+        {
+            try
+            {
+                await RunHotfixPipelineAsync(app, configuration);
+                StartupHotfixJournal.MarkPipelineCompleted();
+            }
+            catch
+            {
+                StartupHotfixJournal.MarkPipelineCompleted(faulted: true);
+                throw;
+            }
+        }
+        var pipeline = RunJournaledPipelineAsync();
         var budget = GetBootBudget(configuration);
         var finishedInTime = await WaitWithBootBudgetAsync(pipeline, budget);
         if (!finishedInTime)
         {
+            StartupHotfixJournal.MarkBootBudgetExceeded();
             var logger = app.Services.GetRequiredService<ILogger<Program>>();
             logger.LogWarning(
                 "Startup DB maintenance exceeded the boot budget of {BudgetSeconds}s — continuing boot so the " +
@@ -4547,6 +4562,7 @@ public static class StartupDatabaseMaintenance
         {
             app.Services.GetRequiredService<ILogger<Program>>()
                 .LogWarning(ex, "Payment Currency column hotfix failed (non-fatal)");
+            StartupHotfixJournal.RecordFailure("PaymentCurrencyColumn", ex);
         }
     }
 
@@ -4583,7 +4599,11 @@ public static class StartupDatabaseMaintenance
         async Task RunAsync(string label, string sql)
         {
             try { await db.Database.ExecuteSqlRawAsync(sql); }
-            catch (Exception ex) { logger.LogWarning(ex, "Multi-currency hotfix step failed (non-fatal): {Step}", label); }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Multi-currency hotfix step failed (non-fatal): {Step}", label);
+                StartupHotfixJournal.RecordFailure($"MultiCurrency:{label}", ex);
+            }
         }
 
         // ── Currency columns — each ADD COLUMN IF NOT EXISTS in its own transaction ──
@@ -4654,7 +4674,11 @@ public static class StartupDatabaseMaintenance
         async Task RunAsync(string label, string sql)
         {
             try { await db.Database.ExecuteSqlRawAsync(sql); }
-            catch (Exception ex) { logger.LogWarning(ex, "Finance enum-type hotfix step failed (non-fatal): {Step}", label); }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Finance enum-type hotfix step failed (non-fatal): {Step}", label);
+                StartupHotfixJournal.RecordFailure($"FinanceEnumTypes:{label}", ex);
+            }
         }
 
         // ── Suppliers.Type: integer → varchar(30) with enum-name values ──
@@ -4757,7 +4781,11 @@ public static class StartupDatabaseMaintenance
         async Task RunAsync(string label, string sql)
         {
             try { await db.Database.ExecuteSqlRawAsync(sql); }
-            catch (Exception ex) { logger.LogWarning(ex, "Visit ortho-fields hotfix step failed (non-fatal): {Step}", label); }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Visit ortho-fields hotfix step failed (non-fatal): {Step}", label);
+                StartupHotfixJournal.RecordFailure($"VisitOrthoFields:{label}", ex);
+            }
         }
 
         // ── Ortho visit clinical fields (mirrored from OrthoVisit onto the bridging Visit) ──

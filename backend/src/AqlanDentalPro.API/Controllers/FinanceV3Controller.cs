@@ -1156,6 +1156,32 @@ public partial class FinanceV3Controller(
         }
     }
 
+    // ─── GET /api/finance-v3/diagnostic/startup-hotfixes — QA4-07 hotfix-failure journal ──
+    /// <summary>
+    /// Admin-only diagnostic: the in-memory journal of startup DB-hotfix
+    /// failures from the current process. The hotfixes are non-fatal by
+    /// design, so when one keeps failing (e.g. an ALTER TABLE denied by
+    /// permissions or blocked by locks) the production DB silently stays on
+    /// stale schema and the only evidence lives in Railway's log stream.
+    /// This endpoint exposes the swallowed failure reasons (exception type +
+    /// first message line only — no stack traces) so the failure can be
+    /// diagnosed remotely. Deliberately admin-gated: this is operator
+    /// tooling, not a user-facing surface.
+    /// </summary>
+    [HttpGet("diagnostic/startup-hotfixes")]
+    [Authorize(Policy = "AdminOnly")]
+    public IActionResult GetStartupHotfixDiagnostic()
+    {
+        return Ok(new
+        {
+            pipelineStartedAtUtc = AqlanDentalPro.API.Configuration.StartupHotfixJournal.PipelineStartedAtUtc,
+            pipelineCompletedAtUtc = AqlanDentalPro.API.Configuration.StartupHotfixJournal.PipelineCompletedAtUtc,
+            pipelineFaulted = AqlanDentalPro.API.Configuration.StartupHotfixJournal.PipelineFaulted,
+            bootBudgetExceeded = AqlanDentalPro.API.Configuration.StartupHotfixJournal.BootBudgetExceeded,
+            failures = AqlanDentalPro.API.Configuration.StartupHotfixJournal.Snapshot(),
+        });
+    }
+
     // ─── POST /api/finance-v3/diagnostic/apply-cashflow-hotfix — Apply CashFlow Category/Type migration manually ──
     /// <summary>
     /// Manually applies the CashFlow Category/Type varchar-to-integer migration.

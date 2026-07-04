@@ -247,7 +247,10 @@ function StaffLoginPanel() {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 flex-1">
+      {/* method="post" on all auth forms: before hydration completes, a submit
+          falls back to the browser's native handling — the default (GET) would
+          put the credentials in the URL, browser history, and server logs. */}
+      <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-4 flex-1">
         {error && (
           <div
             className="text-[13px] px-3 py-2 rounded-lg"
@@ -457,7 +460,7 @@ function PatientLoginPanel() {
       </div>
 
       {step === "login" ? (
-        <form onSubmit={handleLogin} className="space-y-4 flex-1">
+        <form method="post" onSubmit={handleLogin} className="space-y-4 flex-1">
           {error && (
             <div className="text-[13px]" style={{ color: "#fca5a5" }}>
               {error}
@@ -545,7 +548,7 @@ function PatientLoginPanel() {
           </button>
         </form>
       ) : step === "forgot" ? (
-        <form onSubmit={handleForgotPassword} className="space-y-4 flex-1">
+        <form method="post" onSubmit={handleForgotPassword} className="space-y-4 flex-1">
           {error && (
             <div className="text-[13px]" style={{ color: "#fca5a5" }}>
               {error}
@@ -615,7 +618,7 @@ function PatientLoginPanel() {
           </button>
         </form>
       ) : (
-        <form onSubmit={handleResetPassword} className="space-y-4 flex-1">
+        <form method="post" onSubmit={handleResetPassword} className="space-y-4 flex-1">
           {success && (
             <div className="text-[13px]" style={{ color: "#86efac" }}>
               {success}

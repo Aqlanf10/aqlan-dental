@@ -83,3 +83,21 @@ tested against, not current `main`.
 | `QA2-09` | Lab | Lab order creation verified end-to-end live: patient search (reasonable terms), lab/work-type/cost selection, save → 201 (`LAB-2026-002`), correct display in list with actions | `LabOrdersController.cs`, `lab/page.tsx` | verified, no bug | n/a | n/a | no |
 | `QA2-10` | Finance | Payment collection verified end-to-end live: full form (amount/currency/method/service/doctor/notes), save → 200, receipt `RCP-20260703-001` auto-generated, clear Arabic success toast. **Creates real test financial data** (100 YER) — not deleted, tagged QA in service description + notes | `PaymentsController.cs`, patient payments tab | verified, no bug | n/a | n/a | owner: delete the 100 YER test payment if desired |
 | `QA2-11` | Deployment | Railway deploy stall root-caused via API-surface forensics: deployed commit is in the #584–#597 range (refine-landmark route present; #598 Currency fix and #602 enum fix absent — 200/500 discriminator reconfirmed). Stall began at #598 (23:39 Jul 2), **before** the TD-021 build break — corrects QA2-04's attribution. Cause is outside the repo (main is CI-green and buildable); owner checklist for the Railway dashboard written into the QA report | `docs/qa/PRODUCTION_OWNER_QA_ROUND_1.md` (تشخيص توقف نشر Railway) | diagnosed, blocked on Railway dashboard | no (no code fix applicable) | pending first successful Railway deploy | yes (Railway dashboard access required) |
+
+## Production Owner QA — Round 3 (2026-07-04)
+
+Live production QA (admin, real browser). Reconfirmed the Railway deploy stall is
+STILL active >24h after round 2's diagnosis (same 200/500 API fingerprints); all
+previously-fixed-on-main 500s remain live, which blocks the entire daily-operations
+check-in workflow on a day with real appointments. No new test data created —
+round 2's QA patient (GM-2026-059) was reused read-only.
+
+| ID | Module | Finding | Code | Status | Fixed here | Runtime verify | Owner decision |
+|----|--------|---------|------|--------|-----------|----------------|----------------|
+| `QA3-01` | Communication | `/referrals` page crashes to the error boundary (`e.map is not a function`) — API returns a `{data,total,page,pageSize}` envelope while the page maps a bare array; silent `catch(() => {})` also hid load failures behind an empty state | `referrals/page.tsx` (envelope unwrap + Arabic error state with retry) | fixed | yes | yes (live crash repro'd pre-fix; tsc/lint/build green) | no |
+| `QA3-02` | Daily operations | When `/api/patient-journey/today` fails, the board renders "لا توجد مواعيد" — reception believes the day is empty (silent failure, contra CLAUDE.md) | `daily-operations/page.tsx` (`isError` banner + retry, spec 002 §honest-failure) | fixed | yes | pending (banner visible now; auto-clear after Railway redeploy) | no |
+| `QA3-03` | Orthodontics | `/api/ortho-cases/{id}/overview` 500 live → case header KPIs all render "–" silently; same stale-deploy root cause (full `Contracts`+`Payments` materialization hits missing `Currency`) | `OrthoCaseQueryService.cs` (no change needed — heals on deploy) | documented | no | pending Railway redeploy | yes (same Railway action) |
+| `QA3-04` | Inventory/Lab-supply | `IsReadSchemaCompatibilityFailure` in Suppliers/Inventory/PurchaseOrders inspected only `InnerException`, so the schema fallback NEVER fired (EF surfaces read `PostgresException` directly; enum drift throws `InvalidCastException`) — dead safety net | 3 controllers hardened to the `LabOrdersController` pattern + `ReadSchemaCompatibilityFailureTests.cs` (15 tests) | fixed | yes | yes (unit-tested; live path also heals on deploy) | no |
+| `QA3-05` | Navigation | `/hr` root 404s while listed in `routePermissions` (sidebar only links the 4 sub-pages) | `hr/page.tsx` (redirect → `/hr/attendance`) | fixed | yes | yes | no |
+| `QA3-06` | Clinic display | React #418 hydration warning on `/clinic-display` console; screen fully functional | — | documented | no | n/a | no |
+| `QA3-07` | Deployment | Stall persists: deployed image still #584–#597 by API fingerprint; dashboard/stats, patient-journey/today, suppliers all still 500 live | — (owner checklist already in QA report) | blocked on owner | no | pending first successful deploy | **yes — urgent** |

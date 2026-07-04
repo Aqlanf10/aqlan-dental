@@ -32,8 +32,96 @@ public static class StartupDatabaseMaintenance
         // which then makes the InitialCreate migration fail with
         // "relation already exists" and leaves the database incomplete.
         // Existing databases (Users table present) are not touched here.
+        // Deliberately NOT covered by the boot budget below: an empty
+        // database has no traffic holding locks, and serving requests
+        // before the baseline exists would fail everywhere anyway.
         await EnsureFreshDatabaseMigratedAsync(app, configuration);
 
+        // ── Boot budget (QA4-02) ───────────────────────────────────────
+        // The app does not start listening until this method returns, and
+        // Railway's health check gives it only `healthcheckTimeout` (120s).
+        // Every hotfix below issues ALTER TABLE statements that need an
+        // ACCESS EXCLUSIVE lock; while the PREVIOUS deployment is still
+        // serving traffic (constant short reads via the SignalR polling
+        // fallback), each blocked statement waits up to the 30s Npgsql
+        // command timeout before its non-fatal catch fires. A few dozen
+        // blocked statements push boot far past the health check, the
+        // deploy is marked failed, the old instance keeps running — and
+        // every retry hits the same wall. To break that loop, the hotfix
+        // pipeline gets a bounded share of boot time; if it is still
+        // running when the budget expires, boot continues (so the health
+        // check can pass and the old instance is retired) while the
+        // pipeline finishes in the background. All hotfixes are idempotent
+        // and individually try/caught, so background completion is safe.
+        var pipeline = RunHotfixPipelineAsync(app, configuration);
+        var budget = GetBootBudget(configuration);
+        var finishedInTime = await WaitWithBootBudgetAsync(pipeline, budget);
+        if (!finishedInTime)
+        {
+            var logger = app.Services.GetRequiredService<ILogger<Program>>();
+            logger.LogWarning(
+                "Startup DB maintenance exceeded the boot budget of {BudgetSeconds}s — continuing boot so the " +
+                "deployment health check can pass; the maintenance pipeline keeps running in the background. " +
+                "Endpoints depending on not-yet-added columns may return 500 until it completes.",
+                budget.TotalSeconds);
+            _ = pipeline.ContinueWith(t =>
+            {
+                if (t.IsFaulted)
+                    logger.LogError(t.Exception?.GetBaseException(),
+                        "Background startup DB maintenance failed after exceeding the boot budget");
+                else
+                    logger.LogInformation("Background startup DB maintenance completed after exceeding the boot budget");
+            }, TaskScheduler.Default);
+        }
+    }
+
+    /// <summary>
+    /// Reads the boot budget from STARTUP_MAINTENANCE_BOOT_BUDGET_SECONDS
+    /// (configuration or environment). Defaults to 90s — comfortably inside
+    /// Railway's 120s health check window. A value of 0 or less disables the
+    /// budget entirely (boot waits for the full pipeline, the pre-QA4 behavior).
+    /// </summary>
+    internal static TimeSpan GetBootBudget(IConfiguration configuration)
+    {
+        var raw = configuration["STARTUP_MAINTENANCE_BOOT_BUDGET_SECONDS"]
+                  ?? Environment.GetEnvironmentVariable("STARTUP_MAINTENANCE_BOOT_BUDGET_SECONDS");
+        if (int.TryParse(raw, out var seconds))
+            return seconds <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(seconds);
+        return TimeSpan.FromSeconds(90);
+    }
+
+    /// <summary>
+    /// Awaits <paramref name="pipeline"/> for at most <paramref name="budget"/>.
+    /// Returns true when the pipeline finished in time (propagating its
+    /// exception, preserving the fail-fast behavior of a bootstrap crash);
+    /// returns false on timeout WITHOUT observing the pipeline — the caller
+    /// owns logging and observing the background completion.
+    /// An infinite budget awaits the pipeline directly.
+    /// </summary>
+    internal static async Task<bool> WaitWithBootBudgetAsync(Task pipeline, TimeSpan budget)
+    {
+        if (budget == Timeout.InfiniteTimeSpan)
+        {
+            await pipeline;
+            return true;
+        }
+
+        var completed = await Task.WhenAny(pipeline, Task.Delay(budget));
+        if (completed == pipeline)
+        {
+            await pipeline; // propagate faults/cancellation
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// The sequential hotfix pipeline (everything after the fresh-database
+    /// bootstrap). Same steps, same order as before QA4-02 — only extracted
+    /// so the caller can bound how long boot waits for it.
+    /// </summary>
+    private static async Task RunHotfixPipelineAsync(WebApplication app, IConfiguration configuration)
+    {
         // ── Unconditional schema hotfixes ──────────────────────────────
         await EnsureUsersDoctorsSchemaAsync(app);
         await EnsureMessageAttachmentsSchemaAsync(app);

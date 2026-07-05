@@ -107,3 +107,23 @@ round 2's QA patient (GM-2026-059) was reused read-only.
 | `QA4-04` | Deployment | Round-4 live re-verification: Vercel frontend is CURRENT (#616 `method="post"` present in production HTML) while the backend image is still #584–#597 (same 200/500 discriminators; deployed build's pending-migrations list unchanged) — stall is Railway-only, ~2 days old | `docs/qa/PRODUCTION_OWNER_QA_ROUND_1.md` (الجولة الرابعة) | diagnosed | no | pending first successful deploy | **yes — urgent** |
 | `QA4-07` | Deployment | Post-merge live probe: deploy stall IS broken (image ≥ #615 — `schemaFallback:true` fingerprint on /api/suppliers) but the DDL hotfixes leave no trace on the production DB (currency columns still missing, enum types still integer) — the real failure reason is swallowed into Railway-only log warnings, undiagnosable remotely | `StartupHotfixJournal.cs` (new), key hotfix catches wired, `GET /api/finance-v3/diagnostic/startup-hotfixes` (AdminOnly), `StartupHotfixJournalTests.cs` (6 tests) | fixed (diagnosability) | yes | pending next deploy (endpoint then reveals the root cause of the failing ALTERs) | yes (act on the revealed reason — e.g. re-own tables if 42501) |
 | `QA4-08` | Deployment | Journal (QA4-07, now live) proved the hotfix pipeline completes in ~2s with ZERO failures — the covered columns are all no-ops — so the surviving 500s (contracts, dashboard/stats, patient-journey/today, expenses) are type drift in columns NO hotfix covers (CashFlow enum columns proven integer; the rest unknowable remotely) | `GET /api/finance-v3/diagnostic/schema-columns` (AdminOnly, information_schema types only for a hardcoded 13-table whitelist — no row data, no user input in SQL) | fixed (diagnosability) | yes | pending next deploy (then the drifted columns are enumerable in one call) | yes (approve the targeted type-normalization heal once named) |
+
+## Production Owner QA — Round 5 (2026-07-05/06)
+
+Live production QA (admin, real browser + direct API isolation). Reconfirmed the
+Railway deploy stall is STILL active 3+ days after round 2's diagnosis and after
+the #617–#619 boot-budget/diagnostics merges — the same 200/500 API fingerprints
+persist, so every round 1–4 fix on `main` has still not reached production. The
+full reception journey (intake → queue → call → enter-room → start → complete)
+was verified working end-to-end via direct API with a validated state machine and
+Arabic messages, proving the first successful deploy restores the reception
+screen immediately. One NEW bug was found and fixed; the queue module's UTC-date
+family was mapped and scheduled.
+
+| ID | Module | Finding | Code | Status | Fixed here | Runtime verify | Owner decision |
+|----|--------|---------|------|--------|-----------|----------------|----------------|
+| `QA5-01` | Deployment | Deploy stall still live at 2026-07-05 23:00 UTC (same fingerprints: dashboard/stats, patient-journey/{id}/daily-summary, contracts, finance-v3/expenses all 500; finance-v3/contracts 200) | — (owner checklist in QA report round 2 section) | blocked on owner | no | pending first successful deploy | **yes — urgent, unchanged** |
+| `QA5-02` | Clinic queue | `StartVisit` stamped `VisitDate` with the UTC server date — live QA visit dated 2026-07-05 while its appointment/clinic day is 2026-07-06 (clinic verifiably operates past midnight) | `ClinicQueueController.cs` (appointment clinic date, fallback `ClinicTimeProvider.ClinicToday()`) | fixed | yes | yes (data-evidenced root cause; suite green) | no |
+| `QA5-03` | Clinic queue/Journey | UTC-today family: 11 call sites across `ClinicQueueController` / `CheckoutService` / `PatientJourneyService.GetDailySummary` use `DateTime.UtcNow` dates — internally consistent but cross the clinic day between 00:00–03:00 Yemen | dedicated unification sprint (PR #582 pattern) | documented | no | n/a | scheduling |
+| `QA5-04` | Daily operations | Journey action failures show a generic «فشل إتمام العملية» toast, hiding the server's Arabic message (QA3-02 silent-failure family) | daily-operations journey action handlers | documented | no | n/a | no |
+| `QA5-05` | API contracts | `POST /api/appointments` response returns empty patientName/doctorName; patients list projection nulls firstName/lastName (UI unaffected — refetches) | `AppointmentsController.cs`, `PatientsController.cs` | documented | no | n/a | no |

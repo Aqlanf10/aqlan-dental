@@ -7,6 +7,7 @@ using AqlanDentalPro.Domain.Constants;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.API.Hubs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -446,7 +447,14 @@ public class ClinicQueueController(
                     {
                         PatientId = item.PatientId,
                         AppointmentId = item.AppointmentId,
-                        VisitDate = DateOnly.FromDateTime(DateTime.UtcNow),
+                        // QA5-02: clinic-local date, NOT the UTC server date. Yemen is UTC+3,
+                        // so visits started after 21:00 UTC were stamped with the previous
+                        // day and disagreed with the appointment's AppointmentDate
+                        // (confirmed live: visit 2026-07-05 vs appointment 2026-07-06).
+                        // Prefer the linked appointment's own clinic date — matches
+                        // AppointmentsController.StartVisit semantics.
+                        VisitDate = item.Appointment?.AppointmentDate
+                            ?? ClinicTimeProvider.ClinicToday(),
                         DoctorId = item.DoctorId ?? item.Appointment?.DoctorId,
                         Specialty = item.Appointment?.Specialty,
                         ServiceId = item.ServiceId ?? item.Appointment?.ServiceId

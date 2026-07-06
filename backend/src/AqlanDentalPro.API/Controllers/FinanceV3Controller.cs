@@ -1206,6 +1206,11 @@ public partial class FinanceV3Controller(
                 "Contracts", "Payments", "Visits", "Appointments", "Patients",
                 "ClinicQueueItems", "OperationalExpenses", "Suppliers",
                 "CashFlowTransactions", "Invoices", "Treasuries", "LabOrders", "Doctors",
+                // QA round 6: JournalEntries/JournalLines back Finance V3 balance
+                // calculations (dashboard/stats, contracts, expenses all read through
+                // them) but were never in this whitelist — the one remaining
+                // "previously unknowable" gap the comment above already flagged.
+                "JournalEntries", "JournalLines",
             ];
 
             var columns = new List<object>();

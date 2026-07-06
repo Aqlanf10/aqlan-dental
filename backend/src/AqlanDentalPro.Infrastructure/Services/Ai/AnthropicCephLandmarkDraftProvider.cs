@@ -6,15 +6,21 @@ using System.Text.Json;
 namespace AqlanDentalPro.Infrastructure.Services.Ai;
 
 /// <summary>
-/// Gemini multimodal landmark draft provider. This is an assistive first pass,
-/// not a clinically validated automatic tracing model. The caller must keep
-/// the result unsaved until an orthodontist reviews and adjusts every point.
+/// Claude (Anthropic) multimodal landmark draft provider — the vision-capable
+/// counterpart to GeminiCephLandmarkDraftProvider, giving clinics configured
+/// on Anthropic the same ceph auto-trace assistive draft. This is an
+/// assistive first pass, not a clinically validated automatic tracing model;
+/// the caller must keep the result unsaved until an orthodontist reviews and
+/// adjusts every point.
+///
+/// Security: the API key is sent ONLY via the "x-api-key" header, never in
+/// the URL.
 /// </summary>
-public sealed class GeminiCephLandmarkDraftProvider(
+public sealed class AnthropicCephLandmarkDraftProvider(
     IHttpClientFactory httpClientFactory) : ICephLandmarkDraftProvider
 {
-    public string ProviderName => "gemini";
-    public string ApiKeyEnvVar => "GEMINI_API_KEY";
+    public string ProviderName => "anthropic";
+    public string ApiKeyEnvVar => "ANTHROPIC_API_KEY";
 
     public async Task<IReadOnlyList<CephAiLandmarkPoint>> GenerateAsync(
         byte[] imageBytes,
@@ -25,38 +31,36 @@ public sealed class GeminiCephLandmarkDraftProvider(
     {
         var requestBody = JsonSerializer.Serialize(new
         {
-            contents = new[]
+            model,
+            max_tokens = 3000,
+            temperature = 0.0,
+            messages = new[]
             {
                 new
                 {
                     role = "user",
-                    parts = new object[]
+                    content = new object[]
                     {
                         new
                         {
-                            inline_data = new
+                            type = "image",
+                            source = new
                             {
-                                mime_type = mimeType,
+                                type = "base64",
+                                media_type = mimeType,
                                 data = Convert.ToBase64String(imageBytes),
                             },
                         },
-                        new { text = CephLandmarkPromptShared.BuildPrompt() },
+                        new { type = "text", text = CephLandmarkPromptShared.BuildPrompt() },
                     },
                 },
-            },
-            generationConfig = new
-            {
-                responseMimeType = "application/json",
-                temperature = 0.0,
-                maxOutputTokens = 3000,
             },
         });
 
         var client = httpClientFactory.CreateClient(CephAiDraftService.HttpClientName);
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            $"{GeminiAiDraftProvider.BaseUrl}/{Uri.EscapeDataString(model)}:generateContent");
-        request.Headers.Add(GeminiAiDraftProvider.ApiKeyHeader, apiKey);
+        using var request = new HttpRequestMessage(HttpMethod.Post, AnthropicAiDraftProvider.MessagesUrl);
+        request.Headers.Add(AnthropicAiDraftProvider.ApiKeyHeader, apiKey); // header only — never the URL
+        request.Headers.Add("anthropic-version", AnthropicAiDraftProvider.AnthropicVersion);
         request.Content = new StringContent(requestBody, Encoding.UTF8, "application/json");
 
         using var response = await client.SendAsync(request, cancellationToken);
@@ -75,16 +79,12 @@ public sealed class GeminiCephLandmarkDraftProvider(
     private static string ExtractGeneratedText(string responseJson)
     {
         using var document = JsonDocument.Parse(responseJson);
-        if (document.RootElement.TryGetProperty("candidates", out var candidates)
-            && candidates.ValueKind == JsonValueKind.Array
-            && candidates.GetArrayLength() > 0
-            && candidates[0].TryGetProperty("content", out var content)
-            && content.TryGetProperty("parts", out var parts)
-            && parts.ValueKind == JsonValueKind.Array)
+        if (document.RootElement.TryGetProperty("content", out var content)
+            && content.ValueKind == JsonValueKind.Array)
         {
-            foreach (var part in parts.EnumerateArray())
+            foreach (var block in content.EnumerateArray())
             {
-                if (part.TryGetProperty("text", out var textElement)
+                if (block.TryGetProperty("text", out var textElement)
                     && !string.IsNullOrWhiteSpace(textElement.GetString()))
                 {
                     return textElement.GetString()!;

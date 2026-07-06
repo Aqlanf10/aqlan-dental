@@ -127,3 +127,18 @@ family was mapped and scheduled.
 | `QA5-03` | Clinic queue/Journey | UTC-today family: 11 call sites across `ClinicQueueController` / `CheckoutService` / `PatientJourneyService.GetDailySummary` use `DateTime.UtcNow` dates — internally consistent but cross the clinic day between 00:00–03:00 Yemen | dedicated unification sprint (PR #582 pattern) | documented | no | n/a | scheduling |
 | `QA5-04` | Daily operations | Journey action failures show a generic «فشل إتمام العملية» toast, hiding the server's Arabic message (QA3-02 silent-failure family) | daily-operations journey action handlers | documented | no | n/a | no |
 | `QA5-05` | API contracts | `POST /api/appointments` response returns empty patientName/doctorName; patients list projection nulls firstName/lastName (UI unaffected — refetches) | `AppointmentsController.cs`, `PatientsController.cs` | documented | no | n/a | no |
+
+## Production Owner QA — Round 6 (2026-07-06)
+
+API-only live verification (browser launch blocked by an environmental proxy
+issue this round — see QA6-04). Confirmed the Railway deploy stall (QA2/4/5-01)
+is finally resolved, then extended the QA4-08 schema-drift diagnostic to
+`JournalEntries`/`JournalLines` and ruled out schema drift as the cause of the
+4 still-failing endpoints. No new test data created; read-only API sweep only.
+
+| ID | Module | Finding | Code | Status | Fixed here | Runtime verify | Owner decision |
+|----|--------|---------|------|--------|-----------|----------------|----------------|
+| `QA6-01` | Deployment | Railway deploy stall (QA2/4/5-01) is resolved — fresh boot cycle with zero hotfix failures, timestamped to the #620 merge | `GET /api/finance-v3/diagnostic/startup-hotfixes` live | confirmed resolved | no | yes (live) | no — closed |
+| `QA6-02` | Finance/Dashboard | 4 endpoints still 500 live even with a current, healthy deploy: `dashboard/stats`, `contracts?status=active`, `finance-v3/expenses`, `patient-journey/{id}/daily-summary` — root cause is no longer the deploy stall | live probes (200/500 fingerprints unchanged post-fix) | diagnosed (partially) | no | pending Railway log access or local repro | yes — needs either log access or a local dev environment to isolate the exception |
+| `QA6-03` | Finance | Extended QA4-08's schema-columns diagnostic to `JournalEntries`/`JournalLines` (the one remaining "previously unknowable" gap its own doc comment flagged) — result: `AccountType`/`FinancialDocumentType` are both `character varying` as code expects, **no drift** | `FinanceV3Controller.cs` (`GetSchemaColumnsDiagnostic` whitelist +2 tables) | fixed (diagnosability) + ruled out | yes | yes (live) | no — this specific theory is closed |
+| `QA6-04` | Tooling | Chromium (Playwright) could not reach any external host (including a non-project test host) through this session's configured egress proxy — `ERR_CONNECTION_RESET` on every attempt — blocking all visual/RTL/console-error verification this round | — (environment limitation, not app code) | documented | no | n/a | yes — schedule a round with working browser access for the visual/UX checklist items |

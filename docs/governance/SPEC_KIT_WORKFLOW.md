@@ -4,6 +4,7 @@
 
 ## خطوات العمل
 
+0. اقرأ `docs/governance/MANDATORY_SPRINT_QUEUE.md` — حدّد أول عنصر غير منجَز واعمل عليه فقط، إلا إذا انطبق أحد استثناءات الملف نفسه.
 1. اقرأ `.specify/constitution.md`.
 2. اقرأ `specs/000-master-system/requirements.md`.
 3. اقرأ `specs/000-master-system/module-map.md`.

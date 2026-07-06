@@ -4,6 +4,14 @@ This policy applies to Claude, Codex, Gemini, OpenCode, and any smaller model wo
 
 ## Required Read Before Editing
 
+0. **Read `docs/governance/MANDATORY_SPRINT_QUEUE.md` first.** It is the single
+   binding, sequenced backlog for this repository. Locate the first item not
+   marked done and treat it as the only in-scope work, unless the user's request
+   matches one of the queue's own narrow exceptions (P0 production incident,
+   read-only audit, finishing an already-open PR, or a merge-conflict fix). If
+   the user asks for something that is not the current queue item and is not
+   covered by an exception, say so explicitly and ask before proceeding — do not
+   silently work out of order.
 1. Read `.specify/constitution.md`.
 2. Read `specs/000-master-system/module-map.md`.
 3. Read the target feature spec under `specs/`.

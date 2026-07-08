@@ -112,7 +112,7 @@ namespace AqlanDentalPro.API.Controllers;
 public partial class FinanceV3Controller(
     AppDbContext db,
     ICurrentUserService currentUser,
-    IFinanceService financeService,
+    IPaymentService paymentService,
     IInvoiceLedgerService invoiceLedgerService,
     IAuditService audit,
     IJournalEntryService journalEntryService,
@@ -159,7 +159,7 @@ public partial class FinanceV3Controller(
 
         try
         {
-            var result = await financeService.CreatePaymentAsync(req);
+            var result = await paymentService.CreatePaymentAsync(req);
             await audit.LogAsync(AuditAction.Create, "Payment", result.Id,
                 newData: new { result.Amount, result.PatientId, result.PaymentMethod });
             return Ok(result);
@@ -256,8 +256,8 @@ public partial class FinanceV3Controller(
     public async Task<IActionResult> DeletePayment(Guid id)
     {
         if (!await CanAsync("finance.payments", "delete")) return Deny();
-        var payment = await financeService.GetPaymentByIdAsync(id);
-        var deleted = await financeService.DeletePaymentAsync(id);
+        var payment = await paymentService.GetPaymentByIdAsync(id);
+        var deleted = await paymentService.DeletePaymentAsync(id);
         if (deleted && payment != null)
         {
             await audit.LogAsync(AuditAction.Delete, "Payment", id,

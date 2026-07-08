@@ -38,6 +38,11 @@ public static class ServiceRegistrationConfiguration
         services.AddScoped<DashboardService>();
         services.AddScoped<OrthoService>();
         services.AddScoped<IFinanceService, FinanceService>();
+        // TD-021 PR A4 (slices 2+3): payment cluster + supplier-payables/credit-note
+        // refunds extracted from FinanceService. FinanceService now only orchestrates
+        // the two remaining contract methods (moving to ContractService in the final slice).
+        services.AddScoped<IPaymentService, PaymentService>();
+        services.AddScoped<ISupplierRefundService, SupplierRefundService>();
         // TD-021 PR A1: invoice-ledger posting extracted from FinanceService. Self-contained
         // (db + journalEntryService + currentUser + logger only) — first slice of the
         // FinanceService god-service decomposition. See docs/technical-debt/TD-021-god-service-extraction-plan.md.

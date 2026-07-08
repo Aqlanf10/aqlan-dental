@@ -13,7 +13,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api")]
 [Authorize(Policy = "FinanceAccess")]
-public class PaymentsController(IFinanceService service, IFinanceReadService financeReadService, IPdfService pdfService, IAuditService audit, ICurrentUserService currentUser, AppDbContext db, IRealTimePushService pushService, ILogger<PaymentsController> logger) : ControllerBase
+public class PaymentsController(IPaymentService service, IFinanceReadService financeReadService, IPdfService pdfService, IAuditService audit, ICurrentUserService currentUser, AppDbContext db, IRealTimePushService pushService, ILogger<PaymentsController> logger) : ControllerBase
 {
     // FIN-PERM: the class-level FinanceAccess policy (Admin + Reception + Accountant)
     // is the coarse gate; the granular finance.* permission (RolePermissions, owner-

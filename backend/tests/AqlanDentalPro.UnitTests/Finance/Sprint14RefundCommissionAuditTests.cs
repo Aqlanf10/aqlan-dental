@@ -80,7 +80,7 @@ public class Sprint14RefundCommissionAuditTests
         return session;
     }
 
-    private static (FinanceService service, Guid branchId, Guid cashierId) CreateService(AppDbContext db)
+    private static (PaymentService service, Guid branchId, Guid cashierId) CreateService(AppDbContext db)
     {
         var (branchId, cashierId) = SeedBranchAndUser(db);
 
@@ -90,7 +90,7 @@ public class Sprint14RefundCommissionAuditTests
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
 
         var notifications = new Mock<INotificationService>();
-        var logger = new Mock<ILogger<FinanceService>>();
+        var logger = new Mock<ILogger<PaymentService>>();
         var commissionService = new Mock<ICommissionService>();
         var journalEntryService = new Mock<IJournalEntryService>();
 
@@ -161,7 +161,7 @@ public class Sprint14RefundCommissionAuditTests
                 };
             });
 
-        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object, new ContractService(db, currentUser.Object));
+        var service = new PaymentService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
 
         return (service, branchId, cashierId);
     }

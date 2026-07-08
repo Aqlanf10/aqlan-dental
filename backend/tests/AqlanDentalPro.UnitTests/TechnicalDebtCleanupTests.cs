@@ -163,12 +163,12 @@ public class TechnicalDebtCleanupTests
         var notifications = new Mock<INotificationService>().Object;
         var commissionService = new Mock<ICommissionService>().Object;
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
-        var financeService = new FinanceService(db, nonAdminUser, notifications, new Mock<ILogger<FinanceService>>().Object, commissionService, journalEntryService, new ContractService(db, nonAdminUser));
+        var paymentService = new PaymentService(db, nonAdminUser, notifications, new Mock<ILogger<PaymentService>>().Object, commissionService, journalEntryService);
         var audit = new Mock<IAuditService>().Object;
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
         var logger = new Mock<ILogger<FinanceV3Controller>>().Object;
 
-        var controller = new FinanceV3Controller(db, nonAdminUser, financeService, new Mock<IInvoiceLedgerService>().Object, audit, journalEntryService, treasuryResolution, logger);
+        var controller = new FinanceV3Controller(db, nonAdminUser, paymentService, new Mock<IInvoiceLedgerService>().Object, audit, journalEntryService, treasuryResolution, logger);
 
         // Use reflection to invoke the private method
         var method = typeof(FinanceV3Controller).GetMethod("ResolveBranchIdAsync",
@@ -192,12 +192,12 @@ public class TechnicalDebtCleanupTests
         var notifications = new Mock<INotificationService>().Object;
         var commissionService = new Mock<ICommissionService>().Object;
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
-        var financeService = new FinanceService(db, nonAdminUser, notifications, new Mock<ILogger<FinanceService>>().Object, commissionService, journalEntryService, new ContractService(db, nonAdminUser));
+        var paymentService = new PaymentService(db, nonAdminUser, notifications, new Mock<ILogger<PaymentService>>().Object, commissionService, journalEntryService);
         var audit = new Mock<IAuditService>().Object;
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
         var logger = new Mock<ILogger<FinanceV3Controller>>().Object;
 
-        var controller = new FinanceV3Controller(db, nonAdminUser, financeService, new Mock<IInvoiceLedgerService>().Object, audit, journalEntryService, treasuryResolution, logger);
+        var controller = new FinanceV3Controller(db, nonAdminUser, paymentService, new Mock<IInvoiceLedgerService>().Object, audit, journalEntryService, treasuryResolution, logger);
 
         var method = typeof(FinanceV3Controller).GetMethod("ResolveBranchIdAsync",
             BindingFlags.NonPublic | BindingFlags.Instance);
@@ -409,14 +409,14 @@ public class TechnicalDebtCleanupTests
 
         // Use non-admin user with null branch
         var nonAdminNoBranch = CreateNonAdminUserWithoutBranch();
-        var financeService = new Mock<IFinanceService>().Object;
+        var supplierRefundService = new Mock<ISupplierRefundService>().Object;
         var audit = new Mock<IAuditService>().Object;
 
         // FIN-PERM (Sprint 3): grant finance.expenses so the 403 under test comes from the
         // branch guard (no/empty branch), not the new granular permission gate.
         db.RolePermissions.Add(new RolePermission { Role = "Accountant", Resource = "finance.expenses", CanView = true, CanCreate = true, CanEdit = true, CanApprove = true, CanDelete = true });
         await db.SaveChangesAsync();
-        var controller = new FinanceV3SuppliersController(db, financeService, nonAdminNoBranch, audit);
+        var controller = new FinanceV3SuppliersController(db, supplierRefundService, nonAdminNoBranch, audit);
 
         var request = new CreateCreditNoteRequest
         {
@@ -465,14 +465,14 @@ public class TechnicalDebtCleanupTests
         await db.SaveChangesAsync();
 
         var nonAdminEmptyBranch = CreateNonAdminUserWithEmptyBranch();
-        var financeService = new Mock<IFinanceService>().Object;
+        var supplierRefundService = new Mock<ISupplierRefundService>().Object;
         var audit = new Mock<IAuditService>().Object;
 
         // FIN-PERM (Sprint 3): grant finance.expenses so the 403 under test comes from the
         // branch guard (no/empty branch), not the new granular permission gate.
         db.RolePermissions.Add(new RolePermission { Role = "Accountant", Resource = "finance.expenses", CanView = true, CanCreate = true, CanEdit = true, CanApprove = true, CanDelete = true });
         await db.SaveChangesAsync();
-        var controller = new FinanceV3SuppliersController(db, financeService, nonAdminEmptyBranch, audit);
+        var controller = new FinanceV3SuppliersController(db, supplierRefundService, nonAdminEmptyBranch, audit);
 
         var request = new CreateCreditNoteRequest
         {

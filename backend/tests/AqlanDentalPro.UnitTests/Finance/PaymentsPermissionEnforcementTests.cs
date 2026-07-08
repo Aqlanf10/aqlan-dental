@@ -55,10 +55,10 @@ public class PaymentsPermissionEnforcementTests
         db.SaveChanges();
     }
 
-    private static (PaymentsController controller, Mock<IFinanceService> finance, Mock<IFinanceReadService> financeRead, Mock<IPdfService> pdf)
+    private static (PaymentsController controller, Mock<IPaymentService> finance, Mock<IFinanceReadService> financeRead, Mock<IPdfService> pdf)
         Build(AppDbContext db, ICurrentUserService user)
     {
-        var finance = new Mock<IFinanceService>();
+        var finance = new Mock<IPaymentService>();
         var financeRead = new Mock<IFinanceReadService>();
         var pdf = new Mock<IPdfService>();
         var audit = new Mock<IAuditService>();

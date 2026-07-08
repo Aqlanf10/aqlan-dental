@@ -276,7 +276,11 @@ public class DuplicateSessionAndStableLockKeyTests
         var financeFiles = new[]
         {
             "backend/src/AqlanDentalPro.Infrastructure/Services/JournalEntryService.cs",
-            "backend/src/AqlanDentalPro.Infrastructure/Services/FinanceService.cs",
+            // TD-021 A4: FinanceService was decomposed — the invariant now covers its successors.
+            "backend/src/AqlanDentalPro.Infrastructure/Services/PaymentService.cs",
+            "backend/src/AqlanDentalPro.Infrastructure/Services/SupplierRefundService.cs",
+            "backend/src/AqlanDentalPro.Infrastructure/Services/ContractService.cs",
+            "backend/src/AqlanDentalPro.Infrastructure/Services/FinanceLedgerWriter.cs",
             "backend/src/AqlanDentalPro.Infrastructure/Services/CommissionService.cs",
             "backend/src/AqlanDentalPro.API/Controllers/InvoicesController.cs",
             "backend/src/AqlanDentalPro.API/Controllers/OperationalExpensesController.cs",

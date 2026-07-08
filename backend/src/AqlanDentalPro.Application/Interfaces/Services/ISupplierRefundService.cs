@@ -4,7 +4,7 @@ namespace AqlanDentalPro.Application.Interfaces.Services;
 
 /// <summary>
 /// Supplier-payables / credit-note refund service — extracted from
-/// <see cref="IFinanceService"/> as part of TD-021 PR A4 (slice 3).
+/// the former IFinanceService as part of TD-021 PR A4 (slice 3).
 /// </summary>
 public interface ISupplierRefundService
 {

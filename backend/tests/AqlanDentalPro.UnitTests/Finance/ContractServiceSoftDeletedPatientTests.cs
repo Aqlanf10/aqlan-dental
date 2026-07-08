@@ -39,7 +39,10 @@ public class ContractServiceSoftDeletedPatientTests
         var currentUser = new Mock<AqlanDentalPro.Application.Interfaces.Services.ICurrentUserService>();
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
         currentUser.SetupGet(c => c.BranchId).Returns((Guid?)null);
-        return new ContractService(db, currentUser.Object);
+        return new ContractService(db, currentUser.Object,
+            new Mock<Microsoft.Extensions.Logging.ILogger<ContractService>>().Object,
+            new Mock<AqlanDentalPro.Application.Interfaces.Services.IJournalEntryService>().Object,
+            new Mock<AqlanDentalPro.Application.Interfaces.Services.IPaymentService>().Object);
     }
 
     [Fact]

@@ -39,10 +39,9 @@ public class PatientFinanceLedgerTests
         return mock.Object;
     }
 
-    private static (FinanceService service, PaymentService payments) CreateFinanceService(AppDbContext db, ICurrentUserService currentUser)
+    private static (ContractService service, PaymentService payments) CreateFinanceService(AppDbContext db, ICurrentUserService currentUser)
     {
         var notifications = new Mock<INotificationService>().Object;
-        var logger = new Mock<ILogger<FinanceService>>().Object;
         var commissionService = new Mock<ICommissionService>().Object;
 
         // Mock IJournalEntryService — DualWritePaymentEntryAsync calls CreateEntryAsync
@@ -112,7 +111,7 @@ public class PatientFinanceLedgerTests
             });
 
         var payments = new PaymentService(db, currentUser, notifications, new Mock<ILogger<PaymentService>>().Object, commissionService, journalEntryServiceMock.Object);
-        var service = new FinanceService(db, currentUser, new Mock<ILogger<FinanceService>>().Object, journalEntryServiceMock.Object, new ContractService(db, currentUser), payments);
+        var service = new ContractService(db, currentUser, new Mock<ILogger<ContractService>>().Object, journalEntryServiceMock.Object, payments);
         return (service, payments);
     }
 

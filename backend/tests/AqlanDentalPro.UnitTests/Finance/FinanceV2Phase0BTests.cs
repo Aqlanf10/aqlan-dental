@@ -69,7 +69,7 @@ public class FinanceV2Phase0BTests
         return session;
     }
 
-    private static (FinanceService service, PaymentService payments, ContractService contractService, Guid branchId, Guid cashierId) CreateService(AppDbContext db)
+    private static (ContractService service, PaymentService payments, ContractService contractService, Guid branchId, Guid cashierId) CreateService(AppDbContext db)
     {
         var (branchId, cashierId) = SeedBranchAndUser(db);
 
@@ -79,7 +79,6 @@ public class FinanceV2Phase0BTests
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
 
         var notifications = new Mock<INotificationService>();
-        var logger = new Mock<ILogger<FinanceService>>();
         var commissionService = new Mock<ICommissionService>();
 
         var journalEntryService = new Mock<IJournalEntryService>();
@@ -154,11 +153,10 @@ public class FinanceV2Phase0BTests
 
         // TD-021 PR A3: ContractService extracted from FinanceService — extract the instance
         // so tests that call UpdateContractAsync can use it directly.
-        var contractService = new ContractService(db, currentUser.Object);
         var payments = new PaymentService(db, currentUser.Object, notifications.Object, new Mock<ILogger<PaymentService>>().Object, commissionService.Object, journalEntryService.Object);
-        var service = new FinanceService(db, currentUser.Object, new Mock<ILogger<FinanceService>>().Object, journalEntryService.Object, contractService, payments);
+        var contractService = new ContractService(db, currentUser.Object, new Mock<ILogger<ContractService>>().Object, journalEntryService.Object, payments);
 
-        return (service, payments, contractService, branchId, cashierId);
+        return (contractService, payments, contractService, branchId, cashierId);
     }
 
     private static Patient SeedPatient(AppDbContext db, Guid branchId)
@@ -390,7 +388,6 @@ public class FinanceV2Phase0BTests
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
 
         var notifications = new Mock<INotificationService>();
-        var logger = new Mock<ILogger<FinanceService>>();
         var commissionService = new Mock<ICommissionService>();
 
         var journalEntryService = new Mock<IJournalEntryService>();

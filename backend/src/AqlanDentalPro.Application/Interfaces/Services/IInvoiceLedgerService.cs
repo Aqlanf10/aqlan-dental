@@ -1,7 +1,7 @@
 namespace AqlanDentalPro.Application.Interfaces.Services;
 
 /// <summary>
-/// Invoice-ledger posting service — extracted from <see cref="IFinanceService"/> as part of
+/// Invoice-ledger posting service — extracted from the former IFinanceService as part of
 /// TD-021 PR A1 (god-service extraction). Owns the accrual journal entries that mirror
 /// invoice state changes (Draft → Issued → Cancelled).
 ///

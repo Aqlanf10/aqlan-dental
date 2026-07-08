@@ -12,7 +12,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/contracts")]
 [Authorize(Policy = "FinanceAccess")]
-public class ContractsController(IFinanceService service, IContractService contractService, FinanceSettingsReader financeSettings, AppDbContext db, ICurrentUserService currentUser) : ControllerBase
+public class ContractsController(IContractService contractService, FinanceSettingsReader financeSettings, AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
     // FIN-PERM: the class-level FinanceAccess policy (Admin + Reception + Accountant)
     // is the coarse gate; the granular finance.contracts permission (RolePermissions,
@@ -62,7 +62,7 @@ public class ContractsController(IFinanceService service, IContractService contr
         var maxError = await ValidateMaxDiscountAsync(req.TotalAmount, req.DiscountAmount);
         if (maxError is not null) return maxError;
 
-        var result = await service.CreateContractAsync(req);
+        var result = await contractService.CreateContractAsync(req);
         return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
     }
 
@@ -98,7 +98,7 @@ public class ContractsController(IFinanceService service, IContractService contr
         if (!allowed.Contains(body.Status))
             return BadRequest(new { message = "الحالة غير صالحة — القيم المسموحة: active، completed، cancelled" });
 
-        var result = await service.UpdateContractStatusAsync(id, body.Status);
+        var result = await contractService.UpdateContractStatusAsync(id, body.Status);
         if (result == null) return NotFound(new { message = "العقد غير موجود" });
         return Ok(result);
     }

@@ -156,7 +156,7 @@ public class HotfixCashFlowCategoryAndNotificationTests
         return mock;
     }
 
-    private static (FinanceService service, PaymentService payments, Guid branchId, Guid cashierId, Mock<INotificationService> notifications, Mock<ILogger<PaymentService>> logger) CreateServiceWithMocks(
+    private static (ContractService service, PaymentService payments, Guid branchId, Guid cashierId, Mock<INotificationService> notifications, Mock<ILogger<PaymentService>> logger) CreateServiceWithMocks(
         AppDbContext db)
     {
         var (branchId, cashierId) = SeedBranchAndUser(db);
@@ -172,7 +172,7 @@ public class HotfixCashFlowCategoryAndNotificationTests
         var journalEntryService = CreateDefaultJournalEntryServiceMock();
 
         var payments = new PaymentService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
-        var service = new FinanceService(db, currentUser.Object, new Mock<ILogger<FinanceService>>().Object, journalEntryService.Object, new ContractService(db, currentUser.Object), payments);
+        var service = new ContractService(db, currentUser.Object, new Mock<ILogger<ContractService>>().Object, journalEntryService.Object, payments);
 
         return (service, payments, branchId, cashierId, notifications, logger);
     }

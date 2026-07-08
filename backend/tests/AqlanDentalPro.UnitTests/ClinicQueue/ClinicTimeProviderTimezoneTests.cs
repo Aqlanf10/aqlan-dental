@@ -123,7 +123,8 @@ public class ClinicTimeProviderTimezoneTests
             "the new pattern returns the Yemen date (July 16)");
 
         // The difference is exactly 1 day at this boundary
-        (newClinicDate - oldUtcDate).Days.Should().Be(1,
+        // DateOnly doesn't support the '-' operator in .NET 8, so use DayNumber
+        (newClinicDate.DayNumber - oldUtcDate.DayNumber).Should().Be(1,
             "at 22:00 UTC, the clinic date is 1 day ahead of the UTC date");
     }
 

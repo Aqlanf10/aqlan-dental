@@ -79,6 +79,9 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { path: '/lab', allowedRoles: ['Admin', 'Reception', 'Orthodontist', 'GeneralDentist', 'OralSurgeon', 'Assistant', 'BranchManager'] },
   { path: '/doctors', allowedRoles: ['Admin'] },
   { path: '/hr', allowedRoles: ['Admin'] },
+  // SEQ-03: /users is a redirect stub → /settings?tab=permissions (user management
+  // lives in the settings hub). Explicit entry per the default-deny rule below.
+  { path: '/users', allowedRoles: ['Admin'] },
   // More specific path first: isRouteAllowed matches exact paths or child routes, so
   // '/appointments/recall' must precede '/appointments' (Reception needs access here)
   { path: '/appointments/recall', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },

@@ -4,6 +4,8 @@
 
 Evidence: `UserRole.cs`, `AuthorizationPolicyConfiguration.cs`, `PermissionGuard.cs`, `RolePermission`, `AuthController.cs`, `UsersController.cs`, `frontend/src/hooks/usePermissions.ts`, `frontend/src/lib/routePermissions.ts`, auth/authorization tests.
 
+Admin UI (SEQ-03): user and role management lives in the unified settings hub — `settings/page.tsx` permissions tab (`UsersTab` + `RolesTab`), deep-linkable as `/settings?tab=permissions`. The legacy paths `/settings/users`, `/settings/permissions`, and `/users` are Admin-only redirect stubs to that tab (they used to 404 — QA4-03).
+
 - `PERM-REQ-001`: Backend authorization SHALL be authoritative.
 - `PERM-REQ-002`: Frontend route permissions SHALL align with backend policies.
 - `PERM-REQ-003`: Role permissions SHALL not be hardcoded when `RolePermissions` owns the rule.

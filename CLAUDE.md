@@ -4,6 +4,11 @@
 
 Before any code or behavior change, read and follow:
 
+- **`docs/governance/MANDATORY_SPRINT_QUEUE.md` — read this FIRST.** It is the single
+  binding, ordered backlog. Find the first not-done item and work on ONLY that item,
+  regardless of which agent/model/session executes the work — no skipping ahead
+  except the narrow exceptions the file itself defines (P0 production incidents,
+  read-only audits, finishing an already-open PR, merge-conflict fixes).
 - `.specify/constitution.md`
 - `.specify/agent-policy.md`
 - `.specify/model-routing-policy.md`
@@ -55,5 +60,6 @@ No implementation without a linked spec ID. If the requested feature has no spec
 
 ## مراجع التدقيق والخارطة
 
-- التدقيق الكامل والديون الفنية والخارطة: `docs/agent-audit/` (آخر تحديث 2026-06-12).
-- أولويات السبرنتات القادمة: أمان جلسات بوابة المرضى ← تعيينات غرف الأطباء ← شاشة إعدادات موحدة ← تحسين العمليات اليومية لتقليل الزحمة ← وحدة تقويم محسّنة (الأهم للمالك) ← تنبيهات تأخر التراكيب.
+- **ترتيب العمل الإلزامي (الحالي، الملزم لكل وكيل):** `docs/governance/MANDATORY_SPRINT_QUEUE.md` — هذا هو الترتيب الوحيد المعتمد. لا تتبع أي ترتيب سبرنتات مذكور في مستندات أخرى (بما فيها السطر السابق في هذا الملف والذي أُبقي أدناه كسجل تاريخي فقط).
+- التدقيق الكامل والديون الفنية والخارطة (مؤرشف — سجل تاريخي، ليس مصدر ترتيب): `docs/agent-audit/` (آخر تحديث 2026-06-12)، `docs/technical-debt-register.md`.
+- ~~أولويات السبرنتات القادمة (سطر تاريخي مؤرشف — استُبدل بـ`MANDATORY_SPRINT_QUEUE.md` أعلاه): أمان جلسات بوابة المرضى ← تعيينات غرف الأطباء ← شاشة إعدادات موحدة ← تحسين العمليات اليومية لتقليل الزحمة ← وحدة تقويم محسّنة ← تنبيهات تأخر التراكيب.~~

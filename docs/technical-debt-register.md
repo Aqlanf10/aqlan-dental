@@ -1,5 +1,9 @@
 # Technical Debt Register — Aqlan Dental Pro
 
+> **مؤرشف (سجل تاريخي فقط).** لا يُستخدم هذا الملف لتحديد ترتيب العمل بعد الآن.
+> الطابور الملزم الحالي هو `docs/governance/MANDATORY_SPRINT_QUEUE.md` — اقرأه أولًا.
+> هذا الملف من حقبة Sprint 7/8A (قديم) وبقي هنا فقط كسجل تاريخي لما أُنجز وقتها.
+
 | ID | Title | Priority | Added | Status |
 |----|-------|----------|-------|--------|
 | TD-001 | Pre-existing broken test files (renamed to `.disabled`) | Medium | PR #68 | Open |

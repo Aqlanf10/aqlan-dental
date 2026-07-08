@@ -309,7 +309,7 @@ public class JourneyUpdatedSignalRTests
         var paymentId = Guid.NewGuid();
         var invoiceId = Guid.NewGuid();
 
-        var finance = new Mock<IFinanceService>();
+        var finance = new Mock<IPaymentService>();
         finance.Setup(f => f.CreatePaymentAsync(It.IsAny<CreatePaymentRequest>()))
             .ReturnsAsync(new PaymentDto
             {

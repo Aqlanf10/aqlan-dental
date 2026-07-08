@@ -31,15 +31,6 @@ public class FIN13SqlAggregationTests
         return mock.Object;
     }
 
-    private static FinanceService CreateFinanceService(AppDbContext db, ICurrentUserService currentUser)
-    {
-        var notifications = new Mock<INotificationService>().Object;
-        var logger = new Mock<ILogger<FinanceService>>().Object;
-        var commissionService = new Mock<ICommissionService>().Object;
-        var journalEntryServiceMock = new Mock<IJournalEntryService>();
-        return new FinanceService(db, currentUser, notifications, logger, commissionService, journalEntryServiceMock.Object, new ContractService(db, currentUser));
-    }
-
     /// <summary>
     /// TD-021 PR A2: read-side finance service extracted from FinanceService.
     /// Used by tests that call GetPatientFinanceSummaryAsync, GetAccountStatementAsync,
@@ -74,7 +65,6 @@ public class FIN13SqlAggregationTests
     {
         await using var db = CreateDb();
         var (branchId, patientId, userId, currentUser) = SeedPatient(db);
-        var service = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
 
@@ -141,7 +131,6 @@ public class FIN13SqlAggregationTests
     {
         await using var db = CreateDb();
         var (_, patientId, _, currentUser) = SeedPatient(db);
-        var service = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
         await db.SaveChangesAsync();
@@ -166,7 +155,6 @@ public class FIN13SqlAggregationTests
     {
         await using var db = CreateDb();
         var (branchId, patientId, userId, currentUser) = SeedPatient(db);
-        var service = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
 
@@ -208,7 +196,6 @@ public class FIN13SqlAggregationTests
     {
         await using var db = CreateDb();
         var (_, patientId, _, currentUser) = SeedPatient(db);
-        var service = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
         await db.SaveChangesAsync();
@@ -233,7 +220,6 @@ public class FIN13SqlAggregationTests
     {
         await using var db = CreateDb();
         var (branchId, patientId, userId, currentUser) = SeedPatient(db);
-        var service = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
 
@@ -272,7 +258,6 @@ public class FIN13SqlAggregationTests
     {
         await using var db = CreateDb();
         var (_, _, _, currentUser) = SeedPatient(db);
-        var service = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
         await db.SaveChangesAsync();
@@ -289,7 +274,6 @@ public class FIN13SqlAggregationTests
     {
         await using var db = CreateDb();
         var (_, _, _, currentUser) = SeedPatient(db);
-        var service = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
         await db.SaveChangesAsync();

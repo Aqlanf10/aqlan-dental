@@ -77,7 +77,7 @@ public class ContractCancellationAtomicityTests
         return patient;
     }
 
-    private static (FinanceService service, Guid branchId, Guid cashierId) CreateService(
+    private static (FinanceService service, PaymentService payments, Guid branchId, Guid cashierId) CreateService(
         AppDbContext db,
         Mock<IJournalEntryService>? journalEntryServiceOverride = null)
     {
@@ -94,9 +94,10 @@ public class ContractCancellationAtomicityTests
 
         var journalEntryService = journalEntryServiceOverride ?? CreateDefaultJournalEntryServiceMock();
 
-        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object, new ContractService(db, currentUser.Object));
+        var payments = new PaymentService(db, currentUser.Object, notifications.Object, new Mock<ILogger<PaymentService>>().Object, commissionService.Object, journalEntryService.Object);
+        var service = new FinanceService(db, currentUser.Object, logger.Object, journalEntryService.Object, new ContractService(db, currentUser.Object), payments);
 
-        return (service, branchId, cashierId);
+        return (service, payments, branchId, cashierId);
     }
 
     private static Mock<IJournalEntryService> CreateDefaultJournalEntryServiceMock()
@@ -180,7 +181,7 @@ public class ContractCancellationAtomicityTests
     public async Task CancelContract_WithActivePayments_UpdatesAllFinancialStateAtomically()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, payments, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -247,7 +248,7 @@ public class ContractCancellationAtomicityTests
     public async Task CancelContract_WithMultiplePayments_ReversesAllTreasuryAndCashFlows()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, payments, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -262,7 +263,7 @@ public class ContractCancellationAtomicityTests
         });
 
         // Add another payment to the contract
-        await service.CreatePaymentAsync(new CreatePaymentRequest
+        await payments.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             ContractId = contractDto.Id,
@@ -300,7 +301,7 @@ public class ContractCancellationAtomicityTests
     public async Task CancelContract_WithNoPayments_UpdatesStatusOnly()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, payments, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
 
         // Create contract without down payment
@@ -327,7 +328,7 @@ public class ContractCancellationAtomicityTests
     public async Task UpdateContractStatus_ToCompleted_SavesNormally()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, payments, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
 
         var contractDto = await service.CreateContractAsync(new CreateContractRequest
@@ -354,12 +355,12 @@ public class ContractCancellationAtomicityTests
     public async Task CreatePaymentAsync_StillWorksAfterAtomicityFix()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, payments, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
         // Create a standalone payment (not linked to contract)
-        var paymentDto = await service.CreatePaymentAsync(new CreatePaymentRequest
+        var paymentDto = await payments.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             Amount = 5_000m,
@@ -388,12 +389,12 @@ public class ContractCancellationAtomicityTests
     public async Task DeletePaymentAsync_StillWorksAfterAtomicityFix()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, payments, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
         // Create payment
-        var paymentDto = await service.CreatePaymentAsync(new CreatePaymentRequest
+        var paymentDto = await payments.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             Amount = 5_000m,
@@ -402,7 +403,7 @@ public class ContractCancellationAtomicityTests
         });
 
         // Delete payment
-        var result = await service.DeletePaymentAsync(paymentDto.Id);
+        var result = await payments.DeletePaymentAsync(paymentDto.Id);
 
         result.Should().BeTrue();
 
@@ -429,7 +430,7 @@ public class ContractCancellationAtomicityTests
     public async Task CancelContract_AllFinancialChangesPersistedTogether()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, payments, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -479,7 +480,7 @@ public class ContractCancellationAtomicityTests
     public async Task CancelContract_GracefullyHandlesMissingJournalEntries()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId) = CreateService(db);
+        var (service, payments, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 

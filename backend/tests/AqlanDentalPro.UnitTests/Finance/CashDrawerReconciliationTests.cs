@@ -603,7 +603,7 @@ public class CashDrawerReconciliationTests
         currentUserNoBranch.SetupGet(c => c.IsAdmin).Returns(true);
 
         var notifications = new Mock<INotificationService>();
-        var logger = new Mock<ILogger<FinanceService>>();
+        var logger = new Mock<ILogger<PaymentService>>();
         var commissionService = new Mock<ICommissionService>();
 
         var journalEntryService = new Mock<IJournalEntryService>();
@@ -676,7 +676,7 @@ public class CashDrawerReconciliationTests
                 };
             });
 
-        var service = new FinanceService(db, currentUserNoBranch.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object, new ContractService(db, currentUserNoBranch.Object));
+        var service = new PaymentService(db, currentUserNoBranch.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
 
         var patientId = Guid.NewGuid();
         db.Patients.Add(new Patient
@@ -734,7 +734,7 @@ public class CashDrawerReconciliationTests
         currentUserEmptyBranch.SetupGet(c => c.IsAdmin).Returns(false);
 
         var notifications = new Mock<INotificationService>();
-        var logger = new Mock<ILogger<FinanceService>>();
+        var logger = new Mock<ILogger<PaymentService>>();
         var commissionService = new Mock<ICommissionService>();
 
         var journalEntryService = new Mock<IJournalEntryService>();
@@ -807,7 +807,7 @@ public class CashDrawerReconciliationTests
                 };
             });
 
-        var service = new FinanceService(db, currentUserEmptyBranch.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object, new ContractService(db, currentUserEmptyBranch.Object));
+        var service = new PaymentService(db, currentUserEmptyBranch.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
 
         var act = () => service.RefundPaymentAsync(paymentId, "test refund");
 

@@ -23,7 +23,7 @@ public class TreasuryVaultTests
         return new AppDbContext(options);
     }
 
-    private static FinanceService CreateService(AppDbContext db, Guid userId, Guid branchId)
+    private static PaymentService CreateService(AppDbContext db, Guid userId, Guid branchId)
     {
         var currentUser = new Mock<ICurrentUserService>();
         currentUser.SetupGet(c => c.UserId).Returns(userId);
@@ -31,7 +31,7 @@ public class TreasuryVaultTests
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
 
         var notifications = new Mock<INotificationService>();
-        var logger = new Mock<ILogger<FinanceService>>();
+        var logger = new Mock<ILogger<PaymentService>>();
         var commissionService = new Mock<ICommissionService>();
 
         var journalEntryService = new Mock<IJournalEntryService>();
@@ -103,7 +103,7 @@ public class TreasuryVaultTests
                 };
             });
 
-        return new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object, new ContractService(db, currentUser.Object));
+        return new PaymentService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
     }
 
     [Fact]

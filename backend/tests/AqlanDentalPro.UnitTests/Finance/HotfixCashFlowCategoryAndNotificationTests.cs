@@ -156,7 +156,7 @@ public class HotfixCashFlowCategoryAndNotificationTests
         return mock;
     }
 
-    private static (FinanceService service, Guid branchId, Guid cashierId, Mock<INotificationService> notifications, Mock<ILogger<FinanceService>> logger) CreateServiceWithMocks(
+    private static (FinanceService service, PaymentService payments, Guid branchId, Guid cashierId, Mock<INotificationService> notifications, Mock<ILogger<PaymentService>> logger) CreateServiceWithMocks(
         AppDbContext db)
     {
         var (branchId, cashierId) = SeedBranchAndUser(db);
@@ -167,13 +167,14 @@ public class HotfixCashFlowCategoryAndNotificationTests
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
 
         var notifications = new Mock<INotificationService>();
-        var logger = new Mock<ILogger<FinanceService>>();
+        var logger = new Mock<ILogger<PaymentService>>();
         var commissionService = new Mock<ICommissionService>();
         var journalEntryService = CreateDefaultJournalEntryServiceMock();
 
-        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object, new ContractService(db, currentUser.Object));
+        var payments = new PaymentService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
+        var service = new FinanceService(db, currentUser.Object, new Mock<ILogger<FinanceService>>().Object, journalEntryService.Object, new ContractService(db, currentUser.Object), payments);
 
-        return (service, branchId, cashierId, notifications, logger);
+        return (service, payments, branchId, cashierId, notifications, logger);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -184,12 +185,12 @@ public class HotfixCashFlowCategoryAndNotificationTests
     public async Task CashFlowTransaction_CategoryQuery_ByFinancialCategoryEnum_Works()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId, _, _) = CreateServiceWithMocks(db);
+        var (service, payments, branchId, cashierId, _, _) = CreateServiceWithMocks(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
         // Create a payment which should create a CashFlowTransaction with Category = PatientPayment
-        var paymentDto = await service.CreatePaymentAsync(new CreatePaymentRequest
+        var paymentDto = await payments.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             Amount = 10_000m,
@@ -216,7 +217,7 @@ public class HotfixCashFlowCategoryAndNotificationTests
     public async Task CashFlowTransaction_ReversalCategoryQuery_Works()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId, _, _) = CreateServiceWithMocks(db);
+        var (service, payments, branchId, cashierId, _, _) = CreateServiceWithMocks(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -250,7 +251,7 @@ public class HotfixCashFlowCategoryAndNotificationTests
     public async Task CancelContract_WithActivePayment_RevertsTreasuryAndCreatesCashFlowReversal()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId, _, _) = CreateServiceWithMocks(db);
+        var (service, payments, branchId, cashierId, _, _) = CreateServiceWithMocks(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -315,12 +316,12 @@ public class HotfixCashFlowCategoryAndNotificationTests
     public async Task DeletePayment_ReversesTreasuryAndCreatesCashFlowReversal()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId, _, _) = CreateServiceWithMocks(db);
+        var (service, payments, branchId, cashierId, _, _) = CreateServiceWithMocks(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
         // Create a standalone payment
-        var paymentDto = await service.CreatePaymentAsync(new CreatePaymentRequest
+        var paymentDto = await payments.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             Amount = 7_500m,
@@ -334,7 +335,7 @@ public class HotfixCashFlowCategoryAndNotificationTests
         treasuryBefore!.Balance.Should().Be(7_500m);
 
         // Act: Delete the payment
-        var result = await service.DeletePaymentAsync(paymentDto.Id);
+        var result = await payments.DeletePaymentAsync(paymentDto.Id);
 
         // Assert: Payment deleted successfully
         result.Should().BeTrue();
@@ -368,7 +369,7 @@ public class HotfixCashFlowCategoryAndNotificationTests
     public async Task CreatePayment_NotificationFailure_DoesNotFailPayment()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId, notifications, logger) = CreateServiceWithMocks(db);
+        var (service, payments, branchId, cashierId, notifications, logger) = CreateServiceWithMocks(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -379,7 +380,7 @@ public class HotfixCashFlowCategoryAndNotificationTests
             .ThrowsAsync(new Exception("Notification service unavailable"));
 
         // Act: Create payment — should succeed even though notification fails
-        var paymentDto = await service.CreatePaymentAsync(new CreatePaymentRequest
+        var paymentDto = await payments.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             Amount = 5_000m,
@@ -424,7 +425,7 @@ public class HotfixCashFlowCategoryAndNotificationTests
     public async Task CreatePayment_SuccessfulNotification_DoesNotThrow()
     {
         await using var db = CreateContext();
-        var (service, branchId, cashierId, notifications, _) = CreateServiceWithMocks(db);
+        var (service, payments, branchId, cashierId, notifications, _) = CreateServiceWithMocks(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -435,7 +436,7 @@ public class HotfixCashFlowCategoryAndNotificationTests
             .Returns(Task.CompletedTask);
 
         // Act: Create payment — notification should be awaited without issues
-        var paymentDto = await service.CreatePaymentAsync(new CreatePaymentRequest
+        var paymentDto = await payments.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             Amount = 3_000m,
@@ -472,7 +473,7 @@ public class HotfixCashFlowCategoryAndNotificationTests
         // the method doesn't return until the notification is complete.
 
         await using var db = CreateContext();
-        var (service, branchId, cashierId, notifications, _) = CreateServiceWithMocks(db);
+        var (service, payments, branchId, cashierId, notifications, _) = CreateServiceWithMocks(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -485,7 +486,7 @@ public class HotfixCashFlowCategoryAndNotificationTests
             .Returns(Task.CompletedTask);
 
         // Act
-        var paymentDto = await service.CreatePaymentAsync(new CreatePaymentRequest
+        var paymentDto = await payments.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             Amount = 2_000m,

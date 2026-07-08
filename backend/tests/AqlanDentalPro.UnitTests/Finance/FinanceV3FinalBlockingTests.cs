@@ -77,7 +77,7 @@ public class FinanceV3FinalBlockingTests
         return session;
     }
 
-    private static (FinanceService service, Guid branchId, Guid cashierId) CreateFinanceService(AppDbContext db)
+    private static (PaymentService service, Guid branchId, Guid cashierId) CreateFinanceService(AppDbContext db)
     {
         var (branchId, cashierId) = SeedBranchAndUser(db);
 
@@ -87,11 +87,11 @@ public class FinanceV3FinalBlockingTests
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
 
         var notifications = new Mock<INotificationService>();
-        var logger = new Mock<ILogger<FinanceService>>();
+        var logger = new Mock<ILogger<PaymentService>>();
         var commissionService = new Mock<ICommissionService>();
 
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
-        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService, new ContractService(db, currentUser.Object));
+        var service = new PaymentService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService);
 
         return (service, branchId, cashierId);
     }
@@ -1100,12 +1100,12 @@ public class FinanceV3FinalBlockingTests
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
 
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
-        var service = new FinanceService(
+        var service = new PaymentService(
             db, currentUser.Object,
             new Mock<INotificationService>().Object,
-            new Mock<ILogger<FinanceService>>().Object,
+            new Mock<ILogger<PaymentService>>().Object,
             new Mock<ICommissionService>().Object,
-            journalEntryService, new ContractService(db, currentUser.Object));
+            journalEntryService);
 
         var patient = SeedPatient(db, branchId);
         CreateOpenSession(db, cashierId, branchId);
@@ -1147,12 +1147,12 @@ public class FinanceV3FinalBlockingTests
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
 
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
-        var service = new FinanceService(
+        var service = new PaymentService(
             db, currentUser.Object,
             new Mock<INotificationService>().Object,
-            new Mock<ILogger<FinanceService>>().Object,
+            new Mock<ILogger<PaymentService>>().Object,
             new Mock<ICommissionService>().Object,
-            journalEntryService, new ContractService(db, currentUser.Object));
+            journalEntryService);
 
         var patient = SeedPatient(db, branchId);
         CreateOpenSession(db, cashierId, branchId);

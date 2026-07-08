@@ -69,7 +69,7 @@ public class FinanceV2Phase0BTests
         return session;
     }
 
-    private static (FinanceService service, ContractService contractService, Guid branchId, Guid cashierId) CreateService(AppDbContext db)
+    private static (FinanceService service, PaymentService payments, ContractService contractService, Guid branchId, Guid cashierId) CreateService(AppDbContext db)
     {
         var (branchId, cashierId) = SeedBranchAndUser(db);
 
@@ -155,9 +155,10 @@ public class FinanceV2Phase0BTests
         // TD-021 PR A3: ContractService extracted from FinanceService — extract the instance
         // so tests that call UpdateContractAsync can use it directly.
         var contractService = new ContractService(db, currentUser.Object);
-        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object, contractService);
+        var payments = new PaymentService(db, currentUser.Object, notifications.Object, new Mock<ILogger<PaymentService>>().Object, commissionService.Object, journalEntryService.Object);
+        var service = new FinanceService(db, currentUser.Object, new Mock<ILogger<FinanceService>>().Object, journalEntryService.Object, contractService, payments);
 
-        return (service, contractService, branchId, cashierId);
+        return (service, payments, contractService, branchId, cashierId);
     }
 
     private static Patient SeedPatient(AppDbContext db, Guid branchId)
@@ -181,12 +182,12 @@ public class FinanceV2Phase0BTests
     public async Task UpdatePaymentAsync_ChangeAmount_ThrowsArgumentException()
     {
         await using var db = CreateContext();
-        var (service, contractService, branchId, cashierId) = CreateService(db);
+        var (service, payments, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
         // Create a payment via the service so all linked records are set up
-        var paymentDto = await service.CreatePaymentAsync(new CreatePaymentRequest
+        var paymentDto = await payments.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             Amount = 10_000m,
@@ -195,7 +196,7 @@ public class FinanceV2Phase0BTests
         });
 
         // Attempt to update the Amount — should throw
-        var act = () => service.UpdatePaymentAsync(paymentDto.Id, new UpdatePaymentRequest
+        var act = () => payments.UpdatePaymentAsync(paymentDto.Id, new UpdatePaymentRequest
         {
             Amount = 20_000m  // different from original 10,000
         });
@@ -208,11 +209,11 @@ public class FinanceV2Phase0BTests
     public async Task UpdatePaymentAsync_ChangePaymentMethod_ThrowsArgumentException()
     {
         await using var db = CreateContext();
-        var (service, contractService, branchId, cashierId) = CreateService(db);
+        var (service, payments, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
-        var paymentDto = await service.CreatePaymentAsync(new CreatePaymentRequest
+        var paymentDto = await payments.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             Amount = 10_000m,
@@ -220,7 +221,7 @@ public class FinanceV2Phase0BTests
         });
 
         // Attempt to change PaymentMethod — should throw
-        var act = () => service.UpdatePaymentAsync(paymentDto.Id, new UpdatePaymentRequest
+        var act = () => payments.UpdatePaymentAsync(paymentDto.Id, new UpdatePaymentRequest
         {
             PaymentMethod = "card"  // different from "cash"
         });
@@ -233,11 +234,11 @@ public class FinanceV2Phase0BTests
     public async Task UpdatePaymentAsync_ChangePaymentDate_ThrowsArgumentException()
     {
         await using var db = CreateContext();
-        var (service, contractService, branchId, cashierId) = CreateService(db);
+        var (service, payments, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
-        var paymentDto = await service.CreatePaymentAsync(new CreatePaymentRequest
+        var paymentDto = await payments.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             Amount = 10_000m,
@@ -245,7 +246,7 @@ public class FinanceV2Phase0BTests
         });
 
         // Attempt to change PaymentDate — should throw
-        var act = () => service.UpdatePaymentAsync(paymentDto.Id, new UpdatePaymentRequest
+        var act = () => payments.UpdatePaymentAsync(paymentDto.Id, new UpdatePaymentRequest
         {
             PaymentDate = "2020-01-01"  // different from today
         });
@@ -258,11 +259,11 @@ public class FinanceV2Phase0BTests
     public async Task UpdatePaymentAsync_UpdateNotes_Succeeds()
     {
         await using var db = CreateContext();
-        var (service, contractService, branchId, cashierId) = CreateService(db);
+        var (service, payments, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
-        var paymentDto = await service.CreatePaymentAsync(new CreatePaymentRequest
+        var paymentDto = await payments.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             Amount = 10_000m,
@@ -270,7 +271,7 @@ public class FinanceV2Phase0BTests
         });
 
         // Update Notes — should succeed
-        var result = await service.UpdatePaymentAsync(paymentDto.Id, new UpdatePaymentRequest
+        var result = await payments.UpdatePaymentAsync(paymentDto.Id, new UpdatePaymentRequest
         {
             Notes = "ملاحظة محدثة"
         });
@@ -283,11 +284,11 @@ public class FinanceV2Phase0BTests
     public async Task UpdatePaymentAsync_UpdateServiceDescription_Succeeds()
     {
         await using var db = CreateContext();
-        var (service, contractService, branchId, cashierId) = CreateService(db);
+        var (service, payments, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
-        var paymentDto = await service.CreatePaymentAsync(new CreatePaymentRequest
+        var paymentDto = await payments.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             Amount = 10_000m,
@@ -296,7 +297,7 @@ public class FinanceV2Phase0BTests
         });
 
         // Update ServiceDescription — should succeed
-        var result = await service.UpdatePaymentAsync(paymentDto.Id, new UpdatePaymentRequest
+        var result = await payments.UpdatePaymentAsync(paymentDto.Id, new UpdatePaymentRequest
         {
             ServiceDescription = "خدمة محدثة"
         });
@@ -311,12 +312,12 @@ public class FinanceV2Phase0BTests
     public async Task DeletePaymentAsync_ClosedSession_ThrowsArgumentException()
     {
         await using var db = CreateContext();
-        var (service, contractService, branchId, cashierId) = CreateService(db);
+        var (service, payments, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
         // Create a payment (which links to the open session via CashFlowTransaction)
-        var paymentDto = await service.CreatePaymentAsync(new CreatePaymentRequest
+        var paymentDto = await payments.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             Amount = 10_000m,
@@ -329,7 +330,7 @@ public class FinanceV2Phase0BTests
         await db.SaveChangesAsync();
 
         // Attempt to delete the payment — should throw because session is closed
-        var act = () => service.DeletePaymentAsync(paymentDto.Id);
+        var act = () => payments.DeletePaymentAsync(paymentDto.Id);
 
         await act.Should().ThrowAsync<ArgumentException>()
             .WithMessage("*وردية مقفلة*");
@@ -339,12 +340,12 @@ public class FinanceV2Phase0BTests
     public async Task DeletePaymentAsync_OpenSession_Succeeds()
     {
         await using var db = CreateContext();
-        var (service, contractService, branchId, cashierId) = CreateService(db);
+        var (service, payments, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
         // Create a payment linked to the open session
-        var paymentDto = await service.CreatePaymentAsync(new CreatePaymentRequest
+        var paymentDto = await payments.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             Amount = 10_000m,
@@ -352,7 +353,7 @@ public class FinanceV2Phase0BTests
         });
 
         // Session is still open — deletion should succeed
-        var result = await service.DeletePaymentAsync(paymentDto.Id);
+        var result = await payments.DeletePaymentAsync(paymentDto.Id);
 
         result.Should().BeTrue();
 
@@ -462,10 +463,10 @@ public class FinanceV2Phase0BTests
                 };
             });
 
-        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object, new ContractService(db, currentUser.Object));
+        var payments = new PaymentService(db, currentUser.Object, notifications.Object, new Mock<ILogger<PaymentService>>().Object, commissionService.Object, journalEntryService.Object);
 
         // Deleting a payment with no linked CashFlowTransaction should succeed
-        var result = await service.DeletePaymentAsync(paymentId);
+        var result = await payments.DeletePaymentAsync(paymentId);
 
         result.Should().BeTrue();
 
@@ -480,7 +481,7 @@ public class FinanceV2Phase0BTests
     public async Task UpdateContractAsync_TotalBelowPaid_ThrowsArgumentException()
     {
         await using var db = CreateContext();
-        var (service, contractService, branchId, cashierId) = CreateService(db);
+        var (service, payments, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -510,7 +511,7 @@ public class FinanceV2Phase0BTests
     public async Task UpdateContractAsync_TotalAbovePaid_Succeeds()
     {
         await using var db = CreateContext();
-        var (service, contractService, branchId, cashierId) = CreateService(db);
+        var (service, payments, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -542,12 +543,12 @@ public class FinanceV2Phase0BTests
     public async Task CreatePaymentAsync_ZeroAmount_ThrowsArgumentException()
     {
         await using var db = CreateContext();
-        var (service, contractService, branchId, cashierId) = CreateService(db);
+        var (service, payments, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
         // Attempt to create a payment with Amount = 0
-        var act = () => service.CreatePaymentAsync(new CreatePaymentRequest
+        var act = () => payments.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             Amount = 0m,
@@ -562,12 +563,12 @@ public class FinanceV2Phase0BTests
     public async Task CreatePaymentAsync_NegativeAmount_ThrowsArgumentException()
     {
         await using var db = CreateContext();
-        var (service, contractService, branchId, cashierId) = CreateService(db);
+        var (service, payments, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
         // Attempt to create a payment with Amount < 0
-        var act = () => service.CreatePaymentAsync(new CreatePaymentRequest
+        var act = () => payments.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             Amount = -5_000m,
@@ -584,12 +585,12 @@ public class FinanceV2Phase0BTests
     public async Task RefundPaymentAsync_DoubleRefund_ThrowsArgumentException()
     {
         await using var db = CreateContext();
-        var (service, contractService, branchId, cashierId) = CreateService(db);
+        var (service, payments, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
         // Create a payment
-        var paymentDto = await service.CreatePaymentAsync(new CreatePaymentRequest
+        var paymentDto = await payments.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             Amount = 10_000m,
@@ -598,10 +599,10 @@ public class FinanceV2Phase0BTests
         });
 
         // First refund — should succeed
-        await service.RefundPaymentAsync(paymentDto.Id, "استرداد أول");
+        await payments.RefundPaymentAsync(paymentDto.Id, "استرداد أول");
 
         // Second refund of the same payment — should throw
-        var act = () => service.RefundPaymentAsync(paymentDto.Id, "استرداد ثاني");
+        var act = () => payments.RefundPaymentAsync(paymentDto.Id, "استرداد ثاني");
 
         await act.Should().ThrowAsync<ArgumentException>()
             .WithMessage("*استرداد هذه الدفعة مسبقاً*");
@@ -611,12 +612,12 @@ public class FinanceV2Phase0BTests
     public async Task RefundPaymentAsync_FirstRefund_Succeeds()
     {
         await using var db = CreateContext();
-        var (service, contractService, branchId, cashierId) = CreateService(db);
+        var (service, payments, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
         // Create a payment
-        var paymentDto = await service.CreatePaymentAsync(new CreatePaymentRequest
+        var paymentDto = await payments.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             Amount = 10_000m,
@@ -625,7 +626,7 @@ public class FinanceV2Phase0BTests
         });
 
         // First refund — should succeed
-        var result = await service.RefundPaymentAsync(paymentDto.Id, "استرداد أول");
+        var result = await payments.RefundPaymentAsync(paymentDto.Id, "استرداد أول");
 
         result.Should().NotBeNull();
         result!.Amount.Should().Be(-10_000m, "refund payment amount should be negative of original");
@@ -638,7 +639,7 @@ public class FinanceV2Phase0BTests
     public async Task CancelContract_SoftDeletesCashFlowTransactions()
     {
         await using var db = CreateContext();
-        var (service, contractService, branchId, cashierId) = CreateService(db);
+        var (service, payments, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 
@@ -689,7 +690,7 @@ public class FinanceV2Phase0BTests
     public async Task CancelContract_ReversesTreasuryBalance()
     {
         await using var db = CreateContext();
-        var (service, contractService, branchId, cashierId) = CreateService(db);
+        var (service, payments, contractService, branchId, cashierId) = CreateService(db);
         var patient = SeedPatient(db, branchId);
         var session = CreateOpenSession(db, cashierId, branchId);
 

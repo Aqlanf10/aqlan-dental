@@ -69,7 +69,7 @@ public class MultiCurrencyPaymentTests
         return session;
     }
 
-    private static (FinanceService service, FinanceReadService readService, Guid branchId, Guid cashierId) CreateService(AppDbContext db)
+    private static (PaymentService service, FinanceReadService readService, Guid branchId, Guid cashierId) CreateService(AppDbContext db)
     {
         var (branchId, cashierId) = SeedBranchAndUser(db);
 
@@ -79,7 +79,7 @@ public class MultiCurrencyPaymentTests
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
 
         var notifications = new Mock<INotificationService>();
-        var logger = new Mock<ILogger<FinanceService>>();
+        var logger = new Mock<ILogger<PaymentService>>();
         var commissionService = new Mock<ICommissionService>();
 
         var journalEntryService = new Mock<IJournalEntryService>();
@@ -149,7 +149,7 @@ public class MultiCurrencyPaymentTests
                     ReversalOfEntryId = originalId,
                 });
 
-        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object, new ContractService(db, currentUser.Object));
+        var service = new PaymentService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
         // TD-021 PR A2: read-side finance service extracted from FinanceService.
         var readService = new FinanceReadService(db, currentUser.Object);
         return (service, readService, branchId, cashierId);

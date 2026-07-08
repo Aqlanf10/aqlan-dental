@@ -35,7 +35,7 @@ namespace AqlanDentalPro.API.Controllers;
 [Authorize(Policy = "FinanceAccess")] // Admin + Accountant + Receptionist
 public class FinanceV3SuppliersController(
     AppDbContext db,
-    IFinanceService financeService,
+    ISupplierRefundService supplierRefundService,
     ICurrentUserService currentUser,
     IAuditService audit) : ControllerBase
 {
@@ -277,7 +277,7 @@ public class FinanceV3SuppliersController(
         if (!await CanAsync("approve")) return Deny();
         var userId = currentUser.UserId ?? Guid.Empty;
 
-        await financeService.PaySupplierBillAsync(billId, request, userId);
+        await supplierRefundService.PaySupplierBillAsync(billId, request, userId);
 
         await audit.LogAsync(AuditAction.Create, "SupplierBillPayment", billId,
             details: $"Bill {billId} payment of {request.Amount:N0} via FinanceV3SuppliersController");
@@ -388,7 +388,7 @@ public class FinanceV3SuppliersController(
         if (!await CanAsync("approve")) return Deny();
         var userId = currentUser.UserId ?? Guid.Empty;
 
-        await financeService.ProcessRefundAsync(creditNoteId, request, userId);
+        await supplierRefundService.ProcessRefundAsync(creditNoteId, request, userId);
 
         await audit.LogAsync(AuditAction.Create, "CreditNoteRefund", creditNoteId,
             details: $"Refund processed for credit note {creditNoteId}");

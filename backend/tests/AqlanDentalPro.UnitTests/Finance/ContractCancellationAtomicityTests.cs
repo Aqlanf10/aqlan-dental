@@ -77,7 +77,7 @@ public class ContractCancellationAtomicityTests
         return patient;
     }
 
-    private static (FinanceService service, PaymentService payments, Guid branchId, Guid cashierId) CreateService(
+    private static (ContractService service, PaymentService payments, Guid branchId, Guid cashierId) CreateService(
         AppDbContext db,
         Mock<IJournalEntryService>? journalEntryServiceOverride = null)
     {
@@ -89,13 +89,12 @@ public class ContractCancellationAtomicityTests
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
 
         var notifications = new Mock<INotificationService>();
-        var logger = new Mock<ILogger<FinanceService>>();
         var commissionService = new Mock<ICommissionService>();
 
         var journalEntryService = journalEntryServiceOverride ?? CreateDefaultJournalEntryServiceMock();
 
         var payments = new PaymentService(db, currentUser.Object, notifications.Object, new Mock<ILogger<PaymentService>>().Object, commissionService.Object, journalEntryService.Object);
-        var service = new FinanceService(db, currentUser.Object, logger.Object, journalEntryService.Object, new ContractService(db, currentUser.Object), payments);
+        var service = new ContractService(db, currentUser.Object, new Mock<ILogger<ContractService>>().Object, journalEntryService.Object, payments);
 
         return (service, payments, branchId, cashierId);
     }

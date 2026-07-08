@@ -37,10 +37,9 @@ public static class ServiceRegistrationConfiguration
         services.AddScoped<AppointmentService>();
         services.AddScoped<DashboardService>();
         services.AddScoped<OrthoService>();
-        services.AddScoped<IFinanceService, FinanceService>();
-        // TD-021 PR A4 (slices 2+3): payment cluster + supplier-payables/credit-note
-        // refunds extracted from FinanceService. FinanceService now only orchestrates
-        // the two remaining contract methods (moving to ContractService in the final slice).
+        // TD-021 PR A4: FinanceService/IFinanceService retired — the payment cluster
+        // lives in PaymentService, supplier payables/credit-note refunds in
+        // SupplierRefundService, and the contract orchestrators in ContractService.
         services.AddScoped<IPaymentService, PaymentService>();
         services.AddScoped<ISupplierRefundService, SupplierRefundService>();
         // TD-021 PR A1: invoice-ledger posting extracted from FinanceService. Self-contained
@@ -52,11 +51,9 @@ public static class ServiceRegistrationConfiguration
         // helpers (MapPayment, NormalizeCurrency) live in FinanceMappers and are used by
         // both FinanceService (write) and FinanceReadService (read).
         services.AddScoped<IFinanceReadService, FinanceReadService>();
-        // TD-021 PR A3: contract service extracted from FinanceService. Owns the clean
-        // read + write contract methods (GetContracts, GetContractById, UpdateContract).
-        // CreateContractAsync + UpdateContractStatusAsync stay in FinanceService because
-        // they depend on payment-side helpers (will move with PR A4 — PaymentService cluster).
-        // FinanceService injects IContractService for the return value of those two methods.
+        // TD-021 PR A3+A4: contract service extracted from the former FinanceService. Owns
+        // the full contracts cluster: reads, UpdateContract, CreateContract (down payment
+        // via IPaymentService), and UpdateContractStatus (cancellation reversals).
         services.AddScoped<IContractService, ContractService>();
         // FIN-SETTINGS: read helper for the finance.* Settings namespace.
         services.AddScoped<FinanceSettingsReader>();

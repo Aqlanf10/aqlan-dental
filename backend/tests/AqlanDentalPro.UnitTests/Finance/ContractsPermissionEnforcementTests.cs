@@ -52,13 +52,12 @@ public class ContractsPermissionEnforcementTests
         db.SaveChanges();
     }
 
-    private static (ContractsController controller, Mock<IFinanceService> finance, Mock<IContractService> contract) Build(AppDbContext db, ICurrentUserService user)
+    private static (ContractsController controller, Mock<IContractService> contract) Build(AppDbContext db, ICurrentUserService user)
     {
-        var finance = new Mock<IFinanceService>();
         var contract = new Mock<IContractService>();
         var controller = new ContractsController(
-            finance.Object, contract.Object, new FinanceSettingsReader(db), db, user);
-        return (controller, finance, contract);
+            contract.Object, new FinanceSettingsReader(db), db, user);
+        return (controller, contract);
     }
 
     private static int? StatusOf(IActionResult result) =>
@@ -75,7 +74,7 @@ public class ContractsPermissionEnforcementTests
     {
         await using var db = CreateDb();
         Grant(db, "Reception", view: true); // create = false
-        var (controller, finance, contract) = Build(db, User(UserRole.Reception));
+        var (controller, contract) = Build(db, User(UserRole.Reception));
 
         var result = await controller.Create(new CreateContractRequest
         {
@@ -85,7 +84,7 @@ public class ContractsPermissionEnforcementTests
 
         StatusOf(result).Should().Be(403, "Reception is not granted finance.contracts.create");
         MessageOf(result).Should().Be("غير مصرح لك بهذا الإجراء المالي");
-        finance.Verify(f => f.CreateContractAsync(It.IsAny<CreateContractRequest>()), Times.Never,
+        contract.Verify(c => c.CreateContractAsync(It.IsAny<CreateContractRequest>()), Times.Never,
             "the guard must short-circuit before any service call");
     }
 
@@ -94,7 +93,7 @@ public class ContractsPermissionEnforcementTests
     {
         await using var db = CreateDb();
         Grant(db, "Reception", view: true); // edit = false
-        var (controller, finance, contract) = Build(db, User(UserRole.Reception));
+        var (controller, contract) = Build(db, User(UserRole.Reception));
 
         var result = await controller.Update(Guid.NewGuid(), new UpdateContractRequest
         {
@@ -112,12 +111,12 @@ public class ContractsPermissionEnforcementTests
         // PATCH /status = approve (Accountant/Admin only — Reception view-only).
         await using var db = CreateDb();
         Grant(db, "Reception", view: true); // approve = false
-        var (controller, finance, contract) = Build(db, User(UserRole.Reception));
+        var (controller, contract) = Build(db, User(UserRole.Reception));
 
         var result = await controller.UpdateStatus(Guid.NewGuid(), new UpdateContractStatusBody("active"));
 
         StatusOf(result).Should().Be(403, "Reception is not granted finance.contracts.approve (status change)");
-        finance.Verify(f => f.UpdateContractStatusAsync(It.IsAny<Guid>(), It.IsAny<string>()), Times.Never);
+        contract.Verify(c => c.UpdateContractStatusAsync(It.IsAny<Guid>(), It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
@@ -125,7 +124,7 @@ public class ContractsPermissionEnforcementTests
     {
         await using var db = CreateDb();
         Grant(db, "Reception", view: true);
-        var (controller, finance, contract) = Build(db, User(UserRole.Reception));
+        var (controller, contract) = Build(db, User(UserRole.Reception));
         contract.Setup(c => c.GetContractsAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Guid?>(), It.IsAny<string?>()))
             .ReturnsAsync(new List<ContractListDto>());
 
@@ -139,7 +138,7 @@ public class ContractsPermissionEnforcementTests
     public async Task Admin_BypassesGuard_EvenWithNoRolePermissionRows()
     {
         await using var db = CreateDb(); // no RolePermissions seeded
-        var (controller, finance, contract) = Build(db, User(UserRole.Admin));
+        var (controller, contract) = Build(db, User(UserRole.Admin));
         contract.Setup(c => c.GetContractsAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Guid?>(), It.IsAny<string?>()))
             .ReturnsAsync(new List<ContractListDto>());
 
@@ -156,12 +155,12 @@ public class ContractsPermissionEnforcementTests
         // approve=false denies the status change → 403.
         await using var db = CreateDb();
         Grant(db, "Accountant", view: true, create: true, edit: true); // approve NOT granted on finance.contracts
-        var (controller, finance, contract) = Build(db, User(UserRole.Accountant));
+        var (controller, contract) = Build(db, User(UserRole.Accountant));
 
         var result = await controller.UpdateStatus(Guid.NewGuid(), new UpdateContractStatusBody("active"));
 
         StatusOf(result).Should().Be(403,
             "Accountant is not granted finance.contracts.approve by default — status changes need Admin or owner-grant");
-        finance.Verify(f => f.UpdateContractStatusAsync(It.IsAny<Guid>(), It.IsAny<string>()), Times.Never);
+        contract.Verify(c => c.UpdateContractStatusAsync(It.IsAny<Guid>(), It.IsAny<string>()), Times.Never);
     }
 }

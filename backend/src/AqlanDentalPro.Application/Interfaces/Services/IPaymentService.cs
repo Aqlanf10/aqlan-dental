@@ -3,7 +3,7 @@ using AqlanDentalPro.Application.DTOs.Finance;
 namespace AqlanDentalPro.Application.Interfaces.Services;
 
 /// <summary>
-/// Payment service — extracted from <see cref="IFinanceService"/> as part of
+/// Payment service — extracted from the former IFinanceService as part of
 /// TD-021 PR A4 (slice 2). Owns the payment cluster: reads, create (atomic
 /// dual-write to CashFlow/Treasury/JournalEntry), metadata update, delete
 /// (reversal entries), refund (partial/full with cumulative idempotency guard),

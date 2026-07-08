@@ -3,25 +3,12 @@ using AqlanDentalPro.Application.DTOs.Finance;
 namespace AqlanDentalPro.Application.Interfaces.Services;
 
 /// <summary>
-/// Contract service — extracted from <see cref="IFinanceService"/> as part of
-/// TD-021 PR A3 (god-service extraction). Owns the read + clean-write side of
-/// the contracts cluster.
-///
-/// Behaviour-preserving move: the implementation is byte-for-byte identical to the
-/// previous FinanceService methods. No business rule changes; only the host type changed.
-///
-/// Slicing rationale (see docs/technical-debt/TD-021-god-service-extraction-plan.md):
-/// - This PR moves only the self-contained contract methods.
-/// - <c>CreateContractAsync</c> stays in FinanceService because it calls
-///   <c>CreatePaymentAsync</c> (down payment) — a cross-cluster dependency that
-///   will be resolved when PR A4 extracts PaymentService.
-/// - <c>UpdateContractStatusAsync</c> stays in FinanceService because the
-///   cancellation path calls payment-side helpers (<c>UpdateTreasuryBalanceNoSaveAsync</c>,
-///   <c>DualWriteReversalEntryAsync</c>, <c>TryMarkInvoicePaidAsync</c>) — these
-///   will move together with the PaymentService cluster in PR A4.
-/// - <c>TryReconcileContractStatusAsync</c> stays in FinanceService because it is
-///   called from <c>CreatePaymentAsync</c>, <c>DeletePaymentAsync</c>, and
-///   <c>RefundPaymentAsync</c> — it will move with the payment cluster in PR A4.
+/// Contract service — extracted from the former FinanceService god-service across
+/// TD-021 PRs A3 (reads + clean writes) and A4 final slice (the two orchestrators:
+/// CreateContractAsync with its auto down-payment via IPaymentService, and
+/// UpdateContractStatusAsync whose cancellation path reverses linked payments).
+/// Behaviour-preserving moves throughout — no business rule changes.
+/// IFinanceService/FinanceService were retired once this interface absorbed them.
 /// </summary>
 public interface IContractService
 {
@@ -44,4 +31,18 @@ public interface IContractService
     /// updated contract detail, or null if the contract does not exist.
     /// </summary>
     Task<ContractDetailDto?> UpdateContractAsync(Guid id, UpdateContractRequest req);
+
+    /// <summary>
+    /// Creates a contract and, when DownPayment &gt; 0, auto-creates the down payment
+    /// via IPaymentService (requires an open cashier session, same as any payment).
+    /// </summary>
+    Task<ContractDetailDto> CreateContractAsync(CreateContractRequest req);
+
+    /// <summary>
+    /// Transitions a contract's status. Cancellation atomically soft-deletes linked
+    /// payments, writes CashFlow + JournalEntry reversals, reverses treasury balances,
+    /// and re-evaluates affected invoice statuses. Returns null for an unknown
+    /// contract or an unparsable status.
+    /// </summary>
+    Task<ContractDetailDto?> UpdateContractStatusAsync(Guid id, string status);
 }

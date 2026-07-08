@@ -10,7 +10,8 @@
 // old hard-coded "Quick links" block at the bottom. No existing per-tab
 // component was deleted or modified — they are grouped differently here.
 
-import { useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { TABS, type Tab } from "./_components/_shared";
 import { ClinicTab } from "./_components/ClinicTab";
@@ -21,8 +22,22 @@ import { AiTab } from "./_components/AiTab";
 import { FinanceTab } from "./_components/FinanceTab";
 import { QuickLinksGrid } from "./_components/QuickLinksGrid";
 
-export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<Tab>("clinic");
+// SEQ-03: deep-linkable tabs — /settings?tab=permissions opens the users/roles
+// section directly (the /settings/users, /settings/permissions and /users
+// legacy paths redirect here instead of 404ing). Same useSearchParams+Suspense
+// pattern as finance-v3/page.tsx.
+const VALID_TABS = new Set<string>(TABS.map((t) => t.key));
+
+function SettingsPageInner() {
+  const searchParams = useSearchParams();
+  const tabFromUrl = searchParams.get("tab");
+  const initialTab: Tab =
+    tabFromUrl && VALID_TABS.has(tabFromUrl) ? (tabFromUrl as Tab) : "clinic";
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
+
+  useEffect(() => {
+    if (tabFromUrl && VALID_TABS.has(tabFromUrl)) setActiveTab(tabFromUrl as Tab);
+  }, [tabFromUrl]);
 
   // Resolve the current tab's quick links once per render. Tabs without
   // links (none currently, but defensive) just skip the grid.
@@ -120,5 +135,19 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center text-sm text-slate-500">
+          جاري التحميل...
+        </div>
+      }
+    >
+      <SettingsPageInner />
+    </Suspense>
   );
 }

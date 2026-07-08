@@ -142,3 +142,14 @@ is finally resolved, then extended the QA4-08 schema-drift diagnostic to
 | `QA6-02` | Finance/Dashboard | 4 endpoints still 500 live even with a current, healthy deploy: `dashboard/stats`, `contracts?status=active`, `finance-v3/expenses`, `patient-journey/{id}/daily-summary` — root cause is no longer the deploy stall | live probes (200/500 fingerprints unchanged post-fix) | diagnosed (partially) | no | pending Railway log access or local repro | yes — needs either log access or a local dev environment to isolate the exception |
 | `QA6-03` | Finance | Extended QA4-08's schema-columns diagnostic to `JournalEntries`/`JournalLines` (the one remaining "previously unknowable" gap its own doc comment flagged) — result: `AccountType`/`FinancialDocumentType` are both `character varying` as code expects, **no drift** | `FinanceV3Controller.cs` (`GetSchemaColumnsDiagnostic` whitelist +2 tables) | fixed (diagnosability) + ruled out | yes | yes (live) | no — this specific theory is closed |
 | `QA6-04` | Tooling | Chromium (Playwright) could not reach any external host (including a non-project test host) through this session's configured egress proxy — `ERR_CONNECTION_RESET` on every attempt — blocking all visual/RTL/console-error verification this round | — (environment limitation, not app code) | documented | no | n/a | yes — schedule a round with working browser access for the visual/UX checklist items |
+
+## SEQ-03 — Unified users/permissions settings screen (2026-07-06)
+
+Queue item SEQ-03 (from `MANDATORY_SPRINT_QUEUE.md`). The queue's own note proved
+correct on inspection: `UsersTab`/`RolesTab` already exist and work inside the
+settings hub's permissions tab — the gap was only that the tab wasn't
+deep-linkable and three legacy paths 404'd (QA4-03).
+
+| ID | Module | Finding | Code | Status | Fixed here | Runtime verify | Owner decision |
+|----|--------|---------|------|--------|-----------|----------------|----------------|
+| `SEQ-03` | Settings/Users | `/settings/users`, `/settings/permissions`, `/users` all 404 while the working users/roles UI sits unlinkable behind a state-only tab in the settings hub | `settings/page.tsx` (URL-driven `?tab=` via `useSearchParams`+`Suspense`, finance-v3 pattern), 3 redirect stubs (`settings/users/`, `settings/permissions/`, `users/page.tsx` → `/settings?tab=permissions`, hr-pattern), `routePermissions.ts` (`/users` Admin-only entry), `routePermissions.test.ts` (+1 test, 7 assertions), spec 008 evidence note | fixed | yes | tsc/lint/vitest (180/180)/build all green | no |

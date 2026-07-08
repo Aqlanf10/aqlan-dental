@@ -39,6 +39,18 @@ describe('route permissions', () => {
     expect(isRouteAllowed('/daily-operations', null)).toBe(false);
   });
 
+  it('SEQ-03: users/permissions redirect stubs are Admin-only', () => {
+    // /users, /settings/users and /settings/permissions all redirect to
+    // /settings?tab=permissions — reachable by Admin, denied to everyone else.
+    expect(isRouteAllowed('/users', 'Admin')).toBe(true);
+    expect(isRouteAllowed('/settings/users', 'Admin')).toBe(true);
+    expect(isRouteAllowed('/settings/permissions', 'Admin')).toBe(true);
+    expect(isRouteAllowed('/users', 'Reception')).toBe(false);
+    expect(isRouteAllowed('/users', 'Accountant')).toBe(false);
+    expect(isRouteAllowed('/settings/users', 'Reception')).toBe(false);
+    expect(isRouteAllowed('/settings/permissions', 'BranchManager')).toBe(false);
+  });
+
   it('does not allow similarly named paths through prefix matching', () => {
     expect(isRouteAllowed('/labyrinth', 'BranchManager')).toBe(false);
     expect(isRouteAllowed('/settings-labs', 'BranchManager')).toBe(false);

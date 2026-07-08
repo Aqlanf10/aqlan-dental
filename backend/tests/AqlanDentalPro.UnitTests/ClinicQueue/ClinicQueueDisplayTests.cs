@@ -3,6 +3,7 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -99,7 +100,7 @@ public class ClinicQueueDisplayTests
         db.Patients.Add(patient);
         db.Doctors.Add(doctor);
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
         var queueItem = new ClinicQueueItem
         {
             Id = Guid.NewGuid(),
@@ -152,7 +153,7 @@ public class ClinicQueueDisplayTests
             PatientId = patientId,
             DoctorId = doctorId,
             Status = ClinicQueueStatus.Waiting,
-            QueueDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            QueueDate = ClinicTimeProvider.ClinicToday(),
             IsActive = true
         });
         await db.SaveChangesAsync();
@@ -194,7 +195,7 @@ public class ClinicQueueDisplayTests
             IsActive = true
         });
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
         var queueItem = new ClinicQueueItem
         {
             Id = Guid.NewGuid(),
@@ -250,7 +251,7 @@ public class ClinicQueueDisplayTests
             PatientId = patientId,
             DoctorId = doctorId,
             Status = ClinicQueueStatus.Called,
-            QueueDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            QueueDate = ClinicTimeProvider.ClinicToday(),
             IsActive = true,
             CalledAt = DateTime.UtcNow
         });
@@ -291,7 +292,7 @@ public class ClinicQueueDisplayTests
             PatientId = patientId,
             DoctorId = doctorId,
             Status = ClinicQueueStatus.Called,
-            QueueDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            QueueDate = ClinicTimeProvider.ClinicToday(),
             IsActive = true,
             CalledAt = DateTime.UtcNow
         });
@@ -334,7 +335,7 @@ public class ClinicQueueDisplayTests
             PatientId = patientId,
             DoctorId = doctorId,
             Status = ClinicQueueStatus.InRoom,
-            QueueDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            QueueDate = ClinicTimeProvider.ClinicToday(),
             IsActive = true,
             CalledAt = DateTime.UtcNow,
             RoomName = "Room 1"
@@ -373,7 +374,7 @@ public class ClinicQueueDisplayTests
             IsActive = true
         });
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
         // InProgress item with a RoomName but no Doctor loaded (DoctorId is set but Doctor navigation null)
         var queueItem = new ClinicQueueItem
         {
@@ -423,7 +424,7 @@ public class ClinicQueueDisplayTests
             IsActive = true
         });
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
         var queueItem = new ClinicQueueItem
         {
             Id = Guid.NewGuid(),

@@ -166,7 +166,7 @@ public class PatientFinanceLedgerTests
     {
         await using var db = CreateDb();
         var (branchId, patientId, userId, treasuryId, currentUser) = SeedPatientWithUser(db);
-        var (service, payments) = CreateFinanceService(db, currentUser);
+        var (service, paymentSvc) = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
 
@@ -195,7 +195,7 @@ public class PatientFinanceLedgerTests
     {
         await using var db = CreateDb();
         var (branchId, patientId, userId, treasuryId, currentUser) = SeedPatientWithUser(db);
-        var (service, payments) = CreateFinanceService(db, currentUser);
+        var (service, paymentSvc) = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
 
@@ -213,7 +213,7 @@ public class PatientFinanceLedgerTests
         });
         await db.SaveChangesAsync();
 
-        await payments.CreatePaymentAsync(new CreatePaymentRequest
+        await paymentSvc.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patientId,
             InvoiceId = invoiceId,
@@ -222,7 +222,7 @@ public class PatientFinanceLedgerTests
             ServiceDescription = "دفعة فاتورة"
         });
 
-        var payments = await payments.GetPaymentsAsync(1, 50, patientId);
+        var payments = await paymentSvc.GetPaymentsAsync(1, 50, patientId);
         payments.Should().ContainSingle(p => p.InvoiceId == invoiceId && p.Amount == 1500m,
             "payment linked to invoice should appear in patient payments");
     }
@@ -236,7 +236,7 @@ public class PatientFinanceLedgerTests
     {
         await using var db = CreateDb();
         var (branchId, patientId, userId, treasuryId, currentUser) = SeedPatientWithUser(db);
-        var (service, payments) = CreateFinanceService(db, currentUser);
+        var (service, paymentSvc) = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
 
@@ -282,7 +282,7 @@ public class PatientFinanceLedgerTests
     {
         await using var db = CreateDb();
         var (branchId, patientId, userId, treasuryId, currentUser) = SeedPatientWithUser(db);
-        var (service, payments) = CreateFinanceService(db, currentUser);
+        var (service, paymentSvc) = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
 
@@ -316,7 +316,7 @@ public class PatientFinanceLedgerTests
     {
         await using var db = CreateDb();
         var (branchId, patientId, userId, treasuryId, currentUser) = SeedPatientWithUser(db);
-        var (service, payments) = CreateFinanceService(db, currentUser);
+        var (service, paymentSvc) = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
 
@@ -348,7 +348,7 @@ public class PatientFinanceLedgerTests
     {
         await using var db = CreateDb();
         var (branchId, patientId, userId, treasuryId, currentUser) = SeedPatientWithUser(db);
-        var (service, payments) = CreateFinanceService(db, currentUser);
+        var (service, paymentSvc) = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
 
@@ -362,7 +362,7 @@ public class PatientFinanceLedgerTests
             Specialty = "تركيبات"
         });
 
-        var payments = await payments.GetPaymentsAsync(1, 50, patientId);
+        var payments = await paymentSvc.GetPaymentsAsync(1, 50, patientId);
         var downPayment = payments.FirstOrDefault(p => p.ContractId == contract.Id);
 
         downPayment.Should().NotBeNull("contract down payment should exist");
@@ -375,7 +375,7 @@ public class PatientFinanceLedgerTests
     {
         await using var db = CreateDb();
         var (branchId, patientId, userId, treasuryId, currentUser) = SeedPatientWithUser(db);
-        var (service, payments) = CreateFinanceService(db, currentUser);
+        var (service, paymentSvc) = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
 
@@ -388,7 +388,7 @@ public class PatientFinanceLedgerTests
             Specialty = "علاج جذور"
         });
 
-        var payments = await payments.GetPaymentsAsync(1, 50, patientId);
+        var payments = await paymentSvc.GetPaymentsAsync(1, 50, patientId);
         var downPayment = payments.FirstOrDefault(p => p.ContractId == contract.Id);
 
         downPayment.Should().NotBeNull("contract down payment should exist");
@@ -405,7 +405,7 @@ public class PatientFinanceLedgerTests
     {
         await using var db = CreateDb();
         var (branchId, patientId, userId, treasuryId, currentUser) = SeedPatientWithUser(db);
-        var (service, payments) = CreateFinanceService(db, currentUser);
+        var (service, paymentSvc) = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
 
@@ -421,9 +421,9 @@ public class PatientFinanceLedgerTests
         var summaryBefore = await readService.GetPatientFinanceSummaryAsync(patientId);
         summaryBefore.TotalPaid.Should().Be(2000m);
 
-        var payments = await payments.GetPaymentsAsync(1, 50, patientId);
+        var payments = await paymentSvc.GetPaymentsAsync(1, 50, patientId);
         var downPayment = payments.First(p => p.ContractId == contract.Id);
-        await payments.DeletePaymentAsync(downPayment.Id);
+        await paymentSvc.DeletePaymentAsync(downPayment.Id);
 
         var summaryAfter = await readService.GetPatientFinanceSummaryAsync(patientId);
         summaryAfter.TotalPaid.Should().Be(0m, "deleted payment should not be counted in balance");
@@ -450,7 +450,7 @@ public class PatientFinanceLedgerTests
     {
         await using var db = CreateDb();
         var (branchId, patientId, userId, treasuryId, currentUser) = SeedPatientWithUser(db);
-        var (service, payments) = CreateFinanceService(db, currentUser);
+        var (service, paymentSvc) = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
 
@@ -750,7 +750,7 @@ public class PatientFinanceLedgerTests
         // contract, no invoice. Expected outstanding = 30,000.
         await using var db = CreateDb();
         var (_, patientId, currentUser) = SeedPatientWithUnbilledVisit(db, sessionCost: 50_000m, paidAmount: 20_000m);
-        var (service, payments) = CreateFinanceService(db, currentUser);
+        var (service, paymentSvc) = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
 
@@ -770,7 +770,7 @@ public class PatientFinanceLedgerTests
         // Scenario: 50,000 session, no payment. Expected outstanding = 50,000.
         await using var db = CreateDb();
         var (_, patientId, currentUser) = SeedPatientWithUnbilledVisit(db, sessionCost: 50_000m, paidAmount: 0m);
-        var (service, payments) = CreateFinanceService(db, currentUser);
+        var (service, paymentSvc) = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
 
@@ -819,7 +819,7 @@ public class PatientFinanceLedgerTests
         });
         await db.SaveChangesAsync();
 
-        var (service, payments) = CreateFinanceService(db, currentUser);
+        var (service, paymentSvc) = CreateFinanceService(db, currentUser);
 
 
         var readService = CreateFinanceReadService(db, currentUser);
@@ -838,7 +838,7 @@ public class PatientFinanceLedgerTests
         // Expected outstanding = 0 (clamped, NOT -20,000).
         await using var db = CreateDb();
         var (_, patientId, currentUser) = SeedPatientWithUnbilledVisit(db, sessionCost: 0m, paidAmount: 20_000m);
-        var (service, payments) = CreateFinanceService(db, currentUser);
+        var (service, paymentSvc) = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
 
@@ -861,7 +861,7 @@ public class PatientFinanceLedgerTests
         // Account statement's TotalRemaining must be 30,000, NOT 0.
         await using var db = CreateDb();
         var (_, patientId, currentUser) = SeedPatientWithUnbilledVisit(db, sessionCost: 50_000m, paidAmount: 20_000m);
-        var (service, payments) = CreateFinanceService(db, currentUser);
+        var (service, paymentSvc) = CreateFinanceService(db, currentUser);
 
         var readService = CreateFinanceReadService(db, currentUser);
 
@@ -908,7 +908,7 @@ public class PatientFinanceLedgerTests
         });
         await db.SaveChangesAsync();
 
-        var (service, payments) = CreateFinanceService(db, currentUser);
+        var (service, paymentSvc) = CreateFinanceService(db, currentUser);
 
 
         var readService = CreateFinanceReadService(db, currentUser);
@@ -942,7 +942,7 @@ public class PatientFinanceLedgerTests
         });
         await db.SaveChangesAsync();
 
-        var (service, payments) = CreateFinanceService(db, currentUserA);
+        var (service, paymentSvc) = CreateFinanceService(db, currentUserA);
 
 
         var readService = CreateFinanceReadService(db, currentUserA);

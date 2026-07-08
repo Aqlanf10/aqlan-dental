@@ -51,12 +51,15 @@
 - **ما نُفِّذ:** (1) تبويبات مركز الإعدادات صارت قابلة للربط العميق عبر `?tab=` (نمط `finance-v3/page.tsx` نفسه: `useSearchParams` + `Suspense`)؛ (2) ثلاث صفحات redirect بنمط `hr/page.tsx`: `/settings/users` و`/settings/permissions` و`/users` → `/settings?tab=permissions` بدل الـ404؛ (3) إدخال صريح لـ`/users` في `routePermissions.ts` (Admin فقط، وفق قاعدة default-deny)؛ (4) اختبارات vitest جديدة للمسارات الثلاثة (Admin مسموح، بقية الأدوار مرفوضة).
 - **معيار الخروج (محقَّق):** مسار واحد من مركز الإعدادات يعرض المستخدمين والأدوار دون تكرار شاشة — التبويب الموجود أصلًا + المسارات القديمة تقود إليه الآن.
 
-### 🟡 SEQ-04 — إكمال TD-021 PR A4 (تفكيك FinanceService المتبقي)
+### ✅ SEQ-04 — إكمال TD-021 PR A4 (تفكيك FinanceService المتبقي)
 
-- **الحالة:** 🟡 جاهز — PR #606 مفتوح منذ 2026-07-03، مبني على قاعدة قديمة (+257870/-977 عبر 1070 ملف — منحرف كليًا عن `main` الحالي). `FinanceService.cs` اليوم 1623 سطرًا؛ A1–A3 (`InvoiceLedgerService`، `FinanceReadService`، `ContractService`) مدموجة، لكن `PaymentService`/`SupplierRefundService`/`FinanceLedgerWriter` (A4) غير موجودة على `main`.
-- **الإجراء:** أعد بناء الفرع من `main` الحالي (نفس أسلوب إصلاح تعارض PR #620 في هذه الجلسة: فرع جديد من `main` + `cherry-pick` للكوميتات الحقيقية فقط، وليس merge أعمى) بدل محاولة حل التعارض المباشر على فرع منحرف بهذا الحجم.
-- **معيار الخروج:** `FinanceService.cs` ≈ 67 سطرًا (جسر `TryMarkInvoicePaidAsync` فقط)، `dotnet test` أخضر بالكامل، لا تغييرات سلوك مالي.
-- **تحذير:** هذا يمسّ المالية — **نماذج قوية فقط** (انظر `docs/governance/MULTI_MODEL_AGENT_RULES.md`).
+- **الحالة:** ✅ منجَز — فُكِّك `FinanceService` بالكامل عبر ثلاثة شرائح متتالية:
+  - **#626** (شريحة 1): استخرج `FinanceLedgerWriter` من `FinanceService`.
+  - **#627** (شرائح 2+3): استخرج `PaymentService` و`SupplierRefundService`.
+  - **#628** (الشريحة النهائية): نقل orchestrators العقود إلى `ContractService`، وتقاعد `IFinanceService` نهائيًا.
+- **معيار الخروج (محقَّق):** `FinanceService.cs` لم يعد موجودًا (تم تقاعده بالكامل في #628 — تجاوز الهدف الأصلي البالغ ≈67 سطرًا). الخدمات الست المستخرَجة موجودة: `InvoiceLedgerService`، `FinanceReadService`، `ContractService`، `PaymentService`، `SupplierRefundService`، `FinanceLedgerWriter`. CI أخضر بالكامل على `main` (Backend + Frontend + E2E + Arabic Mojibake Guard).
+- **تحذير سابق (مؤرشف):** هذا العنصر كان يمسّ المالية — نُفِّذ بنماذج قوية وفق `docs/governance/MULTI_MODEL_AGENT_RULES.md`. PR #606 القديم أُغلق كمنحرف/قديم واستُبدل بالشرائح الثلاث النظيفة أعلاه.
+- **لا عمل متبقٍ على هذا العنصر.**
 
 ### 🟡 SEQ-05 — توحيد المنطقة الزمنية في وحدة الطابور والرحلة (QA5-03)
 

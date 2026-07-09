@@ -4987,15 +4987,33 @@ public static class StartupDatabaseMaintenance
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             if (!db.Database.IsRelational()) return;
 
-            await db.Database.ExecuteSqlRawAsync("""
-                ALTER TABLE "Contracts" ADD COLUMN IF NOT EXISTS "PackageId" uuid NULL;
-                DO $$ BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Contracts_TreatmentPackages_PackageId') THEN
-                        ALTER TABLE "Contracts" ADD CONSTRAINT "FK_Contracts_TreatmentPackages_PackageId"
-                            FOREIGN KEY ("PackageId") REFERENCES "TreatmentPackages"("Id") ON DELETE SET NULL;
-                    END IF;
-                END $$;
+            // SEQ-06: Split into separate ExecuteSqlRawAsync calls so that a
+            // failure in one statement (e.g. FK constraint on a missing table)
+            // doesn't prevent the others from executing. Previously the entire
+            // block ran as a single raw SQL call — if the DO $$ ... $$ FK
+            // block failed, the ALTER TABLE ADD COLUMN PackageId at the top
+            // was also rolled back, leaving the column missing in production.
+            await db.Database.ExecuteSqlRawAsync(
+                """ALTER TABLE "Contracts" ADD COLUMN IF NOT EXISTS "PackageId" uuid NULL;""");
 
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync("""
+                    DO $$ BEGIN
+                        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Contracts_TreatmentPackages_PackageId') THEN
+                            ALTER TABLE "Contracts" ADD CONSTRAINT "FK_Contracts_TreatmentPackages_PackageId"
+                                FOREIGN KEY ("PackageId") REFERENCES "TreatmentPackages"("Id") ON DELETE SET NULL;
+                        END IF;
+                    END $$;
+                    """);
+            }
+            catch (Exception fkEx)
+            {
+                app.Services.GetRequiredService<ILogger<Program>>()
+                    .LogWarning(fkEx, "FK_Contracts_TreatmentPackages_PackageId hotfix failed (non-fatal — column already added)");
+            }
+
+            await db.Database.ExecuteSqlRawAsync("""
                 CREATE TABLE IF NOT EXISTS "TreatmentPackageServices" (
                     "Id" uuid NOT NULL DEFAULT gen_random_uuid(),
                     "TreatmentPackageId" uuid NOT NULL,

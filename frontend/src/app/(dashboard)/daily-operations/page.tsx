@@ -16,6 +16,7 @@ import {
 import { useHasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
+import { extractErrorMessage } from "@/lib/errors";
 import { useSignalRClinicQueue } from "@/hooks/useSignalRClinicQueue";
 import api from "@/lib/api";
 import { NewLabOrderModal } from "@/components/lab/NewLabOrderModal";
@@ -474,17 +475,17 @@ export default function DailyOperationsPage() {
         if (!item.appointmentId) { toast.error("لا يمكن تسجيل الوصول بدون موعد"); return; }
         intakeMutation.mutate(
           { appointmentId: item.appointmentId, body: notesSuffix ? { notes: notesSuffix } : {} },
-          { onSuccess: () => toast.success("تم تسجيل وصول المريض"), onError: () => toast.error("فشل تسجيل الوصول") }
+          { onSuccess: () => toast.success("تم تسجيل وصول المريض"), onError: (err) => toast.error(extractErrorMessage(err, "فشل تسجيل الوصول")) }
         );
       } else {
         if (!item.appointmentId) { toast.error("لا يمكن إضافة المريض للانتظار بدون موعد"); return; }
         sendToQueueMutation.mutate(
           { appointmentId: item.appointmentId, body: notesSuffix ? { notes: notesSuffix } : {} },
-          { onSuccess: () => toast.success("تمت إضافة المريض للانتظار"), onError: () => toast.error("فشل إضافة المريض للانتظار") }
+          { onSuccess: () => toast.success("تمت إضافة المريض للانتظار"), onError: (err) => toast.error(extractErrorMessage(err, "فشل إضافة المريض للانتظار")) }
         );
       }
-    } catch {
-      toast.error("فشل إتمام العملية");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل إتمام العملية"));
     }
   }, [intakeMutation, sendToQueueMutation]);
 
@@ -516,12 +517,12 @@ export default function DailyOperationsPage() {
     if (callActionType === "recall") {
       recallPatientMutation.mutate(
         { queueItemId: pendingCallItem.queueItemId, roomName },
-        { onSuccess: () => toast.success("تم إعادة النداء"), onError: () => toast.error("فشل إعادة النداء") }
+        { onSuccess: () => toast.success("تم إعادة النداء"), onError: (err) => toast.error(extractErrorMessage(err, "فشل إعادة النداء")) }
       );
     } else {
       callPatientMutation.mutate(
         { queueItemId: pendingCallItem.queueItemId, roomName },
-        { onSuccess: () => toast.success("تم نداء المريض"), onError: () => toast.error("فشل نداء المريض") }
+        { onSuccess: () => toast.success("تم نداء المريض"), onError: (err) => toast.error(extractErrorMessage(err, "فشل نداء المريض")) }
       );
     }
     setRoomSelectOpen(false);
@@ -532,7 +533,7 @@ export default function DailyOperationsPage() {
     if (!item.queueItemId) return;
     enterRoomMutation.mutate(
       item.queueItemId,
-      { onSuccess: () => toast.success("تم دخول الغرفة"), onError: () => toast.error("فشل دخول الغرفة") },
+      { onSuccess: () => toast.success("تم دخول الغرفة"), onError: (err) => toast.error(extractErrorMessage(err, "فشل دخول الغرفة")) },
     );
   }, [enterRoomMutation]);
 
@@ -576,8 +577,8 @@ export default function DailyOperationsPage() {
           ? "توجد فاتورة مسودة مسبقاً لهذه الزيارة"
           : "تم إنشاء فاتورة مسودة للتحصيل"
       );
-    } catch {
-      toast.error("فشل إنشاء فاتورة التحصيل");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل إنشاء فاتورة التحصيل"));
     }
   }, [createDraftInvoiceMutation]);
 
@@ -650,8 +651,8 @@ export default function DailyOperationsPage() {
         await sendToQueueMutation.mutateAsync({ appointmentId: undoAction.appointmentId });
         toast.success("تم التراجع — أعيد المريض لقائمة الانتظار");
       }
-    } catch {
-      toast.error("فشل التراجع");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل التراجع"));
     }
     setUndoAction(null);
   }, [undoAction, updateStatusMutation, sendToQueueMutation]);
@@ -703,8 +704,8 @@ export default function DailyOperationsPage() {
         await completeVisitMutation.mutateAsync({ queueItemId: selectedItem.queueItemId });
         toast.success("تم إنهاء الزيارة");
       }
-    } catch {
-      toast.error("فشل تنفيذ الإجراء");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل تنفيذ الإجراء"));
     }
     setConfirmDialogOpen(false);
   }, [selectedItem, confirmDialogType, updateStatusMutation, cancelQueueMutation, completeVisitMutation, pushUndoAction]);
@@ -737,14 +738,8 @@ export default function DailyOperationsPage() {
           // PDF download failed, user can still download manually
         }
       }
-    } catch (err: unknown) {
-      // Extract the actual error message from backend response
-      let errorMsg = "فشل تسجيل الدفعة";
-      if (err && typeof err === "object" && "response" in err) {
-        const resp = (err as { response?: { data?: { message?: string } } }).response;
-        if (resp?.data?.message) errorMsg = resp.data.message;
-      }
-      toast.error(errorMsg);
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل تسجيل الدفعة"));
     }
   }, [selectedItem, createPaymentMutation]);
 
@@ -796,8 +791,8 @@ export default function DailyOperationsPage() {
       }
 
       toast.error("لا يمكن إكمال الإجراء دون زيارة جاهزة للتحصيل");
-    } catch {
-      toast.error("فشل إنهاء الزيارة");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل إنهاء الزيارة"));
     }
   }, [selectedItem, handoffMutation, checkoutMutation]);
 
@@ -820,8 +815,8 @@ export default function DailyOperationsPage() {
       });
       toast.success("تم إنهاء الزيارة بنجاح");
       setCompleteVisitModalOpen(false);
-    } catch {
-      toast.error("فشل إنهاء الزيارة");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل إنهاء الزيارة"));
     }
   }, [selectedItem, checkoutMutation]);
 
@@ -843,13 +838,8 @@ export default function DailyOperationsPage() {
       toast.success("تم تسجيل خروج المريض بدون إكمال");
       setLeftWithoutModalOpen(false);
       setLeftWithoutReason("");
-    } catch (err: unknown) {
-      let errorMsg = "فشل تسجيل خروج المريض بدون إكمال";
-      if (err && typeof err === "object" && "response" in err) {
-        const resp = (err as { response?: { data?: { message?: string } } }).response;
-        if (resp?.data?.message) errorMsg = resp.data.message;
-      }
-      toast.error(errorMsg);
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل تسجيل خروج المريض بدون إكمال"));
     }
   }, [selectedItem, leftWithoutReason, leftWithoutCompletionMutation]);
 
@@ -871,8 +861,8 @@ export default function DailyOperationsPage() {
       });
       toast.success("تم حجز الموعد بنجاح");
       setBookAppointmentModalOpen(false);
-    } catch {
-      toast.error("فشل حجز الموعد");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل حجز الموعد"));
     }
   }, [selectedItem, createAppointmentMutation]);
 
@@ -884,8 +874,8 @@ export default function DailyOperationsPage() {
       await walkInMutation.mutateAsync(data);
       toast.success("تم تسجيل المريض المشي وإضافته لقائمة الانتظار");
       setWalkInModalOpen(false);
-    } catch {
-      toast.error("فشل تسجيل المريض المشي");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل تسجيل المريض المشي"));
     }
   }, [walkInMutation]);
 
@@ -896,8 +886,8 @@ export default function DailyOperationsPage() {
       });
       toast.success(`تم إرسال ${result.succeeded} تذكير${result.failed > 0 ? ` (فشل ${result.failed})` : ""}`);
       setBulkSmsModalOpen(false);
-    } catch {
-      toast.error("فشل إرسال التذكيرات");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل إرسال التذكيرات"));
     }
   }, [bulkSmsMutation, tomorrowItems]);
 
@@ -935,14 +925,8 @@ export default function DailyOperationsPage() {
           // PDF download failed, user can still download manually
         }
       }
-    } catch (err: unknown) {
-      // Extract the actual error message from backend response
-      let errorMsg = "فشل تسجيل الدفعة";
-      if (err && typeof err === "object" && "response" in err) {
-        const resp = (err as { response?: { data?: { message?: string } } }).response;
-        if (resp?.data?.message) errorMsg = resp.data.message;
-      }
-      toast.error(errorMsg);
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل تسجيل الدفعة"));
     }
   }, [createPaymentMutation]);
 
@@ -1734,8 +1718,8 @@ export default function DailyOperationsPage() {
             await changeRoomMutation.mutateAsync({ queueItemId: selectedItem.queueItemId, roomName });
             toast.success("تم تغيير الغرفة");
             setChangeRoomModalOpen(false);
-          } catch {
-            toast.error("فشل تغيير الغرفة");
+          } catch (err) {
+            toast.error(extractErrorMessage(err, "فشل تغيير الغرفة"));
           }
         }}
       />

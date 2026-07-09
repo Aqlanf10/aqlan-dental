@@ -32,8 +32,9 @@ public class PatientJourneyController(
     public async Task<IActionResult> GetToday([FromQuery] string? date, [FromQuery] string? status,
         [FromQuery] Guid? doctorId, [FromQuery] Guid? serviceId, [FromQuery] Guid? roomId)
     {
-        // Parse date - default to today (declared before try so catch can reference it)
-        DateOnly queryDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        // Parse date - default to clinic today (SEQ-05: was DateTime.UtcNow which is
+        // wrong by up to 3 hours on Railway UTC for a Yemen clinic).
+        DateOnly queryDate = ClinicTimeProvider.ClinicToday();
         try
         {
             if (!string.IsNullOrWhiteSpace(date))

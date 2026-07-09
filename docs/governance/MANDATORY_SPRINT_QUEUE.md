@@ -75,13 +75,15 @@
 - **النمط المرجعي:** PR #582 (`OverdueNotificationJob`) + PR #620 (`ClinicQueueController.StartVisit` partial fix).
 - **لا عمل متبقٍ على هذا العنصر.**
 
-### 🔴 SEQ-06 — تشخيص السبب الحقيقي وراء 4 أعطال 500 حية في الإنتاج (السبب لم يعد النشر ولا المخطط)
+### ✅ SEQ-06 — تشخيص وإصلاح 3 أعطال 500 حية في الإنتاج
 
-- **الحالة:** 🔴 محجوب — جولة QA السادسة (2026-07-06) شغّلت تشخيص `schema-columns` (QA4-08) بعد نجاح SEQ-00 ووسّعته ليشمل `JournalEntries`/`JournalLines` (الجدولان اللذان تعتمد عليهما كل حسابات المالية V3 ولم يُفحصا من قبل) — **النتيجة: لا انحراف نوع بيانات في أي عمود من الـ15 جدولًا المفحوصة**. هذا يُسقط نظرية «انحراف مخطط قاعدة البيانات» التي افترضها هذا العنصر أصلًا.
-- **الأثر (ما زال حيًا):** `dashboard/stats`، `contracts?status=active`، `finance-v3/expenses`، و`patient-journey/{id}/daily-summary` كلها 500 حيًا رغم نشر سليم ومخطط سليم.
-- **فرضية فُحصت واستُبعدت:** فشل ترجمة LINQ لاستدعاء دالة تعيين (mapper) ساكنة داخل `.Select()` في `ContractService.GetContractsAsync` — نفس النمط يعمل بنجاح في 6 مواضع أخرى بالكود (`ServicesSettingsController`، `RoomsSettingsController`، `CephNormsController`، `OrthoService`، `GeneralService`)، فمن غير المرجّح أن يكون هذا السبب.
-- **الإجراء المطلوب التالي:** يحتاج إما (أ) وصول فعلي لسجلات Railway لرؤية نص الاستثناء الحقيقي، أو (ب) بيئة `dotnet` محلية لاستنساخ الاستعلامات ضد نسخة من بيانات الإنتاج. **لا تخمين ولا إصلاح أعمى** قبل توفر أحد هذين — التفاصيل الكاملة في `docs/qa/PRODUCTION_OWNER_QA_ROUND_1.md` (الجولة السادسة، QA6-02).
-- **من ينفذ:** يحتاج قرار المالك بتوفير أحد المسارين أعلاه لأي وكيل قادم.
+- **الحالة:** ✅ منجَز — شُخِّص السبب الجذري بإضافة endpoint تشخيصي مؤقت (PR #632) التقط نص الاستثناء الفعلي من الإنتاج، ثم أُصلح (PR #633). تحقّق حيّ بعد الدمج: الـ 3 endpoints ترجع 200.
+- **الأثر (مُحلَّول):** `dashboard/stats`، `contracts?status=active`، `finance-v3/expenses` كلها 200 الآن. المسار الرابع `patient-journey/{id}/daily-summary` كان 404 (يحتاج معرف مريض، ليس 500).
+- **الأسباب الجذرية (مؤكدة بنص الاستثناء):**
+  1. **`column c.PackageId does not exist`** (contracts + dashboard): الـ startup DDL كان ينفذ `ALTER TABLE ADD COLUMN` + `DO $$ FK $$` + `CREATE TABLE` ككتلة SQL واحدة. عندما يفشل `DO $$`، التراجع يشمل `ALTER TABLE` أيضاً. الـ catch يبتلع الخطأ بصمت. الإصلاح: تقسيم إلى استدعاءات `ExecuteSqlRawAsync` منفصلة.
+  2. **`Reading as Int32 is not supported for varchar`** (expenses): `OperationalExpenseConfiguration` كان ناقص `.HasConversion<string>()` لـ `Category` و `ApprovalStatus`. كل الـ enums الأخرى في النظام تضيفه (9 ملفات أخرى)، هذا كان الاستثناء الوحيد. الإصلاح: إضافة `.HasConversion<string>().HasMaxLength(30)`.
+- **الدليل:** #632 (diagnostic، مُدموج ثم أُزيل) + #633 (root-cause fix، مُدموج). تحقّق إنتاجي: `curl /api/dashboard/stats → 200`، `curl /api/contracts?status=active → 200`، `curl /api/finance-v3/expenses → 200`.
+- **لا عمل متبقٍ على هذا العنصر.**
 
 ### 🟢 SEQ-07 — تحسينات رسائل الخطأ الصامتة في التشغيل اليومي (QA3-02/QA5-04 family)
 

@@ -78,7 +78,7 @@ public class JourneyUpdatedSignalRTests
             Code = $"SVC-{Guid.NewGuid():N}".Substring(0, 10),
             DefaultPrice = 5000m
         };
-        var today = date ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = date ?? ClinicTimeProvider.ClinicToday();
         var appointment = new Appointment
         {
             PatientId = patient.Id,
@@ -146,7 +146,7 @@ public class JourneyUpdatedSignalRTests
     {
         await using var db = CreateDb();
         var seeded = SeedAppointment(db, status: AppointmentStatus.InProgress);
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
 
         var visit = new Visit
         {
@@ -196,7 +196,7 @@ public class JourneyUpdatedSignalRTests
     {
         await using var db = CreateDb();
         var seeded = SeedAppointment(db, status: AppointmentStatus.InProgress);
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
 
         var visit = new Visit
         {

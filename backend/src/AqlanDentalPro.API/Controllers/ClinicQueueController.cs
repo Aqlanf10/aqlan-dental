@@ -51,7 +51,7 @@ public class ClinicQueueController(
     {
         try
         {
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var today = ClinicTimeProvider.ClinicToday();
 
             var query = db.ClinicQueueItems
                 .Include(q => q.Patient)
@@ -153,7 +153,7 @@ public class ClinicQueueController(
     [HttpPost]
     public async Task<IActionResult> AddToQueue([FromBody] AddToQueueRequest req)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
 
         // Validate patient exists
         var patient = await db.Patients.FindAsync(req.PatientId);
@@ -834,7 +834,7 @@ public class ClinicQueueController(
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var today = ClinicTimeProvider.ClinicToday();
 
             foreach (var req in items)
             {
@@ -1112,7 +1112,7 @@ public class ClinicQueueController(
     {
         try
         {
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var today = ClinicTimeProvider.ClinicToday();
 
             var items = await db.ClinicQueueItems
                 .Include(q => q.Patient)
@@ -1291,7 +1291,7 @@ public class ClinicQueueController(
     [HttpGet("estimated-wait")]
     public async Task<IActionResult> GetEstimatedWait()
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
 
         // Calculate average service time from completed items today
         var completedItems = await db.ClinicQueueItems
@@ -1383,7 +1383,7 @@ public class ClinicQueueController(
         if (!appointment.IsActive)
             return BadRequest(new { message = "الموعد محذوف" });
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
         if (appointment.AppointmentDate != today)
             return BadRequest(new { message = "لا يمكن تسجيل الوصول إلا لمواعيد اليوم" });
 

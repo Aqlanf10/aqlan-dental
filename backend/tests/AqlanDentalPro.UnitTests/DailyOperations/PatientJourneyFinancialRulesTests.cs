@@ -28,7 +28,7 @@ public class PatientJourneyFinancialRulesTests
     public async Task GetToday_ConsultationFeeUnpaid_ReturnsWaitingForPaymentGate()
     {
         await using var db = CreateDb();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
         SeedAppointment(db, today, appointmentType: "NewConsultation", requiresFee: true, fee: 100m);
         await db.SaveChangesAsync();
 
@@ -44,7 +44,7 @@ public class PatientJourneyFinancialRulesTests
     public async Task GetToday_EmergencyVisit_DoesNotBlockEntryForUnpaidConsultationFee()
     {
         await using var db = CreateDb();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
         SeedAppointment(db, today, appointmentType: "حالة إسعافية", requiresFee: true, fee: 100m);
         await db.SaveChangesAsync();
 
@@ -59,7 +59,7 @@ public class PatientJourneyFinancialRulesTests
     public async Task GetToday_PaidConsultationFee_DoesNotBlockEntry()
     {
         await using var db = CreateDb();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
         var seeded = SeedAppointment(db, today, appointmentType: "NewConsultation", requiresFee: true, fee: 100m);
         db.Payments.Add(new Payment
         {
@@ -81,7 +81,7 @@ public class PatientJourneyFinancialRulesTests
     public async Task GetToday_VisitWithDraftInvoiceAndLabOrder_ReturnsJourneyMarkers()
     {
         await using var db = CreateDb();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
         var seeded = SeedAppointment(db, today, appointmentType: "LabOrder", requiresFee: false, fee: 0m);
         var visit = new Visit
         {
@@ -136,7 +136,7 @@ public class PatientJourneyFinancialRulesTests
     public async Task MarkLeftWithoutCompletion_SetsVisitStatusCancelsQueueAndWritesAudit()
     {
         await using var db = CreateDb();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
         var seeded = SeedAppointment(db, today, appointmentType: "Treatment", requiresFee: false, fee: 0m);
         seeded.Appointment.Status = AppointmentStatus.InProgress;
 

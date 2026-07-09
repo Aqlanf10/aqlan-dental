@@ -183,7 +183,7 @@ public class CheckoutService(
         if (appointment.Status != AppointmentStatus.Arrived && appointment.Status != AppointmentStatus.Waiting)
             return BadRequest(new { message = "يجب أن يكون المريض وصل أو في الانتظار قبل إضافته لقائمة الانتظار" });
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
 
         // Sprint 1 FIX: Wrap in transaction + advisory lock to prevent duplicate queue items
         await using var tx = await db.Database.BeginTransactionAsync();
@@ -327,7 +327,7 @@ public class CheckoutService(
             }
         }
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
 
         // Sprint 1 FIX: Wrap in transaction + advisory lock to prevent duplicate visits
         await using var tx = await db.Database.BeginTransactionAsync();
@@ -590,7 +590,7 @@ public class CheckoutService(
             // Update queue item if exists
             if (visit.AppointmentId.HasValue)
             {
-                var today = DateOnly.FromDateTime(DateTime.UtcNow);
+                var today = ClinicTimeProvider.ClinicToday();
                 var queueItem = await db.ClinicQueueItems
                     .FirstOrDefaultAsync(q => q.AppointmentId == visit.AppointmentId && q.QueueDate == today && q.IsActive);
 
@@ -714,7 +714,7 @@ public class CheckoutService(
             // Complete queue item if still active
             if (visit.AppointmentId.HasValue)
             {
-                var today = DateOnly.FromDateTime(DateTime.UtcNow);
+                var today = ClinicTimeProvider.ClinicToday();
                 var queueItem = await db.ClinicQueueItems
                     .FirstOrDefaultAsync(q => q.AppointmentId == visit.AppointmentId && q.QueueDate == today && q.IsActive
                         && q.Status != ClinicQueueStatus.Completed && q.Status != ClinicQueueStatus.Cancelled);

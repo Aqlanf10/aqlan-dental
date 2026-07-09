@@ -41,8 +41,8 @@ public class OrthoDailyOperationsIntegrationTests
         {
             OrthoCaseId = orthoCase.Id,
             VisitNumber = 1,
-            VisitDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-7),
-            NextAppointmentDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(14),
+            VisitDate = ClinicTimeProvider.ClinicToday().AddDays(-7),
+            NextAppointmentDate = ClinicTimeProvider.ClinicToday().AddDays(14),
             IsActive = true
         });
         var contract = new Contract
@@ -118,7 +118,7 @@ public class OrthoDailyOperationsIntegrationTests
     {
         await using var db = CreateDb();
         var seeded = SeedAppointment(db);
-        var visitDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        var visitDate = ClinicTimeProvider.ClinicToday();
         var orthoCase = new OrthoCase
         {
             PatientId = seeded.Patient.Id,
@@ -170,7 +170,7 @@ public class OrthoDailyOperationsIntegrationTests
         {
             OrthoCaseId = orthoCase.Id,
             VisitNumber = 1,
-            VisitDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            VisitDate = ClinicTimeProvider.ClinicToday(),
             DoctorId = seeded.Doctor.Id,
             IsActive = true
         };
@@ -281,7 +281,7 @@ public class OrthoDailyOperationsIntegrationTests
             Patient = patient,
             DoctorId = doctor.Id,
             Doctor = doctor,
-            AppointmentDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            AppointmentDate = ClinicTimeProvider.ClinicToday(),
             StartTime = new TimeOnly(8, 0),
             EndTime = new TimeOnly(8, 30),
             AppointmentType = "OrthoFollowUp",

@@ -443,7 +443,7 @@ public class PatientJourneyService(
                     return StatusCode(403, new { message = "ليس لديك صلاحية الوصول لبيانات هذا المريض" });
             }
 
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var today = ClinicTimeProvider.ClinicToday();
 
             // 1. Patient basic info
             var patient = await db.Patients
@@ -999,7 +999,7 @@ public class PatientJourneyService(
             .Select(g => g.OrderByDescending(c => c.CreatedAt).First())
             .ToList();
         var caseIds = selectedCases.Select(c => c.Id).ToList();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
 
         var visits = await db.OrthoVisits
             .IgnoreQueryFilters()

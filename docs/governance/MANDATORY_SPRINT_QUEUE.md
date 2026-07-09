@@ -61,15 +61,19 @@
 - **تحذير سابق (مؤرشف):** هذا العنصر كان يمسّ المالية — نُفِّذ بنماذج قوية وفق `docs/governance/MULTI_MODEL_AGENT_RULES.md`. PR #606 القديم أُغلق كمنحرف/قديم واستُبدل بالشرائح الثلاث النظيفة أعلاه.
 - **لا عمل متبقٍ على هذا العنصر.**
 
-### 🟡 SEQ-05 — توحيد المنطقة الزمنية في وحدة الطابور والرحلة (QA5-03)
+### ✅ SEQ-05 — توحيد المنطقة الزمنية في وحدة الطابور والرحلة (QA5-03)
 
-- **الحالة:** 🟡 جاهز — مكتشف ومُوثّق حيًا في جولة QA الخامسة (PR #620). عائلة كاملة من `DateOnly.FromDateTime(DateTime.UtcNow)` في:
-  - `ClinicQueueController.cs` (الأسطر 53، 155، 815، 1093، 1272، 1364 وقت الاكتشاف)
-  - `CheckoutService.cs` (186، 330، 593، 717)
-  - `PatientJourneyService.GetDailySummary` (446)
-- **النمط المرجعي:** PR #582 (`OverdueNotificationJob` → `ClinicTimeProvider.ClinicToday()`/`ToUtcRange`) و SEQ-05 نفسه جزئيًا في `ClinicQueueController.StartVisit` (أُصلح في PR #620).
-- **معيار الخروج:** كل المواقع أعلاه تستخدم `ClinicTimeProvider.ClinicToday()`؛ اختبار جديد يثبت أن عنصر انتظار مُنشأ الساعة 01:00 بتوقيت اليمن (22:00 UTC اليوم السابق) يُحسب ضمن يوم العيادة الصحيح.
-- **خطر الانحراف:** هذه دوال شديدة الاستخدام (كل عملية طابور/تحصيل يوميًا) — غطِّ بكامل الاختبارات الموجودة قبل الدمج ولا تُغيّر التوقيع العام للدوال.
+- **الحالة:** ✅ منجَز — PR #630 استبدل 13 موقعاً من `DateOnly.FromDateTime(DateTime.UtcNow)` بـ `ClinicTimeProvider.ClinicToday()` في وحدة الطابور/الرحلة فقط.
+- **ما نُفِّذ:**
+  - `ClinicQueueController.cs` (6 مواقع): GetTodayQueue, AddToQueue, Reorder, GetDisplay, GetEstimatedWait, CheckIn
+  - `CheckoutService.cs` (4 مواقع): SendToQueue, StartVisit, HandoffToReception, Checkout
+  - `PatientJourneyService.cs` (2 موقع): GetDailySummary, GetOrthoCaseSummaries
+  - `PatientJourneyController.cs` (1 موقع): GetToday default queryDate
+  - 5 اختبارات جديدة في `ClinicTimeProviderTimezoneTests.cs` تثبت معيار الخروج
+  - 4 ملفات اختبار موجودة حُدِّثت لتستخدم `ClinicTimeProvider.ClinicToday()` عند إنشاء بيانات الاختبار
+- **معيار الخروج (محقَّق):** كل المواقع المذكورة تستخدم `ClinicTimeProvider.ClinicToday()`؛ اختبار `ClinicToday_At2200Utc_ReturnsNextDayInYemen` يثبت أن عنصر انتظار مُنشأ الساعة 01:00 بتوقيت اليمن (22:00 UTC اليوم السابق) يُحسب ضمن يوم العيادة الصحيح. CI أخضر بالكامل.
+- **النمط المرجعي:** PR #582 (`OverdueNotificationJob`) + PR #620 (`ClinicQueueController.StartVisit` partial fix).
+- **لا عمل متبقٍ على هذا العنصر.**
 
 ### 🔴 SEQ-06 — تشخيص السبب الحقيقي وراء 4 أعطال 500 حية في الإنتاج (السبب لم يعد النشر ولا المخطط)
 

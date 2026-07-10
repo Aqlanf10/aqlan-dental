@@ -268,6 +268,14 @@ public class CephAiDraftService(
             throw new CephAiUpstreamException(reason, ex);
         }
 
+        // CEPH-TASK-001 (Codex P2 on #641): system-prompt rule 6 ASKS the model
+        // to end the draft with DisclaimerAr, but a prompt is a request, not a
+        // guarantee. Enforce it server-side so the draft BODY always carries the
+        // disclaimer even when the doctor copies only the text — the separate
+        // DTO Disclaimer field alone doesn't survive a copy of the body.
+        if (!draftText.Contains(DisclaimerAr, StringComparison.Ordinal))
+            draftText = draftText.TrimEnd() + "\n\n" + DisclaimerAr;
+
         await WriteAuditAsync(analysisId, modelId, succeeded: true,
             errorSummary: null, inputSummary, outputLength: draftText.Length);
 

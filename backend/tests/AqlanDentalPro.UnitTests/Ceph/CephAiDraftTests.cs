@@ -299,6 +299,65 @@ public class CephAiDraftTests
         });
     }
 
+    // ─── CEPH-TASK-001 (Codex P2 on #641): server-side disclaimer enforcement ─
+    // The system prompt ASKS the model to end with DisclaimerAr, but a prompt is
+    // a request, not a guarantee. The service must append it when missing so the
+    // draft BODY always carries the disclaimer (the separate DTO field alone
+    // does not survive a copy of the body), and must not duplicate it when the
+    // model complied.
+
+    [Fact]
+    public async Task Draft_WhenModelOmitsDisclaimer_ServiceAppendsIt()
+    {
+        await WithEnvKeyAsync("GEMINI_API_KEY", TestApiKey, async () =>
+        {
+            await using var db = CreateDb();
+            var analysisId = await SeedAnalysisAsync(db);
+            await EnableFeatureAsync(db);
+            // GeminiSuccessJson's model text deliberately has no disclaimer.
+            var service = CreateService(db, new StubHandler(HttpStatusCode.OK, GeminiSuccessJson));
+
+            var result = await service.GenerateDraftAsync(analysisId);
+
+            result!.Draft.TrimEnd().Should().EndWith(CephAiDraftService.DisclaimerAr,
+                "the draft body must carry the disclaimer even when the model ignores prompt rule 6");
+            // Audit output length is measured AFTER enforcement — stays consistent.
+            var log = await db.OrthodonticAiLogs.SingleAsync(l => l.AnalysisId == analysisId);
+            log.OutputLength.Should().Be(result.Draft.Length);
+        });
+    }
+
+    [Fact]
+    public async Task Draft_WhenModelAlreadyEndsWithDisclaimer_ServiceDoesNotDuplicateIt()
+    {
+        await WithEnvKeyAsync("GEMINI_API_KEY", TestApiKey, async () =>
+        {
+            await using var db = CreateDb();
+            var analysisId = await SeedAnalysisAsync(db);
+            await EnableFeatureAsync(db);
+            var compliantJson = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                candidates = new[]
+                {
+                    new
+                    {
+                        content = new
+                        {
+                            role = "model",
+                            parts = new[] { new { text = "مسودة تشخيص: الصنف الثاني.\n\n" + CephAiDraftService.DisclaimerAr } },
+                        },
+                    },
+                },
+            });
+            var service = CreateService(db, new StubHandler(HttpStatusCode.OK, compliantJson));
+
+            var result = await service.GenerateDraftAsync(analysisId);
+
+            var occurrences = result!.Draft.Split(CephAiDraftService.DisclaimerAr).Length - 1;
+            occurrences.Should().Be(1, "a compliant model response must not get a second copy appended");
+        });
+    }
+
     // ─── Success path — anthropic (mocked API) ───────────────────────────────
 
     [Fact]

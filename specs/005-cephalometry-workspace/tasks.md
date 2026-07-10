@@ -6,11 +6,15 @@
   `CephAiLandmarkDraftService.ReviewDisclaimer` explicitly disclaims certified
   tracing and mandates per-point orthodontist review before save/calculation;
   `CephAiDraftService.DisclaimerAr` + its system prompt (rules 5–6) forbid final
-  treatment decisions and force the disclaimer verbatim at the end of every
-  generated draft; the ceph UI labels every AI point "AI · مسودة", flags
-  low-confidence points for manual review, renders the returned disclaimer, and
-  honestly labels the non-AI template tool "ليست ذكاءً اصطناعيًا". Full evidence
-  list in `specs/004-orthodontics-workspace/tasks.md` (ORTHO-TASK-003 entry).
+  treatment decisions and REQUEST the disclaimer verbatim at the end of every
+  draft — and since a prompt is a request, not a guarantee (Codex P2 on #641),
+  `GenerateDraftAsync` now also ENFORCES it server-side: any draft body missing
+  `DisclaimerAr` gets it appended before return (pinned by 2 unit tests:
+  append-when-missing, no-duplicate-when-compliant). The ceph UI labels every AI
+  point "AI · مسودة", flags low-confidence points for manual review, renders the
+  returned disclaimer, and honestly labels the non-AI template tool
+  "ليست ذكاءً اصطناعيًا". Full evidence list in
+  `specs/004-orthodontics-workspace/tasks.md` (ORTHO-TASK-003 entry).
 - `CEPH-TASK-002`: Map ceph UI to backend DTOs. Cheap model: read-only.
 - `CEPH-TASK-003`: Add tests for report/AI behavior. Strong model.
 - `CEPH-TASK-004`: Runtime-verify tracing, VTO, and draft review. Needs runtime verification.

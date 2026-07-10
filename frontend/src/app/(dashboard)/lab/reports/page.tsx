@@ -10,6 +10,7 @@ import type {
   LabCostReportItem, LabPerformanceItem, LabPerformanceSummary,
   LabPayable, LabDebtSummary,
 } from "@/types/lab";
+import { QueryErrorBanner } from "@/components/shared/QueryErrorBanner";
 import { cn } from "@/lib/utils";
 
 type TabType = "costs" | "performance" | "debts";
@@ -19,7 +20,7 @@ export default function LabReportsPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
-  const { data: costsData, isLoading: costsLoading } = useQuery({
+  const { data: costsData, isLoading: costsLoading, isError: costsError, refetch: refetchCosts } = useQuery({
     queryKey: ["lab-costs", dateFrom, dateTo],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -31,7 +32,7 @@ export default function LabReportsPage() {
     enabled: tab === "costs",
   });
 
-  const { data: perfData, isLoading: perfLoading } = useQuery({
+  const { data: perfData, isLoading: perfLoading, isError: perfError, refetch: refetchPerf } = useQuery({
     queryKey: ["lab-performance", dateFrom, dateTo],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -43,7 +44,7 @@ export default function LabReportsPage() {
     enabled: tab === "performance",
   });
 
-  const { data: debtsData, isLoading: debtsLoading } = useQuery({
+  const { data: debtsData, isLoading: debtsLoading, isError: debtsError, refetch: refetchDebts } = useQuery({
     queryKey: ["lab-debts"],
     queryFn: async () => {
       const res = await api.get<{ data: LabPayable[]; summary: LabDebtSummary }>("/api/reports/lab-debts");
@@ -117,6 +118,10 @@ export default function LabReportsPage() {
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
             {costsLoading ? (
               <div className="p-6"><TableSkeleton rows={4} cols={6} /></div>
+            ) : costsError ? (
+              <div className="p-6">
+                <QueryErrorBanner text="تعذر تحميل بيانات التكاليف — تحقق من الاتصال وحاول مجددًا" onRetry={() => refetchCosts()} />
+              </div>
             ) : (costsData ?? []).length === 0 ? (
               <div className="flex flex-col items-center py-12 text-gray-400">
                 <FlaskConical className="w-10 h-10 mb-3" />
@@ -204,6 +209,10 @@ export default function LabReportsPage() {
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
               {perfLoading ? (
                 <div className="p-6"><TableSkeleton rows={4} cols={8} /></div>
+              ) : perfError ? (
+                <div className="p-6">
+                  <QueryErrorBanner text="تعذر تحميل بيانات الأداء — تحقق من الاتصال وحاول مجددًا" onRetry={() => refetchPerf()} />
+                </div>
               ) : (perfData?.data ?? []).length === 0 ? (
                 <div className="flex flex-col items-center py-12 text-gray-400">
                   <TrendingUp className="w-10 h-10 mb-3" />
@@ -293,6 +302,10 @@ export default function LabReportsPage() {
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
               {debtsLoading ? (
                 <div className="p-6"><TableSkeleton rows={4} cols={7} /></div>
+              ) : debtsError ? (
+                <div className="p-6">
+                  <QueryErrorBanner text="تعذر تحميل ديون المعامل — تحقق من الاتصال وحاول مجددًا" onRetry={() => refetchDebts()} />
+                </div>
               ) : (debtsData?.data ?? []).length === 0 ? (
                 <div className="flex flex-col items-center py-12 text-gray-400">
                   <DollarSign className="w-10 h-10 mb-3" />

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Activity, MoreVertical, Pencil, Stethoscope, Send, Trash2, Plus, UserX, Mail } from "lucide-react";
 import type { Appointment } from "@/types/appointment";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { cn, APPOINTMENT_STATUS_LABELS, formatTime } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
@@ -43,6 +44,7 @@ function newApptUrl(date: string, hour: number, doctorId?: string): string {
 export function DaySchedule({ date, doctorId }: Props) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [noShowLoading, setNoShowLoading] = useState(false);
 
   // NOTE: This component uses direct api.get() with from/to params instead of useAppointments hook.
@@ -50,21 +52,29 @@ export function DaySchedule({ date, doctorId }: Props) {
   // Until the hook is updated to support from/to params, direct API calls are the correct approach here.
   const reload = () => {
     setLoading(true);
+    setLoadError(false);
     const q = doctorId ? `&doctorId=${doctorId}` : "";
     api
       .get<Appointment[]>(`/api/appointments?from=${date}&to=${date}${q}`)
       .then((r) => setAppointments(r.data))
-      .catch(() => {})
+      // A failed fetch must not render as an empty (appointment-free) day.
+      .catch(() => { setAppointments([]); setLoadError(true); })
       .finally(() => setLoading(false));
   };
 
   useEffect(() => { reload(); }, [date, doctorId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateStatus = async (id: string, status: string) => {
-    await api.put(`/api/appointments/${id}/status`, { status }).catch((e) => { console.error("[DaySchedule] Failed to update appointment status:", e); });
-    setAppointments((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, status } : a))
-    );
+    try {
+      await api.put(`/api/appointments/${id}/status`, { status });
+      // Flip the card ONLY after the server accepted the change — a local
+      // flip on failure showed a false "مكتمل/ملغي" until reload.
+      setAppointments((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, status } : a))
+      );
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل تحديث حالة الموعد"));
+    }
   };
 
   const handleNoShowAll = async () => {
@@ -90,8 +100,8 @@ export function DaySchedule({ date, doctorId }: Props) {
         )
       );
       toast.success(`تم تسجيل غياب ${remaining.length} موعد`);
-    } catch {
-      toast.error("فشل تسجيل الغياب الجماعي");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل تسجيل الغياب الجماعي"));
     } finally {
       setNoShowLoading(false);
     }
@@ -103,6 +113,23 @@ export function DaySchedule({ date, doctorId }: Props) {
         {Array.from({ length: 5 }).map((_, i) => (
           <div key={i} className="h-16 bg-gray-100 rounded-xl" />
         ))}
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="rounded-xl border border-red-200 py-10 text-center" style={{ background: "#fef2f2" }}>
+        <p className="text-sm font-medium" style={{ color: "#b91c1c" }}>
+          تعذر تحميل مواعيد هذا اليوم — تحقق من الاتصال وحاول مجددًا
+        </p>
+        <button
+          type="button"
+          onClick={reload}
+          className="mt-3 rounded-lg border border-red-300 px-4 py-1.5 text-sm font-medium text-red-700 transition hover:bg-red-100"
+        >
+          إعادة المحاولة
+        </button>
       </div>
     );
   }
@@ -186,6 +213,7 @@ function AppointmentCard({
   const [startingVisit, setStartingVisit] = useState(false);
   const [arrivalLoading, setArrivalLoading] = useState(false);
   const [queueLoading, setQueueLoading] = useState(false);
+  const [reminderSending, setReminderSending] = useState(false);
   const [hasEmail, setHasEmail] = useState<boolean | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const transitions = STATUS_TRANSITIONS[a.status] ?? [];
@@ -272,25 +300,32 @@ function AppointmentCard({
     }
   };
 
+  // In-flight guard: a rapid double-click must not send duplicate reminders.
   const handleSendReminder = async () => {
+    if (reminderSending) return;
+    setReminderSending(true);
     try {
       const { data } = await api.post(`/api/appointments/${a.id}/send-reminder`);
       toast.success(data.message ?? "تم إرسال التذكير");
       setMenuOpen(false);
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg ?? "فشل إرسال التذكير");
+      toast.error(extractErrorMessage(err, "فشل إرسال التذكير"));
+    } finally {
+      setReminderSending(false);
     }
   };
 
   const handleSendEmailReminder = async () => {
+    if (reminderSending) return;
+    setReminderSending(true);
     try {
       const { data } = await api.post(`/api/appointments/${a.id}/send-email-reminder`);
       toast.success(data.message ?? "تم إرسال تذكير الموعد بنجاح");
       setMenuOpen(false);
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg ?? "تعذر إرسال التذكير، حاول مرة أخرى");
+      toast.error(extractErrorMessage(err, "تعذر إرسال التذكير، حاول مرة أخرى"));
+    } finally {
+      setReminderSending(false);
     }
   };
 
@@ -457,7 +492,8 @@ function AppointmentCard({
             )}
             <button
               onClick={handleSendReminder}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-[#f5922e]"
+              disabled={reminderSending}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-[#f5922e] disabled:opacity-50"
             >
               <Send className="w-3.5 h-3.5" />
               إرسال تذكير واتساب
@@ -465,7 +501,8 @@ function AppointmentCard({
             {hasEmail ? (
               <button
                 onClick={handleSendEmailReminder}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-[#0E7490]"
+                disabled={reminderSending}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-[#0E7490] disabled:opacity-50"
               >
                 <Mail className="w-3.5 h-3.5" />
                 إرسال تذكير بالإيميل

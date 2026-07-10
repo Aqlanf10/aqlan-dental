@@ -14,6 +14,7 @@ import type {
   TopLabItem, OverdueOrderItem, MonthlyTrendItem,
 } from "@/types/lab";
 import { cn } from "@/lib/utils";
+import { QueryErrorBanner } from "@/components/shared/QueryErrorBanner";
 
 // FE-08: STATUS_LABELS + STATUS_COLORS now imported from @/lib/labStatus (was re-declared locally).
 
@@ -72,7 +73,7 @@ function SimpleBarChart({ data, maxVal, labelFn, valueFn, colorFn }: {
 }
 
 export default function LabDashboardPage() {
-  const { data: dashboardData, isLoading } = useQuery({
+  const { data: dashboardData, isLoading, isError, refetch } = useQuery({
     queryKey: ["lab-dashboard"],
     queryFn: async () => {
       const res = await api.get<{ data: LabDashboardData }>("/api/reports/lab-dashboard");
@@ -86,6 +87,18 @@ export default function LabDashboardPage() {
       <div className="space-y-6 p-6">
         <h1 className="text-2xl font-bold text-gray-900">ملخص المختبر</h1>
         <TableSkeleton rows={4} cols={4} />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="space-y-6 p-6">
+        <h1 className="text-2xl font-bold text-gray-900">ملخص المختبر</h1>
+        <QueryErrorBanner
+          text="تعذر تحميل ملخص المختبر — الأرقام غير متاحة وليست أصفارًا حقيقية"
+          onRetry={() => refetch()}
+        />
       </div>
     );
   }

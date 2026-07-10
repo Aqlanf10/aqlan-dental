@@ -19,6 +19,7 @@ const STATUS_BADGE_COLORS: Record<string, string> = {
 export function UpcomingWidget() {
   const [appointments, setAppointments] = useState<UpcomingAppointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     async function fetchUpcoming() {
@@ -27,8 +28,11 @@ export function UpcomingWidget() {
           "/api/appointments/upcoming?hours=2"
         );
         setAppointments(data ?? []);
+        setLoadError(false);
       } catch {
+        // A failed poll must not read as "لا مواعيد قادمة" (auto-retries each minute).
         setAppointments([]);
+        setLoadError(true);
       } finally {
         setLoading(false);
       }
@@ -49,6 +53,22 @@ export function UpcomingWidget() {
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="h-12 bg-gray-100 rounded-lg" />
           ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-white shadow-sm p-5">
+        <h3 className="font-bold text-sm text-gray-900 mb-4 flex items-center gap-2">
+          <CalendarDays className="w-4 h-4 text-clinic-blue" />
+          المواعيد القادمة
+        </h3>
+        <div className="text-center py-6 rounded-lg" style={{ background: "#fef2f2" }}>
+          <p className="text-xs font-medium" style={{ color: "#b91c1c" }}>
+            تعذر تحميل المواعيد القادمة — سيُعاد الفحص تلقائيًا خلال دقيقة
+          </p>
         </div>
       </div>
     );

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Calendar, Users, Activity, FlaskConical, AlertTriangle, Wallet, Plus, ListOrdered } from "lucide-react";
 import Link from "next/link";
 import { StatsCard } from "@/components/dashboard/StatsCard";
@@ -23,56 +23,84 @@ interface RecentPatient {
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [statsError, setStatsError] = useState(false);
   const [recentPatients, setRecentPatients] = useState<RecentPatient[]>([]);
+  const [recentsError, setRecentsError] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setStatsError(false);
+    setRecentsError(false);
     api
       .get<DashboardStats>("/api/dashboard/stats")
       .then((r) => setStats(r.data))
-      .catch(() => {})
+      // A server outage must NOT render as an operational clinic with zero
+      // everything — keep stats null and show the banner instead.
+      .catch(() => { setStats(null); setStatsError(true); })
       .finally(() => setLoading(false));
 
     // Fetch recent patients for the "Recent Patients" section
     api
       .get<{ data: RecentPatient[] }>("/api/patients?pageSize=5&status=active")
       .then((r) => setRecentPatients(r.data.data ?? []))
-      .catch(() => {});
+      .catch(() => { setRecentPatients([]); setRecentsError(true); });
   }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // On stats failure: cards show "—" (unknown), never a misleading 0.
+  const statValue = (v: number | string | undefined | null) =>
+    loading || statsError ? "—" : (v ?? 0);
 
   return (
     <div className="space-y-5 page-content">
       {/* Attention alerts — "يحتاج انتباهك" */}
       <AttentionAlerts />
 
+      {statsError && (
+        <div className="rounded-xl border border-red-200 px-5 py-4 flex items-center justify-between gap-3 flex-wrap" style={{ background: "#fef2f2" }}>
+          <p className="text-sm font-medium" style={{ color: "#b91c1c" }}>
+            تعذر تحميل إحصائيات اللوحة — الأرقام أدناه غير متاحة وليست أصفارًا حقيقية
+          </p>
+          <button
+            type="button"
+            onClick={load}
+            className="rounded-lg border border-red-300 px-4 py-1.5 text-sm font-medium text-red-700 transition hover:bg-red-100"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+
       {/* Stats row — 4 column grid matching ZIP */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
         <StatsCard
           title="إجمالي المرضى"
-          value={loading ? "—" : (stats?.totalPatients ?? 0)}
+          value={statValue(stats?.totalPatients)}
           icon={Users}
           color="blue"
-          description={loading ? "" : `+${stats?.newPatientsToday ?? 0} جديد اليوم`}
+          description={loading || statsError ? "" : `+${stats?.newPatientsToday ?? 0} جديد اليوم`}
         />
         <StatsCard
           title="مواعيد اليوم"
-          value={loading ? "—" : (stats?.appointmentsToday ?? 0)}
+          value={statValue(stats?.appointmentsToday)}
           icon={Calendar}
           color="orange"
-          description={loading ? "" : `${stats?.appointmentsToday ?? 0} موعد`}
+          description={loading || statsError ? "" : `${stats?.appointmentsToday ?? 0} موعد`}
         />
         <StatsCard
           title="حالات تقويم نشطة"
-          value={loading ? "—" : (stats?.activeOrthoCases ?? 0)}
+          value={statValue(stats?.activeOrthoCases)}
           icon={Activity}
           color="purple"
           description="جارية حالياً"
         />
         <StatsCard
           title="إيرادات الشهر"
-          value={loading ? "—" : (stats ? `${Math.round(stats.totalRevenueMTD / 1000)}K ر.ي` : 0)}
+          value={statValue(stats ? `${Math.round(stats.totalRevenueMTD / 1000)}K ر.ي` : null)}
           icon={Wallet}
           color="green"
-          description={loading ? "" : `${stats?.overdueContractsCount ?? 0} عقد متأخر السداد`}
+          description={loading || statsError ? "" : `${stats?.overdueContractsCount ?? 0} عقد متأخر السداد`}
         />
       </div>
 
@@ -100,7 +128,11 @@ export default function DashboardPage() {
               عرض الكل
             </Link>
           </div>
-          {recentPatients.length === 0 ? (
+          {recentsError ? (
+            <div className="py-8 text-center text-xs font-medium" style={{ color: "#b91c1c" }}>
+              تعذر تحميل أحدث المرضى — استخدم «إعادة المحاولة» أعلاه أو حدّث الصفحة
+            </div>
+          ) : recentPatients.length === 0 ? (
             <div className="py-8 text-center text-xs" style={{ color: "#94a3b8" }}>لا يوجد مرضى بعد</div>
           ) : (
             recentPatients.map((p, i) => (
@@ -157,14 +189,14 @@ export default function DashboardPage() {
           <div className="grid grid-cols-2 gap-4">
             <StatsCard
               title="طلبات مختبر معلقة"
-              value={loading ? "—" : (stats?.pendingLabOrders ?? 0)}
+              value={statValue(stats?.pendingLabOrders)}
               icon={FlaskConical}
               color="blue"
               description="قيد التصنيع أو الشحن"
             />
             <StatsCard
               title="عقود متأخرة"
-              value={loading ? "—" : (stats?.overdueContractsCount ?? 0)}
+              value={statValue(stats?.overdueContractsCount)}
               icon={AlertTriangle}
               color={stats?.overdueContractsCount ? "red" : "green"}
               description="أقساط متأخرة السداد"
@@ -177,15 +209,15 @@ export default function DashboardPage() {
             <h3 className="font-extrabold text-sm mb-3.5" style={{ color: "#0d2137" }}>حالة الانتظار</h3>
             <div className="grid grid-cols-3 gap-3">
               <div className="rounded-lg p-3 text-center" style={{ background: "#f5922e10", border: "1.5px solid #f5922e25" }}>
-                <div className="text-xl font-extrabold" style={{ color: "#f5922e" }}>{stats?.queueWaitingCount ?? 0}</div>
+                <div className="text-xl font-extrabold" style={{ color: "#f5922e" }}>{statsError ? "—" : (stats?.queueWaitingCount ?? 0)}</div>
                 <div className="text-xs font-medium mt-1" style={{ color: "#64748b" }}>عدد المنتظرين</div>
               </div>
               <div className="rounded-lg p-3 text-center" style={{ background: "#22c55e10", border: "1.5px solid #22c55e25" }}>
-                <div className="text-xl font-extrabold" style={{ color: "#22c55e" }}>{stats?.todayArrivedCount ?? 0}</div>
+                <div className="text-xl font-extrabold" style={{ color: "#22c55e" }}>{statsError ? "—" : (stats?.todayArrivedCount ?? 0)}</div>
                 <div className="text-xs font-medium mt-1" style={{ color: "#64748b" }}>عدد الواصلين</div>
               </div>
               <div className="rounded-lg p-3 text-center" style={{ background: "#3d7ab510", border: "1.5px solid #3d7ab525" }}>
-                <div className="text-xl font-extrabold" style={{ color: "#3d7ab5" }}>{stats?.pendingBookingRequestsCount ?? 0}</div>
+                <div className="text-xl font-extrabold" style={{ color: "#3d7ab5" }}>{statsError ? "—" : (stats?.pendingBookingRequestsCount ?? 0)}</div>
                 <div className="text-xs font-medium mt-1" style={{ color: "#64748b" }}>طلبات حجز معلقة</div>
               </div>
             </div>

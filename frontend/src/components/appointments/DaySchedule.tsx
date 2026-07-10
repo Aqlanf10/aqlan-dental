@@ -77,6 +77,20 @@ export function DaySchedule({ date, doctorId }: Props) {
     }
   };
 
+  // Local-only sync — for card actions whose own endpoint already changed the
+  // server state (mark-arrival, send-to-queue, start-visit). Re-issuing a
+  // PUT /status here would be redundant, and after a delete it 404s (Codex P2
+  // on #646): the appointment is soft-deleted and hidden by the IsActive filter.
+  const syncLocalStatus = (id: string, status: string) => {
+    setAppointments((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, status } : a))
+    );
+  };
+
+  const removeLocally = (id: string) => {
+    setAppointments((prev) => prev.filter((a) => a.id !== id));
+  };
+
   const handleNoShowAll = async () => {
     const remaining = appointments.filter(
       (a) => a.status === "Scheduled" || a.status === "Confirmed"
@@ -179,6 +193,8 @@ export function DaySchedule({ date, doctorId }: Props) {
                   key={a.id}
                   appointment={a}
                   onStatusChange={updateStatus}
+                  onLocalStatus={syncLocalStatus}
+                  onDeleted={removeLocally}
                 />
               ))}
               {!slotAppts.length && (
@@ -203,9 +219,15 @@ export function DaySchedule({ date, doctorId }: Props) {
 function AppointmentCard({
   appointment: a,
   onStatusChange,
+  onLocalStatus,
+  onDeleted,
 }: {
   appointment: Appointment;
+  /** Menu transitions: sends PUT /status to the server, flips on success. */
   onStatusChange: (id: string, status: string) => void;
+  /** Local sync only — the action's own endpoint already changed the server. */
+  onLocalStatus: (id: string, status: string) => void;
+  onDeleted: (id: string) => void;
 }) {
   const { user } = useAuthStore();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -254,7 +276,7 @@ function AppointmentCard({
       toast.success(data.message ?? "تم إنشاء الزيارة بنجاح");
       setVisitExists(true);
       // Update status locally to InProgress
-      onStatusChange(a.id, "InProgress");
+      onLocalStatus(a.id, "InProgress");
       setMenuOpen(false);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -276,7 +298,7 @@ function AppointmentCard({
     try {
       await api.post(`/api/patient-journey/${a.id}/intake`, {});
       toast.success("تم تسجيل حضور المريض بنجاح");
-      onStatusChange(a.id, "Arrived");
+      onLocalStatus(a.id, "Arrived");
       setMenuOpen(false);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -291,7 +313,7 @@ function AppointmentCard({
     try {
       await api.post(`/api/patient-journey/${a.id}/send-to-queue`, {});
       toast.success("تم إرسال المريض إلى الانتظار");
-      onStatusChange(a.id, "Waiting");
+      onLocalStatus(a.id, "Waiting");
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       toast.error(msg ?? "فشل إرسال المريض للانتظار");
@@ -334,7 +356,7 @@ function AppointmentCard({
     try {
       await api.delete(`/api/appointments/${a.id}`);
       toast.success("تم حذف الموعد");
-      onStatusChange(a.id, "Cancelled"); // remove from view
+      onDeleted(a.id); // soft-deleted server-side; drop it from the list like a reload would
       setMenuOpen(false);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;

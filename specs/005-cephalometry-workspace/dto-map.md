@@ -23,9 +23,9 @@ All rows verified against `CephController.cs`, `CephNormsController.cs`, `PhotoA
 | GET `/api/ceph/{id}/report/pdf` | PDF bytes (`File`) | binary download | `ceph/[id]/page.tsx`, `CasePresentationPanel.tsx` |
 | PUT `/api/ceph/{id}/diagnosis` | req `SaveDiagnosisRequest` → anon `{ message }` | req = `CephDiagnosis` partial | `ceph/[id]/page.tsx` |
 | GET `/api/ceph-norms` | `CephNormDto[]` | `ApiNorm[]` | `ceph/[id]/page.tsx` |
-| GET `/api/photo-analysis?orthoCaseId=` | `PhotoAnalysisListDto[]` (see `PhotoAnalysisDto.cs`) | `PhotoAnalysisListItem[]` / `SavedPhotoAnalysis[]` | `FacialPhotoPanel.tsx`, `usePhotoAnalysisCase.ts` |
-| GET `/api/photo-analysis/{id}` | `PhotoAnalysisDto` | inline (shell) | `PhotoAnalysisShell.tsx` |
-| POST `/api/photo-analysis` | req `SavePhotoAnalysisRequest` → `PhotoAnalysisDto` | inline `{ id }` | `usePhotoAnalysisCase.ts` |
+| GET `/api/photo-analysis?orthoCaseId=` | `PhotoAnalysisListItemDto[]` (in `PhotoAnalysisDto.cs`) | `PhotoAnalysisListItem[]` / `SavedPhotoAnalysis[]` | `FacialPhotoPanel.tsx`, `usePhotoAnalysisCase.ts` |
+| GET `/api/photo-analysis/{id}` | `PhotoAnalysisDetailDto` | inline (shell) | `PhotoAnalysisShell.tsx` |
+| POST `/api/photo-analysis` | req `SavePhotoAnalysisRequest` → `PhotoAnalysisDetailDto` | inline `{ id }` | `usePhotoAnalysisCase.ts` |
 | GET `/api/photo-analysis/{id}/report/pdf` | PDF bytes | binary download | `FacialPhotoPanel.tsx`, `PhotoAnalysisShell.tsx` |
 
 ### 2. Mismatches / drift found

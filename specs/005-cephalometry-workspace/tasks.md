@@ -16,5 +16,12 @@
   "ليست ذكاءً اصطناعيًا". Full evidence list in
   `specs/004-orthodontics-workspace/tasks.md` (ORTHO-TASK-003 entry).
 - `CEPH-TASK-002`: Map ceph UI to backend DTOs. Cheap model: read-only.
+  — ✅ Done 2026-07-10. Full map in `specs/005-cephalometry-workspace/dto-map.md`:
+  21 endpoint→DTO→consumer rows verified against the actual controllers, DTO
+  files, ts types and pages. Notable finding: the ts `CephAnalysis` detail type
+  drops `IsAutoTraced`/`DoctorId`/`Notes` present in `CephAnalysisDetailDto`
+  (with `Notes` round-tripped on create but never displayable) — real drift
+  flagged for a future UI decision, not silently "fixed". No frontend call
+  targets a non-existent endpoint.
 - `CEPH-TASK-003`: Add tests for report/AI behavior. Strong model.
 - `CEPH-TASK-004`: Runtime-verify tracing, VTO, and draft review. Needs runtime verification.

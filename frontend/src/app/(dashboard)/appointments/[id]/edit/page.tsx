@@ -6,19 +6,30 @@ import { ChevronRight } from "lucide-react";
 import { AppointmentForm } from "@/components/appointments/AppointmentForm";
 import type { Appointment } from "@/types/appointment";
 import api from "@/lib/api";
+import { QueryErrorBanner } from "@/components/shared/QueryErrorBanner";
+import axios from "axios";
 
 export default function EditAppointmentPage() {
   const { id } = useParams<{ id: string }>();
   const [appt, setAppt] = useState<Appointment | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    setLoading(true);
+    setLoadError(false);
     api.get<Appointment>(`/api/appointments/${id}`)
       .then((r) => setAppt(r.data))
-      .catch(() => setNotFound(true))
+      // Only a 404 means "appointment doesn't exist" — a 500/network failure
+      // must not display the misleading "الموعد غير موجود".
+      .catch((err) => {
+        if (axios.isAxiosError(err) && err.response?.status === 404) setNotFound(true);
+        else setLoadError(true);
+      })
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, reloadKey]);
 
   if (loading) {
     return (
@@ -26,6 +37,15 @@ export default function EditAppointmentPage() {
         <div className="h-8 w-48 bg-gray-100 rounded-lg" />
         <div className="h-64 bg-gray-100 rounded-xl" />
       </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <QueryErrorBanner
+        text="تعذر تحميل الموعد — تحقق من الاتصال وحاول مجددًا"
+        onRetry={() => setReloadKey((k) => k + 1)}
+      />
     );
   }
 

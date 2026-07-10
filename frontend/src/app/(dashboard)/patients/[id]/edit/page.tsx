@@ -6,18 +6,28 @@ import { ArrowRight } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
 import api from "@/lib/api";
 import { PatientForm } from "@/components/patients/PatientForm";
+import { QueryErrorBanner } from "@/components/shared/QueryErrorBanner";
+import axios from "axios";
 
 export default function PatientEditPage() {
   const { id } = useParams<{ id: string }>();
   const [patient, setPatient] = useState<PatientProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    setLoading(true);
+    setLoadError(false);
     api.get<PatientProfile>(`/api/patients/${id}`)
       .then((r) => setPatient(r.data))
-      .catch(() => {})
+      // Only a 404 means "patient doesn't exist" — a 500/network failure must
+      // not display the misleading "المريض غير موجود".
+      .catch((err) => {
+        if (!(axios.isAxiosError(err) && err.response?.status === 404)) setLoadError(true);
+      })
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, reloadKey]);
 
   if (loading) {
     return (
@@ -25,6 +35,15 @@ export default function PatientEditPage() {
         <div className="h-10 bg-gray-100 rounded-xl w-64" />
         <div className="h-96 bg-gray-100 rounded-xl" />
       </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <QueryErrorBanner
+        text="تعذر تحميل بيانات المريض — تحقق من الاتصال وحاول مجددًا"
+        onRetry={() => setReloadKey((k) => k + 1)}
+      />
     );
   }
 

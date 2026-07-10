@@ -64,13 +64,18 @@ const TooltipAppt = ({ active, payload, label }: TooltipProps) => {
 export function DashboardCharts() {
   const [data, setData] = useState<ChartsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    setLoading(true);
+    setLoadError(false);
     api.get<ChartsData>("/api/dashboard/charts")
       .then((r) => setData(r.data))
-      .catch(() => {})
+      // Vanishing silently left "broken" indistinguishable from "no data".
+      .catch(() => { setData(null); setLoadError(true); })
       .finally(() => setLoading(false));
-  }, []);
+  }, [reloadKey]);
 
   if (loading) {
     return (
@@ -78,6 +83,23 @@ export function DashboardCharts() {
         <div className="lg:col-span-2 h-56 rounded-xl" style={{ background: "#f1f5f9" }} />
         <div className="h-56 rounded-xl" style={{ background: "#f1f5f9" }} />
         <div className="lg:col-span-3 h-48 rounded-xl" style={{ background: "#f1f5f9" }} />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="rounded-xl border border-red-200 py-10 text-center" style={{ background: "#fef2f2" }}>
+        <p className="text-sm font-medium" style={{ color: "#b91c1c" }}>
+          تعذر تحميل الرسوم البيانية — تحقق من الاتصال وحاول مجددًا
+        </p>
+        <button
+          type="button"
+          onClick={() => setReloadKey((k) => k + 1)}
+          className="mt-3 rounded-lg border border-red-300 px-4 py-1.5 text-sm font-medium text-red-700 transition hover:bg-red-100"
+        >
+          إعادة المحاولة
+        </button>
       </div>
     );
   }

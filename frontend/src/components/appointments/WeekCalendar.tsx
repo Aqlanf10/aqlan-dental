@@ -43,6 +43,7 @@ interface Props {
 export function WeekCalendar({ anchor, doctorId, onDateClick }: Props) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   const dates = getWeekDates(anchor);
   const today = toDateStr(new Date());
@@ -52,11 +53,13 @@ export function WeekCalendar({ anchor, doctorId, onDateClick }: Props) {
   // Until the hook is updated to support from/to params, direct API calls are the correct approach here.
   const load = useCallback(() => {
     setLoading(true);
+    setLoadError(false);
     const q = doctorId ? `&doctorId=${doctorId}` : "";
     api
       .get<Appointment[]>(`/api/appointments?from=${dates[0]}&to=${dates[6]}${q}`)
       .then((r) => setAppointments(r.data))
-      .catch(() => {})
+      // A failed fetch must not render an empty (appointment-free) week grid.
+      .catch(() => { setAppointments([]); setLoadError(true); })
       .finally(() => setLoading(false));
   }, [dates[0], dates[6], doctorId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -84,6 +87,23 @@ export function WeekCalendar({ anchor, doctorId, onDateClick }: Props) {
             ))}
           </div>
         ))}
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="rounded-xl border border-red-200 py-10 text-center" style={{ background: "#fef2f2" }}>
+        <p className="text-sm font-medium" style={{ color: "#b91c1c" }}>
+          تعذر تحميل المواعيد — تحقق من الاتصال وحاول مجددًا
+        </p>
+        <button
+          type="button"
+          onClick={load}
+          className="mt-3 rounded-lg border border-red-300 px-4 py-1.5 text-sm font-medium text-red-700 transition hover:bg-red-100"
+        >
+          إعادة المحاولة
+        </button>
       </div>
     );
   }

@@ -9,13 +9,15 @@ import { TableSkeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import type { LabOrder, LabOrderStatus } from "@/types/lab";
 import { cn, localDateString } from "@/lib/utils";
+import { extractErrorMessage } from "@/lib/errors";
+import { QueryErrorBanner } from "@/components/shared/QueryErrorBanner";
 
 // FE-08: STATUS_LABELS + STATUS_COLORS now imported from @/lib/labStatus (was re-declared locally).
 
 export default function LabOverduePage() {
   const queryClient = useQueryClient();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["lab-orders-overdue"],
     queryFn: async () => {
       const res = await api.get<{ data: LabOrder[]; count: number }>("/api/lab-orders/overdue");
@@ -30,10 +32,15 @@ export default function LabOverduePage() {
       });
     },
     onSuccess: () => {
+      // The main lab list and the sidebar pending badge show the same order —
+      // invalidate them too so acting from this screen doesn't leave them stale.
       queryClient.invalidateQueries({ queryKey: ["lab-orders-overdue"] });
+      queryClient.invalidateQueries({ queryKey: ["lab-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["lab-orders-pending-count"] });
+      queryClient.invalidateQueries({ queryKey: ["lab-dashboard"] });
       toast.success("تم تأكيد استلام الطلب");
     },
-    onError: () => toast.error("فشل تأكيد الاستلام"),
+    onError: (err) => toast.error(extractErrorMessage(err, "فشل تأكيد الاستلام")),
   });
 
   const advanceMutation = useMutation({
@@ -42,9 +49,12 @@ export default function LabOverduePage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["lab-orders-overdue"] });
+      queryClient.invalidateQueries({ queryKey: ["lab-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["lab-orders-pending-count"] });
+      queryClient.invalidateQueries({ queryKey: ["lab-dashboard"] });
       toast.success("تم تحديث حالة الطلب");
     },
-    onError: () => toast.error("فشل تحديث الحالة"),
+    onError: (err) => toast.error(extractErrorMessage(err, "فشل تحديث الحالة")),
   });
 
   const orders = data?.data ?? [];
@@ -68,6 +78,13 @@ export default function LabOverduePage() {
         <div className="bg-white rounded-xl border border-red-200 shadow-sm overflow-hidden">
           {isLoading ? (
             <div className="p-6"><TableSkeleton rows={4} cols={8} /></div>
+          ) : isError ? (
+            <div className="p-6">
+              <QueryErrorBanner
+                text="تعذر تحميل الطلبات المتأخرة — تحقق من الاتصال وحاول مجددًا"
+                onRetry={() => refetch()}
+              />
+            </div>
           ) : orders.length === 0 ? (
             <div className="flex flex-col items-center py-16 text-gray-400">
               <FlaskConical className="w-10 h-10 mb-3" />

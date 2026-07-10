@@ -11,6 +11,7 @@ import { useHasPermission } from "@/hooks/usePermissions";
 import { PERMISSION_KEYS } from "@/hooks/usePermissions";
 import type { LabPayable } from "@/types/lab";
 import { cn } from "@/lib/utils";
+import { QueryErrorBanner } from "@/components/shared/QueryErrorBanner";
 
 /* ─── Status helpers ────────────────────────────────────────────────────────── */
 const statusLabel: Record<string, string> = {
@@ -48,6 +49,7 @@ function RecordPaymentModal({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["lab-payables"] });
+      queryClient.invalidateQueries({ queryKey: ["lab-dashboard"] });
       toast.success("تم تسجيل الدفعة بنجاح");
       onClose();
     },
@@ -171,7 +173,7 @@ export default function LabPayablesPage() {
   const canView = useHasPermission(PERMISSION_KEYS.LAB_PAYABLES_VIEW);
   const canEdit = useHasPermission(PERMISSION_KEYS.LAB_PAYABLES_MANAGE);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["lab-payables", statusFilter, page],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -276,6 +278,13 @@ export default function LabPayablesPage() {
           {isLoading ? (
             <div className="p-6">
               <TableSkeleton rows={5} cols={6} />
+            </div>
+          ) : isError ? (
+            <div className="p-6">
+              <QueryErrorBanner
+                text="تعذر تحميل مستحقات المعامل — تحقق من الاتصال وحاول مجددًا"
+                onRetry={() => refetch()}
+              />
             </div>
           ) : payables.length === 0 ? (
             <div className="flex flex-col items-center py-12 text-gray-400">

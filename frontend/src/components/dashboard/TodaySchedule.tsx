@@ -23,16 +23,21 @@ const STATUS_STYLES: Record<string, { color: string; bg: string }> = {
 export function TodaySchedule() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const router = useRouter();
 
   const today = localDateString();
 
   useEffect(() => {
+    setLoading(true);
+    setLoadError(false);
     api.get<Appointment[]>(`/api/appointments?from=${today}&to=${today}`)
       .then((r) => setAppointments(r.data))
-      .catch(() => {})
+      // A failed fetch must not read as "لا توجد مواعيد اليوم".
+      .catch(() => { setAppointments([]); setLoadError(true); })
       .finally(() => setLoading(false));
-  }, [today]);
+  }, [today, reloadKey]);
 
   const active = appointments.filter((a) => a.status !== "Cancelled" && a.status !== "NoShow");
   const completed = appointments.filter((a) => a.status === "Completed").length;
@@ -74,6 +79,19 @@ export function TodaySchedule() {
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="h-12 rounded-lg" style={{ background: "#f1f5f9" }} />
           ))}
+        </div>
+      ) : loadError ? (
+        <div className="text-center py-10" style={{ background: "#fef2f2" }}>
+          <p className="text-xs font-medium" style={{ color: "#b91c1c" }}>
+            تعذر تحميل مواعيد اليوم — تحقق من الاتصال
+          </p>
+          <button
+            type="button"
+            onClick={() => setReloadKey((k) => k + 1)}
+            className="mt-2 rounded-lg border border-red-300 px-3 py-1 text-xs font-medium text-red-700 transition hover:bg-red-100"
+          >
+            إعادة المحاولة
+          </button>
         </div>
       ) : appointments.length === 0 ? (
         <div className="text-center py-10" style={{ color: "#94a3b8" }}>

@@ -12,6 +12,8 @@ import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import type { LabOrder, LabOrderStatus } from "@/types/lab";
 import { NewLabOrderModal } from "@/components/lab/NewLabOrderModal";
 import { cn, localDateString } from "@/lib/utils";
+import { extractErrorMessage } from "@/lib/errors";
+import { QueryErrorBanner } from "@/components/shared/QueryErrorBanner";
 
 const STATUS_CONFIG: Record<
   LabOrderStatus,
@@ -78,7 +80,7 @@ export default function LabPage() {
 
   const queryClient = useQueryClient();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["lab-orders", statusFilter, page],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(page), pageSize: "20" });
@@ -110,7 +112,7 @@ export default function LabPage() {
       queryClient.invalidateQueries({ queryKey: ["lab-orders-pending-count"] });
       toast.success("تم تحديث حالة الطلب");
     },
-    onError: () => toast.error("فشل تحديث الحالة"),
+    onError: (err) => toast.error(extractErrorMessage(err, "فشل تحديث الحالة")),
   });
 
   const orders = (data?.data ?? []).filter((o) =>
@@ -178,6 +180,13 @@ export default function LabPage() {
           {isLoading ? (
             <div className="p-6">
               <TableSkeleton rows={6} cols={6} />
+            </div>
+          ) : isError ? (
+            <div className="p-6">
+              <QueryErrorBanner
+                text="تعذر تحميل طلبات المختبر — تحقق من الاتصال وحاول مجددًا"
+                onRetry={() => refetch()}
+              />
             </div>
           ) : orders.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">

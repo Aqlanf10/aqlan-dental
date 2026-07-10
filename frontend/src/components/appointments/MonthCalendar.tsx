@@ -43,15 +43,19 @@ export function MonthCalendar({ anchor, doctorId, onDateClick }: Props) {
 
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     setLoading(true);
+    setLoadError(false);
     const q = doctorId ? `&doctorId=${doctorId}` : "";
     api.get<Appointment[]>(`/api/appointments?from=${fromStr}&to=${toStr2}${q}`)
       .then((r) => setAppointments(r.data))
-      .catch(() => {})
+      // A failed fetch must not render an empty (appointment-free) month grid.
+      .catch(() => { setAppointments([]); setLoadError(true); })
       .finally(() => setLoading(false));
-  }, [fromStr, toStr2, doctorId]);
+  }, [fromStr, toStr2, doctorId, reloadKey]);
 
   // Group by date string
   const byDate: Record<string, Appointment[]> = {};
@@ -59,6 +63,23 @@ export function MonthCalendar({ anchor, doctorId, onDateClick }: Props) {
     const key = a.appointmentDate;
     if (!byDate[key]) byDate[key] = [];
     byDate[key].push(a);
+  }
+
+  if (loadError) {
+    return (
+      <div className="rounded-xl border border-red-200 py-10 text-center" style={{ background: "#fef2f2" }}>
+        <p className="text-sm font-medium" style={{ color: "#b91c1c" }}>
+          تعذر تحميل المواعيد — تحقق من الاتصال وحاول مجددًا
+        </p>
+        <button
+          type="button"
+          onClick={() => setReloadKey((k) => k + 1)}
+          className="mt-3 rounded-lg border border-red-300 px-4 py-1.5 text-sm font-medium text-red-700 transition hover:bg-red-100"
+        >
+          إعادة المحاولة
+        </button>
+      </div>
+    );
   }
 
   return (

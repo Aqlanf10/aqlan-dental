@@ -11,6 +11,7 @@ import {
 import type { PatientListItem, PatientProfile } from "@/types/patient";
 import type { PaginatedResponse } from "@/types/api";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { useDoctors } from "@/hooks/useDoctors";
 import { GENDER_LABELS, formatPhoneForWhatsApp, normalizePhone } from "@/lib/utils";
 import { canViewPatientFinance, isAccountantRole, isAdminRole } from "@/lib/roles";
@@ -186,15 +187,17 @@ export function PatientTable() {
   const doArchive = async (patient: PatientListItem) => {
     try {
       await api.put(`/api/patients/${patient.id}/archive`);
+      toast.success("تمت أرشفة المريض");
       await fetchPatients();
-    } catch (e) { console.error("[Patients] Failed to archive patient:", e); }
+    } catch (e) { toast.error(extractErrorMessage(e, "فشلت أرشفة المريض")); }
   };
 
   const doRestore = async (patient: PatientListItem) => {
     try {
       await api.put(`/api/patients/${patient.id}/restore`);
+      toast.success("تمت استعادة المريض");
       await fetchPatients();
-    } catch (e) { console.error("[Patients] Failed to restore patient:", e); }
+    } catch (e) { toast.error(extractErrorMessage(e, "فشلت استعادة المريض")); }
   };
 
   const handleConfirm = () => {

@@ -11,6 +11,7 @@ import api from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 // FE-09: centralized appointment status colors/labels
 import { APPOINTMENT_STATUS_COLORS as STATUS_COLORS, APPOINTMENT_STATUS_LABELS as STATUS_LABELS } from "@/lib/statusStyles";
+import { extractErrorMessage } from "@/lib/errors";
 
 interface AppointmentDetail {
   id: string;
@@ -115,8 +116,8 @@ export default function AppointmentDetailPage() {
       await api.put(`/api/appointments/${id}/status`, { status });
       setApt((prev) => prev ? { ...prev, status } : prev);
       toast.success("تم تحديث الحالة");
-    } catch {
-      toast.error("فشل تحديث الحالة");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل تحديث الحالة"));
     }
   };
 

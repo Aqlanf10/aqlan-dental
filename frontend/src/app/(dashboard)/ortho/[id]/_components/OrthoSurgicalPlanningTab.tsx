@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   Circle,
   FileDown,
@@ -58,9 +59,15 @@ export function OrthoSurgicalPlanningTab({ caseId }: OrthoSurgicalPlanningTabPro
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [pdfBusy, setPdfBusy] = useState<"doctor" | "patient" | null>(null);
+  // ORTHO-REQ-006: distinguish "genuinely no surgical case yet" (data === null,
+  // error === null → show the "create workspace" CTA) from "the fetch itself
+  // failed" (error set → show a visible Arabic error banner with retry, never
+  // silently fall back to the same empty-state CTA).
+  const [error, setError] = useState<string | null>(null);
 
   const fetchWorkspace = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const listRes = await api.get<{ data: OrthoSurgicalCaseListItem[] }>(
         "/api/ortho-surgical-cases",
@@ -81,7 +88,7 @@ export function OrthoSurgicalPlanningTab({ caseId }: OrthoSurgicalPlanningTabPro
       setReadiness(readinessRes?.data ?? null);
     } catch (e) {
       const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg ?? "تعذر تحميل التخطيط الجراحي لحالة التقويم");
+      setError(msg ?? "تعذر تحميل التخطيط الجراحي لحالة التقويم");
     } finally {
       setLoading(false);
     }
@@ -152,6 +159,24 @@ export function OrthoSurgicalPlanningTab({ caseId }: OrthoSurgicalPlanningTabPro
       <div className="space-y-4 animate-pulse">
         <div className="h-28 rounded-lg bg-gray-100" />
         <div className="h-64 rounded-lg bg-gray-100" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border px-4 py-3" style={{ background: "#fef2f2", borderColor: "#fecaca" }}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-sm font-bold" style={{ color: "#b91c1c" }}>
+            <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+            {error}
+          </div>
+          <button onClick={fetchWorkspace}
+            className="flex-shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold text-white transition hover:opacity-90"
+            style={{ background: "#b91c1c" }}>
+            إعادة المحاولة
+          </button>
+        </div>
       </div>
     );
   }

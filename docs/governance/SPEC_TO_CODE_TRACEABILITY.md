@@ -153,3 +153,15 @@ deep-linkable and three legacy paths 404'd (QA4-03).
 | ID | Module | Finding | Code | Status | Fixed here | Runtime verify | Owner decision |
 |----|--------|---------|------|--------|-----------|----------------|----------------|
 | `SEQ-03` | Settings/Users | `/settings/users`, `/settings/permissions`, `/users` all 404 while the working users/roles UI sits unlinkable behind a state-only tab in the settings hub | `settings/page.tsx` (URL-driven `?tab=` via `useSearchParams`+`Suspense`, finance-v3 pattern), 3 redirect stubs (`settings/users/`, `settings/permissions/`, `users/page.tsx` → `/settings?tab=permissions`, hr-pattern), `routePermissions.ts` (`/users` Admin-only entry), `routePermissions.test.ts` (+1 test, 7 assertions), spec 008 evidence note | fixed | yes | tsc/lint/vitest (180/180)/build all green | no |
+
+## SEQ-08 — Ortho module audit vs specs/004 (2026-07-10)
+
+Read-only audit (per the queue's own warning that `docs/ortho-module/MASTER-PLAN.md`
+is stale) against the 5 concrete acceptance rules in
+`specs/004-orthodontics-workspace/requirements.md`. 4 of 5 confirmed compliant
+with no code change needed; one concrete regression found and fixed.
+
+| ID | Module | Finding | Code | Status | Fixed here | Runtime verify | Owner decision |
+|----|--------|---------|------|--------|-----------|----------------|----------------|
+| `SEQ-08-audit` | Ortho | ORTHO-REQ-001 (single `/ortho` workspace), 003 (AI draft-only), 004 (no FinanceV3 bypass), 005 (existing lab-order system only) — all confirmed compliant by direct code inspection, no violation found | — (read-only audit) | confirmed compliant | no | n/a | no — closed |
+| `SEQ-08` | Ortho | ORTHO-REQ-006 (visible Arabic error state + retry on fetch failure, QA4-01's pattern) was only ever applied to `ortho/[id]/page.tsx` — 4 sibling components silently rendered a genuine fetch failure as the same "no data yet" empty state, hiding real server errors from the doctor | `CastAnalysisPanel.tsx`, `CasePresentationPanel.tsx`, `OrthoSurgicalPlanningTab.tsx`, `OrthoTreatmentPlansTab.tsx` + `OrthoCephPanel` (in `OrthoDiagnosisTab.tsx`) — each now renders an `isError`-driven Arabic banner + retry, matching the already-compliant pattern in `ceph/compare`, `ceph/vto`, `LabOrdersPanel` | fixed | yes | tsc/lint/vitest (180/180)/build all green | no |

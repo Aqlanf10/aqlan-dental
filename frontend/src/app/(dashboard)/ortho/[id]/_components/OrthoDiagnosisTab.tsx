@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
+  AlertTriangle,
   ArrowRight,
   BadgeCheck,
   CheckCircle2,
@@ -40,7 +41,7 @@ import { inputCls } from "../_lib/types";
  * tab.
  */
 export function OrthoCephPanel({ caseId }: { caseId: string }) {
-  const { data: analyses = [], isLoading } = useCaseCephAnalyses(caseId);
+  const { data: analyses = [], isLoading, isError: analysesError, refetch: refetchAnalyses } = useCaseCephAnalyses(caseId);
   const { data: photoAnalyses = [], isLoading: photoAnalysesLoading } =
     useCasePhotoAnalyses(caseId);
   // Same selection the deck generator uses (analysisDate DESC, then createdAt DESC).
@@ -183,6 +184,21 @@ export function OrthoCephPanel({ caseId }: { caseId: string }) {
         <div className="grid gap-3 md:grid-cols-2">
           <div className="h-44 animate-pulse rounded-lg bg-gray-100" />
           <div className="h-44 animate-pulse rounded-lg bg-gray-100" />
+        </div>
+      ) : analysesError ? (
+        // ORTHO-REQ-006: a failed fetch must never render the same "no ceph yet"
+        // empty state — that hides a real server error from the doctor.
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2"
+          style={{ background: "#fef2f2", borderColor: "#fecaca" }}>
+          <div className="flex items-center gap-2 text-xs font-bold" style={{ color: "#b91c1c" }}>
+            <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+            تعذر تحميل تحاليل السيفالو من الخادم
+          </div>
+          <button onClick={() => refetchAnalyses()}
+            className="flex-shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold text-white transition hover:opacity-90"
+            style={{ background: "#b91c1c" }}>
+            إعادة المحاولة
+          </button>
         </div>
       ) : !latest ? (
         <EmptyState text="لا يوجد تحليل سيفالومتري لهذه الحالة بعد" />

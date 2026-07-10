@@ -37,12 +37,14 @@ export function OrthoCaseDraftAiButton({
       const { data } = await api.post<DraftResponse>(`/api/ortho-cases/${caseId}/ai/clinical-draft`, {
         section: sectionFor(draftKind),
       });
+      // ORTHO-TASK-003: the composed block lands inside the doctor's Arabic
+      // clinical draft — section labels must be Arabic, not English.
       const generated = [
-        data.modelId ? `AI draft (${data.modelId})` : "AI draft",
+        data.modelId ? `مسودة AI (النموذج: ${data.modelId})` : "مسودة AI",
         data.draft,
-        data.evidenceUsed?.length ? `Evidence: ${data.evidenceUsed.join(", ")}` : undefined,
-        data.missingData?.length ? `Missing: ${data.missingData.join(", ")}` : undefined,
-        data.warnings?.length ? `Warnings: ${data.warnings.join(", ")}` : undefined,
+        data.evidenceUsed?.length ? `الأدلة المستخدمة: ${data.evidenceUsed.join("، ")}` : undefined,
+        data.missingData?.length ? `بيانات ناقصة: ${data.missingData.join("، ")}` : undefined,
+        data.warnings?.length ? `تحذيرات: ${data.warnings.join("، ")}` : undefined,
         data.disclaimer,
       ].filter(Boolean).join("\n\n");
       onDraft(currentDraft.trim() && currentDraft.trim() !== template.trim() ? `${currentDraft.trim()}\n\n---\n${generated}` : generated);

@@ -279,8 +279,7 @@ function AppointmentCard({
       onLocalStatus(a.id, "InProgress");
       setMenuOpen(false);
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg ?? "فشل إنشاء الزيارة");
+      toast.error(extractErrorMessage(err, "فشل إنشاء الزيارة"));
     } finally {
       setStartingVisit(false);
     }
@@ -301,8 +300,7 @@ function AppointmentCard({
       onLocalStatus(a.id, "Arrived");
       setMenuOpen(false);
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg ?? "فشل تسجيل الحضور");
+      toast.error(extractErrorMessage(err, "فشل تسجيل الحضور"));
     } finally {
       setArrivalLoading(false);
     }
@@ -315,8 +313,7 @@ function AppointmentCard({
       toast.success("تم إرسال المريض إلى الانتظار");
       onLocalStatus(a.id, "Waiting");
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg ?? "فشل إرسال المريض للانتظار");
+      toast.error(extractErrorMessage(err, "فشل إرسال المريض للانتظار"));
     } finally {
       setQueueLoading(false);
     }
@@ -359,8 +356,7 @@ function AppointmentCard({
       onDeleted(a.id); // soft-deleted server-side; drop it from the list like a reload would
       setMenuOpen(false);
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg ?? "فشل حذف الموعد");
+      toast.error(extractErrorMessage(err, "فشل حذف الموعد"));
     }
   };
 

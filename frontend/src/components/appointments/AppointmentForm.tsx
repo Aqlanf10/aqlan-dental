@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Save, AlertTriangle, CalendarDays, Loader2, Clock, Users } from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { useDoctors } from "@/hooks/useDoctors";
 import { cn, localDateString } from "@/lib/utils";
 import type { PatientListItem } from "@/types/patient";
@@ -277,14 +278,12 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
       }
       router.push(`/appointments?date=${data.appointmentDate}`);
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { status?: number; data?: { message?: string } } };
-      const status = axiosErr?.response?.status;
-      const msg    = axiosErr?.response?.data?.message;
+      const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 409) {
         setIsConflict(true);
-        setServerError(msg ?? "يوجد تعارض مع موعد آخر في هذا الوقت");
+        setServerError(extractErrorMessage(err, "يوجد تعارض مع موعد آخر في هذا الوقت"));
       } else {
-        setServerError(msg ?? "حدث خطأ أثناء الحفظ");
+        setServerError(extractErrorMessage(err, "حدث خطأ أثناء الحفظ"));
       }
     } finally {
       setSaving(false);

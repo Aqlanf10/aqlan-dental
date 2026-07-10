@@ -17,9 +17,12 @@ export function extractErrorMessage(err: unknown, fallback = "حدث خطأ"): s
     const resp = (err as { response?: { data?: { message?: string; detail?: string; title?: string; errors?: string[] | Record<string, string[]>; status?: number }; status?: number } }).response;
     if (resp?.data?.message) return resp.data.message;
     if (resp?.data?.detail) return resp.data.detail;
-    if (resp?.data?.title) return resp.data.title;
     // ASP.NET validation problem-details: errors can be an array of strings OR a record
     // of { fieldName: ["error1", "error2"] }. Take the first available message.
+    // Checked BEFORE title (Codex P2 on #647): a FluentValidation 400 carries a
+    // generic English title ("One or more validation errors occurred.") while
+    // the specific Arabic field messages live in errors — title is the least
+    // specific RFC 7807 field, so it is the last resort.
     if (resp?.data?.errors) {
       const errors = resp.data.errors;
       if (Array.isArray(errors) && errors.length > 0) return errors[0];
@@ -28,6 +31,7 @@ export function extractErrorMessage(err: unknown, fallback = "حدث خطأ"): s
         if (firstArr && firstArr[0]) return firstArr[0];
       }
     }
+    if (resp?.data?.title) return resp.data.title;
     if (resp?.status === 401) return "ليس لديك صلاحية. يرجى تسجيل الدخول مجدداً.";
     if (resp?.status === 403) return "غير مصرح بهذا الإجراء.";
   }

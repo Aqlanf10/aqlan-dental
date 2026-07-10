@@ -4,6 +4,15 @@
   — ✅ Done 2026-07-10 (SEQ-08 audit, PR #636): all 5 spec-004 acceptance rules
   checked by direct code inspection; the ORTHO-REQ-006 gap found was fixed in-PR.
 - `ORTHO-TASK-002`: Add/update ortho unit tests for changed behavior. Medium/strong depending risk.
+  — ✅ Done 2026-07-10. Covers the SEQ-08 (#636) error-state fix: 14 new tests
+  across 5 component test files (`CastAnalysisPanel`, `CasePresentationPanel`,
+  `OrthoSurgicalPlanningTab`, `OrthoTreatmentPlansTab`, `OrthoCephPanel`), each
+  asserting the visible-error-banner-vs-empty-state distinction (404/genuine-empty
+  → empty state; 500/network → banner + retry, never the same empty state) and
+  that retry recovers. No react-query component-test harness existed in this repo
+  before — added `__tests__/testUtils/renderWithQueryClient.tsx` (fresh
+  `QueryClient` per render, `retry:false`) as the reusable pattern for future ortho
+  component tests. `tsc`/`lint`/`vitest` (194/194)/`build`/mojibake-guard all green.
 - `ORTHO-TASK-003`: Verify AI draft copy is clinically safe. Strong model.
   — ✅ Done 2026-07-10 (strong model). All 6 AI surfaces reviewed against: draft
   labeling, mandatory doctor-review language, no diagnostic overclaiming, honest

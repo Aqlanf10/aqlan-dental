@@ -1,8 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import axios from "axios";
 import Link from "next/link";
-import { Microscope, ExternalLink, CheckCircle2, Loader2 } from "lucide-react";
+import { AlertTriangle, Microscope, ExternalLink, CheckCircle2, Loader2 } from "lucide-react";
 import api from "@/lib/api";
 import { formatArabicDate } from "@/lib/utils";
 
@@ -33,15 +34,18 @@ function Stat({ label, value }: { label: string; value: string }) {
 /** Surfaces the existing cast / dental-model analysis (PR #364) inside the case
  *  workspace as a read summary + a link to the full calculator. No rebuild. */
 export function CastAnalysisPanel({ caseId }: { caseId: string }) {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["ortho-model-latest", caseId],
     enabled: !!caseId,
     retry: false,
     queryFn: async () => {
       try {
         return (await api.get<ModelAnalysis | null>(`/api/ortho-cases/${caseId}/model-analyses/latest`)).data;
-      } catch {
-        return null; // 404 / none yet
+      } catch (err) {
+        // 404 genuinely means "no analysis yet" — any other status (500, network,
+        // etc.) must surface as a real error, not the same empty state (ORTHO-REQ-006).
+        if (axios.isAxiosError(err) && err.response?.status === 404) return null;
+        throw err;
       }
     },
   });
@@ -67,7 +71,22 @@ export function CastAnalysisPanel({ caseId }: { caseId: string }) {
         </Link>
       </div>
 
-      {!data ? (
+      {isError && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2"
+          style={{ background: "#fef2f2", borderColor: "#fecaca" }}>
+          <div className="flex items-center gap-2 text-xs font-bold" style={{ color: "#b91c1c" }}>
+            <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+            تعذر تحميل تحليل النماذج من الخادم
+          </div>
+          <button onClick={() => refetch()}
+            className="flex-shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold text-white transition hover:opacity-90"
+            style={{ background: "#b91c1c" }}>
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+
+      {isError ? null : !data ? (
         <div className="rounded-lg border border-dashed border-gray-300 py-10 text-center text-sm text-gray-400">
           لا يوجد تحليل نماذج محفوظ بعد لهذه الحالة.
         </div>

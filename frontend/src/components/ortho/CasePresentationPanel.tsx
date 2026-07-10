@@ -1,8 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import axios from "axios";
 import { useState } from "react";
-import { Presentation, CheckCircle2, Circle, FileDown, Loader2, Sparkles, ListOrdered } from "lucide-react";
+import { AlertTriangle, Presentation, CheckCircle2, Circle, FileDown, Loader2, Sparkles, ListOrdered } from "lucide-react";
 import api from "@/lib/api";
 import { useOrthoOverview, useOrthoPhotos } from "@/hooks/useOrtho";
 import { orthoService } from "@/services/orthoService";
@@ -38,10 +39,21 @@ export function CasePresentationPanel({ caseId }: { caseId: string }) {
     queryKey: ["ortho-model-latest", caseId],
     enabled: !!caseId, retry: false,
     queryFn: async () => {
-      try { return (await api.get<{ id: string } | null>(`/api/ortho-cases/${caseId}/model-analyses/latest`)).data; }
-      catch { return null; }
+      try {
+        return (await api.get<{ id: string } | null>(`/api/ortho-cases/${caseId}/model-analyses/latest`)).data;
+      } catch (err) {
+        // 404 genuinely means "no analysis yet" — any other status must surface
+        // as a real error, not the same "not ready" checklist state (ORTHO-REQ-006).
+        if (axios.isAxiosError(err) && err.response?.status === 404) return null;
+        throw err;
+      }
     },
   });
+
+  const hasFetchError = overviewQ.isError || photosQ.isError || definitionQ.isError || checklistQ.isError || modelQ.isError;
+  const retryAll = () => {
+    overviewQ.refetch(); photosQ.refetch(); definitionQ.refetch(); checklistQ.refetch(); modelQ.refetch();
+  };
 
   const o = (overviewQ.data ?? {}) as Record<string, unknown>;
   const c = checklistQ.data ?? {};
@@ -129,6 +141,20 @@ export function CasePresentationPanel({ caseId }: { caseId: string }) {
             {readyCount}/{items.length} جاهز
           </span>
         </div>
+        {hasFetchError && (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2"
+            style={{ background: "#fef2f2", borderColor: "#fecaca" }}>
+            <div className="flex items-center gap-2 text-xs font-bold" style={{ color: "#b91c1c" }}>
+              <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+              تعذر تحميل بعض بيانات الجاهزية من الخادم — القائمة أدناه غير مكتملة
+            </div>
+            <button onClick={retryAll}
+              className="flex-shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold text-white transition hover:opacity-90"
+              style={{ background: "#b91c1c" }}>
+              إعادة المحاولة
+            </button>
+          </div>
+        )}
         {loading ? (
           <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
         ) : (

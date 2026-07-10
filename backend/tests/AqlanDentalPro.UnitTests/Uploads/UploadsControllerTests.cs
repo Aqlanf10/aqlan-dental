@@ -38,6 +38,16 @@ namespace AqlanDentalPro.UnitTests.Uploads;
 /// (or ClinicalPhoto, Radiograph, etc.) with the returned URL. This is by design (the
 /// Document entity is the patient-bound record). Tests assert the response shape only.
 /// </summary>
+// SEQ-10: this class mutates the PROCESS-GLOBAL "UPLOADS_PATH" env var on every
+// construction (UploadsTestData.BuildController/CleanSharedDir re-pin it, and
+// CleanSharedDir deletes every file in the shared dir). The ceph/ortho tests in
+// the "ai-env" collection point the same env var at their own temp dirs and read
+// it at call time (CephAiLandmarkDraftService.ReadImageAsync, the presentation
+// PPTX embedder) — running this class in parallel with them randomly clobbered
+// the variable mid-test ("ملف صورة السيفالومتري غير موجود" in #627/#636 CI runs,
+// empty PPTX ImageParts in #638's run, all clearing on bare re-runs). Joining the
+// same collection serializes every UPLOADS_PATH mutator and removes the race.
+[Collection("ai-env")]
 public class UploadsControllerTests : IDisposable
 {
     public UploadsControllerTests()

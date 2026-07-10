@@ -2,7 +2,9 @@
 import { useState } from "react";
 import type { TreatmentStage } from "@/types/ortho";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { cn } from "@/lib/utils";
+import { toast } from "@/stores/toastStore";
 import { CheckCircle, Circle, PlayCircle } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, { label: string; icon: typeof Circle; color: string }> = {
@@ -28,7 +30,9 @@ export function TreatmentStagesPanel({ caseId, stages, onUpdate }: Props) {
         { status: newStatus }
       );
       onUpdate?.(data);
-    } catch {
+    } catch (err) {
+      // A silent failure here reads as "the stage advanced" — it didn't.
+      toast.error(extractErrorMessage(err, "فشل تحديث حالة المرحلة"));
     } finally {
       setUpdating(null);
     }

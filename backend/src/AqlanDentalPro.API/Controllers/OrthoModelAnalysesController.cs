@@ -3,6 +3,7 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -156,7 +157,7 @@ public class OrthoModelAnalysesController(
         var row = new ModelAnalysis
         {
             OrthoCaseId = orthoCaseId,
-            AnalysisDate = request.AnalysisDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
+            AnalysisDate = request.AnalysisDate ?? ClinicTimeProvider.ClinicToday(),
             DentitionStage = NormalizeDentitionStage(request.DentitionStage),
             InputDataJson = JsonSerializer.Serialize(request.Inputs, JsonOptions),
             ResultDataJson = JsonSerializer.Serialize(result, JsonOptions),

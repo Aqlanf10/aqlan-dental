@@ -205,14 +205,7 @@ export function OrthoVisitTimeline({ caseId, visits: initialVisits, onVisitAdded
       setVisits((prev) => prev.filter((v) => v.id !== visitId));
       if (expandedId === visitId) setExpandedId(null);
     } catch (error: unknown) {
-      const message =
-        typeof error === "object"
-        && error !== null
-        && "response" in error
-        && typeof (error as { response?: { data?: { message?: string } } }).response?.data?.message === "string"
-          ? (error as { response: { data: { message: string } } }).response.data.message
-          : "تعذر حذف الزيارة";
-      setFormError(message);
+      setFormError(extractApiError(error, "تعذر حذف الزيارة"));
     } finally {
       setDeletingId(null);
     }
@@ -228,14 +221,7 @@ export function OrthoVisitTimeline({ caseId, visits: initialVisits, onVisitAdded
       });
       setScheduledVisits((previous) => new Set(previous).add(visit.id));
     } catch (error: unknown) {
-      const message =
-        typeof error === "object"
-        && error !== null
-        && "response" in error
-        && typeof (error as { response?: { data?: { message?: string } } }).response?.data?.message === "string"
-          ? (error as { response: { data: { message: string } } }).response.data.message
-          : "تعذر إنشاء موعد المتابعة";
-      setScheduleError(message);
+      setScheduleError(extractApiError(error, "تعذر إنشاء موعد المتابعة"));
     } finally {
       setSchedulingId(null);
     }

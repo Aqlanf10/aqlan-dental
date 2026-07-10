@@ -6,6 +6,7 @@ using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using SkiaSharp;
+using AqlanDentalPro.Infrastructure.Services;
 
 namespace AqlanDentalPro.API.Services;
 
@@ -829,7 +830,7 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
     // matches the case-summary PDF so both reports agree on the patient's age.
     internal static int CalculateAge(DateOnly dateOfBirth)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
         var age = today.Year - dateOfBirth.Year;
         if (dateOfBirth > today.AddYears(-age)) age--;
         return Math.Max(0, age);

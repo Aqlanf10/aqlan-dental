@@ -8,11 +8,11 @@ import {
   useSaveRetention,
 } from "@/hooks/useOrtho";
 import type { RetentionRecord, RetentionVisit } from "@/types/ortho";
-import { Field, EmptyState, SaveButton } from "./_shared";
+import { Field, EmptyState, QueryErrorState, SaveButton } from "./_shared";
 import { inputCls } from "../_lib/types";
 
 export function OrthoRetentionTab({ caseId }: { caseId: string }) {
-  const { data } = useRetention(caseId);
+  const { data, isError, refetch } = useRetention(caseId);
   const save = useSaveRetention(caseId);
   const addVisit = useAddRetentionVisit(caseId);
   const [form, setForm] = useState<RetentionRecord>({});
@@ -24,6 +24,17 @@ export function OrthoRetentionTab({ caseId }: { caseId: string }) {
     notes: "",
   });
   useEffect(() => setForm(data ?? {}), [data]);
+
+  // ORTHO-REQ-006: a failed fetch must not render the blank form — the doctor
+  // could unknowingly overwrite an existing retention record.
+  if (isError) {
+    return (
+      <QueryErrorState
+        text="تعذر تحميل سجل الاحتفاظ — تحقق من الاتصال وحاول مجددًا"
+        onRetry={() => refetch()}
+      />
+    );
+  }
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">

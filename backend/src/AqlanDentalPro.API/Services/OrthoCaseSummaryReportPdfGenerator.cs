@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
+using AqlanDentalPro.Infrastructure.Services;
 
 namespace AqlanDentalPro.API.Services;
 
@@ -123,7 +124,7 @@ public class OrthoCaseSummaryReportPdfGenerator(AppDbContext db)
                 {
                     col.Item().AlignLeft().Text("ملخّص الحالة التقويمية").Bold().FontSize(14).FontFamily(FontName);
                     col.Item().AlignLeft().Text($"رقم الحالة: {orthoCase.CaseNumber}").FontSize(9).FontFamily(FontName);
-                    col.Item().AlignLeft().Text($"تاريخ التقرير: {CephReportPdfGenerator.FormatArabicDate(DateOnly.FromDateTime(DateTime.UtcNow))}")
+                    col.Item().AlignLeft().Text($"تاريخ التقرير: {CephReportPdfGenerator.FormatArabicDate(ClinicTimeProvider.ClinicToday())}")
                         .FontSize(9).FontFamily(FontName);
                 });
             });
@@ -356,7 +357,7 @@ public class OrthoCaseSummaryReportPdfGenerator(AppDbContext db)
     private static string AgeText(DateOnly? dob)
     {
         if (!dob.HasValue) return "—";
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
         var age = today.Year - dob.Value.Year;
         if (dob.Value > today.AddYears(-age)) age--;
         return age >= 0 ? $"{age} سنة" : "—";

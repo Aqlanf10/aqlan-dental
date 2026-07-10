@@ -101,6 +101,7 @@ export function useDeleteProblem(caseId: string) {
       qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
       toast.success("تم حذف المشكلة");
     },
+    onError: () => toast.error("فشل حذف المشكلة"),
   });
 }
 
@@ -339,6 +340,7 @@ export function useSaveExtractionDecision(caseId: string) {
       qc.invalidateQueries({ queryKey: orthoKeys.case(caseId) });
       toast.success("تم حفظ قرار الخلع");
     },
+    onError: () => toast.error("فشل حفظ قرار الخلع"),
   });
 }
 
@@ -359,6 +361,7 @@ export function useSaveRetention(caseId: string) {
       qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
       toast.success("تم حفظ سجل الاحتفاظ");
     },
+    onError: () => toast.error("فشل حفظ سجل الاحتفاظ"),
   });
 }
 
@@ -370,6 +373,7 @@ export function useAddRetentionVisit(caseId: string) {
       qc.invalidateQueries({ queryKey: orthoKeys.retention(caseId) });
       toast.success("تم تسجيل زيارة الاحتفاظ");
     },
+    onError: () => toast.error("فشل تسجيل زيارة الاحتفاظ"),
   });
 }
 

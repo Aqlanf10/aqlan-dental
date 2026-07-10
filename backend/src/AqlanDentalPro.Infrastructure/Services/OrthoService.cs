@@ -3,6 +3,7 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
@@ -436,9 +437,9 @@ public class OrthoService(AppDbContext db, ICurrentUserService currentUser)
 
         stage.Status = status;
         if (status == "active" && !stage.StartedAt.HasValue)
-            stage.StartedAt = DateOnly.FromDateTime(DateTime.Today);
+            stage.StartedAt = ClinicTimeProvider.ClinicToday();
         if (status == "completed")
-            stage.CompletedAt = DateOnly.FromDateTime(DateTime.Today);
+            stage.CompletedAt = ClinicTimeProvider.ClinicToday();
 
         await db.SaveChangesAsync();
 

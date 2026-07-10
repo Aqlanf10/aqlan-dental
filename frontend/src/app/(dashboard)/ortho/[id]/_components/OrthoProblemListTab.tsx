@@ -8,11 +8,15 @@ import {
   useProblemList,
 } from "@/hooks/useOrtho";
 import type { ProblemListItem } from "@/types/ortho";
-import { Field, EmptyState, SaveButton } from "./_shared";
+import { Field, EmptyState, QueryErrorState, SaveButton } from "./_shared";
 import { inputCls } from "../_lib/types";
 
 export function OrthoProblemListTab({ caseId }: { caseId: string }) {
-  const { data: problems = [] as ProblemListItem[] } = useProblemList(caseId);
+  const {
+    data: problems = [] as ProblemListItem[],
+    isError,
+    refetch,
+  } = useProblemList(caseId);
   const add = useAddProblem(caseId);
   const remove = useDeleteProblem(caseId);
   const [form, setForm] = useState({
@@ -90,7 +94,12 @@ export function OrthoProblemListTab({ caseId }: { caseId: string }) {
         <SaveButton saving={add.isPending}>إضافة المشكلة</SaveButton>
       </form>
       <div className="space-y-3">
-        {problems.length === 0 ? (
+        {isError ? (
+          <QueryErrorState
+            text="تعذر تحميل قائمة المشاكل التشخيصية — تحقق من الاتصال وحاول مجددًا"
+            onRetry={() => refetch()}
+          />
+        ) : problems.length === 0 ? (
           <EmptyState text="لم يتم تسجيل مشاكل تشخيصية بعد." />
         ) : (
           problems.map((p: ProblemListItem) => (

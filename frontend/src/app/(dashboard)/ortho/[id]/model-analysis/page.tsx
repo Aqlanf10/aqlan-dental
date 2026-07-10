@@ -19,7 +19,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import api from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, localDateString } from "@/lib/utils";
 import type {
   DentalModelAnalysisInput,
   DentalModelAnalysisRecord,
@@ -76,7 +76,7 @@ export default function ModelAnalysisPage() {
   const [results, setResults] = useState<DentalModelAnalysisResult | null>(null);
   const [recordId, setRecordId] = useState<string | null>(null);
   const [approvedAt, setApprovedAt] = useState<string | null>(null);
-  const [analysisDate, setAnalysisDate] = useState(new Date().toISOString().slice(0, 10));
+  const [analysisDate, setAnalysisDate] = useState(localDateString());
   const [dentitionStage, setDentitionStage] = useState<"Permanent" | "Mixed">("Permanent");
   const [notes, setNotes] = useState("");
   const [caseInfo, setCaseInfo] = useState<{ caseNumber?: string; patientName?: string } | null>(null);
@@ -217,7 +217,7 @@ export default function ModelAnalysisPage() {
   function startNewVersion() {
     setRecordId(null);
     setApprovedAt(null);
-    setAnalysisDate(new Date().toISOString().slice(0, 10));
+    setAnalysisDate(localDateString());
     setMessage({ type: "success", text: "بدأت نسخة جديدة. القياسات السابقة ما زالت محفوظة في السجل." });
     setSection("teeth");
   }

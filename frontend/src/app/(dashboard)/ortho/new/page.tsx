@@ -10,6 +10,7 @@ import type { PatientListItem } from "@/types/patient";
 import type { CreateOrthoCaseRequest } from "@/types/ortho";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { useDoctors } from "@/hooks/useDoctors";
 import { cn, localDateString } from "@/lib/utils";
 import { rtlArrowBack as RtlArrowBack } from "@/lib/rtlIcons";
@@ -66,8 +67,7 @@ function NewOrthoContent() {
       const { data: created } = await api.post<{ id: string }>("/api/ortho-cases", req);
       router.push(`/ortho/${created.id}`);
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setServerError(msg ?? "حدث خطأ أثناء الحفظ");
+      setServerError(extractErrorMessage(err, "حدث خطأ أثناء الحفظ"));
     } finally {
       setSaving(false);
     }

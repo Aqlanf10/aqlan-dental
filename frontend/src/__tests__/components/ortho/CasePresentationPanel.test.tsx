@@ -46,8 +46,13 @@ describe("CasePresentationPanel", () => {
 
     renderWithQueryClient(<CasePresentationPanel caseId="case-1" />);
 
+    // Codex P2: the heading renders synchronously, so wait for the queries to
+    // actually settle (all 5 requests fired + the loading spinner replaced by
+    // the readiness list) before asserting the error banner is absent —
+    // otherwise this negative assertion can pass before a regression surfaces.
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(5));
     await waitFor(() =>
-      expect(screen.getByText(/جاهزية عرض الحالة/)).toBeInTheDocument(),
+      expect(screen.getByText("تحليل النماذج / Bolton")).toBeInTheDocument(),
     );
     expect(
       screen.queryByText(/تعذر تحميل بعض بيانات الجاهزية/),

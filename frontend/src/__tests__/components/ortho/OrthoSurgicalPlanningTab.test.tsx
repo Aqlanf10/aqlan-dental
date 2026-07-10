@@ -10,6 +10,37 @@ vi.mock("@/lib/api", () => ({
 vi.mock("@/stores/authStore", () => ({
   useAuthStore: () => ({ user: { role: "Admin" } }),
 }));
+// The tab statically imports 7 heavy sub-panels that are irrelevant to the
+// error-state behavior under test — mock them out for isolation (and so v8
+// coverage doesn't count their unexecuted bodies against the global gate).
+vi.mock(
+  "@/app/(dashboard)/ortho-surgical/[id]/_components/CommentsPanel",
+  () => ({ CommentsPanel: () => null }),
+);
+vi.mock(
+  "@/app/(dashboard)/ortho-surgical/[id]/_components/AuditTrailPanel",
+  () => ({ AuditTrailPanel: () => null }),
+);
+vi.mock(
+  "@/app/(dashboard)/ortho-surgical/[id]/_components/JointPlanPanel",
+  () => ({ JointPlanPanel: () => null }),
+);
+vi.mock(
+  "@/app/(dashboard)/ortho-surgical/[id]/_components/SurgeryExecutionPanel",
+  () => ({ SurgeryExecutionPanel: () => null }),
+);
+vi.mock(
+  "@/app/(dashboard)/ortho-surgical/[id]/_components/AiAssistantPanel",
+  () => ({ AiAssistantPanel: () => null }),
+);
+vi.mock(
+  "@/app/(dashboard)/ortho-surgical/[id]/_components/OrthoSurgicalVtoPanel",
+  () => ({ OrthoSurgicalVtoPanel: () => null }),
+);
+vi.mock(
+  "@/app/(dashboard)/ortho-surgical/[id]/_components/OrthoSurgicalExportPackagePanel",
+  () => ({ OrthoSurgicalExportPackagePanel: () => null }),
+);
 
 // ORTHO-TASK-002: covers the SEQ-08 (#636) fix — fetchWorkspace's catch used to
 // only toast and leave data=null, so a genuine request failure rendered the

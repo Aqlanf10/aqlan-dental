@@ -20,9 +20,13 @@ describe("OrthoTreatmentPlansTab", () => {
 
     renderWithQueryClient(<OrthoTreatmentPlansTab caseId="case-1" />);
 
-    await waitFor(() =>
-      expect(screen.getByText("لا توجد خطط علاج مسجلة بعد.")).toBeInTheDocument(),
-    );
+    // Codex P2 (same hazard as CasePresentationPanel): the empty state renders
+    // during loading too (data defaults to []), so wait for the query to
+    // actually settle before the negative banner assertion means anything.
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.getByText("لا توجد خطط علاج مسجلة بعد.")).toBeInTheDocument();
     expect(
       screen.queryByText("تعذر تحميل خطط العلاج من الخادم"),
     ).not.toBeInTheDocument();

@@ -18,7 +18,7 @@ import {
   NASOLABIAL_LABELS,
   ORAL_HYGIENE_LABELS,
 } from "@/types/ortho";
-import { Field, SaveButton } from "./_shared";
+import { Field, QueryErrorState, SaveButton } from "./_shared";
 import { inputCls, HABIT_FLAG_KEYS } from "../_lib/types";
 
 /* ------------------------------------------------------------------ */
@@ -147,7 +147,7 @@ function ExamCheckbox({
 /* ------------------------------------------------------------------ */
 
 export function OrthoClinicalExamTab({ caseId }: { caseId: string }) {
-  const { data } = useClinicalExam(caseId);
+  const { data, isError, refetch } = useClinicalExam(caseId);
   const save = useSaveClinicalExam(caseId);
   const [form, setForm] = useState<ClinicalExam>({});
   useEffect(() => setForm(data ?? {}), [data]);
@@ -155,6 +155,17 @@ export function OrthoClinicalExamTab({ caseId }: { caseId: string }) {
     key: K,
     value: ClinicalExam[K]
   ) => setForm((f) => ({ ...f, [key]: value }));
+
+  // ORTHO-REQ-006: a failed fetch must not render a blank exam form — the
+  // doctor could re-enter and overwrite an exam that actually exists.
+  if (isError) {
+    return (
+      <QueryErrorState
+        text="تعذر تحميل الفحص السريري — تحقق من الاتصال وحاول مجددًا"
+        onRetry={() => refetch()}
+      />
+    );
+  }
 
   return (
     <form

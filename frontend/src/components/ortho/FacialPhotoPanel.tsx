@@ -19,7 +19,7 @@ interface SavedPhotoAnalysis {
  *  workspace: list saved analyses, open the report PDF, and create new ones. */
 export function FacialPhotoPanel({ caseId }: { caseId: string }) {
   const [pdfBusy, setPdfBusy] = useState<string | null>(null);
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["ortho-photo-analyses", caseId],
     enabled: !!caseId,
     retry: false,
@@ -49,6 +49,21 @@ export function FacialPhotoPanel({ caseId }: { caseId: string }) {
       </button>
     </div>
   );
+
+  // ORTHO-REQ-006: a fetch failure must not read as "لا تحاليل بعد".
+  if (isError) {
+    return (
+      <div className="rounded-lg border border-red-200 py-8 text-center" style={{ background: "#fef2f2" }}>
+        <p className="text-sm font-medium" style={{ color: "#b91c1c" }}>
+          تعذر تحميل تحاليل الصور — تحقق من الاتصال وحاول مجددًا
+        </p>
+        <button type="button" onClick={() => refetch()}
+          className="mt-3 rounded-lg border border-red-300 px-4 py-1.5 text-sm font-medium text-red-700 transition hover:bg-red-100">
+          إعادة المحاولة
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">

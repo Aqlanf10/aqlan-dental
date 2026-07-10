@@ -9,11 +9,11 @@ import {
 } from "@/hooks/useOrtho";
 import type { ExtractionDecision } from "@/types/ortho";
 import { EXTRACTION_FACTORS } from "@/types/ortho";
-import { Field, SaveButton } from "./_shared";
+import { Field, QueryErrorState, SaveButton } from "./_shared";
 import { inputCls } from "../_lib/types";
 
 export function OrthoExtractionTab({ caseId }: { caseId: string }) {
-  const { data } = useExtractionDecision(caseId);
+  const { data, isError, refetch } = useExtractionDecision(caseId);
   const save = useSaveExtractionDecision(caseId);
   const [form, setForm] = useState<ExtractionDecision>({});
   useEffect(() => setForm(data ?? {}), [data]);
@@ -61,6 +61,17 @@ export function OrthoExtractionTab({ caseId }: { caseId: string }) {
       },
     }));
   };
+
+  // ORTHO-REQ-006: a failed fetch must not render the default "بدون خلع مفضل"
+  // decision as if that were the saved state.
+  if (isError) {
+    return (
+      <QueryErrorState
+        text="تعذر تحميل قرار الخلع — تحقق من الاتصال وحاول مجددًا"
+        onRetry={() => refetch()}
+      />
+    );
+  }
 
   return (
     <form

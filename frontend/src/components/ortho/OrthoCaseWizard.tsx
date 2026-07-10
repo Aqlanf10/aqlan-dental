@@ -37,6 +37,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 import { resolveImageUrl } from "@/hooks/useClinicBranding";
 import { useOrthoOverview, useOrthoPhotos, useCaseCephAnalyses, useCaseCephAnalysis } from "@/hooks/useOrtho";
@@ -198,20 +199,22 @@ function ClinicalDraftPanel({ caseId, step }: { caseId: string; step: WizardStep
   return <div className="rounded-xl border border-clinic-blue/20 bg-white p-3 shadow-sm"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex items-center gap-1.5 text-xs font-bold text-clinic-navy"><Clipboard className="h-3.5 w-3.5 text-clinic-blue" />مسودة سريرية</div><p className="mt-1 text-[11px] leading-5 text-gray-500">يمكن طلب مسودة من بيانات الحالة كاملة. الناتج لا يُحفظ ولا يُعتمد تلقائيًا.</p></div><div className="flex flex-wrap gap-1.5"><OrthoCaseDraftAiButton caseId={caseId} draftKind={step.draftKind} currentDraft={draft} template={template} onDraft={setDraft} /><button type="button" onClick={copy} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-[11px] font-medium text-gray-700"><Clipboard className="h-3.5 w-3.5" />نسخ</button></div></div><textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={8} className="mt-3 w-full rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs leading-6 text-gray-800 outline-none focus:border-clinic-blue focus:bg-white" /><div className="mt-2 rounded-lg bg-amber-50 p-2 text-[11px] leading-5 text-amber-800">راجع المسودة طبيًا قبل نسخها إلى الشاشة الرسمية.</div></div>;
 }
 
+// ORTHO-TASK-003: section labels must be Arabic — the draft feeds an Arabic RTL
+// clinical field (same rule as OrthoCaseDraftAiButton's composed labels).
 function draftTemplate(kind?: DraftKind) {
   switch (kind) {
-    case "problems": return "Skeletal problems:\n- \n\nDental problems:\n- \n\nSoft tissue problems:\n- \n\nFunctional problems:\n- ";
-    case "diagnosis": return "Skeletal diagnosis:\n- \n\nDental diagnosis:\n- \n\nSoft tissue diagnosis:\n- \n\nFunctional diagnosis:\n- ";
-    case "objectives": return "Treatment objectives:\n1. \n2. \n3. ";
-    case "strategies": return "Treatment strategies:\n\nProblem:\nStrategy:\nRationale:\nAlternative:";
-    case "plan": return "Treatment plan:\n1. Appliance:\n2. Extraction decision:\n3. Anchorage:\n4. Duration:\n5. Retention:";
-    case "mechano": return "Mechanotherapy:\n\nAlignment:\n- \n\nCorrection:\n- \n\nFinishing:\n- ";
-    default: return "Clinical draft:\n- ";
+    case "problems": return "المشاكل الهيكلية:\n- \n\nالمشاكل السنية:\n- \n\nمشاكل الأنسجة الرخوة:\n- \n\nالمشاكل الوظيفية:\n- ";
+    case "diagnosis": return "التشخيص الهيكلي:\n- \n\nالتشخيص السني:\n- \n\nتشخيص الأنسجة الرخوة:\n- \n\nالتشخيص الوظيفي:\n- ";
+    case "objectives": return "أهداف العلاج:\n1. \n2. \n3. ";
+    case "strategies": return "استراتيجيات العلاج:\n\nالمشكلة:\nالاستراتيجية:\nالمسوّغ:\nالبديل:";
+    case "plan": return "خطة العلاج:\n1. الجهاز:\n2. قرار الخلع:\n3. الارتكاز:\n4. المدة:\n5. الاحتفاظ:";
+    case "mechano": return "الميكانيكا العلاجية:\n\nالرصف:\n- \n\nالتصحيح:\n- \n\nالإنهاء:\n- ";
+    default: return "مسودة سريرية:\n- ";
   }
 }
 
 function PhotoSlotCard({ caseId, slot: photoSlot, photo, disabled, onChanged, onPrepare }: { caseId: string; slot: PhotoSlot; photo: OrthoPhoto | null; disabled: boolean; onChanged: () => void; onPrepare: (p: OrthoPhoto) => void }) {
   const inputRef = useRef<HTMLInputElement>(null); const [uploading, setUploading] = useState(false); const preparedUrl = typeof (photo as Record<string, unknown> | null)?.preparedImageUrl === "string" ? (photo as unknown as { preparedImageUrl?: string }).preparedImageUrl : undefined;
-  const onFile = async (file: File | undefined) => { if (!file) return; setUploading(true); try { const form = new FormData(); form.append("file", file); const { data } = await api.post<{ url: string }>("/api/uploads", form, { headers: { "Content-Type": "multipart/form-data" } }); await orthoService.addPhoto(caseId, { photoUrl: data.url, category: photoSlot.category, subtype: photoSlot.subtype, photoType: photoSlot.category, treatmentPhase: photoSlot.phase, isSelectedForReport: true, caption: photoSlot.label } as Partial<OrthoPhoto>); toast.success("تم حفظ الصورة"); onChanged(); } catch { toast.error("تعذر رفع الصورة"); } finally { setUploading(false); if (inputRef.current) inputRef.current.value = ""; } };
+  const onFile = async (file: File | undefined) => { if (!file) return; setUploading(true); try { const form = new FormData(); form.append("file", file); const { data } = await api.post<{ url: string }>("/api/uploads", form, { headers: { "Content-Type": "multipart/form-data" } }); await orthoService.addPhoto(caseId, { photoUrl: data.url, category: photoSlot.category, subtype: photoSlot.subtype, photoType: photoSlot.category, treatmentPhase: photoSlot.phase, isSelectedForReport: true, caption: photoSlot.label } as Partial<OrthoPhoto>); toast.success("تم حفظ الصورة"); onChanged(); } catch (err) { toast.error(extractErrorMessage(err, "تعذر رفع الصورة")); } finally { setUploading(false); if (inputRef.current) inputRef.current.value = ""; } };
   return <div className="rounded-lg border border-gray-200 bg-white p-2.5"><div className="flex items-center justify-between gap-2"><div><span className="block text-xs font-semibold text-gray-700">{photoSlot.label}</span><span className="text-[10px] text-gray-400">{photoSlot.phase === "Final" ? "نهائية" : "بداية"}</span></div>{photo ? <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-1.5 py-0.5 text-[10px] text-green-700"><CheckCircle2 className="h-3 w-3" />محفوظة</span> : <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">مطلوبة</span>}</div>{photo ? <img src={resolveImageUrl(preparedUrl ?? photo.photoUrl)} alt={photoSlot.label} className="mt-2 h-28 w-full rounded-md object-cover" /> : <div className="mt-2 grid h-28 place-items-center rounded-md border border-dashed border-gray-200 bg-gray-50 text-[11px] text-gray-400">لم تُلتقط بعد</div>}<input ref={inputRef} type="file" accept="image/*" capture={photoSlot.capture} className="hidden" onChange={(event) => onFile(event.target.files?.[0])} /><div className="mt-2 flex flex-wrap gap-1.5"><button type="button" disabled={disabled || uploading} onClick={() => inputRef.current?.click()} className="rounded-md bg-clinic-blue px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-50">{uploading ? "..." : photo ? "إعادة" : "التقاط / رفع"}</button>{photo && <button type="button" onClick={() => onPrepare(photo)} className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-[11px] font-medium text-gray-600"><Upload className="h-3 w-3" />قص وتجهيز</button>}{preparedUrl && <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-[11px] text-blue-700"><BadgeCheck className="h-3 w-3" />جاهزة</span>}</div></div>;
 }

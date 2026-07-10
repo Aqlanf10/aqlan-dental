@@ -26,18 +26,20 @@ const STATUS_COLORS: Record<string, string> = {
 export default function OrthoPage() {
   const [cases, setCases] = useState<OrthoCase[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
   const [patientSuggestions, setPatientSuggestions] = useState<PatientListItem[]>([]);
 
   const fetchCases = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     const params = new URLSearchParams({ pageSize: "50" });
     if (statusFilter) params.set("status", statusFilter);
     if (search)       params.set("search", search);
     api.get<OrthoCase[]>(`/api/ortho-cases?${params}`)
       .then((r) => setCases(r.data))
-      .catch(() => {})
+      .catch(() => { setCases([]); setLoadError(true); })
       .finally(() => setLoading(false));
   }, [statusFilter, search]);
 
@@ -53,7 +55,7 @@ export default function OrthoPage() {
       api
         .get<PaginatedResponse<PatientListItem>>(`/api/patients?search=${encodeURIComponent(search)}&pageSize=6`)
         .then((r) => setPatientSuggestions(r.data.data))
-        .catch(() => {});
+        .catch(() => {}); // intentionally silent: suggestions are a convenience, the main list has its own error state
     }, 300);
     return () => clearTimeout(timer);
   }, [search]);
@@ -109,6 +111,18 @@ export default function OrthoPage() {
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="h-16 bg-gray-100 rounded-xl" />
           ))}
+        </div>
+      ) : loadError ? (
+        <div className="rounded-xl border border-red-200 p-6 text-center" style={{ background: "#fef2f2" }}>
+          <p className="text-sm font-medium" style={{ color: "#b91c1c" }}>
+            تعذر تحميل الحالات التقويمية — تحقق من الاتصال وحاول مجددًا
+          </p>
+          <button
+            onClick={fetchCases}
+            className="mt-3 px-4 py-1.5 text-sm font-medium rounded-lg border border-red-300 text-red-700 hover:bg-red-100 transition"
+          >
+            إعادة المحاولة
+          </button>
         </div>
       ) : cases.length === 0 && !patientSuggestions.length ? (
         <div className="text-center py-20 text-gray-400">

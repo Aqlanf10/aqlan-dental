@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Loader2, Sparkles } from "lucide-react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { toast } from "@/stores/toastStore";
 
 interface DraftResponse {
@@ -50,8 +51,7 @@ export function OrthoCaseDraftAiButton({
       onDraft(currentDraft.trim() && currentDraft.trim() !== template.trim() ? `${currentDraft.trim()}\n\n---\n${generated}` : generated);
       toast.success("تم توليد مسودة الحالة");
     } catch (error) {
-      const message = (error as { response?: { data?: { message?: string } } }).response?.data?.message ?? "تعذر توليد مسودة الحالة";
-      toast.error(message);
+      toast.error(extractErrorMessage(error, "تعذر توليد مسودة الحالة"));
     } finally {
       setLoading(false);
     }

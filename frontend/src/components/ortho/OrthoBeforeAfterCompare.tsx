@@ -92,8 +92,12 @@ function PhotoSlot({
 }
 
 export function OrthoBeforeAfterCompare({ caseId }: { caseId: string }) {
-  const { data: photos = [] as OrthoPhoto[], isLoading } =
-    useOrthoPhotos(caseId);
+  const {
+    data: photos = [] as OrthoPhoto[],
+    isLoading,
+    isError,
+    refetch,
+  } = useOrthoPhotos(caseId);
 
   // Sort oldest -> newest (takenAt first, fallback to sortOrder)
   const sorted = useMemo(() => {
@@ -135,6 +139,21 @@ export function OrthoBeforeAfterCompare({ caseId }: { caseId: string }) {
       <div className="grid gap-4 md:grid-cols-2 animate-pulse">
         <div className="h-96 rounded-lg bg-gray-100" />
         <div className="h-96 rounded-lg bg-gray-100" />
+      </div>
+    );
+  }
+
+  // ORTHO-REQ-006: a fetch failure must not read as "أضف صورتين على الأقل".
+  if (isError) {
+    return (
+      <div className="rounded-lg border border-red-200 py-8 text-center" style={{ background: "#fef2f2" }}>
+        <p className="text-sm font-medium" style={{ color: "#b91c1c" }}>
+          تعذر تحميل صور الحالة — تحقق من الاتصال وحاول مجددًا
+        </p>
+        <button type="button" onClick={() => refetch()}
+          className="mt-3 rounded-lg border border-red-300 px-4 py-1.5 text-sm font-medium text-red-700 transition hover:bg-red-100">
+          إعادة المحاولة
+        </button>
       </div>
     );
   }

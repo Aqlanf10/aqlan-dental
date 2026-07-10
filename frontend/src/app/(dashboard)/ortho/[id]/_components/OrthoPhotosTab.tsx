@@ -24,7 +24,8 @@ import {
 import { ImagePreviewModal } from "@/components/shared/ImagePreviewModal";
 import { OrthoImagePreparationDialog } from "@/components/ortho/OrthoImagePreparationDialog";
 import api from "@/lib/api";
-import { Field, EmptyState, SaveButton } from "./_shared";
+import { extractErrorMessage } from "@/lib/errors";
+import { Field, EmptyState, QueryErrorState, SaveButton } from "./_shared";
 import {
   inputCls,
   EMPTY_PHOTO_FORM,
@@ -43,8 +44,11 @@ import {
  * the original behavior.
  */
 export function OrthoPhotosTab({ caseId }: { caseId: string }) {
-  const { data: photos = [] as OrthoPhoto[], refetch: refetchPhotos } =
-    useOrthoPhotos(caseId);
+  const {
+    data: photos = [] as OrthoPhoto[],
+    isError: photosError,
+    refetch: refetchPhotos,
+  } = useOrthoPhotos(caseId);
   const { refetch: refetchChecklist } = useRecordsChecklist(caseId);
   const updatePhoto = useUpdateOrthoPhoto(caseId);
   const [form, setForm] = useState({ ...EMPTY_PHOTO_FORM });
@@ -126,8 +130,8 @@ export function OrthoPhotosTab({ caseId }: { caseId: string }) {
       setForm({ ...EMPTY_PHOTO_FORM });
       await refetchPhotos();
       toast.success("تمت إضافة السجل");
-    } catch {
-      toast.error("فشل إضافة السجل");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل إضافة السجل"));
     } finally {
       setSaving(false);
     }
@@ -160,8 +164,8 @@ export function OrthoPhotosTab({ caseId }: { caseId: string }) {
       if (fileInputRef.current) fileInputRef.current.value = "";
       await refetchPhotos();
       toast.success("تم رفع الصورة وإضافتها بنجاح");
-    } catch {
-      toast.error("فشل رفع الصورة");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل رفع الصورة"));
     } finally {
       setUploading(false);
     }
@@ -175,8 +179,8 @@ export function OrthoPhotosTab({ caseId }: { caseId: string }) {
       setDeleteConfirm(null);
       await refetchPhotos();
       toast.success("تم حذف الصورة");
-    } catch {
-      toast.error("فشل حذف الصورة");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل حذف الصورة"));
     }
   };
 
@@ -386,7 +390,12 @@ export function OrthoPhotosTab({ caseId }: { caseId: string }) {
               ))}
             </div>
           )}
-          {photos.length === 0 ? (
+          {photosError ? (
+            <QueryErrorState
+              text="تعذر تحميل صور الحالة — تحقق من الاتصال وحاول مجددًا"
+              onRetry={() => refetchPhotos()}
+            />
+          ) : photos.length === 0 ? (
             <EmptyState text="لا توجد صور أو سجلات مرتبطة بحالة التقويم." />
           ) : filteredPhotos.length === 0 ? (
             <EmptyState text="لا توجد صور مطابقة للتصفية المحددة." />

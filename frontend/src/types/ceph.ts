@@ -157,7 +157,7 @@ export interface CephAnalysis {
   xrayFileUrl?: string;
   aiAssisted: boolean;
   /** True when the saved analysis originated from the automatic tracing flow. */
-  isAutoTraced: boolean;
+  isAutoTraced?: boolean;
   /** Doctor assigned to the analysis, when the backend has one. */
   doctorId?: string | null;
   /** Clinical notes entered when the analysis was created. */

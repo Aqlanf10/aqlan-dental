@@ -20,7 +20,7 @@ These tasks started as implementation follow-ups after the documentation-only au
 - `NAV-TASK-012` covered by route permission regression tests for the implemented mismatches; a generated inventory report can be added later if desired.
 - `NAV-TASK-013` remains a manual runtime checklist item for a future browser pass across all roles.
 - `NAV-TASK-014` done in #591: module ownership notes reflect the implemented navigation decisions.
-- `NAV-TASK-015` in progress as SEQ-20: make dashboard alert failures visible without discarding cached alerts.
+- `NAV-TASK-015` done in #657 (SEQ-20): dashboard alert failures are visible and retryable without discarding cached alerts.
 
 | Task ID | Goal | Files allowed to edit | Files forbidden to edit | Model allowed | Tests required | Acceptance criteria | Risk |
 |---|---|---|---|---|---|---|---|

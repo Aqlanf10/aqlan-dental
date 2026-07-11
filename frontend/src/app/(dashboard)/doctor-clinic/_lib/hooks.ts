@@ -9,6 +9,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { RoomOption } from "../../daily-operations/_lib/constants";
 import type { DailyJourneySummary } from "@/types/journey";
+import {
+  createDoctorAccountNotLinkedError,
+  isDoctorAccountNotLinkedError,
+} from "./errors";
 
 // ─── Service option (with price) ────────────────────────────────────────────
 export interface ServiceWithPrice {
@@ -60,11 +64,16 @@ export function useDoctorPatientsToday(opts: { doctorId?: string; includeAll?: b
   return useQuery<DoctorPatientItem[]>({
     queryKey: includeAll
       ? ["doctor-clinic", "patients", "all"]
-      : ["doctor-clinic", "patients", doctorId],
+      : ["doctor-clinic", "patients", doctorId ?? "missing-doctor-link"],
     queryFn: async () => {
-      // Admin: omit doctorId to get all active patients
-      // Doctor: send doctorId to filter to their patients
-      if (!includeAll && !doctorId) return [];
+      // SEQ-17: a clinical user without DoctorId is misconfigured, not a doctor
+      // with zero patients. The dashboard layout has already completed auth
+      // hydration before this page renders, so this is safe to surface as a
+      // configuration error instead of silently disabling the query.
+      if (!includeAll && !doctorId) {
+        throw createDoctorAccountNotLinkedError();
+      }
+
       const qs = new URLSearchParams();
       if (!includeAll && doctorId) {
         qs.set("doctorId", doctorId);
@@ -72,9 +81,10 @@ export function useDoctorPatientsToday(opts: { doctorId?: string; includeAll?: b
       const { data } = await api.get(`/api/patient-journey/today?${qs.toString()}`);
       return data;
     },
-    enabled: includeAll || !!doctorId,
     staleTime: 15_000,
     refetchInterval: 30_000,
+    retry: (failureCount, error) =>
+      !isDoctorAccountNotLinkedError(error) && failureCount < 3,
     // SEQ-16: this query owns the doctor-clinic patient list. Allowing an
     // initial API failure to collapse to the page's `data = []` default falsely
     // tells the doctor that there are no patients. Escalate only when no usable

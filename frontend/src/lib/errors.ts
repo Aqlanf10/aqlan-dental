@@ -35,6 +35,11 @@ export function extractErrorMessage(err: unknown, fallback = "حدث خطأ"): s
     if (resp?.status === 401) return "ليس لديك صلاحية. يرجى تسجيل الدخول مجدداً.";
     if (resp?.status === 403) return "غير مصرح بهذا الإجراء.";
   }
-  if (err instanceof Error) return err.message;
+  if (err instanceof Error) {
+    if (err.message === "Network Error" || err.message === "Failed to fetch") {
+      return fallback;
+    }
+    return err.message;
+  }
   return fallback;
 }

@@ -1,4 +1,55 @@
+using System.Text.Json;
+
 namespace AqlanDentalPro.Application.DTOs.Ceph;
+
+/// <summary>
+/// Converts the overloaded CephAnalysis.Notes storage value into the clinical
+/// note exposed by API DTOs. After calibration, the database column contains a
+/// JSON envelope with calibration fields plus UserNotes; API consumers must not
+/// receive that internal envelope as if it were clinical text.
+/// </summary>
+internal static class CephClinicalNoteParser
+{
+    public static string? Extract(string? storedValue)
+    {
+        var trimmed = storedValue?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed)) return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(trimmed);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                return trimmed;
+
+            var root = document.RootElement;
+            var isCalibrationEnvelope =
+                root.TryGetProperty("PixelsPerMm", out _) ||
+                root.TryGetProperty("pixelsPerMm", out _) ||
+                root.TryGetProperty("ImageWidth", out _) ||
+                root.TryGetProperty("imageWidth", out _) ||
+                root.TryGetProperty("ImageHeight", out _) ||
+                root.TryGetProperty("imageHeight", out _) ||
+                root.TryGetProperty("UserNotes", out _) ||
+                root.TryGetProperty("userNotes", out _);
+
+            if (!isCalibrationEnvelope) return trimmed;
+
+            if (!root.TryGetProperty("UserNotes", out var userNotes) &&
+                !root.TryGetProperty("userNotes", out userNotes))
+                return null;
+
+            if (userNotes.ValueKind != JsonValueKind.String) return null;
+            var value = userNotes.GetString()?.Trim();
+            return string.IsNullOrWhiteSpace(value) ? null : value;
+        }
+        catch (JsonException)
+        {
+            // Legacy plain text and malformed JSON-looking notes remain visible;
+            // silently discarding a doctor's note would be worse than preserving it.
+            return trimmed;
+        }
+    }
+}
 
 public class CephAnalysisListDto
 {
@@ -66,6 +117,8 @@ public class CephDiagnosisDto
 
 public class CephAnalysisDetailDto
 {
+    private string? _notes;
+
     public Guid Id { get; set; }
     public Guid OrthoCaseId { get; set; }
     public Guid PatientId { get; set; }
@@ -77,7 +130,15 @@ public class CephAnalysisDetailDto
     public bool IsAutoTraced { get; set; }
     public bool AiAssisted { get; set; }
     public Guid? DoctorId { get; set; }
-    public string? Notes { get; set; }
+    /// <summary>
+    /// Clinical user note only. Calibration metadata stored in the entity's
+    /// Notes column is intentionally removed at the DTO boundary.
+    /// </summary>
+    public string? Notes
+    {
+        get => _notes;
+        set => _notes = CephClinicalNoteParser.Extract(value);
+    }
     public double? PixelsPerMm { get; set; }
     public int ImageWidth { get; set; }
     public int ImageHeight { get; set; }

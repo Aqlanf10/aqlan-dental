@@ -12,12 +12,11 @@ These are future task groups only. Do not implement them from this spec without 
 - `MS-TASK-004` Complete traceability table for all requirements in future sprint.
 - `MS-TASK-005` Runtime-verify daily operations, doctor clinic, ceph AI review, and report identity.
 - `MS-TASK-006` Audit settings usage to remove remaining hardcoded business rules.
-  — 🔵 Round 1 done 2026-07-11: full audit in
-  `docs/audits/ms-task-006-hardcoded-values-audit.md`. All HIGH findings fixed
-  in-round (commission 40% fallback now reads its existing settings key;
-  clinic identity in reminder/reset emails, portal clinic info + OTP SMS,
-  booking WhatsApp message, printed prescription and ceph report all
-  settings-driven). Remaining medium/low items (clinic.timezone key, public
-  pages/nav chrome, recall SMS template) documented in the report with
-  priorities — not silently dropped.
+  — 🔵 Three rounds completed through 2026-07-11. Full evidence is in
+  `docs/audits/ms-task-006-hardcoded-values-audit.md`.
+  Round 1 removed high-risk hardcoded money/identity values; round 2 covered
+  public booking, recall, waiting-display, and booking-contact surfaces; round 3
+  (SEQ-13, PR #648) made clinic timezone configuration real and safe, including
+  reminder-job alignment and fallback tests. Remaining medium/low UI-chrome
+  identity items are documented and intentionally not hidden.
 - `MS-TASK-007` Add PR automation/checklist for spec IDs and drift checks.

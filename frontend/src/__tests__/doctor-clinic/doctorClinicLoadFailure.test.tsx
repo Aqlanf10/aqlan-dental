@@ -96,6 +96,18 @@ describe("doctor clinic honest load and account-link failures", () => {
     expect(screen.queryByText("doctor-clinic-query-error")).not.toBeInTheDocument();
   });
 
+  it("preserves the linked-doctor flow and sends the doctor record id", async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: [] });
+
+    renderProbe({ includeAll: false, doctorId: "doctor-1" });
+
+    expect(await screen.findByText("لا يوجد مرضى")).toBeInTheDocument();
+    expect(api.get).toHaveBeenCalledWith(
+      expect.stringContaining("doctorId=doctor-1"),
+    );
+    expect(screen.queryByText("doctor-clinic-query-error")).not.toBeInTheDocument();
+  });
+
   it("throws an initial patient-list failure instead of rendering a false empty list", async () => {
     vi.mocked(api.get).mockRejectedValue({
       isAxiosError: true,

@@ -27,22 +27,49 @@ export function PatientCombobox({
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const requestSequence = useRef(0);
 
   useEffect(() => { setQuery(defaultDisplayValue); }, [defaultDisplayValue]);
 
   useEffect(() => {
-    if (query.length < 2) { setResults([]); setFailed(false); return; }
+    const requestId = ++requestSequence.current;
+
+    if (query.length < 2) {
+      setResults([]);
+      setFailed(false);
+      setLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    setResults([]);
     setLoading(true);
     setFailed(false);
-    const t = setTimeout(() => {
-      api
-        .get<PaginatedResponse<PatientListItem>>(
-          `/api/patients?search=${encodeURIComponent(query)}&pageSize=8`
-        )
-        .then((r) => { setResults(r.data.data ?? []); setLoading(false); })
-        .catch(() => { setLoading(false); setFailed(true); });
+
+    const t = setTimeout(async () => {
+      try {
+        const response = await api.get<PaginatedResponse<PatientListItem>>(
+          `/api/patients?search=${encodeURIComponent(query)}&pageSize=8`,
+          { signal: controller.signal },
+        );
+
+        if (!active || requestId !== requestSequence.current) return;
+        setResults(response.data.data ?? []);
+        setFailed(false);
+      } catch {
+        if (!active || controller.signal.aborted || requestId !== requestSequence.current) return;
+        setFailed(true);
+      } finally {
+        if (active && requestId === requestSequence.current) setLoading(false);
+      }
     }, 300);
-    return () => clearTimeout(t);
+
+    return () => {
+      active = false;
+      clearTimeout(t);
+      controller.abort();
+    };
   }, [query]);
 
   useEffect(() => {
@@ -92,7 +119,7 @@ export function PatientCombobox({
               لا توجد نتائج لـ &quot;{query}&quot;
             </p>
           )}
-          {!loading && results.map((p) => (
+          {!loading && !failed && results.map((p) => (
             <button
               key={p.id}
               type="button"

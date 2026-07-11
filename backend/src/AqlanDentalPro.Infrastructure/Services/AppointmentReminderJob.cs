@@ -16,7 +16,7 @@ namespace AqlanDentalPro.Infrastructure.Services;
 ///
 /// Key behaviors (post reliability-sprint):
 /// - Targets Scheduled AND Confirmed appointments only.
-/// - Uses Asia/Aden (UTC+3) timezone for all timing calculations.
+/// - Uses the process-wide clinic timezone resolved by <see cref="ClinicTimeProvider"/>.
 /// - Tracks email, SMS, and WhatsApp reminders separately (no cross-channel suppression).
 /// - Supports multiple reminder windows (e.g. 24h and 2h) — each window sends at most once.
 /// - Resolves patient email in priority order: PatientAccount→User, Patient.Email, BookingRequest.Email.
@@ -28,7 +28,6 @@ public class AppointmentReminderJob : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AppointmentReminderJob> _logger;
-    private static readonly TimeZoneInfo ClinicTz = TimeZoneInfo.FindSystemTimeZoneById("Asia/Aden");
 
     public AppointmentReminderJob(IServiceScopeFactory scopeFactory, ILogger<AppointmentReminderJob> logger)
     {
@@ -121,8 +120,8 @@ public class AppointmentReminderJob : BackgroundService
             _logger.LogDebug(ex, "SMS service check failed. Skipping SMS reminders.");
         }
 
-        // ── 4. Use clinic timezone (Asia/Aden, UTC+3) for all timing ──
-        var nowClinic = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, ClinicTz);
+        // ── 4. Use the configured clinic timezone for all timing ──
+        var nowClinic = ClinicTimeProvider.ClinicNow();
         var totalSent = 0;
 
         // ── 5. Target Scheduled AND Confirmed appointments ──
@@ -260,8 +259,8 @@ public class AppointmentReminderJob : BackgroundService
         }
 
         _logger.LogInformation(
-            "AppointmentReminderJob: sent {Count} reminders across all channels (checked {Hours} windows, tz=Asia/Aden)",
-            totalSent, string.Join(",", reminderHours));
+            "AppointmentReminderJob: sent {Count} reminders across all channels (checked {Hours} windows, tz={TimeZoneId})",
+            totalSent, string.Join(",", reminderHours), ClinicTimeProvider.CurrentTimeZone.Id);
     }
 
     /// <summary>

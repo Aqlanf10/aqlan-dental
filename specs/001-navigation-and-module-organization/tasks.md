@@ -21,7 +21,7 @@ These tasks started as implementation follow-ups after the documentation-only au
 - `NAV-TASK-013` remains a manual runtime checklist item for a future browser pass across all roles.
 - `NAV-TASK-014` done in #591: module ownership notes reflect the implemented navigation decisions.
 - `NAV-TASK-015` done in #657 (SEQ-20): dashboard alert failures are visible and retryable without discarding cached alerts.
-- `NAV-TASK-016` in progress as SEQ-21: distinguish recent-patients loading from a genuine empty list.
+- `NAV-TASK-016` done in #658 (SEQ-21): recent-patients loading is distinct from a genuine empty list.
 
 | Task ID | Goal | Files allowed to edit | Files forbidden to edit | Model allowed | Tests required | Acceptance criteria | Risk |
 |---|---|---|---|---|---|---|---|

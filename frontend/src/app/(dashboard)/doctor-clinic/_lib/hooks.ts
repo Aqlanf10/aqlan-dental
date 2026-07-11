@@ -75,11 +75,12 @@ export function useDoctorPatientsToday(opts: { doctorId?: string; includeAll?: b
     enabled: includeAll || !!doctorId,
     staleTime: 15_000,
     refetchInterval: 30_000,
-    // SEQ-16: this query owns the doctor-clinic patient list. Allowing an API
-    // failure to collapse to the page's `data = []` default falsely tells the
-    // doctor that there are no patients. Throw to the route error boundary so
-    // the workspace shows an explicit Arabic load failure with a real retry.
-    throwOnError: true,
+    // SEQ-16: this query owns the doctor-clinic patient list. Allowing an
+    // initial API failure to collapse to the page's `data = []` default falsely
+    // tells the doctor that there are no patients. Escalate only when no usable
+    // data exists; a transient background-refetch failure must not destroy an
+    // already-loaded clinical workspace.
+    throwOnError: (_error, query) => query.state.data === undefined,
   });
 }
 

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DollarSign, FlaskConical, X } from "lucide-react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { toast } from "@/stores/toastStore";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import { TableSkeleton } from "@/components/ui/skeleton";
@@ -54,8 +55,7 @@ function RecordPaymentModal({
       onClose();
     },
     onError: (error: unknown) => {
-      const apiError = error as { response?: { data?: { message?: string } } };
-      toast.error(apiError.response?.data?.message ?? "فشل تسجيل الدفعة");
+      toast.error(extractErrorMessage(error, "فشل تسجيل الدفعة"));
     },
   });
 

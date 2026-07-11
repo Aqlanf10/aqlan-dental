@@ -4,6 +4,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, X } from "lucide-react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { toast } from "@/stores/toastStore";
 import type {
   CreateLabOrderItemDto,
@@ -98,8 +99,7 @@ export function NewLabOrderModal({ onClose, initialPatient }: Props) {
       onClose();
     },
     onError: (error: unknown) => {
-      const apiError = error as { response?: { data?: { message?: string } } };
-      toast.error(apiError.response?.data?.message ?? "فشل إنشاء طلب المعمل");
+      toast.error(extractErrorMessage(error, "فشل إنشاء طلب المعمل"));
     },
   });
 

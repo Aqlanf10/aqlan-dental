@@ -8,6 +8,7 @@ import api from "@/lib/api";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import { cn, formatArabicDate, formatPhoneForWhatsApp } from "@/lib/utils";
+import { useClinicBranding } from "@/hooks/useClinicBranding";
 
 interface RecallCandidate {
   patientId: string;
@@ -26,11 +27,13 @@ interface RecallCandidatesResponse {
 
 const WINDOW_OPTIONS = [7, 14, 30, 60, 90];
 
-const WHATSAPP_MESSAGE =
-  "مرحباً، نود تذكيركم بأن لديكم موعداً فائتاً في مركز د. عقلان لطب الأسنان. يرجى التواصل معنا لإعادة حجز موعد جديد. نتمنى لكم دوام الصحة.";
+// MS-TASK-006: clinic name in outbound patient messages comes from settings.
+const whatsappMessage = (clinicName: string) =>
+  `مرحباً، نود تذكيركم بأن لديكم موعداً فائتاً في ${clinicName}. يرجى التواصل معنا لإعادة حجز موعد جديد. نتمنى لكم دوام الصحة.`;
 
 export default function RecallWorklistPage() {
   const [windowDays, setWindowDays] = useState(30);
+  const branding = useClinicBranding();
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["recall-candidates", windowDays],
@@ -146,7 +149,7 @@ export default function RecallWorklistPage() {
                           </Link>
                           {item.phone && (
                             <a
-                              href={`https://wa.me/${formatPhoneForWhatsApp(item.phone)}?text=${encodeURIComponent(WHATSAPP_MESSAGE)}`}
+                              href={`https://wa.me/${formatPhoneForWhatsApp(item.phone)}?text=${encodeURIComponent(whatsappMessage(branding.clinicName))}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex items-center justify-center w-7 h-7 rounded-lg hover:bg-green-50 transition-colors"

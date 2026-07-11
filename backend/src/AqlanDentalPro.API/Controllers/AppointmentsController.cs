@@ -588,9 +588,11 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         var timeStr = appointment.StartTime.ToString("HH:mm");
         var clinicService = appointment.Service?.ArabicName;
 
-        var subject = $"تذكير بموعد مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الاسنان";
+        var identity = await FinanceClinicIdentity.ResolveAsync(db);
+        var subject = $"تذكير بموعد {identity.Name}";
         var htmlBody = EmailService.BuildAppointmentReminderHtml(
-            patientName, doctorName, dateStr, timeStr, clinicService, appointment.Notes);
+            patientName, doctorName, dateStr, timeStr, clinicService, appointment.Notes,
+            identity.Name, identity.Location);
 
         try
         {

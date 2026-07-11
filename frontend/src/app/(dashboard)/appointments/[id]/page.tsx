@@ -64,8 +64,7 @@ export default function AppointmentDetailPage() {
       toast.success("تم حذف الموعد");
       router.push("/appointments");
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg ?? "فشل حذف الموعد");
+      toast.error(extractErrorMessage(err, "فشل حذف الموعد"));
     } finally {
       setActionLoading(null);
     }
@@ -77,8 +76,7 @@ export default function AppointmentDetailPage() {
       const { data } = await api.post(`/api/appointments/${id}/send-reminder`);
       toast.success(data.message ?? "تم إرسال التذكير");
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg ?? "فشل إرسال التذكير");
+      toast.error(extractErrorMessage(err, "فشل إرسال التذكير"));
     } finally {
       setActionLoading(null);
     }
@@ -90,8 +88,7 @@ export default function AppointmentDetailPage() {
       const { data } = await api.post(`/api/appointments/${id}/send-email-reminder`);
       toast.success(data.message ?? "تم إرسال تذكير الموعد بنجاح");
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg ?? "تعذر إرسال التذكير، حاول مرة أخرى");
+      toast.error(extractErrorMessage(err, "تعذر إرسال التذكير، حاول مرة أخرى"));
     } finally {
       setActionLoading(null);
     }
@@ -104,8 +101,7 @@ export default function AppointmentDetailPage() {
       toast.success(data.message ?? "تم إنشاء الزيارة");
       setApt((prev) => prev ? { ...prev, status: "InProgress" } : prev);
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg ?? "فشل إنشاء الزيارة");
+      toast.error(extractErrorMessage(err, "فشل إنشاء الزيارة"));
     } finally {
       setActionLoading(null);
     }

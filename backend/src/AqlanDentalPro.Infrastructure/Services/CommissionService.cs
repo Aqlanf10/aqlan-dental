@@ -1,3 +1,4 @@
+using AqlanDentalPro.Application.Common;
 using AqlanDentalPro.Application.DTOs.Commission;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
@@ -478,7 +479,9 @@ public class CommissionService(
         item.LabCost = svc.DefaultLabCost;
         item.CommissionBaseRule = svc.CommissionBaseRule;
 
-        // Doctor commission %: service default overrides doctor default
+        // Doctor commission %: service default overrides doctor default, then the
+        // configurable clinic-wide default (MS-TASK-006: this is a money rate —
+        // it must come from Settings, and the key already existed unused here).
         if (svc.DefaultDoctorCommissionPercentage.HasValue)
         {
             item.DoctorCommissionPercentage = svc.DefaultDoctorCommissionPercentage.Value;
@@ -489,11 +492,13 @@ public class CommissionService(
             if (doctor?.DefaultCommissionPercentage.HasValue == true)
                 item.DoctorCommissionPercentage = doctor.DefaultCommissionPercentage.Value;
             else
-                item.DoctorCommissionPercentage = 40m; // Sensible fallback: 40% when neither service nor doctor has a default
+                item.DoctorCommissionPercentage = await new FinanceSettingsReader(db)
+                    .GetDecimalAsync(FinanceSettingsKeys.CommissionDefaultDoctorPercentage);
         }
         else
         {
-            item.DoctorCommissionPercentage = 40m; // Sensible fallback: 40% when no doctor assigned and no service default
+            item.DoctorCommissionPercentage = await new FinanceSettingsReader(db)
+                .GetDecimalAsync(FinanceSettingsKeys.CommissionDefaultDoctorPercentage);
         }
 
         // If linked lab order exists, pull actual lab cost

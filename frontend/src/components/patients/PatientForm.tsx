@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Save, ChevronDown, AlertTriangle, ExternalLink, X, KeyRound, Copy, Check } from "lucide-react";
 import type { CreatePatientRequest } from "@/types/patient";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { useDoctors } from "@/hooks/useDoctors";
 import { useAuthStore } from "@/stores/authStore";
 import { cn, normalizePhone } from "@/lib/utils";
@@ -233,8 +234,7 @@ export function PatientForm({ defaultValues, patientId }: Props) {
         router.push(`/patients/${created.id}`);
       }
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setServerError(msg ?? "حدث خطأ أثناء الحفظ");
+      setServerError(extractErrorMessage(err, "حدث خطأ أثناء الحفظ"));
     } finally {
       setSaving(false);
     }

@@ -5,6 +5,7 @@ import { Printer, CheckCircle, AlertTriangle, XCircle, ArrowUp, ArrowDown, Loade
 import type { CephMeasurement, CephDiagnosis, CephAiDraftResponse, MeasurementGroup } from "@/types/ceph";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useClinicBranding } from "@/hooks/useClinicBranding";
 
 interface Props {
   measurements: CephMeasurement[];
@@ -56,6 +57,8 @@ export function AnalysisReport({
 }: Props) {
   const [activeGroup, setActiveGroup] = useState<MeasurementGroup>(defaultGroup);
   const [finalNotes, setFinalNotes]   = useState(diagnosis?.finalDiagnosis ?? "");
+  // MS-TASK-006: printed-report identity comes from settings, not hardcoded.
+  const branding = useClinicBranding();
 
   // ── C-D AI draft assistant — draft only, NEVER auto-saved ────────────────
   const [aiDraft, setAiDraft]     = useState<CephAiDraftResponse | null>(null);
@@ -92,7 +95,7 @@ export function AnalysisReport({
     <div className="flex flex-col h-full">
       {/* Print header */}
       <div className="hidden print:block text-center border-b-2 pb-3 mb-4">
-        <h2 className="text-lg font-bold">مركز د. عقلان الكامل لطب وتقويم الأسنان</h2>
+        <h2 className="text-lg font-bold">{branding.clinicName}</h2>
         <p className="text-sm">تقرير التحليل السيفالومتري</p>
         <div className="flex justify-between text-xs mt-2">
           <span>المريض: {patientName}</span>

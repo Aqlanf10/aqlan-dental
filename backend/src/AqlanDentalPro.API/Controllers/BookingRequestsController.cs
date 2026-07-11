@@ -2,6 +2,7 @@ using AqlanDentalPro.Application.DTOs.BookingRequests;
 using AqlanDentalPro.Application.DTOs.WhatsApp;
 using AqlanDentalPro.Application.Exceptions;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Cors;
@@ -150,7 +151,7 @@ public class BookingRequestsController(IBookingRequestService service, ICurrentU
                     {
                         PatientId = patient.Id,
                         TemplateType = "custom",
-                        CustomMessage = $"عزيزي/عزيزتي {patientName}، {statusArabic} طلب الحجز الخاص بك. شكراً لتواصلك مع مركز الدكتور عقلان الكامل.",
+                        CustomMessage = $"عزيزي/عزيزتي {patientName}، {statusArabic} طلب الحجز الخاص بك. شكراً لتواصلك مع {(await FinanceClinicIdentity.ResolveAsync(db)).Name}.",
                         Parameters = new Dictionary<string, string>
                         {
                             ["patient_name"] = patientName,

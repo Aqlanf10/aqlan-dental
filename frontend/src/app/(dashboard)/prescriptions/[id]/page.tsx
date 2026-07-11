@@ -7,11 +7,15 @@ import { ArrowRight, Printer, Trash2 } from "lucide-react";
 import type { Prescription } from "@/types/prescription";
 import api from "@/lib/api";
 import { PrescriptionPrint } from "@/components/prescriptions/PrescriptionPrint";
+import { useClinicBranding } from "@/hooks/useClinicBranding";
 import { formatArabicDate } from "@/lib/utils";
 
 export default function PrescriptionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [prescription, setPrescription] = useState<Prescription | null>(null);
+  // MS-TASK-006: printed-prescription identity comes from settings, not the
+  // component's hardcoded defaults.
+  const branding = useClinicBranding();
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
 
@@ -89,7 +93,12 @@ export default function PrescriptionDetailPage() {
 
       {/* Prescription view (screen + print) */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 print:border-0 print:shadow-none print:p-0">
-        <PrescriptionPrint prescription={prescription} />
+        <PrescriptionPrint
+          prescription={prescription}
+          clinicName={branding.clinicName}
+          clinicAddress={branding.address}
+          clinicPhone={branding.phone}
+        />
       </div>
     </div>
   );

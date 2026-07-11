@@ -17,6 +17,7 @@ import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
 import { toast } from "@/stores/toastStore";
 import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
 import { useAuthStore } from "@/stores/authStore";
+import { useClinicBranding } from "@/hooks/useClinicBranding";
 
 type BookingStatus = "Pending" | "Reviewed" | "Confirmed" | "Rejected";
 
@@ -204,6 +205,7 @@ interface DetailModalProps {
 
 function DetailModal({ item, onClose, onStatusChange, onCreateAppointment, onViewAppointment, onConfirmAndConvert }: DetailModalProps) {
   const { user } = useAuthStore();
+  const branding = useClinicBranding();
   const [staffNotes, setStaffNotes] = useState(item.staffNotes ?? "");
   const [loading, setLoading] = useState(false);
   const nextStatuses = NEXT_STATUSES[item.status];
@@ -239,7 +241,7 @@ function DetailModal({ item, onClose, onStatusChange, onCreateAppointment, onVie
   }
 
   const waPhone = normalizePhone(item.phoneNumber);
-  const waMessage = encodeURIComponent("مرحباً، معك مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان بخصوص طلب الحجز الخاص بك.");
+  const waMessage = encodeURIComponent(`مرحباً، معك ${branding.clinicName} بخصوص طلب الحجز الخاص بك.`);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -576,6 +578,7 @@ function ConvertModal({ item, onClose, onConverted }: ConvertModalProps) {
 }
 
 export default function BookingRequestsPage() {
+  const branding = useClinicBranding();
   const router = useRouter();
   const { user } = useAuthStore();
   const [items, setItems] = useState<BookingRequest[]>([]);
@@ -877,7 +880,7 @@ export default function BookingRequestsPage() {
           {filteredItems.map((item) => {
             const isConverted = item.convertedToAppointmentId !== null;
             const waPhone = normalizePhone(item.phoneNumber);
-            const waMessage = encodeURIComponent("مرحباً، معك مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان بخصوص طلب الحجز الخاص بك.");
+            const waMessage = encodeURIComponent(`مرحباً، معك ${branding.clinicName} بخصوص طلب الحجز الخاص بك.`);
 
             return (
               <div

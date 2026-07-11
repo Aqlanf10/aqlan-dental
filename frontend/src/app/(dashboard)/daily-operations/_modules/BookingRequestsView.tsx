@@ -9,6 +9,7 @@ import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
 import { Loader2, RefreshCw, Globe, Stethoscope, Phone, MessageCircle } from "lucide-react";
 import { NAVY, BLUE, ORANGE } from "../_lib/constants";
 import { canConvertBookingToAppointment, confirmBookingAndCreateAppointment } from "../_lib/bookingConversion";
+import { useClinicBranding } from "@/hooks/useClinicBranding";
 
 type BookingStatus = "Pending" | "Reviewed" | "Confirmed" | "Rejected";
 type FilterKey = "all" | BookingStatus;
@@ -47,6 +48,7 @@ function normalizeWaPhone(phone: string): string {
 
 export default function BookingRequestsView({ searchQuery }: { searchQuery: string }) {
   const { user } = useAuthStore();
+  const branding = useClinicBranding();
   const [items, setItems] = useState<BookingRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
@@ -135,7 +137,7 @@ export default function BookingRequestsView({ searchQuery }: { searchQuery: stri
           const canConvert = canConvertBookingToAppointment(item);
           const isBusy = actionLoadingId === item.id;
           const waPhone = normalizeWaPhone(item.phoneNumber);
-          const waText = encodeURIComponent("مرحباً، معك مركز الدكتور عقلان الكامل بخصوص طلب الحجز.");
+          const waText = encodeURIComponent(`مرحباً، معك ${branding.clinicName} بخصوص طلب الحجز.`);
           return (
             <div key={item.id} className="rounded-xl border bg-white p-3 transition hover:shadow-sm" style={{ borderColor: "#e5e7eb" }}>
               <div className="flex items-start justify-between gap-3">

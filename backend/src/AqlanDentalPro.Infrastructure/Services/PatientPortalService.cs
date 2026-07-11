@@ -464,7 +464,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
                 RecentPayments = recentPayments
             },
             LatestPrescription = latestPrescription != null ? MapPrescription(latestPrescription) : null,
-            ClinicInfo = GetClinicInfo()
+            ClinicInfo = await ResolveClinicInfoAsync()
         };
     }
 
@@ -766,7 +766,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
     public Task<PatientClinicInfoDto> GetClinicInfoAsync()
     {
-        return Task.FromResult(GetClinicInfo());
+        return ResolveClinicInfoAsync();
     }
 
     public async Task<Guid?> GetPatientIdByPhoneAsync(string phoneNumber)
@@ -875,15 +875,29 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         }
     }
 
-    private static PatientClinicInfoDto GetClinicInfo()
+    // MS-TASK-006: clinic info shown in the patient portal comes from the same
+    // website.* Settings keys the public site uses — no hardcoding (the old
+    // static version even carried a wrong placeholder phone number).
+    private async Task<PatientClinicInfoDto> ResolveClinicInfoAsync()
     {
+        var keys = new[]
+        {
+            "website.clinicName", "website.phone", "website.whatsapp",
+            "website.address", "website.workingHours",
+        };
+        var settings = await db.Settings
+            .Where(s => keys.Contains(s.Key))
+            .ToDictionaryAsync(s => s.Key, s => s.Value);
+        string Get(string key, string fallback) =>
+            settings.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v) ? v : fallback;
+
         return new PatientClinicInfoDto
         {
-            ClinicName = "مركز د. عقلان الكامل لطب وتقويم الأسنان",
-            Phone = "+967123456789",
-            WhatsApp = "+967123456789",
-            Address = "اليمن",
-            WorkingHours = "السبت - الأربعاء: ٩ ص - ٩ م"
+            ClinicName = Get("website.clinicName", FinanceClinicIdentity.DefaultName),
+            Phone = Get("website.phone", "04-253028"),
+            WhatsApp = Get("website.whatsapp", "967770245745"),
+            Address = Get("website.address", FinanceClinicIdentity.DefaultLocation),
+            WorkingHours = Get("website.workingHours", "السبت – الخميس: 8 ص – 8 م")
         };
     }
 
@@ -1072,9 +1086,10 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
             }
 
             var client = httpClientFactory.CreateClient("WhatsApp");
+            var clinicName = (await ResolveClinicInfoAsync()).ClinicName;
             var messageBody = purpose != null
-                ? $"{purpose} الخاص بك في مركز د. عقلان الكامل هو: {code}\nهذا الرمز صالح لمدة 10 دقائق."
-                : $"رمز التحقق الخاص بك في مركز د. عقلان الكامل هو: {code}\nهذا الرمز صالح لمدة 10 دقائق.";
+                ? $"{purpose} الخاص بك في {clinicName} هو: {code}\nهذا الرمز صالح لمدة 10 دقائق."
+                : $"رمز التحقق الخاص بك في {clinicName} هو: {code}\nهذا الرمز صالح لمدة 10 دقائق.";
 
             var payload = new
             {

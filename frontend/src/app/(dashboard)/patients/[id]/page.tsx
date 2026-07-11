@@ -17,6 +17,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { cn, GENDER_LABELS, formatArabicDate, formatPhoneForWhatsApp } from "@/lib/utils";
 import { isClinicalRole, isAccountantRole, canViewPatientFinance } from "@/lib/roles";
 import { financeV3ContractsUrl } from "@/lib/financeRoutes";
@@ -242,8 +243,7 @@ export default function PatientProfilePage() {
       const { data } = await api.get<PatientProfile>(`/api/patients/${id}`);
       setPatient(data);
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg ?? "حدث خطأ");
+      toast.error(extractErrorMessage(err, "حدث خطأ"));
     } finally {
       setConfirmAction(null);
     }
@@ -312,8 +312,7 @@ export default function PatientProfilePage() {
     api.get<PatientProfile>(`/api/patients/${id}`)
       .then(r  => setPatient(r.data))
       .catch(err => {
-        const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-        setError(msg ?? "فشل تحميل بيانات المريض");
+        setError(extractErrorMessage(err, "فشل تحميل بيانات المريض"));
       })
       .finally(() => setLoading(false));
 

@@ -20,6 +20,7 @@ import {
   buildAnnouncementText,
 } from "@/lib/clinic-display-announcement";
 import { HubConnectionBuilder, type HubConnection, LogLevel } from "@microsoft/signalr";
+import { useClinicBranding } from "@/hooks/useClinicBranding";
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface DisplayData {
@@ -364,6 +365,7 @@ const INITIAL_CONTEXT_MENU: ContextMenuState = {
 
 /* ─── Main Page ────────────────────────────────────────────────────────────── */
 export default function ClinicDisplayPage() {
+  const branding = useClinicBranding();
   const [data, setData] = useState<DisplayData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -533,7 +535,7 @@ export default function ClinicDisplayPage() {
         <div className="flex items-center gap-5">
           <div className="w-14 h-14 rounded-full bg-[#3d7ab5] flex items-center justify-center text-2xl font-bold shadow-lg shadow-cyan-900/40">ع</div>
           <div>
-            <h1 className="text-2xl md:text-4xl font-bold text-white leading-tight">مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان</h1>
+            <h1 className="text-2xl md:text-4xl font-bold text-white leading-tight">{branding.clinicName}</h1>
             <p className="text-lg md:text-xl text-teal-300 mt-1">شاشة الانتظار</p>
           </div>
         </div>
@@ -791,7 +793,7 @@ export default function ClinicDisplayPage() {
       {/* ── Footer ─────────────────────────────────────────────── */}
       <footer className="border-t border-white/10 px-8 md:px-16 py-4 flex items-center justify-between text-gray-500 text-base bg-[#0c1322]">
         <span>{lastUpdated ? `آخر تحديث: ${formatClock(lastUpdated)}` : "جاري التحميل…"}</span>
-        <span>يتحدث تلقائياً كل ٢٠ ثانية — مركز الدكتور عقلان الكامل</span>
+        <span>يتحدث تلقائياً كل ٢٠ ثانية — {branding.clinicName}</span>
       </footer>
 
       {/* ── Right-Click Context Menu ────────────────────────────── */}

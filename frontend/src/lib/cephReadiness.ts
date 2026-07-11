@@ -34,6 +34,13 @@ export interface CephReadinessItem {
   ok: boolean;
 }
 
+/** Detail-only metadata carried with a loaded analysis. */
+export interface CephAnalysisMetadata {
+  notes: string | null;
+  isAutoTraced: boolean;
+  doctorId: string | null;
+}
+
 export interface CephReadiness {
   /** True only when every requirement is met and nothing is unsaved. */
   ready: boolean;
@@ -43,6 +50,8 @@ export interface CephReadiness {
   verdict: string;
   /** The single most important blocking reason, or null when ready. */
   reason: string | null;
+  /** Optional detail metadata; absent for flag-only computations. */
+  analysisMetadata?: CephAnalysisMetadata;
 }
 
 /**
@@ -85,16 +94,32 @@ export function computeCephReadiness(input: CephReadinessInput): CephReadiness {
 
 /** Convenience: derive readiness directly from a loaded analysis + dirty flag. */
 export function cephReadinessFromAnalysis(
-  analysis: Pick<CephAnalysis, "xrayFileUrl" | "pixelsPerMm" | "landmarks" | "measurements">,
+  analysis: Pick<
+    CephAnalysis,
+    | "xrayFileUrl"
+    | "pixelsPerMm"
+    | "landmarks"
+    | "measurements"
+    | "notes"
+    | "isAutoTraced"
+    | "doctorId"
+  >,
   isDirty: boolean,
 ): CephReadiness {
-  return computeCephReadiness({
-    hasImage: Boolean(analysis.xrayFileUrl),
-    hasCalibration: Boolean(analysis.pixelsPerMm && analysis.pixelsPerMm > 0),
-    hasPoints: (analysis.landmarks?.length ?? 0) >= REQUIRED_LANDMARKS,
-    hasMeasurements: (analysis.measurements?.length ?? 0) > 0,
-    isDirty,
-  });
+  return {
+    ...computeCephReadiness({
+      hasImage: Boolean(analysis.xrayFileUrl),
+      hasCalibration: Boolean(analysis.pixelsPerMm && analysis.pixelsPerMm > 0),
+      hasPoints: (analysis.landmarks?.length ?? 0) >= REQUIRED_LANDMARKS,
+      hasMeasurements: (analysis.measurements?.length ?? 0) > 0,
+      isDirty,
+    }),
+    analysisMetadata: {
+      notes: analysis.notes?.trim() || null,
+      isAutoTraced: analysis.isAutoTraced,
+      doctorId: analysis.doctorId ?? null,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

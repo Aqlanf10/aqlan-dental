@@ -118,7 +118,13 @@ export function TopbarSearch() {
     return () => document.removeEventListener("keydown", handleKey);
   }, []);
 
-  useEffect(() => () => invalidateActiveSearch(), []);
+  useEffect(() => {
+    return () => {
+      requestSequence.current += 1;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      controllerRef.current?.abort();
+    };
+  }, []);
 
   const hasResults = Boolean(
     results &&

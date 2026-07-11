@@ -37,4 +37,19 @@ describe("extractErrorMessage", () => {
     expect(extractErrorMessage(axiosErr({}, 403))).toBe("غير مصرح بهذا الإجراء.");
     expect(extractErrorMessage({}, "بديل")).toBe("بديل");
   });
+
+  it.each(["Network Error", "Failed to fetch"])(
+    "uses the Arabic fallback for the generic transport error %s",
+    (message) => {
+      expect(extractErrorMessage(new Error(message), "تعذر الاتصال بالخادم")).toBe(
+        "تعذر الاتصال بالخادم",
+      );
+    },
+  );
+
+  it("keeps a specific plain error message", () => {
+    expect(extractErrorMessage(new Error("تعذر حفظ السجل"), "حدث خطأ")).toBe(
+      "تعذر حفظ السجل",
+    );
+  });
 });

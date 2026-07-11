@@ -9,10 +9,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { RoomOption } from "../../daily-operations/_lib/constants";
 import type { DailyJourneySummary } from "@/types/journey";
-import {
-  createDoctorAccountNotLinkedError,
-  isDoctorAccountNotLinkedError,
-} from "./errors";
+import { createDoctorAccountNotLinkedError } from "./errors";
 
 // ─── Service option (with price) ────────────────────────────────────────────
 export interface ServiceWithPrice {
@@ -61,19 +58,14 @@ export interface DoctorPatientItem {
 export function useDoctorPatientsToday(opts: { doctorId?: string; includeAll?: boolean } = {}) {
   const { doctorId, includeAll = false } = opts;
 
-  return useQuery<DoctorPatientItem[]>({
+  const query = useQuery<DoctorPatientItem[]>({
     queryKey: includeAll
       ? ["doctor-clinic", "patients", "all"]
-      : ["doctor-clinic", "patients", doctorId ?? "missing-doctor-link"],
+      : ["doctor-clinic", "patients", doctorId],
     queryFn: async () => {
-      // SEQ-17: a clinical user without DoctorId is misconfigured, not a doctor
-      // with zero patients. The dashboard layout has already completed auth
-      // hydration before this page renders, so this is safe to surface as a
-      // configuration error instead of silently disabling the query.
-      if (!includeAll && !doctorId) {
-        throw createDoctorAccountNotLinkedError();
-      }
-
+      // Admin: omit doctorId to get all active patients
+      // Doctor: send doctorId to filter to their patients
+      if (!includeAll && !doctorId) return [];
       const qs = new URLSearchParams();
       if (!includeAll && doctorId) {
         qs.set("doctorId", doctorId);
@@ -81,17 +73,27 @@ export function useDoctorPatientsToday(opts: { doctorId?: string; includeAll?: b
       const { data } = await api.get(`/api/patient-journey/today?${qs.toString()}`);
       return data;
     },
+    enabled: includeAll || !!doctorId,
     staleTime: 15_000,
     refetchInterval: 30_000,
-    retry: (failureCount, error) =>
-      !isDoctorAccountNotLinkedError(error) && failureCount < 3,
     // SEQ-16: this query owns the doctor-clinic patient list. Allowing an
     // initial API failure to collapse to the page's `data = []` default falsely
     // tells the doctor that there are no patients. Escalate only when no usable
     // data exists; a transient background-refetch failure must not destroy an
     // already-loaded clinical workspace.
-    throwOnError: (_error, query) => query.state.data === undefined,
+    throwOnError: (_error, queryState) => queryState.state.data === undefined,
   });
+
+  // SEQ-17: the dashboard layout completes auth hydration before rendering this
+  // page. A non-admin clinic workspace without DoctorId is therefore a durable
+  // account configuration defect, not a temporary loading state or an empty
+  // patient list. The query stays disabled, no API request is made, and the
+  // route boundary renders the actionable linking instructions.
+  if (!includeAll && !doctorId) {
+    throw createDoctorAccountNotLinkedError();
+  }
+
+  return query;
 }
 
 // ─── Patient daily summary (doctor view — no phone/finance) ─────────────────

@@ -34,6 +34,7 @@ public class AppointmentRepository(AppDbContext context)
                 return false;
             await DbSet.AddAsync(appointment);
             await Context.SaveChangesAsync();
+            await LoadDisplayDetailsAsync(appointment);
             return true;
         }
 
@@ -53,6 +54,14 @@ public class AppointmentRepository(AppDbContext context)
 
             await DbSet.AddAsync(appointment);
             await Context.SaveChangesAsync();
+
+            // SEQ-18: the create endpoint immediately maps this same entity to its DTO.
+            // Load the display-only references before committing so PatientName,
+            // DoctorName, and package metadata are not returned as empty values.
+            // Keeping the load inside the transaction also prevents a 500-after-save
+            // ghost success if enrichment itself fails.
+            await LoadDisplayDetailsAsync(appointment);
+
             await tx.CommitAsync();
             return true;
         }
@@ -61,6 +70,20 @@ public class AppointmentRepository(AppDbContext context)
             await tx.RollbackAsync();
             throw;
         }
+    }
+
+    private async Task LoadDisplayDetailsAsync(Appointment appointment)
+    {
+        var entry = Context.Entry(appointment);
+
+        if (!entry.Reference(a => a.Patient).IsLoaded)
+            await entry.Reference(a => a.Patient).LoadAsync();
+
+        if (!entry.Reference(a => a.Doctor).IsLoaded)
+            await entry.Reference(a => a.Doctor).LoadAsync();
+
+        if (appointment.PackageId.HasValue && !entry.Reference(a => a.Package).IsLoaded)
+            await entry.Reference(a => a.Package).LoadAsync();
     }
 
     public async Task<IEnumerable<Appointment>> GetTodayAsync(Guid? branchId, Guid? doctorId)

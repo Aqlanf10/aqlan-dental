@@ -48,17 +48,31 @@ function renderProbe() {
     },
   });
 
-  return render(
+  const view = render(
     <QueryClientProvider client={queryClient}>
       <TestErrorBoundary>
         <PatientsProbe />
       </TestErrorBoundary>
     </QueryClientProvider>,
   );
+
+  return { queryClient, ...view };
 }
+
+const ONE_PATIENT = {
+  appointmentId: "appointment-1",
+  patientId: "patient-1",
+  patientName: "مريض تجريبي",
+  appointmentTime: "09:00",
+  appointmentStatus: "InRoom",
+  doctorId: "doctor-1",
+  doctorName: "طبيب تجريبي",
+  nextAction: "StartVisit",
+};
 
 describe("SEQ-16 doctor clinic honest load failures", () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     vi.clearAllMocks();
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
@@ -72,7 +86,7 @@ describe("SEQ-16 doctor clinic honest load failures", () => {
     expect(screen.queryByText("doctor-clinic-query-error")).not.toBeInTheDocument();
   });
 
-  it("throws a patient-list fetch failure to the route boundary instead of rendering a false empty list", async () => {
+  it("throws an initial patient-list failure instead of rendering a false empty list", async () => {
     vi.mocked(api.get).mockRejectedValue({
       isAxiosError: true,
       response: { status: 500, data: { message: "تعذر تحميل رحلة المرضى" } },
@@ -84,6 +98,26 @@ describe("SEQ-16 doctor clinic honest load failures", () => {
       expect(screen.getByText("doctor-clinic-query-error")).toBeInTheDocument(),
     );
     expect(screen.queryByText("لا يوجد مرضى")).not.toBeInTheDocument();
+  });
+
+  it("keeps cached patients and does not tear down the workspace on a background refresh failure", async () => {
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({ data: [ONE_PATIENT] })
+      .mockRejectedValueOnce({
+        isAxiosError: true,
+        response: { status: 503, data: { message: "انقطاع مؤقت" } },
+      });
+
+    const { queryClient } = renderProbe();
+    expect(await screen.findByText("1 مرضى")).toBeInTheDocument();
+
+    await queryClient.refetchQueries({
+      queryKey: ["doctor-clinic", "patients", "all"],
+    });
+
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("1 مرضى")).toBeInTheDocument();
+    expect(screen.queryByText("doctor-clinic-query-error")).not.toBeInTheDocument();
   });
 
   it("provides a specific Arabic error screen with an explicit retry action", () => {

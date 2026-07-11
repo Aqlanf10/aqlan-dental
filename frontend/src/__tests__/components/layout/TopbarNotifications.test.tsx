@@ -23,7 +23,17 @@ vi.mock("@/lib/api", () => ({
   },
 }));
 
-const notification = {
+interface TestNotification {
+  id: string;
+  title: string;
+  body: string;
+  isRead: boolean;
+  createdAt: string;
+  relatedEntity?: string;
+  relatedId?: string;
+}
+
+const notification: TestNotification = {
   id: "notification-1",
   title: "موعد يحتاج تأكيدًا",
   body: "راجع موعد المريض قبل نهاية اليوم",
@@ -33,7 +43,7 @@ const notification = {
   relatedId: "patient-1",
 };
 
-const notificationWithoutRoute = {
+const notificationWithoutRoute: TestNotification = {
   ...notification,
   id: "notification-no-route",
   title: "تنبيه إداري",
@@ -41,7 +51,7 @@ const notificationWithoutRoute = {
   relatedId: undefined,
 };
 
-function listResponse(items = [notification], unreadCount = items.length) {
+function listResponse(items: TestNotification[] = [notification], unreadCount = items.length) {
   return { data: { data: items, unreadCount } };
 }
 

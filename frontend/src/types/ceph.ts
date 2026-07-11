@@ -156,6 +156,12 @@ export interface CephAnalysis {
   analysisDate: string;
   xrayFileUrl?: string;
   aiAssisted: boolean;
+  /** True when the saved analysis originated from the automatic tracing flow. */
+  isAutoTraced: boolean;
+  /** Doctor assigned to the analysis, when the backend has one. */
+  doctorId?: string | null;
+  /** Clinical notes entered when the analysis was created. */
+  notes?: string | null;
   /** `null` when the image has not been calibrated yet. */
   pixelsPerMm: number | null;
   imageWidth?: number;

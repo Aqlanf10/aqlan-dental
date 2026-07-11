@@ -6,6 +6,7 @@
 - Entities: `Invoice`, `InvoiceLineItem`, `Payment`, `Contract`, `CashierSession`, `Treasury`, `VaultTransfer`, `SupplierBill`, `CreditNote`, `JournalEntry`, `JournalLine`, `DoctorCommissionPayment`.
 - Permissions: `ReportsAccess`, `FinanceAccess`, `FinanceWrite`, `CashierAccess`, `AdminOnly`, commission policies.
 - Tests: `backend/tests/AqlanDentalPro.UnitTests/Finance/`, Commissions, Invoices, Services.
+- Finance list surfaces use an explicit fetch-error state; a failed refresh keeps the last successful rows visible beside the retry action.
 
 Allowed files: finance owners, finance tests, specs.
 

@@ -16,6 +16,7 @@ Initial table based on static repo inspection. Incomplete rows are marked `Needs
 | `MS-REQ-010` | Cephalometry | Ceph and draft AI | `ceph/`, `components/ceph/`, `CephController.cs`, `CephAiDraftService` | Ceph tests | active, runtime review needed | 2026-07-02 | High |
 | `MS-REQ-011` | Surgery | Surgery and ortho-surgical | `surgery/`, `ortho-surgical/`, `SurgeryController.cs`, `OrthoSurgicalCasesController.cs` | Surgery and OrthoSurgical tests | active | 2026-07-02 | High |
 | `MS-REQ-012` | Finance | Finance V3 | `finance-v3/`, `FinanceV3Controller*.cs`, `FinanceService.cs`, `TreasuryResolutionService.cs` | Finance tests | active | 2026-07-02 | Critical |
+| `FIN-REQ-007` | Finance | Fetch failure is distinct from a successful empty list and preserves cached rows | `finance-v3/components/ContractsTab.tsx`, `components/shared/QueryErrorBanner.tsx` | `ContractsTab.test.tsx` | active | 2026-07-11 | High |
 | `MS-REQ-013` | Lab | Lab orders/payables/reports | `lab/`, `LabOrdersController.cs`, `LabPayablesController.cs`, `LabReportsController.cs` | Lab tests | active | 2026-07-02 | High |
 | `MS-REQ-014` | Inventory | Inventory/purchases/suppliers | `inventory/`, `InventoryController.cs`, `PurchaseOrdersController.cs` | Inventory tests | active | 2026-07-02 | Medium |
 | `MS-REQ-015` | Reports | Reports/PDF | `ReportsController.cs`, `PdfService.cs`, PDF generators, print pages | PDF tests | active | 2026-07-02 | High |

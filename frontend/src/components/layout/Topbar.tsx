@@ -1,15 +1,14 @@
 "use client";
 
-import { Bell, CheckCheck, Trash2, LogOut, KeyRound, MessageCircle } from "lucide-react";
-import { useAuthStore } from "@/stores/authStore";
+import { KeyRound, LogOut, MessageCircle } from "lucide-react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuthStore } from "@/stores/authStore";
 import type { UserDto } from "@/types/auth";
 import api from "@/lib/api";
-import { useEffect, useRef, useState, memo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useUnreadCount } from "@/hooks/useMessaging";
-import { financeV3CollectionsUrl, financeV3ContractsUrl } from "@/lib/financeRoutes";
 import { TopbarSearch } from "@/components/layout/TopbarSearch";
+import { TopbarNotifications } from "@/components/layout/TopbarNotifications";
 
 /* ─── Live Clock — matches ZIP ─────────────────────────────────────────────── */
 // FE-31: Wrapped in React.memo so the parent Topbar does not re-render every second
@@ -17,145 +16,50 @@ import { TopbarSearch } from "@/components/layout/TopbarSearch";
 const LiveClock = memo(function LiveClock() {
   const [now, setNow] = useState(new Date());
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
   }, []);
 
-  const days = ['الأحد','الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
-  const months = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
-  const hh = now.getHours().toString().padStart(2, '0');
-  const mm = now.getMinutes().toString().padStart(2, '0');
-  const ss = now.getSeconds().toString().padStart(2, '0');
+  const days = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+  const months = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+  const hours = now.getHours().toString().padStart(2, "0");
+  const minutes = now.getMinutes().toString().padStart(2, "0");
+  const seconds = now.getSeconds().toString().padStart(2, "0");
   const dayName = days[now.getDay()];
-  const dateStr = `${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
+  const dateString = `${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
 
   return (
     <div
       className="hidden md:flex flex-col items-center rounded-[10px] px-3 py-1"
       style={{ background: "#eef3f9", border: "1px solid #dce8f5", minWidth: 140 }}
     >
-      <div className="text-lg font-extrabold leading-tight" style={{ color: "#0d2137", letterSpacing: 1, fontFamily: "monospace" }}>
-        {hh}<span style={{ opacity: now.getSeconds() % 2 === 0 ? 1 : 0.3, transition: "opacity 0.3s" }}>:</span>{mm}<span className="text-xs opacity-50">:{ss}</span>
+      <div
+        className="text-lg font-extrabold leading-tight"
+        style={{ color: "#0d2137", letterSpacing: 1, fontFamily: "monospace" }}
+      >
+        {hours}
+        <span
+          style={{
+            opacity: now.getSeconds() % 2 === 0 ? 1 : 0.3,
+            transition: "opacity 0.3s",
+          }}
+        >
+          :
+        </span>
+        {minutes}
+        <span className="text-xs opacity-50">:{seconds}</span>
       </div>
-      <div className="text-[10px] font-semibold" style={{ color: "#94a3b8" }}>{dayName} · {dateStr}</div>
+      <div className="text-[10px] font-semibold" style={{ color: "#94a3b8" }}>
+        {dayName} · {dateString}
+      </div>
     </div>
   );
 });
 
-interface NotificationItem {
-  id: string;
-  type?: string;
-  title?: string;
-  body?: string;
-  isRead: boolean;
-  createdAt: string;
-  relatedEntity?: string;
-  relatedId?: string;
-}
-
-const ENTITY_URL: Record<string, (id: string) => string> = {
-  Appointment: () => "/appointments",
-  Patient:     (id) => `/patients/${id}`,
-  Payment:     () => financeV3CollectionsUrl(),
-  Contract:    () => financeV3ContractsUrl(),
-  LabOrder:    () => "/lab",
-  OrthoCase:   (id) => `/ortho/${id}`,
-};
-
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const min  = Math.floor(diff / 60_000);
-  if (min < 1)  return "الآن";
-  if (min < 60) return `منذ ${min} دقيقة`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24)  return `منذ ${hr} ساعة`;
-  return `منذ ${Math.floor(hr / 24)} يوم`;
-}
-
 export function Topbar() {
   const { user } = useAuthStore();
   const router = useRouter();
-
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [notifOpen, setNotifOpen] = useState(false);
-  const [notifLoading, setNotifLoading] = useState(false);
-  const notifRef = useRef<HTMLDivElement>(null);
-
-  const { data: notifData } = useQuery({
-    queryKey: ["notificationUnreadCount"],
-    queryFn: async () => {
-      const { data } = await api.get<{ count: number }>("/api/notifications/unread-count");
-      return data;
-    },
-    staleTime: 120_000,
-    refetchInterval: false,
-    refetchOnWindowFocus: true,
-  });
-
-  const queryClient = useQueryClient();
-  useEffect(() => {
-    if (notifData?.count !== undefined) setUnreadCount(notifData.count);
-  }, [notifData]);
-
-  const { data: msgUnreadData } = useUnreadCount();
-
-  const openNotifications = async () => {
-    if (notifOpen) { setNotifOpen(false); return; }
-    setNotifOpen(true);
-    setNotifLoading(true);
-    try {
-      const { data } = await api.get<{ data: NotificationItem[]; unreadCount: number }>(
-        "/api/notifications?page=1&pageSize=15"
-      );
-      setNotifications(data.data);
-      setUnreadCount(data.unreadCount);
-    } catch {
-      setNotifications([]);
-    } finally {
-      setNotifLoading(false);
-    }
-  };
-
-  const markAllRead = async () => {
-    await api.put("/api/notifications/read-all").catch((e) => { console.error("[Topbar] Failed to mark all notifications read:", e); });
-    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-    setUnreadCount(0);
-    queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
-  };
-
-  const markRead = async (id: string) => {
-    await api.put(`/api/notifications/${id}/read`).catch((e) => { console.error("[Topbar] Failed to mark notification read:", e); });
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
-    setUnreadCount(prev => Math.max(0, prev - 1));
-    queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
-  };
-
-  const handleNotifClick = async (n: NotificationItem) => {
-    if (!n.isRead) await markRead(n.id);
-    if (n.relatedEntity && n.relatedId) {
-      const urlFn = ENTITY_URL[n.relatedEntity];
-      if (urlFn) {
-        setNotifOpen(false);
-        router.push(urlFn(n.relatedId));
-      }
-    }
-  };
-
-  const deleteNotif = async (id: string) => {
-    await api.delete(`/api/notifications/${id}`).catch((e) => { console.error("[Topbar] Failed to delete notification:", e); });
-    setNotifications(prev => prev.filter(n => n.id !== id));
-  };
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
-        setNotifOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  const { data: messageUnreadData } = useUnreadCount();
 
   return (
     <header
@@ -170,116 +74,32 @@ export function Topbar() {
         <LiveClock />
 
         <button
+          type="button"
           onClick={() => router.push("/messages")}
           className="relative w-[38px] h-[38px] rounded-lg flex items-center justify-center transition-colors"
           style={{ background: "#eef3f9", color: "#64748b" }}
           title="الرسائل"
         >
           <MessageCircle className="w-[18px] h-[18px]" />
-          {msgUnreadData && msgUnreadData.totalUnread > 0 && (
+          {messageUnreadData && messageUnreadData.totalUnread > 0 && (
             <span
               className="absolute rounded-full flex items-center justify-center text-white text-[9px] font-bold leading-none"
               style={{
-                top: 4, right: 4,
-                minWidth: 16, height: 16,
+                top: 4,
+                right: 4,
+                minWidth: 16,
+                height: 16,
                 background: "#3d7ab5",
                 padding: "0 3px",
               }}
             >
-              {msgUnreadData.totalUnread > 99 ? "99+" : msgUnreadData.totalUnread}
+              {messageUnreadData.totalUnread > 99 ? "99+" : messageUnreadData.totalUnread}
             </span>
           )}
         </button>
 
         <TopbarSearch />
-
-        <div ref={notifRef} className="relative">
-          <button
-            onClick={openNotifications}
-            className="relative w-[38px] h-[38px] rounded-lg flex items-center justify-center transition-colors"
-            style={{ background: "#eef3f9", color: "#64748b" }}
-          >
-            <Bell className="w-[18px] h-[18px]" />
-            {unreadCount > 0 && (
-              <span
-                className="absolute rounded-full"
-                style={{
-                  top: 6, right: 6, width: 8, height: 8,
-                  background: "#ef4444",
-                  border: "2px solid #fff",
-                }}
-              />
-            )}
-          </button>
-
-          {notifOpen && (
-            <div
-              className="absolute top-full mt-2 end-0 w-[340px] bg-white rounded-xl z-50 overflow-hidden"
-              style={{ boxShadow: "0 8px 30px rgba(0,0,0,0.12)", border: "1px solid #e8f0f9" }}
-            >
-              <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid #e8f0f9" }}>
-                <span className="font-bold text-sm" style={{ color: "#0d2137" }}>الإشعارات</span>
-                {unreadCount > 0 && (
-                  <button
-                    onClick={markAllRead}
-                    className="flex items-center gap-1 text-xs transition"
-                    style={{ color: "#3d7ab5" }}
-                  >
-                    <CheckCheck className="w-3.5 h-3.5" />
-                    تحديد الكل كمقروء
-                  </button>
-                )}
-              </div>
-
-              <div className="max-h-96 overflow-y-auto">
-                {notifLoading ? (
-                  <div className="space-y-3 p-4">
-                    {[1,2,3].map(i => <div key={i} className="h-12 rounded-lg animate-pulse" style={{ background: "#f1f5f9" }} />)}
-                  </div>
-                ) : notifications.length === 0 ? (
-                  <div className="py-10 text-center text-sm" style={{ color: "#94a3b8" }}>
-                    <Bell className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                    لا توجد إشعارات
-                  </div>
-                ) : (
-                  notifications.map(n => (
-                    <div
-                      key={n.id}
-                      onClick={() => handleNotifClick(n)}
-                      className="flex items-start gap-3 px-4 py-3 cursor-pointer group transition"
-                      style={{
-                        background: !n.isRead ? "#eef3f9" : "transparent",
-                        borderBottom: "1px solid #f1f5f9",
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = !n.isRead ? "#eef3f9" : "transparent")}
-                    >
-                      <div
-                        className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
-                        style={{ background: !n.isRead ? "#3d7ab5" : "#cbd5e1" }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-[13px] ${!n.isRead ? "font-semibold" : ""}`} style={{ color: "#0d2137" }}>
-                          {n.title}
-                        </p>
-                        <p className="text-xs mt-0.5 line-clamp-2" style={{ color: "#94a3b8" }}>{n.body}</p>
-                        <p className="text-[11px] mt-1" style={{ color: "#94a3b8" }}>{timeAgo(n.createdAt)}</p>
-                      </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); deleteNotif(n.id); }}
-                        className="opacity-0 group-hover:opacity-100 p-1 rounded transition"
-                        style={{ color: "#94a3b8" }}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
+        <TopbarNotifications />
         <UserMenu user={user} router={router} />
       </div>
     </header>
@@ -289,16 +109,21 @@ export function Topbar() {
 function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<typeof useRouter> }) {
   const { logout } = useAuthStore();
   const [open, setOpen] = useState(false);
-  const [changePw, setChangePw] = useState(false);
-  const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
-  const [pwError, setPwError] = useState("");
-  const [pwSaving, setPwSaving] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ current: "", next: "", confirm: "" });
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setChangePw(false); } };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
+    const handleOutside = (event: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        setOpen(false);
+        setChangePasswordOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
   }, []);
 
   const handleLogout = async () => {
@@ -306,34 +131,53 @@ function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<t
     router.replace("/login");
   };
 
-  const handleChangePw = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (pwForm.next !== pwForm.confirm) { setPwError("كلمة المرور الجديدة غير متطابقة"); return; }
-    if (pwForm.next.length < 8) { setPwError("يجب أن تكون 8 أحرف على الأقل"); return; }
-    setPwSaving(true); setPwError("");
+  const handleChangePassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (passwordForm.next !== passwordForm.confirm) {
+      setPasswordError("كلمة المرور الجديدة غير متطابقة");
+      return;
+    }
+    if (passwordForm.next.length < 8) {
+      setPasswordError("يجب أن تكون 8 أحرف على الأقل");
+      return;
+    }
+
+    setPasswordSaving(true);
+    setPasswordError("");
     try {
-      await api.post("/api/users/me/change-password", { currentPassword: pwForm.current, newPassword: pwForm.next });
-      setChangePw(false); setOpen(false);
-      setPwForm({ current: "", next: "", confirm: "" });
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setPwError(msg ?? "حدث خطأ");
+      await api.post("/api/users/me/change-password", {
+        currentPassword: passwordForm.current,
+        newPassword: passwordForm.next,
+      });
+      setChangePasswordOpen(false);
+      setOpen(false);
+      setPasswordForm({ current: "", next: "", confirm: "" });
+    } catch (error: unknown) {
+      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setPasswordError(message ?? "حدث خطأ");
     } finally {
-      setPwSaving(false);
+      setPasswordSaving(false);
     }
   };
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={rootRef} className="relative">
       <button
-        onClick={() => { setOpen(o => !o); setChangePw(false); }}
+        type="button"
+        onClick={() => {
+          setOpen((current) => !current);
+          setChangePasswordOpen(false);
+        }}
         className="flex items-center gap-1.5 rounded-lg transition px-1 py-0.5"
-        onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
-        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+        onMouseEnter={(event) => (event.currentTarget.style.background = "#f7fafd")}
+        onMouseLeave={(event) => (event.currentTarget.style.background = "transparent")}
       >
         <div
           className="w-[38px] h-[38px] rounded-full flex items-center justify-center text-white text-[13px] font-bold"
-          style={{ backgroundColor: user?.doctorColor ?? "#3d7ab5", border: "2px solid #dce8f5" }}
+          style={{
+            backgroundColor: user?.doctorColor ?? "#3d7ab5",
+            border: "2px solid #dce8f5",
+          }}
         >
           {user?.doctorInitials ?? user?.username?.charAt(0).toUpperCase() ?? "م"}
         </div>
@@ -344,30 +188,39 @@ function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<t
           className="absolute top-full mt-2 end-0 w-56 bg-white rounded-xl z-50 overflow-hidden"
           style={{ boxShadow: "0 8px 30px rgba(0,0,0,0.12)", border: "1px solid #e8f0f9" }}
         >
-          <div className="px-4 py-3" style={{ background: "#f7fafd", borderBottom: "1px solid #f1f5f9" }}>
-            <p className="font-bold text-sm" style={{ color: "#0d2137" }}>{user?.doctorName ?? user?.username}</p>
-            <p className="text-xs mt-0.5" style={{ color: "#94a3b8" }}>{user?.username}</p>
+          <div
+            className="px-4 py-3"
+            style={{ background: "#f7fafd", borderBottom: "1px solid #f1f5f9" }}
+          >
+            <p className="font-bold text-sm" style={{ color: "#0d2137" }}>
+              {user?.doctorName ?? user?.username}
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: "#94a3b8" }}>
+              {user?.username}
+            </p>
           </div>
 
-          {!changePw ? (
+          {!changePasswordOpen ? (
             <div className="py-1">
               <button
-                onClick={() => setChangePw(true)}
+                type="button"
+                onClick={() => setChangePasswordOpen(true)}
                 className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition text-start"
                 style={{ color: "#0d2137" }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                onMouseEnter={(event) => (event.currentTarget.style.background = "#f7fafd")}
+                onMouseLeave={(event) => (event.currentTarget.style.background = "transparent")}
               >
                 <KeyRound className="w-[15px] h-[15px]" style={{ color: "#64748b" }} />
                 تغيير كلمة المرور
               </button>
               <div style={{ borderTop: "1px solid #f1f5f9" }}>
                 <button
+                  type="button"
                   onClick={handleLogout}
                   className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition text-start"
                   style={{ color: "#ef4444" }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#fef2f2")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  onMouseEnter={(event) => (event.currentTarget.style.background = "#fef2f2")}
+                  onMouseLeave={(event) => (event.currentTarget.style.background = "transparent")}
                 >
                   <LogOut className="w-[15px] h-[15px]" style={{ color: "#ef4444" }} />
                   تسجيل الخروج
@@ -375,47 +228,73 @@ function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<t
               </div>
             </div>
           ) : (
-            <form onSubmit={handleChangePw} className="p-4 space-y-3">
-              <p className="text-sm font-semibold" style={{ color: "#0d2137" }}>تغيير كلمة المرور</p>
-              {pwError && <p className="text-xs px-3 py-1.5 rounded-lg" style={{ color: "#ef4444", background: "#fef2f2" }}>{pwError}</p>}
+            <form onSubmit={handleChangePassword} className="p-4 space-y-3">
+              <p className="text-sm font-semibold" style={{ color: "#0d2137" }}>
+                تغيير كلمة المرور
+              </p>
+              {passwordError && (
+                <p
+                  className="text-xs px-3 py-1.5 rounded-lg"
+                  style={{ color: "#ef4444", background: "#fef2f2" }}
+                >
+                  {passwordError}
+                </p>
+              )}
               <input
-                type="password" placeholder="كلمة المرور الحالية"
-                value={pwForm.current} onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })}
+                type="password"
+                placeholder="كلمة المرور الحالية"
+                value={passwordForm.current}
+                onChange={(event) =>
+                  setPasswordForm({ ...passwordForm, current: event.target.value })
+                }
                 className="w-full text-sm px-3 py-2 rounded-lg outline-none"
                 style={{ border: "1px solid #dce8f5" }}
-                onFocus={(e) => (e.currentTarget.style.borderColor = "#3d7ab5")}
-                onBlur={(e) => (e.currentTarget.style.borderColor = "#dce8f5")}
+                onFocus={(event) => (event.currentTarget.style.borderColor = "#3d7ab5")}
+                onBlur={(event) => (event.currentTarget.style.borderColor = "#dce8f5")}
               />
               <input
-                type="password" placeholder="كلمة المرور الجديدة (8 أحرف+)"
-                value={pwForm.next} onChange={(e) => setPwForm({ ...pwForm, next: e.target.value })}
+                type="password"
+                placeholder="كلمة المرور الجديدة (8 أحرف+)"
+                value={passwordForm.next}
+                onChange={(event) => setPasswordForm({ ...passwordForm, next: event.target.value })}
                 className="w-full text-sm px-3 py-2 rounded-lg outline-none"
                 style={{ border: "1px solid #dce8f5" }}
-                onFocus={(e) => (e.currentTarget.style.borderColor = "#3d7ab5")}
-                onBlur={(e) => (e.currentTarget.style.borderColor = "#dce8f5")}
+                onFocus={(event) => (event.currentTarget.style.borderColor = "#3d7ab5")}
+                onBlur={(event) => (event.currentTarget.style.borderColor = "#dce8f5")}
               />
               <input
-                type="password" placeholder="تأكيد كلمة المرور الجديدة"
-                value={pwForm.confirm} onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
+                type="password"
+                placeholder="تأكيد كلمة المرور الجديدة"
+                value={passwordForm.confirm}
+                onChange={(event) =>
+                  setPasswordForm({ ...passwordForm, confirm: event.target.value })
+                }
                 className="w-full text-sm px-3 py-2 rounded-lg outline-none"
                 style={{ border: "1px solid #dce8f5" }}
-                onFocus={(e) => (e.currentTarget.style.borderColor = "#3d7ab5")}
-                onBlur={(e) => (e.currentTarget.style.borderColor = "#dce8f5")}
+                onFocus={(event) => (event.currentTarget.style.borderColor = "#3d7ab5")}
+                onBlur={(event) => (event.currentTarget.style.borderColor = "#dce8f5")}
               />
               <div className="flex gap-2 pt-1">
-                <button type="submit" disabled={pwSaving}
+                <button
+                  type="submit"
+                  disabled={passwordSaving}
                   className="flex-1 py-2 text-sm font-medium rounded-lg text-white transition"
                   style={{ background: "#3d7ab5" }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#2d5e8e")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "#3d7ab5")}
+                  onMouseEnter={(event) => (event.currentTarget.style.background = "#2d5e8e")}
+                  onMouseLeave={(event) => (event.currentTarget.style.background = "#3d7ab5")}
                 >
-                  {pwSaving ? "جارٍ الحفظ..." : "حفظ"}
+                  {passwordSaving ? "جارٍ الحفظ..." : "حفظ"}
                 </button>
-                <button type="button" onClick={() => { setChangePw(false); setPwError(""); }}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setChangePasswordOpen(false);
+                    setPasswordError("");
+                  }}
                   className="flex-1 py-2 text-sm font-medium rounded-lg transition"
                   style={{ border: "1px solid #dce8f5", color: "#64748b" }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  onMouseEnter={(event) => (event.currentTarget.style.background = "#f7fafd")}
+                  onMouseLeave={(event) => (event.currentTarget.style.background = "transparent")}
                 >
                   إلغاء
                 </button>

@@ -2,6 +2,7 @@ using AqlanDentalPro.Application.Interfaces.Repositories;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace AqlanDentalPro.Infrastructure.Repositories;
@@ -86,9 +87,15 @@ public class AppointmentRepository(AppDbContext context)
             await entry.Reference(a => a.Package).LoadAsync();
     }
 
-    public async Task<IEnumerable<Appointment>> GetTodayAsync(Guid? branchId, Guid? doctorId)
+    public async Task<IEnumerable<Appointment>> GetTodayAsync(
+        Guid? branchId,
+        Guid? doctorId,
+        DateOnly? clinicDate = null)
     {
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        // SEQ-19: DateTime.Today follows the host/container timezone (typically UTC),
+        // not the configured clinic timezone. Use the clinic-local date by default;
+        // the optional explicit date keeps midnight-boundary tests deterministic.
+        var today = clinicDate ?? ClinicTimeProvider.ClinicToday();
         var query = DbSet
             .Include(a => a.Patient)
             .Include(a => a.Doctor)

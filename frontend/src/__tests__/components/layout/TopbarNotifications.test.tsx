@@ -5,13 +5,16 @@ import api from "@/lib/api";
 
 const push = vi.fn();
 const invalidateQueries = vi.fn();
+const { unreadQueryData } = vi.hoisted(() => ({
+  unreadQueryData: { count: 2 },
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
 }));
 
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: () => ({ data: { count: 2 } }),
+  useQuery: () => ({ data: unreadQueryData }),
   useQueryClient: () => ({ invalidateQueries }),
 }));
 
@@ -73,6 +76,7 @@ async function openNotifications() {
 describe("SEQ-28 TopbarNotifications load states", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    unreadQueryData.count = 2;
     vi.mocked(api.put).mockResolvedValue({} as never);
     vi.mocked(api.delete).mockResolvedValue({} as never);
   });
@@ -150,6 +154,7 @@ describe("SEQ-28 TopbarNotifications load states", () => {
 describe("SEQ-29 TopbarNotifications mutation truth", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    unreadQueryData.count = 2;
     vi.mocked(api.get).mockResolvedValue(listResponse() as never);
     vi.mocked(api.put).mockResolvedValue({} as never);
     vi.mocked(api.delete).mockResolvedValue({} as never);

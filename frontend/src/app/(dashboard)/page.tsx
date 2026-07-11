@@ -8,6 +8,7 @@ import { DashboardCharts } from "@/components/dashboard/DashboardCharts";
 import { TodaySchedule } from "@/components/dashboard/TodaySchedule";
 import type { DashboardStats } from "@/types/dashboard";
 import api from "@/lib/api";
+import { Skeleton } from "@/components/ui/skeleton";
 /* ZIP-matched card styles — shared constants (identical pixels) */
 import { cardStyle, cardNoPadStyle } from "@/components/ui/cardStyles";
 
@@ -25,11 +26,13 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [statsError, setStatsError] = useState(false);
   const [recentPatients, setRecentPatients] = useState<RecentPatient[]>([]);
+  const [recentsLoading, setRecentsLoading] = useState(true);
   const [recentsError, setRecentsError] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
     setStatsError(false);
+    setRecentsLoading(true);
     setRecentsError(false);
     api
       .get<DashboardStats>("/api/dashboard/stats")
@@ -43,7 +46,8 @@ export default function DashboardPage() {
     api
       .get<{ data: RecentPatient[] }>("/api/patients?pageSize=5&status=active")
       .then((r) => setRecentPatients(r.data.data ?? []))
-      .catch(() => { setRecentPatients([]); setRecentsError(true); });
+      .catch(() => { setRecentPatients([]); setRecentsError(true); })
+      .finally(() => setRecentsLoading(false));
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -128,7 +132,23 @@ export default function DashboardPage() {
               عرض الكل
             </Link>
           </div>
-          {recentsError ? (
+          {recentsLoading ? (
+            <div
+              role="status"
+              aria-label="جارٍ تحميل أحدث المرضى"
+              className="space-y-3 px-5 py-4"
+            >
+              {[0, 1, 2].map((row) => (
+                <div key={row} className="flex items-center gap-3">
+                  <Skeleton className="h-[34px] w-[34px] flex-shrink-0 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-3 w-1/2" />
+                    <Skeleton className="h-2.5 w-1/3" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : recentsError ? (
             <div className="py-8 text-center text-xs font-medium" style={{ color: "#b91c1c" }}>
               تعذر تحميل أحدث المرضى — استخدم «إعادة المحاولة» أعلاه أو حدّث الصفحة
             </div>

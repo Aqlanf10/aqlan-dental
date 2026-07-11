@@ -121,6 +121,25 @@ describe("SEQ-26 PatientCombobox request ordering", () => {
     expect(screen.queryByText("تعذّر البحث، تحقق من الاتصال")).not.toBeInTheDocument();
   });
 
+  it("does not leave previous patients selectable when the current search fails", async () => {
+    vi.mocked(api.get)
+      .mockResolvedValueOnce(response([patient("5", "أحمد منصور")]) as never)
+      .mockRejectedValueOnce(new Error("current search failed"));
+
+    render(<PatientCombobox onSelect={vi.fn()} />);
+    const input = screen.getByPlaceholderText("ابحث بالاسم أو رقم المريض...");
+
+    fireEvent.change(input, { target: { value: "أحمد" } });
+    await act(async () => { vi.advanceTimersByTime(300); await Promise.resolve(); });
+    expect(screen.getByText("أحمد منصور")).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "محمد" } });
+    await act(async () => { vi.advanceTimersByTime(300); await Promise.resolve(); });
+
+    expect(screen.getByText("تعذّر البحث، تحقق من الاتصال")).toBeInTheDocument();
+    expect(screen.queryByText("أحمد منصور")).not.toBeInTheDocument();
+  });
+
   it("clears loading and ignores an in-flight response when the query becomes too short", async () => {
     const pendingRequest = deferred<MockApiResponse>();
     vi.mocked(api.get).mockReturnValueOnce(pendingRequest.promise as never);

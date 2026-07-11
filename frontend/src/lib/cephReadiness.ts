@@ -96,14 +96,8 @@ export function computeCephReadiness(input: CephReadinessInput): CephReadiness {
 export function cephReadinessFromAnalysis(
   analysis: Pick<
     CephAnalysis,
-    | "xrayFileUrl"
-    | "pixelsPerMm"
-    | "landmarks"
-    | "measurements"
-    | "notes"
-    | "isAutoTraced"
-    | "doctorId"
-  >,
+    "xrayFileUrl" | "pixelsPerMm" | "landmarks" | "measurements"
+  > & Partial<Pick<CephAnalysis, "notes" | "isAutoTraced" | "doctorId">>,
   isDirty: boolean,
 ): CephReadiness {
   return {
@@ -116,7 +110,7 @@ export function cephReadinessFromAnalysis(
     }),
     analysisMetadata: {
       notes: analysis.notes?.trim() || null,
-      isAutoTraced: analysis.isAutoTraced,
+      isAutoTraced: Boolean(analysis.isAutoTraced),
       doctorId: analysis.doctorId ?? null,
     },
   };

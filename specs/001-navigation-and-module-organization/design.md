@@ -22,6 +22,12 @@ This is a proposed final navigation design only. Do not change code from this do
 - If a background refresh fails after useful alert data loaded, cached alerts remain visible and the refresh failure is shown without changing the dashboard alerts API contract.
 - Error copy uses the shared `extractErrorMessage` helper so safe server messages are preferred over a generic fallback.
 
+## Dashboard Recent Patients Loading (SEQ-21)
+
+- The recent-patients request owns an independent loading flag because dashboard stats and patients settle separately.
+- While the request is pending, the section renders small shared skeleton rows and does not claim that the patient list is empty.
+- The existing successful-empty and explicit-error states remain unchanged after the request settles.
+
 ## Proposed Final Sidebar Groups
 
 1. **الرئيسية**

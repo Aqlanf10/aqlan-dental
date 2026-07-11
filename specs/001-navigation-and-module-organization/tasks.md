@@ -21,6 +21,7 @@ These tasks started as implementation follow-ups after the documentation-only au
 - `NAV-TASK-013` remains a manual runtime checklist item for a future browser pass across all roles.
 - `NAV-TASK-014` done in #591: module ownership notes reflect the implemented navigation decisions.
 - `NAV-TASK-015` done in #657 (SEQ-20): dashboard alert failures are visible and retryable without discarding cached alerts.
+- `NAV-TASK-016` in progress as SEQ-21: distinguish recent-patients loading from a genuine empty list.
 
 | Task ID | Goal | Files allowed to edit | Files forbidden to edit | Model allowed | Tests required | Acceptance criteria | Risk |
 |---|---|---|---|---|---|---|---|
@@ -39,3 +40,4 @@ These tasks started as implementation follow-ups after the documentation-only au
 | `NAV-TASK-013` | Runtime-check sidebar for all roles. | No code for audit; screenshots/report docs only | Runtime code, permissions | cheap-readonly for checklist; medium to run browser | Manual/browser verification report | Each role sees only links it can open. | Medium |
 | `NAV-TASK-014` | Update module map after implementation decisions. | `specs/000-master-system/module-map.md`, traceability docs | Runtime code | cheap-readonly/docs | Markdown diff check | Module map matches implemented navigation ownership. | Low |
 | `NAV-TASK-015` | Distinguish dashboard alert load failures from a successful empty response and preserve cached alerts during refresh failures. | `AttentionAlerts.tsx`, its focused component test, queue/spec/traceability docs | Dashboard API contract, backend, auth, finance, migrations, package files | medium | Five focused Vitest cases plus frontend checks | Initial failure is visible and retryable; cached alerts survive background failure; successful empty state remains truthful. | Medium |
+| `NAV-TASK-016` | Add an independent loading state for the dashboard recent-patients request. | Dashboard page, its focused test, queue/spec/traceability docs | Patients API, backend patient access, auth, migrations, package files | medium | Deferred-response Vitest case plus frontend checks | Pending patient requests show a skeleton; genuine empty copy appears only after a successful empty response. | Medium |

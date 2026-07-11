@@ -38,6 +38,14 @@ const OK_STATS = {
 };
 const OK_RECENTS = { data: { data: [] } };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 function mockGetByUrl(overrides: Record<string, unknown>) {
   vi.mocked(api.get).mockImplementation(async (url: string) => {
     for (const [needle, result] of Object.entries(overrides)) {
@@ -61,6 +69,27 @@ describe("DashboardPage (landing stats)", () => {
     await waitFor(() => expect(screen.getByText("120")).toBeInTheDocument());
     expect(screen.queryByText(/تعذر تحميل إحصائيات اللوحة/)).not.toBeInTheDocument();
     expect(screen.getByText("لا يوجد مرضى بعد")).toBeInTheDocument();
+  });
+
+  it("does not render a false empty recent-patients state while the request is pending", async () => {
+    const recents = deferred<typeof OK_RECENTS>();
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.includes("/api/dashboard/stats")) return OK_STATS;
+      if (url.includes("/api/patients")) return recents.promise;
+      throw new Error(`unmocked GET ${url}`);
+    });
+
+    render(<DashboardPage />);
+
+    expect(screen.getByRole("status", { name: "جارٍ تحميل أحدث المرضى" })).toBeInTheDocument();
+    expect(screen.queryByText("لا يوجد مرضى بعد")).not.toBeInTheDocument();
+
+    recents.resolve(OK_RECENTS);
+
+    await waitFor(() =>
+      expect(screen.getByText("لا يوجد مرضى بعد")).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("status", { name: "جارٍ تحميل أحدث المرضى" })).not.toBeInTheDocument();
   });
 
   it("shows the error banner and dashes — not fake zeros — when stats fail", async () => {

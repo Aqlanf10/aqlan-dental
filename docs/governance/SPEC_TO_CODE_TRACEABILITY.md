@@ -33,6 +33,7 @@ Initial table based on static repo inspection. Incomplete rows are marked `Needs
 | `NAV-REQ-013` | Finance | Finance remains a single sidebar entry | `frontend/src/app/(dashboard)/finance-v3/page.tsx`, `frontend/src/components/layout/Sidebar.tsx` | Needs completion in future sprint | documented | 2026-07-02 | Low |
 | `NAV-REQ-014` | Daily operations | Daily operations owns reception tabs | `frontend/src/app/(dashboard)/daily-operations/` | Needs runtime verification | documented | 2026-07-02 | Medium |
 | `NAV-REQ-020` | Dashboard | Honest dashboard-alert failure state with retry and cached-data preservation | `frontend/src/components/dashboard/AttentionAlerts.tsx` | `AttentionAlerts.test.tsx` | fixed (SEQ-20, PR #657) | 2026-07-11 | Medium |
+| `NAV-REQ-021` | Dashboard | Recent patients loading is distinct from a genuine empty list | `frontend/src/app/(dashboard)/page.tsx` | `DashboardPage.test.tsx` | in progress (SEQ-21) | 2026-07-11 | Medium |
 | `002` | Daily operations | One reception workflow | daily operations UI/API | DailyOperations/ClinicQueue tests | active | 2026-07-02 | High |
 | `003` | Doctor clinic | Doctor workflow | doctor-clinic UI, patient journey APIs | Needs completion in future sprint | needs review | 2026-07-02 | High |
 | `004` | Orthodontics | Ortho workspace | ortho UI/API/services | Ortho tests | active | 2026-07-02 | High |

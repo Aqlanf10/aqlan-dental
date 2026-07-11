@@ -4,6 +4,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { useDoctorPatientsToday } from "@/app/(dashboard)/doctor-clinic/_lib/hooks";
+import { createDoctorAccountNotLinkedError } from "@/app/(dashboard)/doctor-clinic/_lib/errors";
 import DoctorClinicError from "@/app/(dashboard)/doctor-clinic/error";
 
 vi.mock("@/lib/api", () => ({
@@ -36,12 +37,20 @@ class TestErrorBoundary extends React.Component<
   }
 }
 
-function PatientsProbe() {
-  const { data = [] } = useDoctorPatientsToday({ includeAll: true });
+function PatientsProbe({
+  doctorId,
+  includeAll = true,
+}: {
+  doctorId?: string;
+  includeAll?: boolean;
+}) {
+  const { data = [] } = useDoctorPatientsToday({ doctorId, includeAll });
   return <div>{data.length === 0 ? "لا يوجد مرضى" : `${data.length} مرضى`}</div>;
 }
 
-function renderProbe() {
+function renderProbe(
+  options: { doctorId?: string; includeAll?: boolean } = { includeAll: true },
+) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
@@ -51,7 +60,7 @@ function renderProbe() {
   const view = render(
     <QueryClientProvider client={queryClient}>
       <TestErrorBoundary>
-        <PatientsProbe />
+        <PatientsProbe {...options} />
       </TestErrorBoundary>
     </QueryClientProvider>,
   );
@@ -70,11 +79,12 @@ const ONE_PATIENT = {
   nextAction: "StartVisit",
 };
 
-describe("SEQ-16 doctor clinic honest load failures", () => {
+describe("doctor clinic honest load and account-link failures", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
     vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
   });
 
   it("keeps the genuine empty state when the server successfully returns an empty list", async () => {
@@ -120,7 +130,17 @@ describe("SEQ-16 doctor clinic honest load failures", () => {
     expect(screen.queryByText("doctor-clinic-query-error")).not.toBeInTheDocument();
   });
 
-  it("provides a specific Arabic error screen with an explicit retry action", () => {
+  it("rejects an unlinked clinical account without calling the patient API or showing an empty list", async () => {
+    renderProbe({ includeAll: false, doctorId: undefined });
+
+    await waitFor(() =>
+      expect(screen.getByText("doctor-clinic-query-error")).toBeInTheDocument(),
+    );
+    expect(api.get).not.toHaveBeenCalled();
+    expect(screen.queryByText("لا يوجد مرضى")).not.toBeInTheDocument();
+  });
+
+  it("provides a specific Arabic load-error screen with an explicit retry action", () => {
     render(
       <DoctorClinicError
         error={new Error("server unavailable")}
@@ -133,5 +153,24 @@ describe("SEQ-16 doctor clinic honest load failures", () => {
     );
     expect(screen.getByText(/هذه ليست قائمة فارغة/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /إعادة المحاولة/ })).toBeInTheDocument();
+  });
+
+  it("explains how to repair an unlinked doctor account instead of suggesting a network retry", () => {
+    render(
+      <DoctorClinicError
+        error={createDoctorAccountNotLinkedError()}
+        reset={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "حسابك غير مرتبط بسجل طبيب",
+    );
+    expect(screen.getByText(/إعدادات المستخدمين والصلاحيات/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "العودة إلى التشغيل اليومي" })).toHaveAttribute(
+      "href",
+      "/daily-operations",
+    );
+    expect(screen.queryByRole("button", { name: /إعادة المحاولة/ })).not.toBeInTheDocument();
   });
 });

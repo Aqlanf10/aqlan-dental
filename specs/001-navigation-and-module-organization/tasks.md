@@ -20,6 +20,7 @@ These tasks started as implementation follow-ups after the documentation-only au
 - `NAV-TASK-012` covered by route permission regression tests for the implemented mismatches; a generated inventory report can be added later if desired.
 - `NAV-TASK-013` remains a manual runtime checklist item for a future browser pass across all roles.
 - `NAV-TASK-014` done in #591: module ownership notes reflect the implemented navigation decisions.
+- `NAV-TASK-015` in progress as SEQ-20: make dashboard alert failures visible without discarding cached alerts.
 
 | Task ID | Goal | Files allowed to edit | Files forbidden to edit | Model allowed | Tests required | Acceptance criteria | Risk |
 |---|---|---|---|---|---|---|---|
@@ -37,3 +38,4 @@ These tasks started as implementation follow-ups after the documentation-only au
 | `NAV-TASK-012` | Add route inventory regression report/check. | docs/specs or a non-runtime script if later approved | Runtime app code unless separately scoped | cheap-readonly for report; medium if adding script | Documentation check or test if script added | Future PRs can detect sidebar/route guard mismatch before merge. | Low |
 | `NAV-TASK-013` | Runtime-check sidebar for all roles. | No code for audit; screenshots/report docs only | Runtime code, permissions | cheap-readonly for checklist; medium to run browser | Manual/browser verification report | Each role sees only links it can open. | Medium |
 | `NAV-TASK-014` | Update module map after implementation decisions. | `specs/000-master-system/module-map.md`, traceability docs | Runtime code | cheap-readonly/docs | Markdown diff check | Module map matches implemented navigation ownership. | Low |
+| `NAV-TASK-015` | Distinguish dashboard alert load failures from a successful empty response and preserve cached alerts during refresh failures. | `AttentionAlerts.tsx`, its focused component test, queue/spec/traceability docs | Dashboard API contract, backend, auth, finance, migrations, package files | medium | Five focused Vitest cases plus frontend checks | Initial failure is visible and retryable; cached alerts survive background failure; successful empty state remains truthful. | Medium |

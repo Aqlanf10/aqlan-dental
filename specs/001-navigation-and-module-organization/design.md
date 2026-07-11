@@ -14,6 +14,14 @@ This is a proposed final navigation design only. Do not change code from this do
 - Settings hub: `frontend/src/app/(dashboard)/settings/page.tsx` and `frontend/src/app/(dashboard)/settings/_components/_shared.ts`.
 - Daily operations owner: `frontend/src/app/(dashboard)/daily-operations/`.
 
+## Dashboard Alert Reliability (SEQ-20)
+
+- `AttentionAlerts.tsx` remains the sole owner of the dashboard attention-alert query and presentation.
+- A successful empty response is distinct from a failed request.
+- Initial failure renders a compact Arabic error with an explicit retry action.
+- If a background refresh fails after useful alert data loaded, cached alerts remain visible and the refresh failure is shown without changing the dashboard alerts API contract.
+- Error copy uses the shared `extractErrorMessage` helper so safe server messages are preferred over a generic fallback.
+
 ## Proposed Final Sidebar Groups
 
 1. **الرئيسية**

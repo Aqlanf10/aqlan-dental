@@ -9,10 +9,12 @@ import {
   CheckCircle2,
   FlaskConical,
   Hourglass,
+  RefreshCw,
   UserX,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 
 interface DashboardAlerts {
   overdueLabOrdersCount: number;
@@ -85,7 +87,7 @@ function buildAlerts(data: DashboardAlerts): AlertItem[] {
 }
 
 export function AttentionAlerts() {
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError, error, isFetching, refetch } = useQuery({
     queryKey: ["dashboard-alerts"],
     queryFn: async () =>
       (await api.get<DashboardAlerts>("/api/dashboard/alerts")).data,
@@ -113,11 +115,36 @@ export function AttentionAlerts() {
     );
   }
 
-  if (isError || !data) return null;
+  const errorState = isError ? (
+    <div
+      role="alert"
+      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+    >
+      <div className="flex min-w-0 items-center gap-2">
+        <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+        <span className="font-semibold">
+          {extractErrorMessage(error, "تعذر تحميل تنبيهات لوحة التحكم")}
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={() => void refetch()}
+        disabled={isFetching}
+        className="inline-flex items-center gap-1.5 rounded-md border border-red-300 px-3 py-1.5 font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-wait disabled:opacity-60"
+      >
+        <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+        إعادة المحاولة
+      </button>
+    </div>
+  ) : null;
+
+  if (!data) return errorState;
 
   const alerts = buildAlerts(data).filter((a) => a.count > 0);
 
   if (alerts.length === 0) {
+    if (errorState) return errorState;
+
     return (
       <div
         className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-semibold"
@@ -137,6 +164,7 @@ export function AttentionAlerts() {
 
   return (
     <section aria-label="يحتاج انتباهك">
+      {errorState && <div className="mb-3">{errorState}</div>}
       <div className="mb-2 flex items-center gap-2">
         <AlertTriangle className="h-4 w-4" style={{ color: "#f5922e" }} />
         <h2 className="text-sm font-extrabold" style={{ color: "#0d2137" }}>

@@ -55,6 +55,30 @@ export interface CephReadiness {
 }
 
 /**
+ * CephService stores calibration metadata and the original user note together
+ * in the Notes column after landmarks are saved. The detail DTO historically
+ * returned that raw value, so the frontend must unwrap UserNotes rather than
+ * displaying the calibration JSON to the doctor.
+ */
+export function extractCephUserNotes(rawNotes?: string | null): string | null {
+  const trimmed = rawNotes?.trim();
+  if (!trimmed) return null;
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const record = parsed as Record<string, unknown>;
+      const wrapped = record.userNotes ?? record.UserNotes;
+      return typeof wrapped === "string" && wrapped.trim() ? wrapped.trim() : null;
+    }
+  } catch {
+    // Plain-text notes created before calibration wrapping remain valid notes.
+  }
+
+  return trimmed;
+}
+
+/**
  * Computes the report/VTO readiness from saved-data flags. `isDirty` reflects
  * unsaved landmark/calibration edits and, when true, always blocks readiness —
  * because the PDF and VTO are generated from the saved record, not the canvas.
@@ -109,7 +133,7 @@ export function cephReadinessFromAnalysis(
       isDirty,
     }),
     analysisMetadata: {
-      notes: analysis.notes?.trim() || null,
+      notes: extractCephUserNotes(analysis.notes),
       isAutoTraced: Boolean(analysis.isAutoTraced),
       doctorId: analysis.doctorId ?? null,
     },

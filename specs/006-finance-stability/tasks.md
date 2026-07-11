@@ -5,3 +5,4 @@
 - `FIN-TASK-003`: Adjust finance UI copy only. Medium model if no logic.
 - `FIN-TASK-004`: Any calculation/refund/treasury change. Strong model only.
 - `FIN-TASK-005`: Runtime verify cashier and receipt flows. Strong model.
+- `FIN-TASK-006`: Add explicit finance list loading/error/empty-state regression coverage. Strong model.

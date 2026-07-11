@@ -26,6 +26,8 @@ import {
 } from "./FinanceSharedUI";
 import { formatYER, safeFormatDate } from "./FinanceHelpers";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
+import { QueryErrorBanner } from "@/components/shared/QueryErrorBanner";
+import { extractErrorMessage } from "@/lib/errors";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    CreateContractModal Component
@@ -352,6 +354,7 @@ interface ContractsTabProps {
 export function ContractsTab({ patientId, patientName }: ContractsTabProps) {
   const [data, setData] = useState<ContractListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
@@ -363,13 +366,16 @@ export function ContractsTab({ patientId, patientName }: ContractsTabProps) {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
+      setLoadError(null);
       const params: Record<string, string> = {};
       if (statusFilter) params.status = statusFilter;
       const { data } = await api.get<{ data: ContractListItem[]; total: number }>("/api/finance-v3/contracts", { params });
       const contracts = data?.data ?? (Array.isArray(data) ? data as unknown as ContractListItem[] : []);
       setData(contracts);
-    } catch {
-      toast.error("فشل في تحميل العقود");
+    } catch (error) {
+      const message = extractErrorMessage(error, "فشل في تحميل العقود");
+      setLoadError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -450,11 +456,15 @@ export function ContractsTab({ patientId, patientName }: ContractsTabProps) {
         }
       />
 
-      {loading ? (
+      {loadError && (
+        <QueryErrorBanner text={loadError} onRetry={fetchData} />
+      )}
+
+      {loading && data.length === 0 ? (
         <LoadingSkeleton />
-      ) : filtered.length === 0 ? (
+      ) : !loadError && filtered.length === 0 ? (
         <EmptyState icon={HandCoins} message="لا توجد عقود" />
-      ) : (
+      ) : filtered.length > 0 ? (
         <DataTable<ContractListItem>
           keyField="id"
           data={filtered}
@@ -509,7 +519,7 @@ export function ContractsTab({ patientId, patientName }: ContractsTabProps) {
             { key: "startDate", label: "تاريخ البداية", render: (r) => safeFormatDate(r.startDate) },
           ]}
         />
-      )}
+      ) : null}
 
       {/* Contract Creation Modal */}
       <CreateContractModal

@@ -10,6 +10,7 @@ Evidence: `frontend/src/app/(dashboard)/finance-v3/`, `FinanceV3Controller*.cs`,
 - `FIN-REQ-004`: Treasury outflows SHALL use `TreasuryResolutionService` and settings such as `finance.prevent_negative_treasury_balance`.
 - `FIN-REQ-005`: Finance settings SHALL be read from Settings, not hardcoded.
 - `FIN-REQ-006`: Finance PDFs SHALL use `FinanceClinicIdentity`.
+- `FIN-REQ-007`: Finance data-fetch failures SHALL render a visible error and retry action, SHALL NOT render the successful empty state, and SHALL preserve previously loaded data during a failed refresh.
 
 ## Target State
 

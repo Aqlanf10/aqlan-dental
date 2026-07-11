@@ -182,16 +182,20 @@ describe("SEQ-29 TopbarNotifications mutation truth", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("تعذّر حذف الإشعار");
     expect(screen.getByText("موعد يحتاج تأكيدًا")).toBeInTheDocument();
+    expect(screen.getByTestId("notification-unread-indicator")).toBeInTheDocument();
+    expect(invalidateQueries).not.toHaveBeenCalled();
   });
 
-  it("removes the notification only after deletion succeeds", async () => {
+  it("removes the notification and updates unread count only after deletion succeeds", async () => {
     render(<TopbarNotifications />);
     await openNotifications();
     fireEvent.click(screen.getByRole("button", { name: "حذف الإشعار موعد يحتاج تأكيدًا" }));
 
     expect(await screen.findByText("لا توجد إشعارات")).toBeInTheDocument();
     expect(screen.queryByText("موعد يحتاج تأكيدًا")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("notification-unread-indicator")).not.toBeInTheDocument();
     expect(api.delete).toHaveBeenCalledWith("/api/notifications/notification-1");
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["notificationUnreadCount"] });
   });
 
   it("keeps a notification unread when marking it read fails", async () => {

@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
-import { AlertTriangle, RefreshCw } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, RefreshCw, UserRoundX } from "lucide-react";
+import { isDoctorAccountNotLinkedError } from "./_lib/errors";
 
 export default function DoctorClinicError({
   error,
@@ -9,9 +11,41 @@ export default function DoctorClinicError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const accountNotLinked = isDoctorAccountNotLinkedError(error);
+
   useEffect(() => {
+    if (accountNotLinked) {
+      console.warn("Doctor clinic account is not linked to a doctor record");
+      return;
+    }
     console.error("Doctor clinic load error:", error);
-  }, [error]);
+  }, [accountNotLinked, error]);
+
+  if (accountNotLinked) {
+    return (
+      <div
+        role="alert"
+        dir="rtl"
+        className="flex min-h-[420px] flex-col items-center justify-center gap-4 p-8 text-center"
+      >
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-50">
+          <UserRoundX className="h-8 w-8 text-amber-700" />
+        </div>
+        <div>
+          <h1 className="text-lg font-bold text-gray-900">حسابك غير مرتبط بسجل طبيب</h1>
+          <p className="mt-2 max-w-lg text-sm leading-6 text-gray-600">
+            لا يمكن تحديد مرضاك لأن حساب المستخدم لا يحتوي على معرّف الطبيب. اطلب من مدير النظام ربط الحساب بسجل الطبيب من إعدادات المستخدمين والصلاحيات.
+          </p>
+        </div>
+        <Link
+          href="/daily-operations"
+          className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-bold text-gray-700 hover:bg-gray-50"
+        >
+          العودة إلى التشغيل اليومي
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div

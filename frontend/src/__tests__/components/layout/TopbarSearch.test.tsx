@@ -157,6 +157,35 @@ describe("SEQ-27 TopbarSearch request ordering", () => {
     expect(screen.queryByText("نورا حسن")).not.toBeInTheDocument();
   });
 
+  it("does not reopen a dismissed dropdown when the pending response arrives", async () => {
+    const pending = deferred<SearchResponse>();
+    vi.mocked(api.get).mockReturnValueOnce(pending.promise as never);
+
+    render(
+      <div>
+        <TopbarSearch />
+        <button type="button">خارج البحث</button>
+      </div>,
+    );
+    const input = screen.getByLabelText("البحث السريع");
+
+    fireEvent.change(input, { target: { value: "ليلى" } });
+    await act(async () => { vi.advanceTimersByTime(300); });
+    expect(screen.getByText("جارٍ البحث...")).toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByText("خارج البحث"));
+    expect(screen.queryByText("جارٍ البحث...")).not.toBeInTheDocument();
+
+    await act(async () => {
+      pending.resolve(response("ليلى أحمد", "7"));
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText("ليلى أحمد")).not.toBeInTheDocument();
+    fireEvent.focus(input);
+    expect(screen.getByText("ليلى أحمد")).toBeInTheDocument();
+  });
+
   it("navigates to the selected patient and resets the search", async () => {
     vi.mocked(api.get).mockResolvedValueOnce(response("مريم علي", "6") as never);
 

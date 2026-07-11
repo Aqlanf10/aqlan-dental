@@ -43,6 +43,7 @@ export function PatientCombobox({
 
     const controller = new AbortController();
     let active = true;
+    setResults([]);
     setLoading(true);
     setFailed(false);
 
@@ -118,7 +119,7 @@ export function PatientCombobox({
               لا توجد نتائج لـ &quot;{query}&quot;
             </p>
           )}
-          {!loading && results.map((p) => (
+          {!loading && !failed && results.map((p) => (
             <button
               key={p.id}
               type="button"

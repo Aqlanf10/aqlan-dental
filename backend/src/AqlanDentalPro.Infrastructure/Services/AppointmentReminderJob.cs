@@ -188,10 +188,12 @@ public class AppointmentReminderJob : BackgroundService
                             var appointmentTime = appt.StartTime.ToString("HH:mm");
                             var clinicService = appt.Service?.ArabicName;
 
-                            var subject = $"تذكير بموعد مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الاسنان — {appointmentDate}";
+                            var identity = await FinanceClinicIdentity.ResolveAsync(db);
+                            var subject = $"تذكير بموعد {identity.Name} — {appointmentDate}";
                             var htmlBody = EmailService.BuildAppointmentReminderHtml(
                                 patientName, doctorName, appointmentDate,
-                                appointmentTime, clinicService, appt.Notes);
+                                appointmentTime, clinicService, appt.Notes,
+                                identity.Name, identity.Location);
 
                             var sent = await emailService.SendAppointmentReminderAsync(patientEmail, subject, htmlBody, appt.Id);
 

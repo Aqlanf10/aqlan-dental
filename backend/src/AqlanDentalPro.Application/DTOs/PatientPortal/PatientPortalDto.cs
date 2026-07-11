@@ -219,7 +219,7 @@ public class PatientDoctorDto
 // Clinic info
 public class PatientClinicInfoDto
 {
-    public string ClinicName { get; set; } = "مركز د. عقلان الكامل لطب وتقويم الأسنان";
+    public string ClinicName { get; set; } = "";
     public string? Phone { get; set; }
     public string? WhatsApp { get; set; }
     public string? Address { get; set; }

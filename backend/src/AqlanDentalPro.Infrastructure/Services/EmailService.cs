@@ -110,10 +110,29 @@ public class EmailService : IEmailService
         var appUrl = GetConfig("APP_PUBLIC_URL", "App:PublicUrl") ?? "http://localhost:3000";
         var fullResetUrl = $"{appUrl.TrimEnd('/')}/{resetUrl.TrimStart('/')}?token={Uri.EscapeDataString(resetToken)}";
 
-        var subject = "استعادة كلمة المرور — مركز د. عقلان الكامل";
-        var htmlBody = BuildResetEmailHtml(fullResetUrl);
+        var identity = await ResolveIdentityAsync();
+        var subject = $"استعادة كلمة المرور — {identity.Name}";
+        var htmlBody = BuildResetEmailHtml(fullResetUrl, identity.Name, identity.Location);
 
         return await SendEmailInternalAsync(toEmail, subject, htmlBody, "password_reset");
+    }
+
+    /// <summary>
+    /// MS-TASK-006: clinic identity in outbound emails comes from Settings
+    /// (clinic.* keys via FinanceClinicIdentity), not hardcoded strings.
+    /// </summary>
+    private async Task<FinanceClinicIdentity> ResolveIdentityAsync()
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            return await FinanceClinicIdentity.ResolveAsync(db);
+        }
+        catch
+        {
+            return FinanceClinicIdentity.Fallback;
+        }
     }
 
     /// <summary>
@@ -363,8 +382,12 @@ public class EmailService : IEmailService
         }
     }
 
-    private static string BuildResetEmailHtml(string fullResetUrl)
+    private static string BuildResetEmailHtml(string fullResetUrl, string? clinicName = null, string? clinicLocation = null)
     {
+        var safeClinicName = HttpUtility.HtmlEncode(
+            string.IsNullOrWhiteSpace(clinicName) ? FinanceClinicIdentity.DefaultName : clinicName);
+        var safeClinicLocation = HttpUtility.HtmlEncode(
+            string.IsNullOrWhiteSpace(clinicLocation) ? FinanceClinicIdentity.DefaultLocation : clinicLocation);
         return $@"
 <!DOCTYPE html>
 <html dir='rtl' lang='ar'>
@@ -385,11 +408,11 @@ public class EmailService : IEmailService
 <body>
     <div class='container'>
         <div class='header'>
-            <h1>&#x1F9B7; مركز د. عقلان الكامل</h1>
+            <h1>&#x1F9B7; {safeClinicName}</h1>
         </div>
         <div class='content'>
             <p>السلام عليكم،</p>
-            <p>تلقينا طلباً لاستعادة كلمة المرور الخاصة بحسابكم في نظام مركز د. عقلان الكامل لطب وتقويم الأسنان.</p>
+            <p>تلقينا طلباً لاستعادة كلمة المرور الخاصة بحسابكم في نظام {safeClinicName}.</p>
             <div style='text-align: center;'>
                 <a href='{HttpUtility.HtmlAttributeEncode(fullResetUrl)}' class='btn'>إعادة تعيين كلمة المرور</a>
             </div>
@@ -400,8 +423,8 @@ public class EmailService : IEmailService
             </div>
         </div>
         <div class='footer'>
-            <p>&#x00A9; {DateTime.UtcNow.Year} مركز د. عقلان الكامل لطب وتقويم الأسنان</p>
-            <p>تعز، اليمن — شارع التحرير الأعلى</p>
+            <p>&#x00A9; {DateTime.UtcNow.Year} {safeClinicName}</p>
+            <p>{safeClinicLocation}</p>
         </div>
     </div>
 </body>
@@ -414,8 +437,13 @@ public class EmailService : IEmailService
     /// </summary>
     public static string BuildAppointmentReminderHtml(
         string patientName, string doctorName, string appointmentDate,
-        string appointmentTime, string? clinicService, string? notes)
+        string appointmentTime, string? clinicService, string? notes,
+        string? clinicName = null, string? clinicLocation = null)
     {
+        var safeClinicName = HttpUtility.HtmlEncode(
+            string.IsNullOrWhiteSpace(clinicName) ? FinanceClinicIdentity.DefaultName : clinicName);
+        var safeClinicLocation = HttpUtility.HtmlEncode(
+            string.IsNullOrWhiteSpace(clinicLocation) ? FinanceClinicIdentity.DefaultLocation : clinicLocation);
         // HTML-encode all dynamic content to prevent XSS/injection
         var safePatientName = HttpUtility.HtmlEncode(patientName);
         var safeDoctorName = HttpUtility.HtmlEncode(doctorName);
@@ -448,11 +476,11 @@ public class EmailService : IEmailService
 <body>
     <div class='container'>
         <div class='header'>
-            <h1>&#x1F9B7; تذكير بموعد — مركز د. عقلان الكامل</h1>
+            <h1>&#x1F9B7; تذكير بموعد — {safeClinicName}</h1>
         </div>
         <div class='content'>
             <p>السلام عليكم {safePatientName}،</p>
-            <p>نود تذكيركم بموعدكم القادم في مركز د. عقلان الكامل لطب وتقويم الأسنان.</p>
+            <p>نود تذكيركم بموعدكم القادم في {safeClinicName}.</p>
             <div class='info-box'>
                 <p><strong>الطبيب:</strong> {safeDoctorName}</p>
                 <p><strong>التاريخ:</strong> {safeDate}</p>
@@ -463,8 +491,8 @@ public class EmailService : IEmailService
             <p>يرجى الحضور قبل الموعد بـ 10 دقائق. في حال الرغبة بإلغاء أو تغيير الموعد، يرجى التواصل مع المركز.</p>
         </div>
         <div class='footer'>
-            <p>&#x00A9; {DateTime.UtcNow.Year} مركز د. عقلان الكامل لطب وتقويم الأسنان</p>
-            <p>تعز، اليمن — شارع التحرير الأعلى</p>
+            <p>&#x00A9; {DateTime.UtcNow.Year} {safeClinicName}</p>
+            <p>{safeClinicLocation}</p>
         </div>
     </div>
 </body>

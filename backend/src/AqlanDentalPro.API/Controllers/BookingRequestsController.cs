@@ -2,6 +2,7 @@ using AqlanDentalPro.Application.DTOs.BookingRequests;
 using AqlanDentalPro.Application.DTOs.WhatsApp;
 using AqlanDentalPro.Application.Exceptions;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Cors;

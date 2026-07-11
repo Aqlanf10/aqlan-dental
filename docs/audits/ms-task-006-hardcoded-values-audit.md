@@ -9,45 +9,50 @@
 وهوية العيادة عبر `FinanceClinicIdentity` (`clinic.*`) في كل مستندات المالية، ومفاتيح `website.*` للموقع العام
 مع hook ‏`useClinicBranding` في الواجهة. النمط المعتمد: قراءة من الإعدادات مع fallback ثابت.
 
-## ما أُصلح في هذه الجولة (البنود العالية — commit ضمن فرع SEQ-12)
+## ما أُصلح في الجولة الأولى (البنود العالية — SEQ-12)
 
 | # | الموقع | كان | صار |
 |---|--------|-----|-----|
-| 1 | `CommissionService.AutoFillFromServiceAsync` (موقعان) | نسبة عمولة طبيب احتياطية `40m` مثبتة — **قيمة مالية** تُكتب على بنود الفواتير | يقرأ `finance.commission.default_doctor_percentage` (المفتاح كان موجودًا وغير مستخدم هنا) |
+| 1 | `CommissionService.AutoFillFromServiceAsync` (موقعان) | نسبة عمولة طبيب احتياطية `40m` مثبتة — **قيمة مالية** تُكتب على بنود الفواتير | يقرأ `finance.commission.default_doctor_percentage` |
 | 2 | `AppointmentReminderJob` + `AppointmentsController` | اسم المركز مثبت في عنوان بريد التذكير | `FinanceClinicIdentity.ResolveAsync(db).Name` |
-| 3 | `EmailService` (قالبا الاستعادة والتذكير — 9 مواقع) | الاسم والعنوان مثبتان في ترويسة/تذييل البريد | معاملا `clinicName`/`clinicLocation` اختياريان + fallback لثوابت `FinanceClinicIdentity` الرسمية |
-| 4 | `PatientPortalService.GetClinicInfo` | اسم/هاتف/عنوان مثبتة — **الهاتف كان placeholder خاطئًا** `+967123456789` والعنوان «اليمن» فقط | يقرأ مفاتيح `website.*` (نفس مصدر الموقع العام) |
-| 5 | `PatientPortalService.SendOtpViaWhatsAppAsync` | اسم المركز مثبت في نص SMS رمز التحقق | من `website.clinicName` |
+| 3 | `EmailService` (قالبا الاستعادة والتذكير — 9 مواقع) | الاسم والعنوان مثبتان في ترويسة/تذييل البريد | معاملا `clinicName`/`clinicLocation` اختياريان + fallback رسمي |
+| 4 | `PatientPortalService.GetClinicInfo` | اسم/هاتف/عنوان مثبتة — الهاتف كان placeholder خاطئًا | يقرأ مفاتيح `website.*` |
+| 5 | `PatientPortalService.SendOtpViaWhatsAppAsync` | اسم المركز مثبت في نص رمز التحقق | من `website.clinicName` |
 | 6 | `PatientPortalDto.ClinicName` | افتراضي مثبت في الـDTO | يُملأ دائمًا من الخدمة |
-| 7 | `prescriptions/[id]/page.tsx` → `PrescriptionPrint` | **الوصفة المطبوعة** كانت تعتمد افتراضيات المكوّن المثبتة (الصفحة لا تمرر شيئًا) | تمرر `useClinicBranding()` (الاسم/العنوان/الهاتف) |
-| 8 | `components/ceph/AnalysisReport.tsx` | ترويسة **تقرير السيفالو المطبوع** مثبتة | `useClinicBranding().clinicName` |
+| 7 | `prescriptions/[id]/page.tsx` → `PrescriptionPrint` | الوصفة المطبوعة تعتمد افتراضيات مثبتة | تمرر `useClinicBranding()` |
+| 8 | `components/ceph/AnalysisReport.tsx` | ترويسة تقرير السيفالو مثبتة | `useClinicBranding().clinicName` |
 | 9 | `BookingRequestsController` | اسم المركز مثبت في رسالة واتساب حالة الحجز | `FinanceClinicIdentity.ResolveAsync(db).Name` |
 
-## المتبقي (موثَّق، لم يُصلح بعد — بالأولوية)
+## ما أُصلح في الجولة الثانية
 
-### متوسط — ✅ أُصلح في الجولة الثانية (نفس اليوم) ما يلي:
 - ✅ قالب SMS الاستدعاء/الغياب في `appointments/recall/page.tsx` — الاسم من `useClinicBranding`.
-- ✅ رسائل واتساب التواصل في `booking-requests/page.tsx` (موقعان) و`BookingRequestsView.tsx`.
+- ✅ رسائل واتساب التواصل في `booking-requests/page.tsx` و`BookingRequestsView.tsx`.
 - ✅ شاشة الانتظار العامة `clinic-display/page.tsx` (الترويسة + التذييل).
-- ✅ صفحة الحجز العامة `home/book/page.tsx` — الهاتف (زرا اتصال + النص) والعنوان من الإعدادات.
+- ✅ صفحة الحجز العامة `home/book/page.tsx` — الهاتف والعنوان من الإعدادات.
 
-### متوسط — ما يزال متبقيًا:
-- **`ClinicTimeProvider` المنطقة الزمنية `"Asia/Aden"` مثبتة** (+`AppointmentReminderJob`، `BookingRequestService`) —
-  تعليق الكلاس نفسه يدّعي القراءة من `Settings:ClinicTimezone` لكن لا كود يقرأها. تحتاج مفتاح `clinic.timezone`
-  فعليًا. حساسة (تحدد حدود «اليوم» للمالية والتقارير) — تُنفذ بحذر وباختبارات.
-- اسم المركز في `PublicNavbar` — مقسوم عمدًا لسطرين تصميميين (اسم قصير + تخصص)؛ يحتاج قرار تصميم قبل ربطه
-  بمفتاح واحد، فتُرك عمدًا.
-- هوية الطبيب في مصفوفة «الفريق» بموقع الويب `home/page.tsx:42`.
+## ما أُصلح في الجولة الثالثة — SEQ-13 / PR #648
+
+- ✅ أصبح `ClinicTimeProvider` يقرأ المنطقة الزمنية مرة واحدة عند الإقلاع بترتيب:
+  `Settings[clinic.timezone]` → `Clinic:Timezone` → `Settings:ClinicTimezone` → `Asia/Aden`.
+- ✅ القيم المفقودة أو غير الصحيحة لا توقف الإنتاج؛ تسجل تحذيرًا وتعود إلى `Asia/Aden`.
+- ✅ التخزين مؤقت وآمن على مستوى العملية؛ لا قراءة قاعدة بيانات في كل استدعاء `ClinicToday`/`ClinicNow`.
+- ✅ `AppointmentReminderJob` أزيل منه التثبيت الخاص لـ`Asia/Aden` وأصبح يستخدم نفس المنطقة الزمنية المهيأة.
+- ✅ أضيفت اختبارات للقيمة الافتراضية، منطقة بديلة، fallback غير صالح، نطاق UTC، والعزل في التشغيل المتوازي.
+
+## المتبقي (موثَّق — بالأولوية)
+
+### متوسط
+- اسم المركز في `PublicNavbar` — مقسوم عمدًا لسطرين تصميميين؛ يحتاج قرار تصميم قبل ربطه بمفتاح واحد.
+- هوية الطبيب في مصفوفة «الفريق» بموقع الويب `home/page.tsx`.
 
 ### منخفض (chrome واجهة — لا يستعجل)
-- اسم المركز في `Sidebar`/`Topbar`/ترويسة المواعيد/صفحتي تسجيل الدخول (بما فيها قائمة هواتف كاملة في
-  `(auth)/login/page.tsx`)/`<title>` وmeta الـSEO — و`LabOrderPdfGenerator.cs:204` (اسم النظام في تذييل PDF).
-- ملاحظة: مدة الموعد الافتراضية `30` دقيقة متناثرة كـfallback إنشاء (المدة الفعلية عمود قابل للتهيئة في
-  `DoctorSchedule.SlotDurationMinutes`) — مفتاح `appointment.default_duration_minutes` اختياري مستقبلًا.
+- اسم المركز في `Sidebar`/`Topbar`/ترويسة المواعيد/صفحتي تسجيل الدخول/`<title>` وmeta SEO.
+- `LabOrderPdfGenerator.cs` (اسم النظام في تذييل PDF).
+- مدة الموعد الافتراضية `30` دقيقة متناثرة كـfallback إنشاء؛ مفتاح
+  `appointment.default_duration_minutes` اختياري مستقبلًا.
 
 ## ما فُحص ووُجد سليمًا (لا انتهاك)
 
-أسعار الصرف (تُقرأ من `finance.exchange_rate.*` وترمي خطأ إن غابت — لا سعر مثبت)، سقف الخصم، عتبة اعتماد
-المصروفات، منع سالب الخزينة، افتراضيات الخدمة الجديدة، كل PDFs المالية (عبر `FinanceClinicIdentity`)،
-مُهَل التذكير (`appointment.reminder_hours`)، نواة حساب العمولات، `ContractService`. الثوابت السريرية
-(معايير السيفالو — لها جدولها؛ معايير قرار الخلع) خارج النطاق عمدًا.
+أسعار الصرف، سقف الخصم، عتبة اعتماد المصروفات، منع سالب الخزينة، افتراضيات الخدمة الجديدة،
+كل PDFs المالية، مُهَل التذكير، نواة حساب العمولات، و`ContractService`. الثوابت السريرية
+(معايير السيفالو ومعايير قرار الخلع) خارج النطاق عمدًا.

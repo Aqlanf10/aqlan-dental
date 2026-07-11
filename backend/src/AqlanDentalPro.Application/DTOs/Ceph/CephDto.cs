@@ -64,6 +64,11 @@ public class CephAnalysisListDto
     public int LandmarkCount { get; set; }
     public bool HasMeasurements { get; set; }
     public string? Notes { get; set; }
+    /// <summary>
+    /// Creation timestamp — the deterministic tiebreaker the presentation deck
+    /// generator uses (AnalysisDate DESC, then CreatedAt DESC) to pick the
+    /// "latest" analysis. Exposed so the UI selects the same record.
+    /// </summary>
     public DateTime CreatedAt { get; set; }
 }
 
@@ -76,6 +81,11 @@ public class CephLandmarkDto
     public double Y { get; set; }
     public bool IsAiPlaced { get; set; }
     public double? Confidence { get; set; }
+    /// <summary>
+    /// Optional short note (Arabic or English) explaining WHY the AI placed this
+    /// landmark at this position. Surfaced in the canvas UI so the orthodontist
+    /// can read the model's reasoning before accepting or moving the point.
+    /// </summary>
     public string? Reasoning { get; set; }
 }
 
@@ -120,7 +130,6 @@ public class CephAnalysisDetailDto
     public bool IsAutoTraced { get; set; }
     public bool AiAssisted { get; set; }
     public Guid? DoctorId { get; set; }
-
     /// <summary>
     /// Clinical user note only. Calibration metadata stored in the entity's
     /// Notes column is intentionally removed at the DTO boundary.
@@ -130,13 +139,15 @@ public class CephAnalysisDetailDto
         get => _notes;
         set => _notes = CephClinicalNoteParser.Extract(value);
     }
-
     public double? PixelsPerMm { get; set; }
     public int ImageWidth { get; set; }
     public int ImageHeight { get; set; }
     public List<CephLandmarkDto> Landmarks { get; set; } = [];
     public List<CephMeasurementDto> Measurements { get; set; } = [];
     public CephDiagnosisDto? Diagnosis { get; set; }
+
+    // ── Clinical approval gate (CEPH-EPIC) ────────────────────────────────────
+    // The final PDF report is blocked until IsApproved is true.
     public bool IsApproved { get; set; }
     public Guid? ApprovedByUserId { get; set; }
     public string? ApprovedByName { get; set; }
@@ -144,6 +155,7 @@ public class CephAnalysisDetailDto
     public string? ApprovalNotes { get; set; }
 }
 
+/// <summary>Request body for POST /api/ceph/{id}/approve — optional notes.</summary>
 public class ApproveCephAnalysisRequest
 {
     public string? Notes { get; set; }
@@ -194,6 +206,10 @@ public class AiSimulateRequest
     public double PixelsPerMm { get; set; } = 1.0;
 }
 
+/// <summary>
+/// Result of the template-based landmark simulation. Explicitly labeled as a
+/// simulation (NOT AI) — the notice must always reach the client.
+/// </summary>
 public class CephSimulationResultDto
 {
     public bool IsSimulation { get; set; } = true;
@@ -205,6 +221,11 @@ public class CephAiTraceRequest
 {
     public int ImageWidth { get; set; }
     public int ImageHeight { get; set; }
+    /// <summary>
+    /// Precision mode for the AI draft. <c>"draft"</c> (default) = fast first-pass;
+    /// <c>"high"</c> = slower deliberate pass that cross-checks each landmark and
+    /// omits anything with confidence &lt;= 0.5. Unknown / null values fall back to draft.
+    /// </summary>
     public string? Precision { get; set; }
 }
 
@@ -216,6 +237,7 @@ public class CephAiTraceResultDto
     public DateTime GeneratedAt { get; set; }
 }
 
+/// <summary>Request body for POST /api/ceph/{id}/ai/refine-landmark.</summary>
 public class CephAiRefineLandmarkRequest
 {
     public string LandmarkKey { get; set; } = string.Empty;
@@ -225,6 +247,11 @@ public class CephAiRefineLandmarkRequest
     public double CurrentY { get; set; }
 }
 
+/// <summary>
+/// Result of refining a single landmark. <see cref="Landmark"/> is null when the
+/// model declined to refine (e.g. confidence too low) — the caller should keep
+/// the current position. The result is NEVER auto-saved.
+/// </summary>
 public class CephAiRefineResultDto
 {
     public CephLandmarkDto? Landmark { get; set; }
@@ -233,6 +260,7 @@ public class CephAiRefineResultDto
     public DateTime GeneratedAt { get; set; }
 }
 
+/// <summary>C-B: pre/post comparison between two analyses of the same case.</summary>
 public class CephCompareResultDto
 {
     public CephCompareSideDto Base { get; set; } = new();
@@ -261,6 +289,7 @@ public class CephCompareRowDto
     public decimal? StdDeviation { get; set; }
     public string? BaseClassification { get; set; }
     public string? TargetClassification { get; set; }
+    /// <summary>true = target closer to normal than base; null when not computable.</summary>
     public bool? Improved { get; set; }
 }
 
@@ -280,8 +309,17 @@ public class CephNormDto
     public string? InterpretationNormal { get; set; }
     public string? InterpretationAbove { get; set; }
     public int SortOrder { get; set; }
+
+    /// <summary>CLIN-10 — lower bound (inclusive) of the patient-age band, in
+    /// whole years. Null = no lower bound.</summary>
     public int? AgeMin { get; set; }
+
+    /// <summary>CLIN-10 — upper bound (inclusive) of the patient-age band, in
+    /// whole years. Null = no upper bound.</summary>
     public int? AgeMax { get; set; }
+
+    /// <summary>CLIN-10 — "M" or "F" for sex-specific norms, null for both
+    /// sexes.</summary>
     public string? Sex { get; set; }
 }
 
@@ -294,11 +332,28 @@ public class UpdateCephNormRequest
     public string? InterpretationBelow { get; set; }
     public string? InterpretationNormal { get; set; }
     public string? InterpretationAbove { get; set; }
+
+    /// <summary>CLIN-10 — lower bound (inclusive) of the patient-age band. Null
+    /// = no lower bound (the row applies to any age from 0 up to AgeMax, or to
+    /// any age if AgeMax is also null).</summary>
     public int? AgeMin { get; set; }
+
+    /// <summary>CLIN-10 — upper bound (inclusive) of the patient-age band. Null
+    /// = no upper bound.</summary>
     public int? AgeMax { get; set; }
+
+    /// <summary>CLIN-10 — "M" or "F" for a sex-specific norm, null for both
+    /// sexes. When non-null, the lookup prefers this row over a sex-null row
+    /// for the same age band on a matching-sex patient.</summary>
     public string? Sex { get; set; }
 }
 
+/// <summary>
+/// CLIN-10 — payload for POST /api/ceph-norms. Creates a new configurable norm
+/// row. Admin-only. The clinic owner (an orthodontist) uses this to add
+/// population-specific norms for an age/sex stratum not covered by the factory
+/// defaults.
+/// </summary>
 public class CreateCephNormRequest
 {
     public string MeasurementName { get; set; } = string.Empty;
@@ -319,6 +374,12 @@ public class CreateCephNormRequest
     public string? Sex { get; set; }
 }
 
+/// <summary>
+/// CLIN-10 — query parameters for GET /api/ceph-norms/best. Returns the
+/// best-matching norm for a patient's age/sex using the same priority tiers
+/// as CephService.FindBestCephNorm (sex-specific+age-matched &gt; sex-null+age-
+/// matched &gt; un-stratified fallback).
+/// </summary>
 public class CephNormBestMatchRequest
 {
     public string MeasurementName { get; set; } = string.Empty;
@@ -327,11 +388,21 @@ public class CephNormBestMatchRequest
     public string? Sex { get; set; }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  CEPH-EPIC batch C-B — analysis VERSION snapshots
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// Request body for POST /api/ceph/{id}/versions — save the current analysis
+/// state (landmarks + measurements + diagnosis) as a named snapshot.
+/// </summary>
 public class CreateCephVersionRequest
 {
+    /// <summary>Free-text label, e.g. "قبل العلاج" / "بعد 6 أشهر". 1..100 chars.</summary>
     public string Label { get; set; } = string.Empty;
 }
 
+/// <summary>List item for GET /api/ceph/{id}/versions (no JSON blobs).</summary>
 public class CephVersionListDto
 {
     public Guid Id { get; set; }
@@ -341,6 +412,11 @@ public class CephVersionListDto
     public DateTime CreatedAt { get; set; }
 }
 
+/// <summary>
+/// Full snapshot for GET /api/ceph/{id}/versions/{versionId}. Carries the
+/// deserialized landmarks/measurements/diagnosis so the compare page can load
+/// a snapshot the same way it loads a live analysis.
+/// </summary>
 public class CephVersionDetailDto
 {
     public Guid Id { get; set; }

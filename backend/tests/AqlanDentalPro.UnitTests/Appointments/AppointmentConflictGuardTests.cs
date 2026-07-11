@@ -16,9 +16,9 @@ namespace AqlanDentalPro.UnitTests.Appointments;
 /// </summary>
 public class AppointmentConflictGuardTests
 {
-    private static AppDbContext CreateDb() =>
+    private static AppDbContext CreateDb(string? databaseName = null) =>
         new(new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .UseInMemoryDatabase(databaseName ?? Guid.NewGuid().ToString())
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options);
 
@@ -68,5 +68,46 @@ public class AppointmentConflictGuardTests
         var otherDoctor = Slot(Guid.NewGuid(), new TimeOnly(10, 0), new TimeOnly(10, 30));
         (await repo.TryCreateWithConflictGuardAsync(otherDoctor)).Should().BeTrue();
         (await db.Appointments.CountAsync()).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task TryCreate_HydratesPatientAndDoctorForImmediateResponseMapping()
+    {
+        await using var db = CreateDb();
+        var patient = new Patient
+        {
+            Id = Guid.NewGuid(),
+            PatientNumber = "GM-2026-100",
+            FirstName = "أحمد",
+            LastName = "علي",
+            IsActive = true,
+        };
+        var doctor = new Doctor
+        {
+            Id = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
+            Name = "د. عقلان الكامل",
+            Color = "#2563eb",
+            IsActive = true,
+        };
+        db.AddRange(patient, doctor);
+        await db.SaveChangesAsync();
+
+        // Ensure the appointment begins with IDs only, matching the create service.
+        db.ChangeTracker.Clear();
+        var appointment = Slot(doctor.Id, new TimeOnly(12, 0), new TimeOnly(12, 30));
+        appointment.PatientId = patient.Id;
+        appointment.Patient.Should().BeNull();
+        appointment.Doctor.Should().BeNull();
+
+        var repo = new AppointmentRepository(db);
+        (await repo.TryCreateWithConflictGuardAsync(appointment)).Should().BeTrue();
+
+        appointment.Patient.Should().NotBeNull();
+        appointment.Patient!.FirstName.Should().Be("أحمد");
+        appointment.Patient.LastName.Should().Be("علي");
+        appointment.Doctor.Should().NotBeNull();
+        appointment.Doctor!.Name.Should().Be("د. عقلان الكامل");
+        appointment.Doctor.Color.Should().Be("#2563eb");
     }
 }

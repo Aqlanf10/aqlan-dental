@@ -57,12 +57,10 @@ export function TopbarSearch() {
       if (controller.signal.aborted || requestId !== requestSequence.current) return;
       setResults(data);
       setFailed(false);
-      setOpen(true);
     } catch {
       if (controller.signal.aborted || requestId !== requestSequence.current) return;
       setResults(null);
       setFailed(true);
-      setOpen(true);
     } finally {
       if (requestId === requestSequence.current) {
         setSearching(false);

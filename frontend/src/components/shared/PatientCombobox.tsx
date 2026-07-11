@@ -42,6 +42,7 @@ export function PatientCombobox({
     }
 
     const controller = new AbortController();
+    let active = true;
     setLoading(true);
     setFailed(false);
 
@@ -52,18 +53,19 @@ export function PatientCombobox({
           { signal: controller.signal },
         );
 
-        if (requestId !== requestSequence.current) return;
+        if (!active || requestId !== requestSequence.current) return;
         setResults(response.data.data ?? []);
         setFailed(false);
       } catch {
-        if (controller.signal.aborted || requestId !== requestSequence.current) return;
+        if (!active || controller.signal.aborted || requestId !== requestSequence.current) return;
         setFailed(true);
       } finally {
-        if (requestId === requestSequence.current) setLoading(false);
+        if (active && requestId === requestSequence.current) setLoading(false);
       }
     }, 300);
 
     return () => {
+      active = false;
       clearTimeout(t);
       controller.abort();
     };

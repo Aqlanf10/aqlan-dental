@@ -76,6 +76,9 @@ public static class ServiceRegistrationConfiguration
         services.AddScoped<IPatientPortalService, PatientPortalService>();
         services.AddScoped<IWhatsAppService, WhatsAppService>();
         services.AddScoped<INotificationService, AqlanDentalPro.Infrastructure.Services.NotificationService>();
+        // SEQ-13: resolve clinic.timezone once at startup, then serve all date calculations
+        // from ClinicTimeProvider's thread-safe cache (no per-request database reads).
+        services.AddHostedService<ClinicTimeZoneInitializer>();
         services.AddHostedService<AqlanDentalPro.Infrastructure.Services.OverdueNotificationJob>();
         services.AddHostedService<AqlanDentalPro.Infrastructure.Services.AppointmentReminderJob>();
         services.AddHostedService<AqlanDentalPro.API.Services.AutoBackupJob>();

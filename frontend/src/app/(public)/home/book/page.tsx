@@ -135,8 +135,9 @@ const STEPS = [
 const FALLBACK_WHATSAPP = "967770245745";
 
 export default function BookPage() {
-  const { whatsApp: clinicWhatsApp } = useClinicBranding();
+  const { whatsApp: clinicWhatsApp, phone: clinicPhone, address: clinicAddress } = useClinicBranding();
   const waNumber = clinicWhatsApp || FALLBACK_WHATSAPP;
+  const telHref = `tel:${clinicPhone.replace(/[^\d+]/g, "")}`;
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<FormData>({
     patientName: "",
@@ -530,12 +531,12 @@ export default function BookPage() {
               تواصل عبر واتساب
             </a>
             <a
-              href="tel:04253028"
+              href={telHref}
               className="text-white font-semibold px-6 py-3.5 rounded-xl transition-colors inline-flex items-center justify-center gap-2"
               style={{ backgroundColor: "#87CEEB" }}
             >
               <Phone className="w-4 h-4" />
-              04-253028
+              {clinicPhone}
             </a>
           </div>
 
@@ -544,7 +545,7 @@ export default function BookPage() {
               className="w-3.5 h-3.5"
               style={{ color: "#FF8C00" }}
             />
-            تعز، اليمن — شارع التحرير الأعلى
+            {clinicAddress}
             <span className="mx-1 text-slate-200">|</span>
             <Clock
               className="w-3.5 h-3.5"
@@ -1247,12 +1248,12 @@ export default function BookPage() {
           </div>
           <div className="p-5 grid grid-cols-2 gap-3">
             <a
-              href="tel:04253028"
+              href={telHref}
               className="text-white font-semibold px-4 py-3 rounded-xl text-sm transition-opacity hover:opacity-90 flex items-center justify-center gap-2"
               style={{ backgroundColor: "#87CEEB" }}
             >
               <Phone className="w-4 h-4" />
-              04-253028
+              {clinicPhone}
             </a>
             <a
               href={`https://wa.me/${waNumber}`}

@@ -25,14 +25,18 @@
 
 ## المتبقي (موثَّق، لم يُصلح بعد — بالأولوية)
 
-### متوسط
+### متوسط — ✅ أُصلح في الجولة الثانية (نفس اليوم) ما يلي:
+- ✅ قالب SMS الاستدعاء/الغياب في `appointments/recall/page.tsx` — الاسم من `useClinicBranding`.
+- ✅ رسائل واتساب التواصل في `booking-requests/page.tsx` (موقعان) و`BookingRequestsView.tsx`.
+- ✅ شاشة الانتظار العامة `clinic-display/page.tsx` (الترويسة + التذييل).
+- ✅ صفحة الحجز العامة `home/book/page.tsx` — الهاتف (زرا اتصال + النص) والعنوان من الإعدادات.
+
+### متوسط — ما يزال متبقيًا:
 - **`ClinicTimeProvider` المنطقة الزمنية `"Asia/Aden"` مثبتة** (+`AppointmentReminderJob`، `BookingRequestService`) —
   تعليق الكلاس نفسه يدّعي القراءة من `Settings:ClinicTimezone` لكن لا كود يقرأها. تحتاج مفتاح `clinic.timezone`
   فعليًا. حساسة (تحدد حدود «اليوم» للمالية والتقارير) — تُنفذ بحذر وباختبارات.
-- قالب SMS الاستدعاء/الغياب الافتراضي في `appointments/recall/page.tsx:30` — يستحق مفتاح قالب رسالة.
-- رسائل واتساب التواصل في `booking-requests/page.tsx` (موقعان) و`BookingRequestsView.tsx` — تحتاج `useClinicBranding`.
-- شاشة الانتظار العامة `clinic-display/page.tsx` (موقعان) واسم المركز في `PublicNavbar` وصفحة الحجز العامة
-  `home/book/page.tsx` (هاتف/عنوان في 5 مواقع) — كلها عامة للجمهور وتحتاج `useClinicBranding`/`website.*`.
+- اسم المركز في `PublicNavbar` — مقسوم عمدًا لسطرين تصميميين (اسم قصير + تخصص)؛ يحتاج قرار تصميم قبل ربطه
+  بمفتاح واحد، فتُرك عمدًا.
 - هوية الطبيب في مصفوفة «الفريق» بموقع الويب `home/page.tsx:42`.
 
 ### منخفض (chrome واجهة — لا يستعجل)

@@ -1,13 +1,15 @@
 "use client";
-import { Bell, Search, X, User, Calendar, GitBranch, CheckCheck, Trash2, LogOut, KeyRound, MessageCircle } from "lucide-react";
+
+import { Bell, CheckCheck, Trash2, LogOut, KeyRound, MessageCircle } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { useRouter } from "next/navigation";
 import type { UserDto } from "@/types/auth";
 import api from "@/lib/api";
-import { useEffect, useRef, useState, useCallback, memo } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useUnreadCount } from "@/hooks/useMessaging";
 import { financeV3CollectionsUrl, financeV3ContractsUrl } from "@/lib/financeRoutes";
+import { TopbarSearch } from "@/components/layout/TopbarSearch";
 
 /* ─── Live Clock — matches ZIP ─────────────────────────────────────────────── */
 // FE-31: Wrapped in React.memo so the parent Topbar does not re-render every second
@@ -40,13 +42,6 @@ const LiveClock = memo(function LiveClock() {
   );
 });
 
-/* ─── Types ──────────────────────────────────────────────────────────────── */
-interface SearchResult {
-  patients:     { id: string; fullName: string; patientNumber: string; phoneNumber?: string }[];
-  appointments: { id: string; patientName: string; appointmentType?: string; appointmentDate: string; doctorName?: string }[];
-  orthoCases:   { id: string; caseNumber: string; patientName: string; status: string }[];
-}
-
 interface NotificationItem {
   id: string;
   type?: string;
@@ -67,7 +62,6 @@ const ENTITY_URL: Record<string, (id: string) => string> = {
   OrthoCase:   (id) => `/ortho/${id}`,
 };
 
-/* ─── Notification type icons ────────────────────────────────────────────── */
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const min  = Math.floor(diff / 60_000);
@@ -78,71 +72,34 @@ function timeAgo(iso: string): string {
   return `منذ ${Math.floor(hr / 24)} يوم`;
 }
 
-/* ─── Component ──────────────────────────────────────────────────────────── */
 export function Topbar() {
   const { user } = useAuthStore();
-  const router   = useRouter();
+  const router = useRouter();
 
-  /* Search state */
-  const [query,        setQuery]        = useState("");
-  const [searchResults, setSearchResults] = useState<SearchResult | null>(null);
-  const [searchOpen,   setSearchOpen]   = useState(false);
-  const [searching,    setSearching]    = useState(false);
-  const searchRef = useRef<HTMLDivElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  /* Notification state */
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [unreadCount,   setUnreadCount]   = useState(0);
-  const [notifOpen,     setNotifOpen]     = useState(false);
-  const [notifLoading,  setNotifLoading]  = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifLoading, setNotifLoading] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
 
-  /* ── Search ── */
-  const runSearch = useCallback(async (q: string) => {
-    if (q.length < 2) { setSearchResults(null); setSearchOpen(false); return; }
-    setSearching(true);
-    try {
-      const { data } = await api.get<SearchResult>(`/api/search?q=${encodeURIComponent(q)}&limit=4`);
-      setSearchResults(data);
-      setSearchOpen(true);
-    } catch {
-      setSearchResults(null);
-    } finally {
-      setSearching(false);
-    }
-  }, []);
-
-  const handleSearchInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setQuery(val);
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => runSearch(val), 300);
-  };
-
-  /* ── Notification unread count — SignalR handles real-time updates ── */
   const { data: notifData } = useQuery({
     queryKey: ["notificationUnreadCount"],
     queryFn: async () => {
       const { data } = await api.get<{ count: number }>("/api/notifications/unread-count");
       return data;
     },
-    staleTime: 120_000,       // 2 min — rely on SignalR for invalidation
-    refetchInterval: false,   // No polling — SignalR pushes updates instantly
-    refetchOnWindowFocus: true, // Safety net on tab focus
+    staleTime: 120_000,
+    refetchInterval: false,
+    refetchOnWindowFocus: true,
   });
 
-  // Keep local unreadCount in sync with the query
   const queryClient = useQueryClient();
   useEffect(() => {
     if (notifData?.count !== undefined) setUnreadCount(notifData.count);
   }, [notifData]);
 
-  /* ── Message unread count with polling ── */
   const { data: msgUnreadData } = useUnreadCount();
 
-  /* ── Open notifications dropdown ── */
   const openNotifications = async () => {
     if (notifOpen) { setNotifOpen(false); return; }
     setNotifOpen(true);
@@ -190,12 +147,8 @@ export function Topbar() {
     setNotifications(prev => prev.filter(n => n.id !== id));
   };
 
-  /* ── Click outside to close ── */
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setSearchOpen(false);
-      }
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
         setNotifOpen(false);
       }
@@ -204,45 +157,18 @@ export function Topbar() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  /* ── Ctrl+K / Cmd+K shortcut to focus search ── */
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
-      }
-      if (e.key === "Escape") {
-        setSearchOpen(false);
-        searchInputRef.current?.blur();
-      }
-    };
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
-  }, []);
-
-  const hasResults = searchResults && (
-    searchResults.patients.length > 0 ||
-    searchResults.appointments.length > 0 ||
-    searchResults.orthoCases.length > 0
-  );
-
   return (
     <header
       className="h-16 flex items-center justify-between px-6 flex-shrink-0"
       style={{ background: "#fff", borderBottom: "1px solid #e8f0f9" }}
     >
-      {/* Title */}
       <div className="text-lg font-extrabold" style={{ color: "#0d2137" }}>
         مركز د. عقلان الكامل — تعز
       </div>
 
-      {/* Right controls */}
       <div className="flex items-center gap-3.5">
-        {/* Live Clock */}
         <LiveClock />
 
-        {/* ── Message icon with unread badge ── */}
         <button
           onClick={() => router.push("/messages")}
           className="relative w-[38px] h-[38px] rounded-lg flex items-center justify-center transition-colors"
@@ -265,123 +191,8 @@ export function Topbar() {
           )}
         </button>
 
-        {/* ── Search ── */}
-        <div ref={searchRef} className="relative hidden md:block">
-          <input
-            ref={searchInputRef}
-            type="search"
-            value={query}
-            onChange={handleSearchInput}
-            onFocus={() => hasResults && setSearchOpen(true)}
-            placeholder="بحث سريع... (Ctrl+K)"
-            className="pe-9 ps-3 py-[7px] text-[13px] rounded-lg outline-none"
-            style={{
-              width: 220,
-              border: "1.5px solid #dce8f5",
-              background: "#f7fafd",
-              color: "#0d2137",
-              direction: "rtl",
-              fontFamily: "Tajawal",
-            }}
-          />
-          <span className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: "#94a3b8" }}>
-            <Search className="w-[15px] h-[15px]" />
-          </span>
-          {query && (
-            <button
-              onClick={() => { setQuery(""); setSearchResults(null); setSearchOpen(false); }}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2"
-              style={{ color: "#94a3b8" }}
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
+        <TopbarSearch />
 
-          {/* Search dropdown */}
-          {searchOpen && (
-            <div className="absolute top-full mt-2 end-0 w-80 bg-white rounded-xl z-50 overflow-hidden" style={{ boxShadow: "0 8px 30px rgba(0,0,0,0.12)", border: "1px solid #e8f0f9" }}>
-              {searching ? (
-                <div className="p-4 text-center text-sm" style={{ color: "#94a3b8" }}>جارٍ البحث...</div>
-              ) : !hasResults ? (
-                <div className="p-4 text-center text-sm" style={{ color: "#94a3b8" }}>لا توجد نتائج لـ &ldquo;{query}&rdquo;</div>
-              ) : (
-                <div className="py-1">
-                  {/* Patients */}
-                  {searchResults!.patients.length > 0 && (
-                    <div>
-                      <div className="px-3 py-1.5 text-xs font-semibold" style={{ color: "#94a3b8", background: "#f7fafd" }}>المرضى</div>
-                      {searchResults!.patients.map(p => (
-                        <button
-                          key={p.id}
-                          onClick={() => { router.push(`/patients/${p.id}`); setSearchOpen(false); setQuery(""); }}
-                          className="w-full flex items-center gap-3 px-3 py-2.5 transition text-start"
-                          onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
-                          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                        >
-                          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "#3d7ab518" }}>
-                            <User className="w-3.5 h-3.5" style={{ color: "#3d7ab5" }} />
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium" style={{ color: "#0d2137" }}>{p.fullName}</p>
-                            <p className="text-xs" style={{ color: "#94a3b8" }}>{p.patientNumber} {p.phoneNumber && `· ${p.phoneNumber}`}</p>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {/* Ortho cases */}
-                  {searchResults!.orthoCases.length > 0 && (
-                    <div>
-                      <div className="px-3 py-1.5 text-xs font-semibold" style={{ color: "#94a3b8", background: "#f7fafd" }}>التقويم</div>
-                      {searchResults!.orthoCases.map(c => (
-                        <button
-                          key={c.id}
-                          onClick={() => { router.push(`/ortho/${c.id}`); setSearchOpen(false); setQuery(""); }}
-                          className="w-full flex items-center gap-3 px-3 py-2.5 transition text-start"
-                          onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
-                          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                        >
-                          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "#a855f718" }}>
-                            <GitBranch className="w-3.5 h-3.5" style={{ color: "#a855f7" }} />
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium" style={{ color: "#0d2137" }}>{c.caseNumber} — {c.patientName}</p>
-                            <p className="text-xs" style={{ color: "#94a3b8" }}>{c.status}</p>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {/* Appointments */}
-                  {searchResults!.appointments.length > 0 && (
-                    <div>
-                      <div className="px-3 py-1.5 text-xs font-semibold" style={{ color: "#94a3b8", background: "#f7fafd" }}>المواعيد</div>
-                      {searchResults!.appointments.map(a => (
-                        <button
-                          key={a.id}
-                          onClick={() => { router.push(`/appointments/${a.id}`); setSearchOpen(false); setQuery(""); }}
-                          className="w-full flex items-center gap-3 px-3 py-2.5 transition text-start"
-                          onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
-                          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                        >
-                          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "#3d7ab518" }}>
-                            <Calendar className="w-3.5 h-3.5" style={{ color: "#3d7ab5" }} />
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium" style={{ color: "#0d2137" }}>{a.patientName}</p>
-                            <p className="text-xs" style={{ color: "#94a3b8" }}>{a.appointmentDate} {a.doctorName && `· ${a.doctorName}`}</p>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* ── Notifications Bell ── */}
         <div ref={notifRef} className="relative">
           <button
             onClick={openNotifications}
@@ -401,13 +212,11 @@ export function Topbar() {
             )}
           </button>
 
-          {/* Notifications dropdown */}
           {notifOpen && (
             <div
               className="absolute top-full mt-2 end-0 w-[340px] bg-white rounded-xl z-50 overflow-hidden"
               style={{ boxShadow: "0 8px 30px rgba(0,0,0,0.12)", border: "1px solid #e8f0f9" }}
             >
-              {/* Header */}
               <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid #e8f0f9" }}>
                 <span className="font-bold text-sm" style={{ color: "#0d2137" }}>الإشعارات</span>
                 {unreadCount > 0 && (
@@ -422,7 +231,6 @@ export function Topbar() {
                 )}
               </div>
 
-              {/* List */}
               <div className="max-h-96 overflow-y-auto">
                 {notifLoading ? (
                   <div className="space-y-3 p-4">
@@ -472,21 +280,19 @@ export function Topbar() {
           )}
         </div>
 
-        {/* User menu */}
         <UserMenu user={user} router={router} />
       </div>
     </header>
   );
 }
 
-/* ─── UserMenu ───────────────────────────────────────────────────────────────── */
 function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<typeof useRouter> }) {
   const { logout } = useAuthStore();
-  const [open, setOpen]           = useState(false);
-  const [changePw, setChangePw]   = useState(false);
-  const [pwForm, setPwForm]       = useState({ current: "", next: "", confirm: "" });
-  const [pwError, setPwError]     = useState("");
-  const [pwSaving, setPwSaving]   = useState(false);
+  const [open, setOpen] = useState(false);
+  const [changePw, setChangePw] = useState(false);
+  const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
+  const [pwError, setPwError] = useState("");
+  const [pwSaving, setPwSaving] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -538,7 +344,6 @@ function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<t
           className="absolute top-full mt-2 end-0 w-56 bg-white rounded-xl z-50 overflow-hidden"
           style={{ boxShadow: "0 8px 30px rgba(0,0,0,0.12)", border: "1px solid #e8f0f9" }}
         >
-          {/* User info — matches ZIP */}
           <div className="px-4 py-3" style={{ background: "#f7fafd", borderBottom: "1px solid #f1f5f9" }}>
             <p className="font-bold text-sm" style={{ color: "#0d2137" }}>{user?.doctorName ?? user?.username}</p>
             <p className="text-xs mt-0.5" style={{ color: "#94a3b8" }}>{user?.username}</p>

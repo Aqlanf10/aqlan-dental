@@ -161,13 +161,19 @@ export function TopbarNotifications() {
     router.push(urlForEntity(notification.relatedId));
   };
 
-  const deleteNotification = async (id: string) => {
-    const actionKey = `delete:${id}`;
+  const deleteNotification = async (notification: NotificationItem) => {
+    const actionKey = `delete:${notification.id}`;
     if (!beginAction(actionKey)) return;
 
     try {
-      await api.delete(`/api/notifications/${id}`);
-      setNotifications((current) => current.filter((notification) => notification.id !== id));
+      await api.delete(`/api/notifications/${notification.id}`);
+      setNotifications((current) =>
+        current.filter((item) => item.id !== notification.id),
+      );
+      if (!notification.isRead) {
+        setUnreadCount((current) => Math.max(0, current - 1));
+        queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
+      }
     } catch (error) {
       setActionError(extractErrorMessage(error, "تعذّر حذف الإشعار"));
     } finally {
@@ -327,7 +333,7 @@ export function TopbarNotifications() {
                         disabled={mutationPending}
                         onClick={(event) => {
                           event.stopPropagation();
-                          void deleteNotification(notification.id);
+                          void deleteNotification(notification);
                         }}
                         className="opacity-0 group-hover:opacity-100 p-1 rounded transition disabled:cursor-not-allowed disabled:opacity-40"
                         style={{ color: "#94a3b8" }}

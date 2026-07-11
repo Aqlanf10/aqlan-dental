@@ -9,6 +9,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { RoomOption } from "../../daily-operations/_lib/constants";
 import type { DailyJourneySummary } from "@/types/journey";
+import { createDoctorAccountNotLinkedError } from "./errors";
 
 // ─── Service option (with price) ────────────────────────────────────────────
 export interface ServiceWithPrice {
@@ -57,7 +58,7 @@ export interface DoctorPatientItem {
 export function useDoctorPatientsToday(opts: { doctorId?: string; includeAll?: boolean } = {}) {
   const { doctorId, includeAll = false } = opts;
 
-  return useQuery<DoctorPatientItem[]>({
+  const query = useQuery<DoctorPatientItem[]>({
     queryKey: includeAll
       ? ["doctor-clinic", "patients", "all"]
       : ["doctor-clinic", "patients", doctorId],
@@ -80,8 +81,19 @@ export function useDoctorPatientsToday(opts: { doctorId?: string; includeAll?: b
     // tells the doctor that there are no patients. Escalate only when no usable
     // data exists; a transient background-refetch failure must not destroy an
     // already-loaded clinical workspace.
-    throwOnError: (_error, query) => query.state.data === undefined,
+    throwOnError: (_error, queryState) => queryState.state.data === undefined,
   });
+
+  // SEQ-17: the dashboard layout completes auth hydration before rendering this
+  // page. A non-admin clinic workspace without DoctorId is therefore a durable
+  // account configuration defect, not a temporary loading state or an empty
+  // patient list. The query stays disabled, no API request is made, and the
+  // route boundary renders the actionable linking instructions.
+  if (!includeAll && !doctorId) {
+    throw createDoctorAccountNotLinkedError();
+  }
+
+  return query;
 }
 
 // ─── Patient daily summary (doctor view — no phone/finance) ─────────────────

@@ -33,8 +33,31 @@ const notification = {
   relatedId: "patient-1",
 };
 
+const notificationWithoutRoute = {
+  ...notification,
+  id: "notification-no-route",
+  title: "تنبيه إداري",
+  relatedEntity: undefined,
+  relatedId: undefined,
+};
+
 function listResponse(items = [notification], unreadCount = items.length) {
   return { data: { data: items, unreadCount } };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+async function openNotifications() {
+  fireEvent.click(screen.getByLabelText("الإشعارات"));
+  await screen.findByText("موعد يحتاج تأكيدًا");
 }
 
 describe("SEQ-28 TopbarNotifications load states", () => {
@@ -104,12 +127,106 @@ describe("SEQ-28 TopbarNotifications load states", () => {
     vi.mocked(api.get).mockResolvedValueOnce(listResponse() as never);
 
     render(<TopbarNotifications />);
-    fireEvent.click(screen.getByLabelText("الإشعارات"));
-    fireEvent.click(await screen.findByText("موعد يحتاج تأكيدًا"));
+    await openNotifications();
+    fireEvent.click(screen.getByText("موعد يحتاج تأكيدًا"));
 
     await waitFor(() => {
       expect(push).toHaveBeenCalledWith("/patients/patient-1");
     });
     expect(api.put).toHaveBeenCalledWith("/api/notifications/notification-1/read");
+  });
+});
+
+describe("SEQ-29 TopbarNotifications mutation truth", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.get).mockResolvedValue(listResponse() as never);
+    vi.mocked(api.put).mockResolvedValue({} as never);
+    vi.mocked(api.delete).mockResolvedValue({} as never);
+  });
+
+  it("keeps notifications unread when mark-all fails", async () => {
+    vi.mocked(api.put).mockRejectedValueOnce(new Error("Network Error"));
+
+    render(<TopbarNotifications />);
+    await openNotifications();
+    fireEvent.click(screen.getByRole("button", { name: "تحديد الكل كمقروء" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "تعذّر تعليم الإشعارات كمقروءة",
+    );
+    expect(screen.getByText("موعد يحتاج تأكيدًا")).toBeInTheDocument();
+    expect(screen.getByTestId("notification-unread-indicator")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "تحديد الكل كمقروء" })).toBeInTheDocument();
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it("updates the unread state only after mark-all succeeds", async () => {
+    render(<TopbarNotifications />);
+    await openNotifications();
+    fireEvent.click(screen.getByRole("button", { name: "تحديد الكل كمقروء" }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("notification-unread-indicator")).not.toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: "تحديد الكل كمقروء" })).not.toBeInTheDocument();
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["notificationUnreadCount"] });
+  });
+
+  it("does not remove a notification when deletion fails", async () => {
+    vi.mocked(api.delete).mockRejectedValueOnce(new Error("Failed to fetch"));
+
+    render(<TopbarNotifications />);
+    await openNotifications();
+    fireEvent.click(screen.getByRole("button", { name: "حذف الإشعار موعد يحتاج تأكيدًا" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("تعذّر حذف الإشعار");
+    expect(screen.getByText("موعد يحتاج تأكيدًا")).toBeInTheDocument();
+  });
+
+  it("removes the notification only after deletion succeeds", async () => {
+    render(<TopbarNotifications />);
+    await openNotifications();
+    fireEvent.click(screen.getByRole("button", { name: "حذف الإشعار موعد يحتاج تأكيدًا" }));
+
+    expect(await screen.findByText("لا توجد إشعارات")).toBeInTheDocument();
+    expect(screen.queryByText("موعد يحتاج تأكيدًا")).not.toBeInTheDocument();
+    expect(api.delete).toHaveBeenCalledWith("/api/notifications/notification-1");
+  });
+
+  it("keeps a notification unread when marking it read fails", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce(
+      listResponse([notificationWithoutRoute], 1) as never,
+    );
+    vi.mocked(api.put).mockRejectedValueOnce(new Error("Network Error"));
+
+    render(<TopbarNotifications />);
+    fireEvent.click(screen.getByLabelText("الإشعارات"));
+    fireEvent.click(await screen.findByText("تنبيه إداري"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("تعذّر تعليم الإشعار كمقروء");
+    expect(screen.getByText("تنبيه إداري")).toBeInTheDocument();
+    expect(screen.getByTestId("notification-unread-indicator")).toBeInTheDocument();
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it("prevents duplicate mark-all requests while the first request is pending", async () => {
+    const pending = deferred<Record<string, never>>();
+    vi.mocked(api.put).mockReturnValueOnce(pending.promise as never);
+
+    render(<TopbarNotifications />);
+    await openNotifications();
+    const markAllButton = screen.getByRole("button", { name: "تحديد الكل كمقروء" });
+
+    fireEvent.click(markAllButton);
+    fireEvent.click(markAllButton);
+
+    expect(api.put).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "جارٍ التحديث..." })).toBeDisabled();
+
+    pending.resolve({});
+    await waitFor(() => {
+      expect(screen.queryByTestId("notification-unread-indicator")).not.toBeInTheDocument();
+    });
   });
 });

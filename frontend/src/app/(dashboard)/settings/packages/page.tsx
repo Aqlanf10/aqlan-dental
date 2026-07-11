@@ -4,6 +4,8 @@ import { Plus, Edit3, Power, PowerOff, X, Save, Package, Trash2, ChevronUp, Laye
 import Link from "next/link";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { extractErrorMessage } from "@/lib/errors";
+import { QueryErrorBanner } from "@/components/shared/QueryErrorBanner";
 import type {
   TreatmentPackage,
   TreatmentPackageService,
@@ -39,6 +41,7 @@ const EMPTY_FORM: PackageForm = {
 export default function TreatmentPackagesPage() {
   const [packages, setPackages] = useState<TreatmentPackage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<PackageForm>(EMPTY_FORM);
@@ -58,10 +61,11 @@ export default function TreatmentPackagesPage() {
 
   const load = () => {
     setLoading(true);
+    setLoadError(null);
     api
       .get<TreatmentPackage[]>(`/api/treatment-packages?activeOnly=${!showInactive}`)
       .then((r) => setPackages(r.data ?? []))
-      .catch(() => setPackages([]))
+      .catch((error) => setLoadError(extractErrorMessage(error, "تعذر تحميل الباقات")))
       .finally(() => setLoading(false));
   };
 
@@ -433,7 +437,9 @@ export default function TreatmentPackagesPage() {
       )}
 
       {/* Loading */}
-      {loading && (
+      {loadError && <QueryErrorBanner text={loadError} onRetry={load} />}
+
+      {loading && packages.length === 0 && (
         <div className="animate-pulse space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="h-14 bg-gray-100 rounded-lg" />
@@ -442,7 +448,7 @@ export default function TreatmentPackagesPage() {
       )}
 
       {/* Empty State */}
-      {!loading && packages.length === 0 && (
+      {!loading && !loadError && packages.length === 0 && (
         <div className="text-center py-16">
           <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
           <p className="text-gray-500 font-medium">لا توجد باقات</p>

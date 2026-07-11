@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
 import { screen } from "@testing-library/dom";
 import { CephReadinessBadge } from "@/components/ceph/CephReadinessBadge";
-import { cephReadinessFromAnalysis } from "@/lib/cephReadiness";
+import { cephReadinessFromAnalysis, extractCephUserNotes } from "@/lib/cephReadiness";
 import type { CephAnalysis } from "@/types/ceph";
 
 function analysis(overrides: Partial<CephAnalysis> = {}): CephAnalysis {
@@ -62,7 +62,30 @@ describe("CephReadinessBadge detail metadata", () => {
     expect(screen.getByText(/تتبع آلي — يتطلب مراجعة الطبيب/)).toBeInTheDocument();
   });
 
-  it("does not render an empty notes card for null or whitespace notes", () => {
+  it("unwraps UserNotes from persisted calibration JSON instead of showing raw JSON", () => {
+    const wrapped = JSON.stringify({
+      PixelsPerMm: 11.5,
+      ImageWidth: 1920,
+      ImageHeight: 1080,
+      UserNotes: "ملاحظة سريرية محفوظة داخل غلاف المعايرة",
+    });
+
+    expect(extractCephUserNotes(wrapped)).toBe(
+      "ملاحظة سريرية محفوظة داخل غلاف المعايرة",
+    );
+
+    const readiness = cephReadinessFromAnalysis(analysis({ notes: wrapped }), false);
+    render(<CephReadinessBadge readiness={readiness} />);
+
+    const note = screen.getByTestId("ceph-analysis-notes");
+    expect(note).toHaveTextContent("ملاحظة سريرية محفوظة داخل غلاف المعايرة");
+    expect(note).not.toHaveTextContent("PixelsPerMm");
+  });
+
+  it("does not render an empty notes card for null, whitespace, or metadata-only JSON", () => {
+    expect(extractCephUserNotes("   ")).toBeNull();
+    expect(extractCephUserNotes('{"PixelsPerMm":10,"UserNotes":null}')).toBeNull();
+
     const readiness = cephReadinessFromAnalysis(
       analysis({ notes: "   ", isAutoTraced: false, doctorId: null }),
       false,

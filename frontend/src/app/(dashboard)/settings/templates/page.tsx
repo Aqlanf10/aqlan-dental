@@ -5,6 +5,8 @@ import Link from "next/link";
 import { ArrowRight, Copy, Eye, FileText, Plus, Save, Trash2 } from "lucide-react";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { extractErrorMessage } from "@/lib/errors";
+import { QueryErrorBanner } from "@/components/shared/QueryErrorBanner";
 
 interface DocumentTemplate {
   id: string;
@@ -56,6 +58,7 @@ const placeholders = [
 export default function DocumentTemplatesPage() {
   const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<TemplateForm>(emptyForm);
@@ -69,13 +72,13 @@ export default function DocumentTemplatesPage() {
 
   const loadTemplates = () => {
     setLoading(true);
+    setLoadError(null);
     api
       .get<DocumentTemplate[]>("/api/document-templates", { params: { includeInactive: true } })
       .then((res) => setTemplates(res.data ?? []))
-      .catch(() => {
-        setTemplates([]);
-        setError("تعذر تحميل قوالب الوثائق");
-      })
+      .catch((loadFailure) =>
+        setLoadError(extractErrorMessage(loadFailure, "تعذر تحميل قوالب الوثائق"))
+      )
       .finally(() => setLoading(false));
   };
 
@@ -197,6 +200,8 @@ export default function DocumentTemplatesPage() {
         </div>
       )}
 
+      {loadError && <QueryErrorBanner text={loadError} onRetry={loadTemplates} />}
+
       <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-4">
         <aside className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
@@ -204,11 +209,11 @@ export default function DocumentTemplatesPage() {
             <span className="text-xs text-gray-500">{templates.length}</span>
           </div>
           <div className="divide-y divide-gray-100 max-h-[680px] overflow-y-auto">
-            {loading ? (
+            {loading && templates.length === 0 ? (
               <div className="p-4 text-sm text-gray-500">جاري التحميل...</div>
-            ) : templates.length === 0 ? (
+            ) : !loadError && templates.length === 0 ? (
               <div className="p-4 text-sm text-gray-500">لا توجد قوالب بعد</div>
-            ) : (
+            ) : templates.length > 0 ? (
               templates.map((template) => (
                 <button
                   key={template.id}
@@ -239,7 +244,7 @@ export default function DocumentTemplatesPage() {
                   )}
                 </button>
               ))
-            )}
+            ) : null}
           </div>
         </aside>
 

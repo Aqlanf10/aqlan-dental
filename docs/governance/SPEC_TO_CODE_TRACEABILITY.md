@@ -22,6 +22,7 @@ Initial table based on static repo inspection. Incomplete rows are marked `Needs
 | `MS-REQ-015` | Reports | Reports/PDF | `ReportsController.cs`, `PdfService.cs`, PDF generators, print pages | PDF tests | active | 2026-07-02 | High |
 | `MS-REQ-016` | Settings | Settings-backed rules | `SettingsController.cs`, settings pages, `FinanceSettingsKeys.cs` | Settings/finance tests | partial | 2026-07-02 | High |
 | `SEQ-24` | Settings/Packages | Package fetch failures are distinct from a successful empty catalog and preserve cached rows | `settings/packages/page.tsx`, `QueryErrorBanner.tsx`, `errors.ts` | `TreatmentPackagesPage.test.tsx` | active | 2026-07-11 | High |
+| `SEQ-25` | Settings/Templates | Template fetch failures are distinct from a successful empty list and preserve cached rows | `settings/templates/page.tsx`, `QueryErrorBanner.tsx`, `errors.ts` | `DocumentTemplatesPage.test.tsx` | active | 2026-07-11 | High |
 | `MS-REQ-017` | Navigation | Sidebar/routes | `Sidebar.tsx`, `routePermissions.ts`, dashboard layout | Needs completion in future sprint | active | 2026-07-02 | Medium |
 | `MS-REQ-018` | Production | Deployment/CI safety | `Program.cs`, `.github/workflows/ci.yml`, `encoding-guard.yml` | CI | active | 2026-07-02 | High |
 | `001` | Navigation | No duplicate routes | `Sidebar.tsx`, `routePermissions.ts` | Needs completion in future sprint | active | 2026-07-02 | Medium |

@@ -34,6 +34,13 @@ export interface CephReadinessItem {
   ok: boolean;
 }
 
+/** Detail-only metadata carried with a loaded analysis. */
+export interface CephAnalysisMetadata {
+  notes: string | null;
+  isAutoTraced: boolean;
+  doctorId: string | null;
+}
+
 export interface CephReadiness {
   /** True only when every requirement is met and nothing is unsaved. */
   ready: boolean;
@@ -43,6 +50,32 @@ export interface CephReadiness {
   verdict: string;
   /** The single most important blocking reason, or null when ready. */
   reason: string | null;
+  /** Optional detail metadata; absent for flag-only computations. */
+  analysisMetadata?: CephAnalysisMetadata;
+}
+
+/**
+ * CephService stores calibration metadata and the original user note together
+ * in the Notes column after landmarks are saved. The detail DTO historically
+ * returned that raw value, so the frontend must unwrap UserNotes rather than
+ * displaying the calibration JSON to the doctor.
+ */
+export function extractCephUserNotes(rawNotes?: string | null): string | null {
+  const trimmed = rawNotes?.trim();
+  if (!trimmed) return null;
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const record = parsed as Record<string, unknown>;
+      const wrapped = record.userNotes ?? record.UserNotes;
+      return typeof wrapped === "string" && wrapped.trim() ? wrapped.trim() : null;
+    }
+  } catch {
+    // Plain-text notes created before calibration wrapping remain valid notes.
+  }
+
+  return trimmed;
 }
 
 /**
@@ -85,16 +118,26 @@ export function computeCephReadiness(input: CephReadinessInput): CephReadiness {
 
 /** Convenience: derive readiness directly from a loaded analysis + dirty flag. */
 export function cephReadinessFromAnalysis(
-  analysis: Pick<CephAnalysis, "xrayFileUrl" | "pixelsPerMm" | "landmarks" | "measurements">,
+  analysis: Pick<
+    CephAnalysis,
+    "xrayFileUrl" | "pixelsPerMm" | "landmarks" | "measurements"
+  > & Partial<Pick<CephAnalysis, "notes" | "isAutoTraced" | "doctorId">>,
   isDirty: boolean,
 ): CephReadiness {
-  return computeCephReadiness({
-    hasImage: Boolean(analysis.xrayFileUrl),
-    hasCalibration: Boolean(analysis.pixelsPerMm && analysis.pixelsPerMm > 0),
-    hasPoints: (analysis.landmarks?.length ?? 0) >= REQUIRED_LANDMARKS,
-    hasMeasurements: (analysis.measurements?.length ?? 0) > 0,
-    isDirty,
-  });
+  return {
+    ...computeCephReadiness({
+      hasImage: Boolean(analysis.xrayFileUrl),
+      hasCalibration: Boolean(analysis.pixelsPerMm && analysis.pixelsPerMm > 0),
+      hasPoints: (analysis.landmarks?.length ?? 0) >= REQUIRED_LANDMARKS,
+      hasMeasurements: (analysis.measurements?.length ?? 0) > 0,
+      isDirty,
+    }),
+    analysisMetadata: {
+      notes: extractCephUserNotes(analysis.notes),
+      isAutoTraced: Boolean(analysis.isAutoTraced),
+      doctorId: analysis.doctorId ?? null,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

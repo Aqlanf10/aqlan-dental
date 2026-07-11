@@ -2,11 +2,16 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
 import api from "@/lib/api";
+import type { PaginatedResponse } from "@/types/api";
 import type { PatientListItem } from "@/types/patient";
 
 vi.mock("@/lib/api", () => ({
   default: { get: vi.fn() },
 }));
+
+interface MockApiResponse {
+  data: PaginatedResponse<PatientListItem>;
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -28,14 +33,16 @@ function patient(id: string, fullName: string): PatientListItem {
   };
 }
 
-function response(items: PatientListItem[]) {
+function response(items: PatientListItem[]): MockApiResponse {
   return {
     data: {
       data: items,
       page: 1,
       pageSize: 8,
       totalCount: items.length,
-      totalPages: 1,
+      totalPages: items.length > 0 ? 1 : 0,
+      hasNextPage: false,
+      hasPreviousPage: false,
     },
   };
 }
@@ -51,11 +58,11 @@ describe("SEQ-26 PatientCombobox request ordering", () => {
   });
 
   it("keeps the newest search results when an older request resolves last", async () => {
-    const oldRequest = deferred<ReturnType<typeof response>>();
-    const newRequest = deferred<ReturnType<typeof response>>();
+    const oldRequest = deferred<MockApiResponse>();
+    const newRequest = deferred<MockApiResponse>();
     vi.mocked(api.get)
-      .mockReturnValueOnce(oldRequest.promise)
-      .mockReturnValueOnce(newRequest.promise);
+      .mockReturnValueOnce(oldRequest.promise as never)
+      .mockReturnValueOnce(newRequest.promise as never);
 
     render(<PatientCombobox onSelect={vi.fn()} />);
     const input = screen.getByPlaceholderText("ابحث بالاسم أو رقم المريض...");
@@ -87,11 +94,11 @@ describe("SEQ-26 PatientCombobox request ordering", () => {
   });
 
   it("ignores a stale failure after a newer search succeeds", async () => {
-    const oldRequest = deferred<ReturnType<typeof response>>();
-    const newRequest = deferred<ReturnType<typeof response>>();
+    const oldRequest = deferred<MockApiResponse>();
+    const newRequest = deferred<MockApiResponse>();
     vi.mocked(api.get)
-      .mockReturnValueOnce(oldRequest.promise)
-      .mockReturnValueOnce(newRequest.promise);
+      .mockReturnValueOnce(oldRequest.promise as never)
+      .mockReturnValueOnce(newRequest.promise as never);
 
     render(<PatientCombobox onSelect={vi.fn()} />);
     const input = screen.getByPlaceholderText("ابحث بالاسم أو رقم المريض...");
@@ -115,8 +122,8 @@ describe("SEQ-26 PatientCombobox request ordering", () => {
   });
 
   it("clears loading and ignores an in-flight response when the query becomes too short", async () => {
-    const pendingRequest = deferred<ReturnType<typeof response>>();
-    vi.mocked(api.get).mockReturnValueOnce(pendingRequest.promise);
+    const pendingRequest = deferred<MockApiResponse>();
+    vi.mocked(api.get).mockReturnValueOnce(pendingRequest.promise as never);
 
     render(<PatientCombobox onSelect={vi.fn()} />);
     const input = screen.getByPlaceholderText("ابحث بالاسم أو رقم المريض...");

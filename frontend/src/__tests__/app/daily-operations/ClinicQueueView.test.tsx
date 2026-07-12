@@ -81,7 +81,7 @@ function deferred<T>() {
 function installQueueResponses(queueResponses: Array<Promise<unknown>>) {
   const queueCalls: Array<{ signal?: AbortSignal }> = [];
 
-  vi.mocked(api.get).mockImplementation((url: string, config?: { signal?: AbortSignal }) => {
+  vi.mocked(api.get).mockImplementation((url, config) => {
     if (url.startsWith("/api/clinic-queue/today")) {
       const response = queueResponses[queueCalls.length];
       if (!response) throw new Error(`Unexpected queue request ${url}`);

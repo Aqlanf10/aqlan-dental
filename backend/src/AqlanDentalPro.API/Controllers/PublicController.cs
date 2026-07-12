@@ -55,6 +55,12 @@ public class PublicController : ControllerBase
             ["servicesSectionTitle"] = settings.GetValueOrDefault("website.servicesSectionTitle") ?? "حلول طبية متكاملة لابتسامة صحية وواثقة",
             ["bookingButtonText"]    = settings.GetValueOrDefault("website.bookingButtonText")    ?? "احجز موعدك الآن",
             ["whatsappButtonText"]   = settings.GetValueOrDefault("website.whatsappButtonText")   ?? "تواصل عبر الواتساب",
+            // Spec 010 (RX-REQ-004): English identity for printed forms that leave
+            // the clinic (radiology referrals, prescriptions).
+            ["clinicNameEn"]             = settings.GetValueOrDefault("website.clinicNameEn")             ?? "Dr. Aqlan Alkamel Center for Orthodontics, Dental Implants & Cosmetic Dentistry",
+            ["addressEn"]                = settings.GetValueOrDefault("website.addressEn")                ?? "Upper Al-Tahrir Street, Taiz, Yemen",
+            ["leadDoctorEn"]             = settings.GetValueOrDefault("website.leadDoctorEn")             ?? "Dr. Aqlan Alkamel — Orthodontic Specialist",
+            ["leadDoctorCredentialsEn"]  = settings.GetValueOrDefault("website.leadDoctorCredentialsEn")  ?? "Central University of Manila — Philippines",
         };
 
         return Ok(result);

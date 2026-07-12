@@ -31,13 +31,22 @@ export default function PrescriptionsPage() {
           <h1 className="text-2xl font-extrabold text-gray-900">الوصفات الطبية</h1>
           <p className="text-sm text-gray-500 mt-0.5">إدارة وطباعة وصفات المرضى</p>
         </div>
-        <Link
-          href="/prescriptions/new"
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
-        >
-          <Plus className="w-4 h-4" />
-          وصفة جديدة
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/radiology-orders/new"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-clinic-blue text-clinic-blue hover:bg-blue-50 transition"
+          >
+            <Plus className="w-4 h-4" />
+            طلب أشعة
+          </Link>
+          <Link
+            href="/prescriptions/new"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
+          >
+            <Plus className="w-4 h-4" />
+            وصفة جديدة
+          </Link>
+        </div>
       </div>
 
       {/* List */}

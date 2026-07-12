@@ -61,6 +61,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<InternalReferral> InternalReferrals => Set<InternalReferral>();
     public DbSet<Document> Documents => Set<Document>();
     public DbSet<Prescription> Prescriptions => Set<Prescription>();
+    public DbSet<RadiologyOrder> RadiologyOrders => Set<RadiologyOrder>();
     public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<Notification> Notifications => Set<Notification>();

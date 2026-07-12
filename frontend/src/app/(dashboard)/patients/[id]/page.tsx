@@ -166,6 +166,8 @@ export default function PatientProfilePage() {
           action: () => { /* handled via Link */ } },
         { icon: Pill, label: "وصفة طبية", color: "text-pink-600", bgColor: "hover:bg-pink-50",
           action: () => router.push(`/prescriptions/new?patientId=${id}`) },
+        { icon: ScanLine, label: "طلب أشعة", color: "text-cyan-600", bgColor: "hover:bg-cyan-50",
+          action: () => router.push(`/radiology-orders/new?patientId=${id}`) },
       ],
     },
     {

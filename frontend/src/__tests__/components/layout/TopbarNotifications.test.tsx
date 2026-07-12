@@ -54,6 +54,15 @@ const notificationWithoutRoute: TestNotification = {
   relatedId: undefined,
 };
 
+function namedNotification(id: string, title: string): TestNotification {
+  return {
+    ...notification,
+    id,
+    title,
+    relatedId: id,
+  };
+}
+
 function listResponse(items: TestNotification[] = [notification], unreadCount = items.length) {
   return { data: { data: items, unreadCount } };
 }
@@ -247,5 +256,110 @@ describe("SEQ-29 TopbarNotifications mutation truth", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("notification-unread-indicator")).not.toBeInTheDocument();
     });
+  });
+});
+
+describe("SEQ-30 TopbarNotifications load ordering", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    unreadQueryData.count = 2;
+    vi.mocked(api.put).mockResolvedValue({} as never);
+    vi.mocked(api.delete).mockResolvedValue({} as never);
+  });
+
+  it("keeps the newest notification list when an older success resolves last", async () => {
+    const oldRequest = deferred<ReturnType<typeof listResponse>>();
+    const newRequest = deferred<ReturnType<typeof listResponse>>();
+    vi.mocked(api.get)
+      .mockReturnValueOnce(oldRequest.promise as never)
+      .mockReturnValueOnce(newRequest.promise as never);
+
+    render(<TopbarNotifications />);
+    const bell = screen.getByLabelText("الإشعارات");
+
+    fireEvent.click(bell);
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+    const oldSignal = vi.mocked(api.get).mock.calls[0]?.[1]?.signal;
+
+    fireEvent.click(bell);
+    expect(oldSignal?.aborted).toBe(true);
+    fireEvent.click(bell);
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2));
+
+    newRequest.resolve(listResponse([namedNotification("new", "الإشعار الأحدث")], 1));
+    expect(await screen.findByText("الإشعار الأحدث")).toBeInTheDocument();
+
+    oldRequest.resolve(listResponse([namedNotification("old", "الإشعار القديم")], 1));
+    await waitFor(() => {
+      expect(screen.queryByText("الإشعار القديم")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("الإشعار الأحدث")).toBeInTheDocument();
+  });
+
+  it("ignores an older failure after the newest load succeeds", async () => {
+    const oldRequest = deferred<ReturnType<typeof listResponse>>();
+    const newRequest = deferred<ReturnType<typeof listResponse>>();
+    vi.mocked(api.get)
+      .mockReturnValueOnce(oldRequest.promise as never)
+      .mockReturnValueOnce(newRequest.promise as never);
+
+    render(<TopbarNotifications />);
+    const bell = screen.getByLabelText("الإشعارات");
+
+    fireEvent.click(bell);
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+    fireEvent.click(bell);
+    fireEvent.click(bell);
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2));
+
+    newRequest.resolve(listResponse([namedNotification("latest", "نتيجة حديثة")], 1));
+    expect(await screen.findByText("نتيجة حديثة")).toBeInTheDocument();
+
+    oldRequest.reject(new Error("Network Error"));
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("نتيجة حديثة")).toBeInTheDocument();
+  });
+
+  it("cancels the active load and does not reopen after an outside dismissal", async () => {
+    const pending = deferred<ReturnType<typeof listResponse>>();
+    vi.mocked(api.get).mockReturnValueOnce(pending.promise as never);
+
+    render(
+      <div>
+        <TopbarNotifications />
+        <button type="button">خارج الإشعارات</button>
+      </div>,
+    );
+
+    fireEvent.click(screen.getByLabelText("الإشعارات"));
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+    const signal = vi.mocked(api.get).mock.calls[0]?.[1]?.signal;
+
+    fireEvent.mouseDown(screen.getByText("خارج الإشعارات"));
+    expect(signal?.aborted).toBe(true);
+    expect(screen.queryByLabelText("جارٍ تحميل الإشعارات")).not.toBeInTheDocument();
+
+    pending.resolve(listResponse([namedNotification("late", "إشعار متأخر")], 1));
+    await waitFor(() => {
+      expect(screen.queryByText("إشعار متأخر")).not.toBeInTheDocument();
+    });
+    expect(screen.getByLabelText("الإشعارات")).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("aborts the active load when the component unmounts", async () => {
+    const pending = deferred<ReturnType<typeof listResponse>>();
+    vi.mocked(api.get).mockReturnValueOnce(pending.promise as never);
+
+    const { unmount } = render(<TopbarNotifications />);
+    fireEvent.click(screen.getByLabelText("الإشعارات"));
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+    const signal = vi.mocked(api.get).mock.calls[0]?.[1]?.signal;
+
+    unmount();
+
+    expect(signal?.aborted).toBe(true);
+    pending.resolve(listResponse([namedNotification("late", "إشعار بعد الإزالة")], 1));
   });
 });

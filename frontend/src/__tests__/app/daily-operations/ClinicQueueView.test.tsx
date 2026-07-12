@@ -14,7 +14,12 @@ vi.mock("@/lib/api", () => ({
 }));
 
 vi.mock("@/hooks/useDoctors", () => ({
-  useDoctors: () => ({ data: [] }),
+  useDoctors: () => ({
+    data: [
+      { id: "doctor-1", name: "د. أحمد" },
+      { id: "doctor-2", name: "د. سارة" },
+    ],
+  }),
 }));
 
 vi.mock("@tanstack/react-query", () => ({
@@ -81,13 +86,13 @@ function deferred<T>() {
 type QueueResponseFactory = () => Promise<unknown>;
 
 function installQueueResponses(queueResponses: QueueResponseFactory[]) {
-  const queueCalls: Array<{ signal?: { aborted: boolean } }> = [];
+  const queueCalls: Array<{ signal?: { aborted: boolean }; url: string }> = [];
 
   vi.mocked(api.get).mockImplementation((url, config) => {
     if (url.startsWith("/api/clinic-queue/today")) {
       const responseFactory = queueResponses[queueCalls.length];
       if (!responseFactory) throw new Error(`Unexpected queue request ${url}`);
-      queueCalls.push({ signal: config?.signal });
+      queueCalls.push({ signal: config?.signal, url });
       return responseFactory() as never;
     }
 
@@ -105,12 +110,18 @@ function installQueueResponses(queueResponses: QueueResponseFactory[]) {
   return queueCalls;
 }
 
-function forceRefreshWhilePending() {
-  const refreshButton = screen.getByRole("button", {
-    name: "تحديث قائمة الانتظار",
-  }) as HTMLButtonElement;
-  refreshButton.disabled = false;
-  fireEvent.click(refreshButton);
+async function startTwoFilteredLoads(queueCalls: Array<{ signal?: { aborted: boolean }; url: string }>) {
+  const doctorFilter = screen.getByRole("combobox");
+
+  fireEvent.change(doctorFilter, { target: { value: "doctor-1" } });
+  await waitFor(() => expect(queueCalls).toHaveLength(2));
+
+  fireEvent.change(doctorFilter, { target: { value: "doctor-2" } });
+  await waitFor(() => expect(queueCalls).toHaveLength(3));
+
+  expect(queueCalls[1].url).toContain("doctorId=doctor-1");
+  expect(queueCalls[2].url).toContain("doctorId=doctor-2");
+  expect(queueCalls[1].signal?.aborted).toBe(true);
 }
 
 describe("SEQ-35 ClinicQueueView load truth", () => {
@@ -175,7 +186,7 @@ describe("SEQ-35 ClinicQueueView load truth", () => {
     });
   });
 
-  it("keeps the newest queue data when an older success resolves last", async () => {
+  it("keeps the newest doctor-filter queue data when an older success resolves last", async () => {
     const olderRefresh = deferred<unknown>();
     const newerRefresh = deferred<unknown>();
     const queueCalls = installQueueResponses([
@@ -187,11 +198,7 @@ describe("SEQ-35 ClinicQueueView load truth", () => {
     render(<ClinicQueueView searchQuery="" />);
     expect(await screen.findByText("مريض الانتظار")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "تحديث قائمة الانتظار" }));
-    await waitFor(() => expect(queueCalls).toHaveLength(2));
-    forceRefreshWhilePending();
-    await waitFor(() => expect(queueCalls).toHaveLength(3));
-    expect(queueCalls[1].signal?.aborted).toBe(true);
+    await startTwoFilteredLoads(queueCalls);
 
     newerRefresh.resolve({ data: [newestQueueItem] });
     expect(await screen.findByText("المريض الأحدث")).toBeInTheDocument();
@@ -203,7 +210,7 @@ describe("SEQ-35 ClinicQueueView load truth", () => {
     expect(screen.getByText("المريض الأحدث")).toBeInTheDocument();
   });
 
-  it("ignores an older failure after a newer queue refresh succeeds", async () => {
+  it("ignores an older doctor-filter failure after a newer queue load succeeds", async () => {
     const olderRefresh = deferred<unknown>();
     const newerRefresh = deferred<unknown>();
     const queueCalls = installQueueResponses([
@@ -215,10 +222,7 @@ describe("SEQ-35 ClinicQueueView load truth", () => {
     render(<ClinicQueueView searchQuery="" />);
     expect(await screen.findByText("مريض الانتظار")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "تحديث قائمة الانتظار" }));
-    await waitFor(() => expect(queueCalls).toHaveLength(2));
-    forceRefreshWhilePending();
-    await waitFor(() => expect(queueCalls).toHaveLength(3));
+    await startTwoFilteredLoads(queueCalls);
 
     newerRefresh.resolve({ data: [newestQueueItem] });
     expect(await screen.findByText("المريض الأحدث")).toBeInTheDocument();

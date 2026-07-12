@@ -260,8 +260,8 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
           queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
         });
 
-        // Patient called — refresh + play notification sound + voice announcement
-        connection.on("PatientCalled", (payload: { id?: string; patientId?: string; roomName?: string }) => {
+        // Patient called — one refresh is sufficient; the items effect handles voice announcement.
+        connection.on("PatientCalled", () => {
           fetchQueue();
           queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
           queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
@@ -274,12 +274,6 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
             }
             audioRef.current.play().catch(() => {});
           } catch { /* ignore */ }
-
-          // Voice announcement for the called patient
-          if (voiceEnabled && payload?.id) {
-            // Fetch the called patient info for voice announcement
-            fetchQueue(); // data already refreshed above
-          }
         });
 
         connection.onreconnected(() => {
@@ -349,8 +343,11 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
     setActionLoading(item.id);
     try {
       await api.post(`/api/clinic-queue/${item.id}/call`, { roomName: rooms[0]?.arabicName });
-      // Voice announcement will be triggered by the SignalR PatientCalled event + useEffect above
-    } catch { /* ignore */ }
+      // Keep all queue-backed views aligned even when SignalR is disconnected or delayed.
+      queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
+      queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
+      await Promise.all([fetchQueue(), fetchAnalytics()]);
+    } catch { /* SEQ-36 surfaces the mutation failure */ }
     finally { setActionLoading(null); }
   };
 

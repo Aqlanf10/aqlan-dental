@@ -73,6 +73,13 @@ const staleQueueItem = {
   patientNumber: "P-OLD",
 };
 
+const calledQueueItem = {
+  ...queueItem,
+  status: "Called",
+  statusArabic: "تم النداء",
+  calledAt: "2026-07-12T00:01:00Z",
+};
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -124,7 +131,7 @@ async function startTwoFilteredLoads(queueCalls: Array<{ signal?: { aborted: boo
   expect(queueCalls[1].signal?.aborted).toBe(true);
 }
 
-describe("SEQ-35 ClinicQueueView load truth", () => {
+describe("SEQ-35/37 ClinicQueueView load and call truth", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
@@ -232,5 +239,29 @@ describe("SEQ-35 ClinicQueueView load truth", () => {
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     });
     expect(screen.getByText("المريض الأحدث")).toBeInTheDocument();
+  });
+
+  it("refreshes all queue views immediately after a successful call without waiting for SignalR", async () => {
+    const queueCalls = installQueueResponses([
+      () => Promise.resolve({ data: [queueItem] }),
+      () => Promise.resolve({ data: [calledQueueItem] }),
+    ]);
+    vi.mocked(api.post).mockResolvedValue({ data: {} } as never);
+
+    render(<ClinicQueueView searchQuery="" />);
+    expect(await screen.findByText("مريض الانتظار")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "نداء" }));
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith(
+        "/api/clinic-queue/queue-1/call",
+        { roomName: undefined },
+      );
+    });
+    expect(await screen.findByText("تم النداء")).toBeInTheDocument();
+    expect(queueCalls).toHaveLength(2);
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["daily-ops"] });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["clinic-queue"] });
   });
 });

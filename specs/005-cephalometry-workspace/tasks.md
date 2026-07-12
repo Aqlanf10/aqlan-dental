@@ -33,3 +33,10 @@
   readiness gate — the 3 new points are optional enhancements, so previously
   saved analyses keep working and their historic values don't shift (legacy
   approximations remain the fallback). Strong model.
+- `CEPH-TASK-006`: SEQ-41 (owner directive 2026-07-13) — add an Excel-compatible
+  UTF-8 CSV export for the saved cephalometric measurement table. Reuse the
+  final-report approval and clean-state gate, include case metadata plus values,
+  norms, deviations, groups, and interpretations, and neutralize spreadsheet
+  formula prefixes in text cells. Frontend-only; no API, schema, permission, or
+  clinical calculation changes. Strong model. — ✅ Done in PR #678; eight
+  focused tests plus Backend, Frontend, E2E, Encoding Guard, and Vercel passed.

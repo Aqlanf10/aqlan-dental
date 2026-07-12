@@ -84,6 +84,36 @@ describe("SEQ-36 clinic queue action errors", () => {
     expect(show).toHaveBeenCalledWith("error", "الغرفة مشغولة حاليًا", undefined);
   });
 
+  it("uses the Arabic fallback for an HTTP response without safe server text", () => {
+    const error = Object.assign(
+      new Error("Request failed with status code 500"),
+      {
+        config: { url: "/api/clinic-queue/q-1/complete", method: "post" },
+        response: { status: 500, data: {} },
+      },
+    );
+
+    expect(notifyClinicQueueActionFailure(error)).toBe(true);
+    vi.advanceTimersByTime(CLINIC_QUEUE_ACTION_NOTICE_DELAY_MS);
+
+    expect(show).toHaveBeenCalledWith("error", "تعذر إنهاء زيارة المريض", undefined);
+  });
+
+  it("does not expose an HTML error body to the operator", () => {
+    const error = Object.assign(
+      new Error("Request failed with status code 502"),
+      {
+        config: { url: "/api/clinic-queue/q-1/call", method: "post" },
+        response: { status: 502, data: "<html>Bad Gateway</html>" },
+      },
+    );
+
+    expect(notifyClinicQueueActionFailure(error)).toBe(true);
+    vi.advanceTimersByTime(CLINIC_QUEUE_ACTION_NOTICE_DELAY_MS);
+
+    expect(show).toHaveBeenCalledWith("error", "تعذر نداء المريض", undefined);
+  });
+
   it("does not duplicate an error already reported by the caller", () => {
     expect(
       notifyClinicQueueActionFailure(

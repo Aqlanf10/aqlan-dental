@@ -343,7 +343,9 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
     setActionLoading(item.id);
     try {
       await api.post(`/api/clinic-queue/${item.id}/call`, { roomName: rooms[0]?.arabicName });
-      // Refresh server truth immediately even when SignalR is disconnected or delayed.
+      // Keep all queue-backed views aligned even when SignalR is disconnected or delayed.
+      queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
+      queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
       await Promise.all([fetchQueue(), fetchAnalytics()]);
     } catch { /* SEQ-36 surfaces the mutation failure */ }
     finally { setActionLoading(null); }

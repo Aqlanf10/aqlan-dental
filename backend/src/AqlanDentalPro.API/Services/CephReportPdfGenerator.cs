@@ -46,10 +46,12 @@ public class CephReportPdfGenerator(AppDbContext db)
         // mandible
         ["B"] = "mandible", ["Pog"] = "mandible", ["Gn"] = "mandible", ["Me"] = "mandible",
         ["Go"] = "mandible", ["Co"] = "mandible", ["Ar"] = "mandible", ["D"] = "mandible", ["Pm"] = "mandible",
-        // dental
+        // dental (U6/L6: SEQ-40 first-molar points for the occlusal plane / Wits)
         ["U1T"] = "dental", ["U1A"] = "dental", ["L1T"] = "dental", ["L1A"] = "dental",
-        // soft tissue
+        ["U6"] = "dental", ["L6"] = "dental",
+        // soft tissue (SPog: SEQ-40 soft-tissue Pogonion)
         ["LS"] = "soft", ["LI"] = "soft", ["Pn"] = "soft", ["Cm"] = "soft",
+        ["SPog"] = "soft",
     };
 
     private static readonly Dictionary<string, string> GroupColor = new(StringComparer.Ordinal)
@@ -86,7 +88,9 @@ public class CephReportPdfGenerator(AppDbContext db)
         (["Co", "Go", "Me", "Pog", "B"], "#F87171"),
         (["Ar", "Go"], "#F87171"),
         (["N", "A", "Pog"], "#FBBF24"),
-        (["Pn", "Cm", "LS", "LI", "Pog"], "#F472B6"),
+        // "A?B" = first PRESENT alternative (mirrors frontend cephTracing SEQ-40:
+        // the soft-tissue profile ends at soft-tissue Pogonion when placed).
+        (["Pn", "Cm", "LS", "LI", "SPog?Pog"], "#F472B6"),
         (["U1A", "U1T"], "#34D399"),
         (["L1A", "L1T"], "#10B981"),
     ];
@@ -621,11 +625,28 @@ public class CephReportPdfGenerator(AppDbContext db)
                 $"stroke=\"{color}\" stroke-width=\"{lineW:0.##}\" stroke-opacity=\"0.85\"/>"));
         }
 
+        // SEQ-40 occlusal plane (Codex P2 #677): the canvas draws OcP between the
+        // incisal overbite midpoint and the molar occlusion midpoint — mirror it
+        // here so the exported report matches the on-screen measurement overlay.
+        if (points.TryGetValue("U1T", out var u1t) && points.TryGetValue("L1T", out var l1t)
+            && points.TryGetValue("U6", out var u6) && points.TryGetValue("L6", out var l6))
+        {
+            var ocpA = ((u1t.Item1 + l1t.Item1) / 2, (u1t.Item2 + l1t.Item2) / 2);
+            var ocpB = ((u6.Item1 + l6.Item1) / 2, (u6.Item2 + l6.Item2) / 2);
+            sb.Append(string.Create(inv,
+                $"<line x1=\"{ocpA.Item1:0.##}\" y1=\"{ocpA.Item2:0.##}\" x2=\"{ocpB.Item1:0.##}\" y2=\"{ocpB.Item2:0.##}\" " +
+                $"stroke=\"#22D3EE\" stroke-width=\"{lineW:0.##}\" stroke-opacity=\"0.85\" stroke-dasharray=\"{lineW * 4:0.##} {lineW * 2:0.##}\"/>"));
+        }
+
         // Anatomical tracing contours — polylines through present landmarks.
         var tracingW = lineW * 1.4;
         foreach (var (keys, color) in TracingContours)
         {
-            var present = keys.Where(points.ContainsKey).ToList();
+            var present = keys
+                .Select(spec => spec.Split('?').FirstOrDefault(points.ContainsKey))
+                .Where(k => k is not null)
+                .Cast<string>()
+                .ToList();
             if (present.Count < 2) continue;
             var coords = string.Join(" ", present.Select(k =>
                 string.Create(inv, $"{points[k].Item1:0.##},{points[k].Item2:0.##}")));

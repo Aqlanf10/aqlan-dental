@@ -30,13 +30,16 @@ export const LANDMARK_DEFS: Record<string, { nameAr: string; group: string; colo
   U1A: { nameAr: 'قمة القاطع ع',          group: 'dental',   color: '#34D399' },
   L1T: { nameAr: 'طرف القاطع س',          group: 'dental',   color: '#10B981' },
   L1A: { nameAr: 'قمة القاطع س',          group: 'dental',   color: '#10B981' },
+  U6:  { nameAr: 'الرحى الأولى ع (U6)',   group: 'dental',   color: '#2DD4BF' },
+  L6:  { nameAr: 'الرحى الأولى س (L6)',   group: 'dental',   color: '#14B8A6' },
   LS:  { nameAr: 'الشفة العلوية',         group: 'soft',     color: '#F472B6' },
   LI:  { nameAr: 'الشفة السفلية',         group: 'soft',     color: '#F472B6' },
   Pn:  { nameAr: 'طرف الأنف',             group: 'soft',     color: '#F472B6' },
   Cm:  { nameAr: 'قاعدة الأنف',           group: 'soft',     color: '#F472B6' },
+  SPog:{ nameAr: 'الذقن الرخو (Pog′)',    group: 'soft',     color: '#F472B6' },
 };
 
-const LANDMARK_ORDER = ['S','N','Or','Po','ANS','PNS','A','B','Pog','Gn','Me','Go','Co','Ar','D','Pm','U1T','U1A','L1T','L1A','LS','LI','Pn','Cm'];
+const LANDMARK_ORDER = ['S','N','Or','Po','ANS','PNS','A','B','Pog','Gn','Me','Go','Co','Ar','D','Pm','U1T','U1A','L1T','L1A','U6','L6','LS','LI','Pn','Cm','SPog'];
 
 const PLANES = [
   { key: 'SN',   pts: ['S',   'N'],   color: '#60A5FA', dash: [] as number[],   label: 'SN' },
@@ -51,11 +54,14 @@ const PLANES = [
   // Jarabak (Björk) polygon legs — S-N (=SN above) / S-Ar / Ar-Go / Go-Me (=MdP).
   { key: 'SAr',  pts: ['S',   'Ar'],  color: '#C084FC', dash: [] as number[],   label: 'S-Ar' },
   { key: 'ArGo', pts: ['Ar',  'Go'],  color: '#C084FC', dash: [] as number[],   label: 'Ar-Go' },
+  // SEQ-40: functional occlusal plane — incisal overbite midpoint → first-molar
+  // occlusion midpoint. A "A|B" endpoint means the midpoint of two landmarks.
+  { key: 'OcP',  pts: ['U1T|L1T', 'U6|L6'], color: '#22D3EE', dash: [8, 4],     label: 'OcP' },
 ];
 
 // Planes that are part of the measurement overlay (drawn even when the
 // general planes toggle is off, as long as showMeasurements is on).
-const MEASUREMENT_PLANE_KEYS = new Set(['SN', 'FH', 'MdP', 'NA', 'NB', 'U1ax', 'L1ax']);
+const MEASUREMENT_PLANE_KEYS = new Set(['SN', 'FH', 'MdP', 'NA', 'NB', 'U1ax', 'L1ax', 'OcP']);
 
 // Floating value labels for the measurement overlay: measurement → anchor
 // landmark + canvas-space offset (kept constant regardless of zoom).
@@ -299,9 +305,21 @@ export function CephCanvas({
 
     // Planes (measurement-overlay planes are drawn even when planes are hidden)
     if (showPlanes || showMeasurements) {
+      // "A|B" plane endpoints resolve to the midpoint of two landmarks
+      // (used by the occlusal plane); plain keys resolve to the landmark.
+      const resolvePt = (spec: string): { x: number; y: number } | null => {
+        if (spec.includes('|')) {
+          const [a, b] = spec.split('|');
+          const la = lmMap[a], lb = lmMap[b];
+          if (!la || !lb) return null;
+          return { x: (la.x + lb.x) / 2, y: (la.y + lb.y) / 2 };
+        }
+        const lm = lmMap[spec];
+        return lm ? { x: lm.x, y: lm.y } : null;
+      };
       PLANES.forEach(p => {
         if (!showPlanes && !MEASUREMENT_PLANE_KEYS.has(p.key)) return;
-        const lm1 = lmMap[p.pts[0]], lm2 = lmMap[p.pts[1]];
+        const lm1 = resolvePt(p.pts[0]), lm2 = resolvePt(p.pts[1]);
         if (!lm1 || !lm2) return;
         const p1 = T.tc(lm1.x, lm1.y), p2 = T.tc(lm2.x, lm2.y);
         const dx = p2.x - p1.x, dy = p2.y - p1.y;

@@ -84,6 +84,25 @@ public class PrescriptionsController(
 
         if (patientId.HasValue) query = query.Where(p => p.PatientId == patientId.Value);
 
+        // Codex P1 (#676): PatientAccessFilter only enforces access when a patientId
+        // is present in the route/query — a plain list request reached this query
+        // unfiltered, letting any doctor read every patient's orders. Mirror the
+        // PatientsController pattern: doctors see only their linked patients,
+        // fail-closed (500, not silent-empty) if the accessible set cannot load.
+        if (patientAccess.IsDoctor)
+        {
+            HashSet<Guid> accessible;
+            try
+            {
+                accessible = await patientAccess.GetAccessiblePatientIdsAsync() ?? [];
+            }
+            catch
+            {
+                return StatusCode(500, new { message = "تعذر تحميل الوصفات حالياً" });
+            }
+            query = query.Where(p => accessible.Contains(p.PatientId));
+        }
+
         var total = await query.CountAsync();
         var prescriptions = await query
             .OrderByDescending(p => p.CreatedAt)

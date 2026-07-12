@@ -9,7 +9,13 @@
 /** One anatomical contour: an ordered list of landmark keys + its colour. */
 export interface TracingContour {
   id: string;
-  /** Ordered landmark keys forming the polyline. */
+  /**
+   * Ordered landmark keys forming the polyline. A key may list alternatives
+   * separated by "?" (e.g. "SPog?Pog") — the first PRESENT alternative is
+   * drawn. SEQ-40 uses this so the soft-tissue profile ends at the true
+   * soft-tissue Pogonion when placed, while older analyses without it keep
+   * the historic hard-Pog terminal point.
+   */
   keys: string[];
   color: string;
 }
@@ -20,7 +26,7 @@ export const TRACING_CONTOURS: TracingContour[] = [
   { id: "mandible", keys: ["Co", "Go", "Me", "Pog", "B"], color: "#F87171" },
   { id: "ramus", keys: ["Ar", "Go"], color: "#F87171" },
   { id: "facial-profile", keys: ["N", "A", "Pog"], color: "#FBBF24" },
-  { id: "soft-tissue", keys: ["Pn", "Cm", "LS", "LI", "Pog"], color: "#F472B6" },
+  { id: "soft-tissue", keys: ["Pn", "Cm", "LS", "LI", "SPog?Pog"], color: "#F472B6" },
   { id: "upper-incisor", keys: ["U1A", "U1T"], color: "#34D399" },
   { id: "lower-incisor", keys: ["L1A", "L1T"], color: "#10B981" },
 ];
@@ -40,7 +46,9 @@ export interface TracingPolyline {
 export function tracingPolylines(isPresent: (key: string) => boolean): TracingPolyline[] {
   const out: TracingPolyline[] = [];
   for (const c of TRACING_CONTOURS) {
-    const keys = c.keys.filter(isPresent);
+    const keys = c.keys
+      .map((spec) => spec.split("?").find(isPresent))
+      .filter((k): k is string => Boolean(k));
     if (keys.length >= 2) out.push({ id: c.id, color: c.color, keys });
   }
   return out;

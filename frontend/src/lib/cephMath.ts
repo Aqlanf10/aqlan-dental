@@ -393,17 +393,18 @@ export function computeSteiner(lmMap: Record<string, Pt>, mmPerPx: number | null
   add('U1-L1',      has('U1A','U1T','L1A','L1T') ? r1(180-angleBetweenLines(G('U1A'),G('U1T'),G('L1A'),G('L1T'))) : null);
   add('GoGn-SN',    has('Go','Me','S','N') ? r1(angleBetweenLines(G('Go'),G('Me'),G('S'),G('N'))) : null);
 
-  // ── Soft tissue (Steiner S-line: Pog → midpoint between Cm and Pn) ──
-  // The S-line reference runs from soft-tissue Pogonion (approximated here by
-  // hard-tissue Pog) to the midpoint of the nose contour. Lips should touch
-  // the line; positive = lip anterior to S-line, negative = posterior.
+  // ── Soft tissue (Steiner S-line: soft-tissue Pog′ → midpoint Cm/Pn) ──
+  // SEQ-40: the S-line properly starts at soft-tissue Pogonion. When the SPog
+  // landmark is placed we use it; older analyses without it keep the historic
+  // hard-tissue Pog approximation so their saved values don't shift.
+  const sPogKey = lmMap['SPog'] ? 'SPog' : 'Pog';
   const sLineMid = has('Cm','Pn')
     ? { x: (G('Cm').x + G('Pn').x) / 2, y: (G('Cm').y + G('Pn').y) / 2 }
     : null;
-  add('UL-SLine', cal && sLineMid && has('LS','Pog')
-    ? r1(signedPerpDist(G('LS'), G('Pog'), sLineMid) * mmPerPx!) : null);
-  add('LL-SLine', cal && sLineMid && has('LI','Pog')
-    ? r1(signedPerpDist(G('LI'), G('Pog'), sLineMid) * mmPerPx!) : null);
+  add('UL-SLine', cal && sLineMid && has('LS', sPogKey)
+    ? r1(signedPerpDist(G('LS'), G(sPogKey), sLineMid) * mmPerPx!) : null);
+  add('LL-SLine', cal && sLineMid && has('LI', sPogKey)
+    ? r1(signedPerpDist(G('LI'), G(sPogKey), sLineMid) * mmPerPx!) : null);
   return r;
 }
 
@@ -426,20 +427,29 @@ export function computeWits(lmMap: Record<string, Pt>, mmPerPx: number | null): 
   const r: CephMeasurement[] = [];
   const add = (n: string, v: number | null) => r.push(makeMeasurement(n, v, WITS_NORMS[n], 'wits'));
 
-  if (!cal || !has('U1T','L1T','Go','Me','A','B')) {
+  // SEQ-40: with the first-molar landmarks (U6, L6) placed, Wits uses the TRUE
+  // functional occlusal plane — incisal overbite midpoint → molar occlusion
+  // midpoint (the classic definition). Analyses without molars keep the
+  // historic mid(U1T,L1T)→mid(Go,Me) approximation so saved values don't shift.
+  const hasMolars = has('U6','L6');
+  if (!cal || !has('U1T','L1T','A','B') || (!hasMolars && !has('Go','Me'))) {
     add('Wits', null);
     return r;
   }
 
-  // Occlusal plane approximation
   const pA: Pt = {
     x: (lmMap['U1T'].x + lmMap['L1T'].x) / 2,
     y: (lmMap['U1T'].y + lmMap['L1T'].y) / 2,
   };
-  const pB: Pt = {
-    x: (lmMap['Go'].x + lmMap['Me'].x) / 2,
-    y: (lmMap['Go'].y + lmMap['Me'].y) / 2,
-  };
+  const pB: Pt = hasMolars
+    ? {
+        x: (lmMap['U6'].x + lmMap['L6'].x) / 2,
+        y: (lmMap['U6'].y + lmMap['L6'].y) / 2,
+      }
+    : {
+        x: (lmMap['Go'].x + lmMap['Me'].x) / 2,
+        y: (lmMap['Go'].y + lmMap['Me'].y) / 2,
+      };
 
   // Perpendicular foot of point P onto line pA→pB
   const project = (p: Pt): Pt => {
@@ -539,16 +549,20 @@ export function computeRicketts(lmMap: Record<string, Pt>, mmPerPx: number | nul
       ? r1(angleBetweenLines(G('L1A'),G('L1T'),G('A'),G('Pog')))
       : null);
 
-  // Upper lip to E-plane: signed dist of LS from Pn-Pog line (mm)
+  // Ricketts E-plane properly runs Pn → soft-tissue Pogonion. SEQ-40: use the
+  // SPog landmark when placed; older analyses keep the hard-Pog approximation.
+  const ePogKey = lmMap['SPog'] ? 'SPog' : 'Pog';
+
+  // Upper lip to E-plane: signed dist of LS from Pn-Pog′ line (mm)
   add('Upper-Lip-ELine',
-    cal && has('LS','Pn','Pog')
-      ? r1(signedPerpDist(G('LS'), G('Pn'), G('Pog')) * mmPerPx!)
+    cal && has('LS','Pn',ePogKey)
+      ? r1(signedPerpDist(G('LS'), G('Pn'), G(ePogKey)) * mmPerPx!)
       : null);
 
   // Lower lip to E-plane
   add('Lower-Lip-ELine',
-    cal && has('LI','Pn','Pog')
-      ? r1(signedPerpDist(G('LI'), G('Pn'), G('Pog')) * mmPerPx!)
+    cal && has('LI','Pn',ePogKey)
+      ? r1(signedPerpDist(G('LI'), G('Pn'), G(ePogKey)) * mmPerPx!)
       : null);
 
   // Nasolabial angle: Pn-Cm-LS

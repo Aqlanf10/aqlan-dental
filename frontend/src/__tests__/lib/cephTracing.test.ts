@@ -28,4 +28,17 @@ describe("tracingPolylines", () => {
   it("returns nothing when no landmark forms a pair", () => {
     expect(tracingPolylines(() => false)).toEqual([]);
   });
+
+  // SEQ-40: "A?B" keys draw the first PRESENT alternative — the soft-tissue
+  // profile ends at soft-tissue Pogonion when placed, else legacy hard Pog.
+  it("prefers SPog over Pog for the soft-tissue terminal when both exist", () => {
+    const soft = tracingPolylines(() => true).find((c) => c.id === "soft-tissue");
+    expect(soft?.keys).toEqual(["Pn", "Cm", "LS", "LI", "SPog"]);
+  });
+
+  it("falls back to hard Pog for older analyses without SPog", () => {
+    const present = new Set(["Pn", "Cm", "LS", "LI", "Pog"]);
+    const soft = tracingPolylines((k) => present.has(k)).find((c) => c.id === "soft-tissue");
+    expect(soft?.keys).toEqual(["Pn", "Cm", "LS", "LI", "Pog"]);
+  });
 });

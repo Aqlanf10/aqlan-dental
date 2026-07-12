@@ -283,19 +283,22 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
                 Add("U1-L1",      "steiner", 180 - ABLines(G("U1A"),G("U1T"),G("L1A"),G("L1T")), 131, 6, "°");
             if (Has("Go","Me","S","N"))   Add("GoGn-SN",    "steiner", ABLines(G("Go"),G("Me"),G("S"),G("N")), 32, 6, "°");
 
-            // S-line soft tissue: Pog → midpoint(Cm, Pn)
+            // S-line soft tissue: soft-tissue Pog′ → midpoint(Cm, Pn).
+            // SEQ-40: use the SPog landmark when placed; analyses without it keep
+            // the historic hard-Pog approximation so saved values don't shift.
             if (Has("Cm","Pn"))
             {
+                var sPogKey = Has("SPog") ? "SPog" : "Pog";
                 var sLineMid = ((G("Cm").x + G("Pn").x) / 2, (G("Cm").y + G("Pn").y) / 2);
-                if (cal && Has("LS","Pog"))
+                if (cal && Has("LS", sPogKey))
                     Add("UL-SLine", "steiner",
                         SignedPerp(G("LS").x, G("LS").y,
-                                   G("Pog").x, G("Pog").y, sLineMid.Item1, sLineMid.Item2) / pixelsPerMm,
+                                   G(sPogKey).x, G(sPogKey).y, sLineMid.Item1, sLineMid.Item2) / pixelsPerMm,
                         0, 1, "mm");
-                if (cal && Has("LI","Pog"))
+                if (cal && Has("LI", sPogKey))
                     Add("LL-SLine", "steiner",
                         SignedPerp(G("LI").x, G("LI").y,
-                                   G("Pog").x, G("Pog").y, sLineMid.Item1, sLineMid.Item2) / pixelsPerMm,
+                                   G(sPogKey).x, G(sPogKey).y, sLineMid.Item1, sLineMid.Item2) / pixelsPerMm,
                         0, 1, "mm");
             }
         }
@@ -333,12 +336,15 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
                     SignedPerpT(G("L1T"),G("A"),G("Pog")) / pixelsPerMm, 1, 2, "mm");
             if (Has("L1A","L1T","A","Pog"))
                 Add("L1-APog_angle",    "ricketts", ABLines(G("L1A"),G("L1T"),G("A"),G("Pog")), 22, 4, "°");
-            if (cal && Has("LS","Pn","Pog"))
+            // SEQ-40: Ricketts E-plane properly runs Pn → soft-tissue Pogonion —
+            // use SPog when placed, legacy hard-Pog fallback otherwise.
+            var ePogKey = Has("SPog") ? "SPog" : "Pog";
+            if (cal && Has("LS","Pn",ePogKey))
                 Add("Upper-Lip-ELine",  "ricketts",
-                    SignedPerpT(G("LS"),G("Pn"),G("Pog")) / pixelsPerMm, -2, 2, "mm");
-            if (cal && Has("LI","Pn","Pog"))
+                    SignedPerpT(G("LS"),G("Pn"),G(ePogKey)) / pixelsPerMm, -2, 2, "mm");
+            if (cal && Has("LI","Pn",ePogKey))
                 Add("Lower-Lip-ELine",  "ricketts",
-                    SignedPerpT(G("LI"),G("Pn"),G("Pog")) / pixelsPerMm, -2, 2, "mm");
+                    SignedPerpT(G("LI"),G("Pn"),G(ePogKey)) / pixelsPerMm, -2, 2, "mm");
             if (Has("Pn","Cm","LS"))
                 Add("Nasolabial",       "ricketts", Angle3T(G("Pn"),G("Cm"),G("LS")), 102, 8, "°");
         }
@@ -382,11 +388,18 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         }
 
         // ── Wits ─────────────────────────────────────────────────────────────
-        if (groups.Contains("wits") && cal && Has("U1T","L1T","Go","Me","A","B"))
+        // SEQ-40: with the first-molar landmarks (U6, L6) placed, Wits uses the
+        // TRUE functional occlusal plane — incisal overbite midpoint → molar
+        // occlusion midpoint (classic definition). Analyses without molars keep
+        // the historic mid(U1T,L1T)→mid(Go,Me) approximation (values unchanged).
+        var witsHasMolars = Has("U6","L6");
+        if (groups.Contains("wits") && cal && Has("U1T","L1T","A","B")
+            && (witsHasMolars || Has("Go","Me")))
         {
-            // Occlusal plane: midpoint(U1T,L1T) → midpoint(Go,Me)
             var occP1 = ((G("U1T").x + G("L1T").x) / 2, (G("U1T").y + G("L1T").y) / 2);
-            var occP2 = ((G("Go").x  + G("Me").x)  / 2, (G("Go").y  + G("Me").y)  / 2);
+            var occP2 = witsHasMolars
+                ? ((G("U6").x + G("L6").x) / 2, (G("U6").y + G("L6").y) / 2)
+                : ((G("Go").x + G("Me").x) / 2, (G("Go").y + G("Me").y) / 2);
             double dx = occP2.Item1 - occP1.Item1, dy = occP2.Item2 - occP1.Item2;
             double len2 = dx * dx + dy * dy;
             if (len2 > 1e-9)
@@ -766,10 +779,13 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
             ("U1A", "قمة القاطع العلوي",            0.70, 0.61),
             ("L1T", "طرف القاطع السفلي",            0.75, 0.57),
             ("L1A", "قمة القاطع السفلي",            0.67, 0.64),
+            ("U6",  "الرحى الأولى العلوية",         0.58, 0.55),
+            ("L6",  "الرحى الأولى السفلية",         0.57, 0.58),
             ("LS",  "الشفة العلوية",                0.82, 0.56),
             ("LI",  "الشفة السفلية",                0.79, 0.61),
             ("Pn",  "طرف الأنف",                    0.87, 0.44),
             ("Cm",  "قاعدة الأنف",                  0.83, 0.49),
+            ("SPog","الذقن الرخو",                  0.70, 0.70),
         };
 
         var landmarks = new List<CephLandmarkDto>(templates.Length);

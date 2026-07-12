@@ -159,6 +159,7 @@ public static class StartupDatabaseMaintenance
         await EnsureLabTablesSchemaAsync(app);
         await EnsureCephNormsSchemaAndSeedAsync(app);
         await EnsureOrthodonticAiLogsSchemaAsync(app);
+        await EnsureRadiologyOrdersSchemaAsync(app);
         await EnsurePhotoAnalysisSchemaAsync(app);
         await EnsureCephAnalysisVersionsSchemaAsync(app);
         await EnsureCephApprovalColumnsAsync(app);
@@ -1487,6 +1488,13 @@ public static class StartupDatabaseMaintenance
                 ["website.whatsapp"]             = "967770245745",
                 ["website.address"]              = "تعز، اليمن — شارع التحرير الأعلى",
                 ["website.workingHours"]         = "السبت – الخميس: 8 ص – 8 م",
+                // Spec 010 (RX-REQ-004): English identity for printed forms the
+                // patient carries outside the clinic (radiology referrals,
+                // prescriptions). Lead-doctor line per the owner's decision.
+                ["website.clinicNameEn"]             = "Dr. Aqlan Alkamel Center for Orthodontics, Dental Implants & Cosmetic Dentistry",
+                ["website.addressEn"]                = "Upper Al-Tahrir Street, Taiz, Yemen",
+                ["website.leadDoctorEn"]             = "Dr. Aqlan Alkamel — Orthodontic Specialist",
+                ["website.leadDoctorCredentialsEn"]  = "Central University of Manila — Philippines",
                 ["website.facebook"]             = "",
                 ["website.instagram"]            = "",
                 ["website.logoUrl"]              = "",
@@ -1618,6 +1626,55 @@ public static class StartupDatabaseMaintenance
         {
             var cnLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
             cnLogger2.LogWarning(ex, "Ceph norms schema/seed hotfix failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// RadiologyOrders table (spec 010 — outgoing OPG/CBCT referrals to external
+    /// radiology centers). Idempotent CREATE TABLE IF NOT EXISTS because the
+    /// migration chain is frozen; fresh databases get it from the EF model
+    /// baseline, existing production databases get it here. Mirrors
+    /// RadiologyOrder + BaseEntity columns and RadiologyOrderConfiguration.
+    /// </summary>
+    private static async Task EnsureRadiologyOrdersSchemaAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS "RadiologyOrders" (
+                    "Id" uuid NOT NULL,
+                    "PatientId" uuid NOT NULL,
+                    "DoctorId" uuid NULL,
+                    "VisitId" uuid NULL,
+                    "StudyType" character varying(30) NOT NULL,
+                    "Region" character varying(200) NULL,
+                    "ClinicalNotes" character varying(1000) NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "UpdatedAt" timestamp with time zone NOT NULL,
+                    "IsActive" boolean NOT NULL DEFAULT true,
+                    "DeletedAt" timestamp with time zone NULL,
+                    "DeletedBy" uuid NULL,
+                    CONSTRAINT "PK_RadiologyOrders" PRIMARY KEY ("Id"),
+                    CONSTRAINT "FK_RadiologyOrders_Patients_PatientId" FOREIGN KEY ("PatientId")
+                        REFERENCES "Patients" ("Id") ON DELETE CASCADE,
+                    CONSTRAINT "FK_RadiologyOrders_Doctors_DoctorId" FOREIGN KEY ("DoctorId")
+                        REFERENCES "Doctors" ("Id") ON DELETE SET NULL,
+                    CONSTRAINT "FK_RadiologyOrders_Visits_VisitId" FOREIGN KEY ("VisitId")
+                        REFERENCES "Visits" ("Id") ON DELETE SET NULL
+                );
+                CREATE INDEX IF NOT EXISTS "IX_RadiologyOrders_PatientId" ON "RadiologyOrders" ("PatientId");
+                CREATE INDEX IF NOT EXISTS "IX_RadiologyOrders_DoctorId" ON "RadiologyOrders" ("DoctorId");
+                CREATE INDEX IF NOT EXISTS "IX_RadiologyOrders_VisitId" ON "RadiologyOrders" ("VisitId");
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "RadiologyOrders schema hotfix failed (non-fatal)");
         }
     }
 

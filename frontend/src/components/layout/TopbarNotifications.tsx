@@ -142,6 +142,7 @@ export function TopbarNotifications() {
 
     try {
       await api.put("/api/notifications/read-all");
+      cancelActiveLoad();
       setNotifications((current) =>
         current.map((notification) => ({ ...notification, isRead: true })),
       );
@@ -160,6 +161,7 @@ export function TopbarNotifications() {
 
     try {
       await api.put(`/api/notifications/${id}/read`);
+      cancelActiveLoad();
       setNotifications((current) =>
         current.map((notification) =>
           notification.id === id ? { ...notification, isRead: true } : notification,
@@ -193,6 +195,7 @@ export function TopbarNotifications() {
 
     try {
       await api.delete(`/api/notifications/${notification.id}`);
+      cancelActiveLoad();
       setNotifications((current) =>
         current.filter((item) => item.id !== notification.id),
       );

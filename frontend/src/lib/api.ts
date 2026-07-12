@@ -1,4 +1,5 @@
 import { createApiClient } from "@/lib/apiClient";
+import { notifyClinicQueueActionFailure } from "@/lib/clinicQueueActionErrors";
 
 // Sprint 13: base URL + common headers + withCredentials are now sourced from the
 // shared `apiClient.ts` factory. The staff auth interceptors (JWT in localStorage
@@ -87,6 +88,10 @@ api.interceptors.response.use(
         isRefreshing = false;
       }
     }
+
+    // SEQ-36: mutating clinic-queue failures must never be swallowed silently.
+    // The notifier ignores reads, cancellations, and authentication failures.
+    notifyClinicQueueActionFailure(error);
     return Promise.reject(error);
   }
 );

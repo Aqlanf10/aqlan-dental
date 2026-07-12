@@ -302,4 +302,32 @@ describe("SEQ-35/37/38 ClinicQueueView truth and synchronization", () => {
     expect(await screen.findByText("تم تسجيل عدم الحضور")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "لم يحضر" })).not.toBeInTheDocument();
   });
+
+  it("keeps the action locked after a failed resync until retry applies server truth", async () => {
+    const queueCalls = installQueueResponses([
+      () => Promise.resolve({ data: [queueItem] }),
+      () => Promise.reject(new Error("Network Error")),
+      () => Promise.resolve({ data: [noShowQueueItem] }),
+    ]);
+    vi.mocked(api.post).mockResolvedValue({ data: {} } as never);
+
+    render(<ClinicQueueView searchQuery="" />);
+    expect(await screen.findByText("مريض الانتظار")).toBeInTheDocument();
+
+    const noShowButton = screen.getByRole("button", { name: "لم يحضر" });
+    fireEvent.click(noShowButton);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "تعذر تحميل قائمة الانتظار",
+    );
+    expect(noShowButton).toBeDisabled();
+    fireEvent.click(noShowButton);
+    expect(api.post).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "إعادة المحاولة" }));
+
+    expect(await screen.findByText("تم تسجيل عدم الحضور")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "لم يحضر" })).not.toBeInTheDocument();
+    expect(queueCalls).toHaveLength(3);
+  });
 });

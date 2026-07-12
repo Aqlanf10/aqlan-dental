@@ -72,6 +72,8 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
 
   // Additional sidebar routes
   { path: '/prescriptions', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
+  // Spec 010: radiology referrals live beside prescriptions — same clinical roles
+  { path: '/radiology-orders', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   // FE-03: Aligned with sidebar — all clinical staff use lab orders
   { path: '/lab/dashboard', allowedRoles: ['Admin', 'BranchManager', 'Accountant'] },
   { path: '/lab/reports', allowedRoles: ['Admin', 'BranchManager', 'Accountant'] },

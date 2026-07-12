@@ -13,6 +13,12 @@ const FALLBACKS = {
   workingHours: "السبت – الخميس: 8 ص – 8 م",
   footer: "تم إنشاء هذا التقرير بواسطة نظام مركز الدكتور عقلان الكامل",
   logoUrl: "",
+  // Spec 010 (RX-REQ-004): English identity for printed forms that leave the
+  // clinic (radiology referrals, prescriptions) — served by the same endpoint.
+  clinicNameEn: "Dr. Aqlan Alkamel Center for Orthodontics, Dental Implants & Cosmetic Dentistry",
+  addressEn: "Upper Al-Tahrir Street, Taiz, Yemen",
+  leadDoctorEn: "Dr. Aqlan Alkamel — Orthodontic Specialist",
+  leadDoctorCredentialsEn: "Central University of Manila — Philippines",
 } as const;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -25,6 +31,10 @@ export interface ClinicBranding {
   workingHours: string;
   footer: string;
   logoUrl: string;  // resolved absolute URL or ""
+  clinicNameEn: string;
+  addressEn: string;
+  leadDoctorEn: string;
+  leadDoctorCredentialsEn: string;
 }
 
 // ─── URL resolver ─────────────────────────────────────────────────────────────
@@ -67,6 +77,10 @@ export function useClinicBranding(): ClinicBranding {
           workingHours: s.workingHours || FALLBACKS.workingHours,
           footer: FALLBACKS.footer,
           logoUrl: resolveImageUrl(s.logoUrl),
+          clinicNameEn: s.clinicNameEn || FALLBACKS.clinicNameEn,
+          addressEn: s.addressEn || FALLBACKS.addressEn,
+          leadDoctorEn: s.leadDoctorEn || FALLBACKS.leadDoctorEn,
+          leadDoctorCredentialsEn: s.leadDoctorCredentialsEn || FALLBACKS.leadDoctorCredentialsEn,
         });
       })
       .catch(() => {

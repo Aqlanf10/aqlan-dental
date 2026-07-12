@@ -4,33 +4,31 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight, Printer, Trash2 } from "lucide-react";
-import type { Prescription } from "@/types/prescription";
+import type { RadiologyOrder } from "@/types/radiologyOrder";
+import { studyTypeLabelAr } from "@/types/radiologyOrder";
 import api from "@/lib/api";
-import { PrescriptionPrint } from "@/components/prescriptions/PrescriptionPrint";
+import { RadiologyReferralPrint } from "@/components/radiology/RadiologyReferralPrint";
 import { useClinicBranding } from "@/hooks/useClinicBranding";
-import { formatArabicDate } from "@/lib/utils";
 
-export default function PrescriptionDetailPage() {
+export default function RadiologyOrderDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [prescription, setPrescription] = useState<Prescription | null>(null);
-  // MS-TASK-006: printed-prescription identity comes from settings, not the
-  // component's hardcoded defaults.
+  const [order, setOrder] = useState<RadiologyOrder | null>(null);
   const branding = useClinicBranding();
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    api.get<Prescription>(`/api/prescriptions/${id}`)
-      .then((r) => setPrescription(r.data))
+    api.get<RadiologyOrder>(`/api/radiology-orders/${id}`)
+      .then((r) => setOrder(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [id]);
 
   const handleDelete = async () => {
-    if (!confirm("هل أنت متأكد من حذف هذه الوصفة؟")) return;
+    if (!confirm("هل أنت متأكد من حذف طلب الأشعة؟")) return;
     setDeleting(true);
     try {
-      await api.delete(`/api/prescriptions/${id}`);
+      await api.delete(`/api/radiology-orders/${id}`);
       window.location.href = "/prescriptions";
     } catch {
       setDeleting(false);
@@ -47,8 +45,8 @@ export default function PrescriptionDetailPage() {
     );
   }
 
-  if (!prescription) {
-    return <div className="text-center py-20 text-gray-400 text-sm">الوصفة غير موجودة</div>;
+  if (!order) {
+    return <div className="text-center py-20 text-gray-400 text-sm">طلب الأشعة غير موجود</div>;
   }
 
   return (
@@ -57,11 +55,11 @@ export default function PrescriptionDetailPage() {
       <div className="flex items-center gap-2 text-sm text-gray-500">
         <Link href="/prescriptions" className="hover:text-clinic-blue transition">الوصفات</Link>
         <span>/</span>
-        <Link href={`/patients/${prescription.patientId}`} className="hover:text-clinic-blue transition">
-          {prescription.patientName}
+        <Link href={`/patients/${order.patientId}`} className="hover:text-clinic-blue transition">
+          {order.patientName}
         </Link>
         <span>/</span>
-        <span className="text-gray-900 font-medium">{formatArabicDate(prescription.createdAt)}</span>
+        <span className="text-gray-900 font-medium">{studyTypeLabelAr(order.studyType)}</span>
       </div>
 
       {/* Toolbar */}
@@ -70,7 +68,7 @@ export default function PrescriptionDetailPage() {
           <Link href="/prescriptions" className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500">
             <ArrowRight className="w-4 h-4" />
           </Link>
-          <h1 className="text-2xl font-extrabold text-gray-900">وصفة طبية</h1>
+          <h1 className="text-2xl font-extrabold text-gray-900">إحالة أشعة</h1>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -91,10 +89,10 @@ export default function PrescriptionDetailPage() {
         </div>
       </div>
 
-      {/* Prescription view (screen + print) */}
+      {/* Referral view (screen + print) */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 print:border-0 print:shadow-none print:p-0">
-        <PrescriptionPrint
-          prescription={prescription}
+        <RadiologyReferralPrint
+          order={order}
           clinicName={branding.clinicNameEn}
           clinicAddress={branding.addressEn}
           clinicPhone={branding.phone}

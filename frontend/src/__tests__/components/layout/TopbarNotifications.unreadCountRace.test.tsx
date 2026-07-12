@@ -39,6 +39,13 @@ const notification: TestNotification = {
   createdAt: "2026-07-12T00:00:00Z",
 };
 
+const readNotification: TestNotification = {
+  ...notification,
+  id: "notification-read",
+  title: "إشعار مقروء",
+  isRead: true,
+};
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -68,7 +75,7 @@ function renderNotifications(queryClient: QueryClient) {
   );
 }
 
-function installUnreadCountRace() {
+function installUnreadCountRace(listNotification: TestNotification = notification) {
   const staleCountRequest = deferred<CountResponse>();
   let unreadCountCalls = 0;
   let staleSignal: AbortSignal | undefined;
@@ -92,7 +99,7 @@ function installUnreadCountRace() {
     if (url === "/api/notifications?page=1&pageSize=15") {
       return Promise.resolve({
         data: {
-          data: [notification],
+          data: [listNotification],
           unreadCount: 1,
         },
       }) as never;
@@ -108,9 +115,9 @@ function installUnreadCountRace() {
   };
 }
 
-async function openNotifications() {
+async function openNotifications(title = notification.title) {
   fireEvent.click(screen.getByLabelText("الإشعارات"));
-  expect(await screen.findByText("إشعار غير مقروء")).toBeInTheDocument();
+  expect(await screen.findByText(title)).toBeInTheDocument();
 }
 
 describe("SEQ-32 notification unread-count ordering", () => {
@@ -174,6 +181,33 @@ describe("SEQ-32 notification unread-count ordering", () => {
     await staleRefetch;
 
     expect(screen.queryByTestId("notification-unread-indicator")).not.toBeInTheDocument();
+    queryClient.clear();
+  });
+
+  it("keeps an in-flight count refresh alive when deleting an already-read notification", async () => {
+    const queryClient = createTestClient();
+    const race = installUnreadCountRace(readNotification);
+    renderNotifications(queryClient);
+
+    expect(await screen.findByTestId("notification-unread-indicator")).toBeInTheDocument();
+    await openNotifications(readNotification.title);
+
+    const staleRefetch = queryClient
+      .refetchQueries({ queryKey: UNREAD_COUNT_QUERY_KEY })
+      .catch(() => undefined);
+    await waitFor(() => expect(race.getUnreadCountCalls()).toBe(2));
+    expect(race.getStaleSignal()?.aborted).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "حذف الإشعار إشعار مقروء" }));
+
+    expect(await screen.findByText("لا توجد إشعارات")).toBeInTheDocument();
+    expect(race.getStaleSignal()?.aborted).toBe(false);
+    expect(race.getUnreadCountCalls()).toBe(2);
+
+    race.staleCountRequest.resolve({ data: { count: 2 } });
+    await staleRefetch;
+
+    expect(screen.getByTestId("notification-unread-indicator")).toBeInTheDocument();
     queryClient.clear();
   });
 });

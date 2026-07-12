@@ -42,12 +42,15 @@ export function TopbarNotifications() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const rootRef = useRef<HTMLDivElement>(null);
+  const actionInFlightRef = useRef<string | null>(null);
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
 
   const { data: unreadData } = useQuery({
     queryKey: ["notificationUnreadCount"],
@@ -67,6 +70,7 @@ export function TopbarNotifications() {
   const loadNotifications = async () => {
     setLoading(true);
     setLoadError(null);
+    setActionError(null);
 
     try {
       const { data } = await api.get<{ data: NotificationItem[]; unreadCount: number }>(
@@ -92,26 +96,58 @@ export function TopbarNotifications() {
     void loadNotifications();
   };
 
-  const markAllRead = async () => {
-    await api.put("/api/notifications/read-all").catch((error) => {
-      console.error("[TopbarNotifications] Failed to mark all notifications read:", error);
-    });
-    setNotifications((current) => current.map((notification) => ({ ...notification, isRead: true })));
-    setUnreadCount(0);
-    queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
+  const beginAction = (key: string): boolean => {
+    if (actionInFlightRef.current) return false;
+    actionInFlightRef.current = key;
+    setPendingAction(key);
+    setActionError(null);
+    return true;
   };
 
-  const markRead = async (id: string) => {
-    await api.put(`/api/notifications/${id}/read`).catch((error) => {
-      console.error("[TopbarNotifications] Failed to mark notification read:", error);
-    });
-    setNotifications((current) =>
-      current.map((notification) =>
-        notification.id === id ? { ...notification, isRead: true } : notification,
-      ),
-    );
-    setUnreadCount((current) => Math.max(0, current - 1));
-    queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
+  const finishAction = (key: string) => {
+    if (actionInFlightRef.current !== key) return;
+    actionInFlightRef.current = null;
+    setPendingAction(null);
+  };
+
+  const markAllRead = async () => {
+    const actionKey = "read-all";
+    if (!beginAction(actionKey)) return;
+
+    try {
+      await api.put("/api/notifications/read-all");
+      setNotifications((current) =>
+        current.map((notification) => ({ ...notification, isRead: true })),
+      );
+      setUnreadCount(0);
+      queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
+    } catch (error) {
+      setActionError(extractErrorMessage(error, "تعذّر تعليم الإشعارات كمقروءة"));
+    } finally {
+      finishAction(actionKey);
+    }
+  };
+
+  const markRead = async (id: string): Promise<boolean> => {
+    const actionKey = `read:${id}`;
+    if (!beginAction(actionKey)) return false;
+
+    try {
+      await api.put(`/api/notifications/${id}/read`);
+      setNotifications((current) =>
+        current.map((notification) =>
+          notification.id === id ? { ...notification, isRead: true } : notification,
+        ),
+      );
+      setUnreadCount((current) => Math.max(0, current - 1));
+      queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
+      return true;
+    } catch (error) {
+      setActionError(extractErrorMessage(error, "تعذّر تعليم الإشعار كمقروء"));
+      return false;
+    } finally {
+      finishAction(actionKey);
+    }
   };
 
   const handleNotificationClick = async (notification: NotificationItem) => {
@@ -125,11 +161,24 @@ export function TopbarNotifications() {
     router.push(urlForEntity(notification.relatedId));
   };
 
-  const deleteNotification = async (id: string) => {
-    await api.delete(`/api/notifications/${id}`).catch((error) => {
-      console.error("[TopbarNotifications] Failed to delete notification:", error);
-    });
-    setNotifications((current) => current.filter((notification) => notification.id !== id));
+  const deleteNotification = async (notification: NotificationItem) => {
+    const actionKey = `delete:${notification.id}`;
+    if (!beginAction(actionKey)) return;
+
+    try {
+      await api.delete(`/api/notifications/${notification.id}`);
+      setNotifications((current) =>
+        current.filter((item) => item.id !== notification.id),
+      );
+      if (!notification.isRead) {
+        setUnreadCount((current) => Math.max(0, current - 1));
+        queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
+      }
+    } catch (error) {
+      setActionError(extractErrorMessage(error, "تعذّر حذف الإشعار"));
+    } finally {
+      finishAction(actionKey);
+    }
   };
 
   useEffect(() => {
@@ -141,6 +190,7 @@ export function TopbarNotifications() {
   }, []);
 
   const showInitialSkeleton = loading && notifications.length === 0;
+  const mutationPending = pendingAction !== null;
 
   return (
     <div ref={rootRef} className="relative">
@@ -179,12 +229,13 @@ export function TopbarNotifications() {
             {unreadCount > 0 && (
               <button
                 type="button"
-                onClick={markAllRead}
-                className="flex items-center gap-1 text-xs transition"
+                onClick={() => void markAllRead()}
+                disabled={mutationPending}
+                className="flex items-center gap-1 text-xs transition disabled:cursor-not-allowed disabled:opacity-60"
                 style={{ color: "#3d7ab5" }}
               >
                 <CheckCheck className="w-3.5 h-3.5" />
-                تحديد الكل كمقروء
+                {pendingAction === "read-all" ? "جارٍ التحديث..." : "تحديد الكل كمقروء"}
               </button>
             )}
           </div>
@@ -206,7 +257,11 @@ export function TopbarNotifications() {
                     <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
                     <div className="min-w-0 flex-1">
                       <p className="font-bold">{loadError}</p>
-                      <p className="mt-0.5 text-[11px] text-red-600">لم يتم استبدال الإشعارات المحمّلة سابقًا.</p>
+                      <p className="mt-0.5 text-[11px] text-red-600">
+                        {notifications.length > 0
+                          ? "لم يتم استبدال الإشعارات المحمّلة سابقًا."
+                          : "يمكنك إعادة المحاولة دون فقدان أي بيانات."}
+                      </p>
                     </div>
                     <button
                       type="button"
@@ -217,6 +272,16 @@ export function TopbarNotifications() {
                       <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
                       إعادة المحاولة
                     </button>
+                  </div>
+                )}
+
+                {actionError && (
+                  <div
+                    role="alert"
+                    className="m-3 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs font-bold text-red-700"
+                  >
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                    {actionError}
                   </div>
                 )}
 
@@ -235,7 +300,8 @@ export function TopbarNotifications() {
                   notifications.map((notification) => (
                     <div
                       key={notification.id}
-                      onClick={() => handleNotificationClick(notification)}
+                      onClick={() => void handleNotificationClick(notification)}
+                      aria-busy={pendingAction === `read:${notification.id}`}
                       className="flex items-start gap-3 px-4 py-3 cursor-pointer group transition"
                       style={{
                         background: !notification.isRead ? "#eef3f9" : "transparent",
@@ -264,11 +330,12 @@ export function TopbarNotifications() {
                       <button
                         type="button"
                         aria-label={`حذف الإشعار ${notification.title ?? ""}`}
+                        disabled={mutationPending}
                         onClick={(event) => {
                           event.stopPropagation();
-                          void deleteNotification(notification.id);
+                          void deleteNotification(notification);
                         }}
-                        className="opacity-0 group-hover:opacity-100 p-1 rounded transition"
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded transition disabled:cursor-not-allowed disabled:opacity-40"
                         style={{ color: "#94a3b8" }}
                       >
                         <Trash2 className="w-3.5 h-3.5" />

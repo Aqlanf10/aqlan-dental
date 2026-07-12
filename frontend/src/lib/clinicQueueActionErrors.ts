@@ -1,6 +1,13 @@
 import { extractErrorMessage } from "@/lib/errors";
 import { toast, useToastStore } from "@/stores/toastStore";
 
+type ResponsePayload = {
+  message?: string;
+  detail?: string;
+  title?: string;
+  errors?: string[] | Record<string, string[]>;
+};
+
 type RequestFailure = {
   code?: string;
   config?: {
@@ -8,7 +15,10 @@ type RequestFailure = {
     url?: string;
     signal?: { aborted?: boolean };
   };
-  response?: { status?: number };
+  response?: {
+    status?: number;
+    data?: unknown;
+  };
 };
 
 const MUTATING_METHODS = new Set(["post", "patch", "put", "delete"]);
@@ -43,6 +53,48 @@ export function getClinicQueueActionErrorFallback(error: unknown): string | null
   return "تعذر تنفيذ الإجراء على قائمة الانتظار";
 }
 
+function firstValidationMessage(errors: ResponsePayload["errors"]): string | null {
+  if (Array.isArray(errors)) return errors.find(Boolean) ?? null;
+  if (!errors || typeof errors !== "object") return null;
+
+  for (const messages of Object.values(errors)) {
+    const message = messages.find(Boolean);
+    if (message) return message;
+  }
+  return null;
+}
+
+function getSafeResponseMessage(data: unknown): string | null {
+  if (typeof data === "string") {
+    const text = data.trim();
+    return text && !text.startsWith("<") ? text : null;
+  }
+  if (!data || typeof data !== "object") return null;
+
+  const payload = data as ResponsePayload;
+  if (payload.message?.trim()) return payload.message.trim();
+  if (payload.detail?.trim()) return payload.detail.trim();
+
+  const validationMessage = firstValidationMessage(payload.errors);
+  if (validationMessage) return validationMessage;
+
+  if (payload.title?.trim()) return payload.title.trim();
+  return null;
+}
+
+function getQueueActionErrorMessage(error: unknown, fallback: string): string {
+  const failure = error as RequestFailure | null;
+
+  if (failure?.response) {
+    const safeServerMessage = getSafeResponseMessage(failure.response.data);
+    if (safeServerMessage) return safeServerMessage;
+    if (failure.response.status === 403) return extractErrorMessage(error, fallback);
+    return fallback;
+  }
+
+  return extractErrorMessage(error, fallback);
+}
+
 function getCallerHandledAliases(url: string): string[] {
   if (/\/recall(?:\?|$)/.test(url)) return ["فشل إعادة النداء"];
   if (/\/call(?:\?|$)/.test(url)) return ["فشل نداء المريض"];
@@ -66,7 +118,7 @@ export function notifyClinicQueueActionFailure(error: unknown): boolean {
 
   const failure = error as RequestFailure;
   const url = failure.config?.url ?? "";
-  const message = extractErrorMessage(error, fallback);
+  const message = getQueueActionErrorMessage(error, fallback);
   const equivalentMessages = new Set([message, ...getCallerHandledAliases(url)]);
   const existingErrorIds = new Set(
     useToastStore.getState().toasts

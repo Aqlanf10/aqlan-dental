@@ -6,6 +6,11 @@ import {
 } from "@/lib/clinicQueueActionErrors";
 import { useToastStore } from "@/stores/toastStore";
 
+const originalToastActions = {
+  show: useToastStore.getState().show,
+  dismiss: useToastStore.getState().dismiss,
+};
+
 function requestError(
   url: string,
   method = "post",
@@ -31,6 +36,10 @@ describe("SEQ-36 clinic queue action errors", () => {
   });
 
   afterEach(() => {
+    useToastStore.setState({
+      toasts: [],
+      ...originalToastActions,
+    });
     vi.useRealTimers();
   });
 

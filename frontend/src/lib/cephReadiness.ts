@@ -17,6 +17,23 @@ import type { CephAnalysis } from "@/types/ceph";
  */
 export const REQUIRED_LANDMARKS = 24;
 
+/**
+ * The 24 CORE landmark keys themselves (matches CephCanvas LANDMARK_DEFS minus
+ * the SEQ-40 optional points). Codex P1 on #677: with 27 placeable landmarks a
+ * COUNT of 24 could be reached by 21 core + 3 optional points — readiness must
+ * verify the core keys specifically, never the total count.
+ */
+export const CORE_LANDMARK_KEYS: readonly string[] = [
+  'S','N','Or','Po','ANS','PNS','A','B','Pog','Gn','Me','Go','Co','Ar','D','Pm',
+  'U1T','U1A','L1T','L1A','LS','LI','Pn','Cm',
+];
+
+/** True when every CORE landmark key is present in the given key list. */
+export function hasAllCoreLandmarks(keys: Iterable<string>): boolean {
+  const set = new Set(keys);
+  return CORE_LANDMARK_KEYS.every((k) => set.has(k));
+}
+
 export interface CephReadinessInput {
   /** An x-ray image is attached to the analysis. */
   hasImage: boolean;
@@ -130,7 +147,7 @@ export function cephReadinessFromAnalysis(
     ...computeCephReadiness({
       hasImage: Boolean(analysis.xrayFileUrl),
       hasCalibration: Boolean(analysis.pixelsPerMm && analysis.pixelsPerMm > 0),
-      hasPoints: (analysis.landmarks?.length ?? 0) >= REQUIRED_LANDMARKS,
+      hasPoints: hasAllCoreLandmarks((analysis.landmarks ?? []).map((l) => l.key)),
       hasMeasurements: (analysis.measurements?.length ?? 0) > 0,
       isDirty,
     }),
@@ -243,7 +260,8 @@ export function lowConfidenceLandmarks(
 export function computeCephQuality(input: CephQualityInput): CephQualityReport {
   const dirty = Boolean(input.isDirty);
   const landmarks = input.landmarks ?? [];
-  const placed = landmarks.length;
+  const placedKeys = new Set(landmarks.map((l) => l.key));
+  const placed = CORE_LANDMARK_KEYS.filter((k) => placedKeys.has(k)).length;
   const calibrationValid = isCalibrationValid(input.pixelsPerMm);
   const lowConfidenceKeys = lowConfidenceLandmarks(landmarks);
 

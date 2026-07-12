@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  CORE_LANDMARK_KEYS,
   computeCephReadiness,
   cephReadinessFromAnalysis,
   computeCephQuality,
@@ -72,9 +73,11 @@ describe("computeCephReadiness", () => {
 });
 
 describe("cephReadinessFromAnalysis", () => {
-  // A fully-placed landmark set (24) — the report/VTO requirement.
+  // A fully-placed CORE landmark set — the report/VTO requirement. Codex P1
+  // on #677: readiness now checks the core KEYS, not the count, so the test
+  // helper takes a slice of the real core set.
   const landmarks = (count: number) =>
-    Array.from({ length: count }, (_, i) => ({ key: `L${i}` }));
+    CORE_LANDMARK_KEYS.slice(0, count).map((key) => ({ key }));
 
   const withLandmarks = (count: number) =>
     ({
@@ -93,6 +96,30 @@ describe("cephReadinessFromAnalysis", () => {
     const r = cephReadinessFromAnalysis(base, false);
     expect(r.ready).toBe(true);
     expect(r.items.find((i) => i.key === "hasPoints")?.ok).toBe(true);
+  });
+
+  it("is NOT ready when optional points pad the count but core points are missing (Codex P1 #677)", () => {
+    const padded = {
+      ...base,
+      landmarks: [
+        ...CORE_LANDMARK_KEYS.slice(0, 21).map((key) => ({ key })),
+        { key: "SPog" }, { key: "U6" }, { key: "L6" },
+      ],
+    } as unknown as typeof base;
+    const r = cephReadinessFromAnalysis(padded, false);
+    expect(r.ready).toBe(false);
+    expect(r.items.find((i) => i.key === "hasPoints")?.ok).toBe(false);
+  });
+
+  it("stays ready when the full core set PLUS the optional points are placed", () => {
+    const full = {
+      ...base,
+      landmarks: [
+        ...CORE_LANDMARK_KEYS.map((key) => ({ key })),
+        { key: "SPog" }, { key: "U6" }, { key: "L6" },
+      ],
+    } as unknown as typeof base;
+    expect(cephReadinessFromAnalysis(full, false).ready).toBe(true);
   });
 
   it("is NOT ready with a single landmark", () => {
@@ -190,7 +217,7 @@ describe("computeCephQuality", () => {
     isAiPlaced: false,
     confidence: 1,
   });
-  const fullManualSet = Array.from({ length: 24 }, (_, i) => manual(`L${i}`));
+  const fullManualSet = CORE_LANDMARK_KEYS.map((k) => manual(k));
 
   it("reports no warnings for a complete, calibrated, computed, clean analysis", () => {
     const q = computeCephQuality({

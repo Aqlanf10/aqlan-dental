@@ -38,4 +38,5 @@
   final-report approval and clean-state gate, include case metadata plus values,
   norms, deviations, groups, and interpretations, and neutralize spreadsheet
   formula prefixes in text cells. Frontend-only; no API, schema, permission, or
-  clinical calculation changes. Strong model.
+  clinical calculation changes. Strong model. — ✅ Done in PR #678; eight
+  focused tests plus Backend, Frontend, E2E, Encoding Guard, and Vercel passed.

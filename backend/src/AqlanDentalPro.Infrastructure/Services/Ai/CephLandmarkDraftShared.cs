@@ -15,11 +15,12 @@ namespace AqlanDentalPro.Infrastructure.Services.Ai;
 /// </summary>
 internal static class CephLandmarkDraftShared
 {
-    /// <summary>The 24 landmarks the model is allowed to return. Anything else is dropped.</summary>
+    /// <summary>The 27 landmarks the model is allowed to return. Anything else is dropped.</summary>
     public static readonly HashSet<string> AllowedKeys =
     [
         "S", "N", "Or", "Po", "ANS", "PNS", "A", "B", "Pog", "Gn", "Me", "Go",
-        "Co", "Ar", "D", "Pm", "U1T", "U1A", "L1T", "L1A", "LS", "LI", "Pn", "Cm",
+        "Co", "Ar", "D", "Pm", "U1T", "U1A", "L1T", "L1A", "U6", "L6",
+        "LS", "LI", "Pn", "Cm", "SPog",
     ];
 
     /// <summary>
@@ -118,10 +119,13 @@ internal static class CephLandmarkDraftShared
         - U1A (Upper Incisor Apex): root apex of the same maxillary central incisor as U1T.
         - L1T (Lower Incisor Tip): incisal edge tip of the most anterior mandibular central incisor.
         - L1A (Lower Incisor Apex): root apex of the same mandibular central incisor as L1T.
+        - U6 (Upper First Molar): mesial cusp tip of the maxillary first molar occlusal surface (the most mesial occlusal cusp of the upper first molar).
+        - L6 (Lower First Molar): mesial cusp tip of the mandibular first molar occlusal surface (occluding with U6; place at the mesiobuccal cusp tip).
         - LS (Labiale Superioris): most anterior point on the margin of the upper lip (soft tissue).
         - LI (Labiale Inferioris): most anterior point on the margin of the lower lip (soft tissue).
         - Pn (Pronasale): most anterior point on the tip of the nose (soft tissue).
         - Cm (Columella): most anterior point on the columella of the nose (where the nose meets the upper lip, soft tissue).
+        - SPog (Soft-Tissue Pogonion): most anterior point of the soft-tissue chin contour (on the skin profile, anterior to the bony Pogonion).
 
         COORDINATE RULES:
         - x and y are normalized values from 0 to 1000 (integers or floats).

@@ -9,9 +9,11 @@
 import type { CephAnalysis } from "@/types/ceph";
 
 /**
- * Full cephalometric landmark set. A report/VTO is only valid once every
- * landmark is placed (matches LANDMARK_ORDER and the "X/24" UI counters), so
- * readiness requires the complete set — not just a single saved point.
+ * CORE cephalometric landmark set required for a report/VTO. SEQ-40 added
+ * three OPTIONAL landmarks on top of these (SPog soft-tissue pogonion, U6/L6
+ * first molars) that upgrade the S-/E-lines, the occlusal plane and Wits to
+ * their true clinical definitions when placed — but they are deliberately NOT
+ * counted here, so every previously-saved 24-point analysis stays ready.
  */
 export const REQUIRED_LANDMARKS = 24;
 

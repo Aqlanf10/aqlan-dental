@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   dist, angle3, angleBetweenLines, perpDist, signedPerpDist, lineAngle,
   computeJarabak, similarityFromPairs, applySimilarity,
-  applyVtoMovements, approxOverjetMm,
+  applyVtoMovements, approxOverjetMm, computeWits, computeSteiner, computeRicketts,
 } from '@/lib/cephMath';
 
 type Pt = { x: number; y: number };
@@ -370,5 +370,69 @@ describe('approxOverjetMm', () => {
   it('returns null when uncalibrated or an incisor edge is missing', () => {
     expect(approxOverjetMm({ U1T: { x: 1, y: 1 }, L1T: { x: 0, y: 0 } }, 0)).toBeNull();
     expect(approxOverjetMm({ U1T: { x: 1, y: 1 } }, 4)).toBeNull();
+  });
+});
+
+// ─── computeWits (SEQ-40: true functional occlusal plane) ────────────────────
+
+describe('computeWits', () => {
+  const witsOf = (lm: Record<string, Pt>) =>
+    computeWits(lm, 1).find(m => m.name === 'Wits')?.value ?? null;
+
+  // Horizontal true occlusal plane at y=100: incisal midpoint (200,100),
+  // molar midpoint (100,100). A/B project straight down onto it.
+  const base: Record<string, Pt> = {
+    U1T: { x: 200, y: 90 }, L1T: { x: 200, y: 110 },
+    U6:  { x: 100, y: 95 }, L6:  { x: 100, y: 105 },
+    A:   { x: 190, y: 80 }, B:   { x: 170, y: 60 },
+    Go:  { x: 80, y: 180 }, Me:  { x: 180, y: 220 },
+  };
+
+  it('uses the molar-based occlusal plane when U6/L6 are placed', () => {
+    // AO=(190,100), BO=(170,100); plane direction anterior→posterior = (-1,0)
+    // → signed (AO-BO)·u = -20 mm.
+    expect(witsOf(base)).toBe(-20);
+  });
+
+  it('falls back to the legacy Go/Me approximation without molars (values unchanged)', () => {
+    const { U6: _u6, L6: _l6, ...legacy } = base;
+    const legacyValue = witsOf(legacy);
+    expect(legacyValue).not.toBeNull();
+    expect(legacyValue).not.toBe(-20); // different plane → different value
+  });
+
+  it('returns null when neither molars nor Go/Me are available', () => {
+    const { U6: _u6, L6: _l6, Go: _go, Me: _me, ...rest } = base;
+    expect(witsOf(rest)).toBeNull();
+  });
+});
+
+// ─── S-line / E-line prefer soft-tissue Pogonion (SEQ-40) ────────────────────
+
+describe('soft-tissue Pogonion upgrades', () => {
+  const lm: Record<string, Pt> = {
+    // vertical S-line references
+    Cm: { x: 300, y: 100 }, Pn: { x: 300, y: 60 },
+    LS: { x: 310, y: 120 }, LI: { x: 305, y: 150 },
+    Pog: { x: 280, y: 200 }, SPog: { x: 295, y: 205 },
+    // minimal extras so computeSteiner's other measurements just come back null
+  };
+
+  it('S-line uses SPog when placed and hard Pog otherwise', () => {
+    const withSPog = computeSteiner(lm, 1).find(m => m.name === 'UL-SLine')?.value;
+    const { SPog: _sp, ...noSPog } = lm;
+    const withPog = computeSteiner(noSPog, 1).find(m => m.name === 'UL-SLine')?.value;
+    expect(withSPog).not.toBeNull();
+    expect(withPog).not.toBeNull();
+    expect(withSPog).not.toBe(withPog); // different chin point → different S-line
+  });
+
+  it('E-line uses SPog when placed and hard Pog otherwise', () => {
+    const withSPog = computeRicketts(lm, 1).find(m => m.name === 'Upper-Lip-ELine')?.value;
+    const { SPog: _sp, ...noSPog } = lm;
+    const withPog = computeRicketts(noSPog, 1).find(m => m.name === 'Upper-Lip-ELine')?.value;
+    expect(withSPog).not.toBeNull();
+    expect(withPog).not.toBeNull();
+    expect(withSPog).not.toBe(withPog);
   });
 });

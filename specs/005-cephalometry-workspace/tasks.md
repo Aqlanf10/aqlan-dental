@@ -25,3 +25,11 @@
   targets a non-existent endpoint.
 - `CEPH-TASK-003`: Add tests for report/AI behavior. Strong model.
 - `CEPH-TASK-004`: Runtime-verify tracing, VTO, and draft review. Needs runtime verification.
+- `CEPH-TASK-005`: SEQ-40 (owner directive 2026-07-12) — add soft-tissue
+  Pogonion (`SPog`), first-molar landmarks (`U6`, `L6`), draw the functional
+  occlusal plane (incisal overbite midpoint → molar occlusion midpoint), and
+  upgrade Wits + Steiner S-line + Ricketts E-line to their true clinical
+  definitions when the new points are placed. The 24-point core set stays the
+  readiness gate — the 3 new points are optional enhancements, so previously
+  saved analyses keep working and their historic values don't shift (legacy
+  approximations remain the fallback). Strong model.

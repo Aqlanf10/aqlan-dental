@@ -32,8 +32,8 @@ const LANDMARK_GROUPS = [
   { key: 'cranial',  label: 'قاعدة الجمجمة',  keys: ['S', 'N', 'Or', 'Po'] },
   { key: 'maxilla',  label: 'الفك العلوي',     keys: ['ANS', 'PNS', 'A'] },
   { key: 'mandible', label: 'الفك السفلي',     keys: ['B', 'Pog', 'Gn', 'Me', 'Go', 'Co', 'Ar', 'D', 'Pm'] },
-  { key: 'dental',   label: 'الأسنان',         keys: ['U1T', 'U1A', 'L1T', 'L1A'] },
-  { key: 'soft',     label: 'الأنسجة الرخوة',  keys: ['LS', 'LI', 'Pn', 'Cm'] },
+  { key: 'dental',   label: 'الأسنان',         keys: ['U1T', 'U1A', 'L1T', 'L1A', 'U6', 'L6'] },
+  { key: 'soft',     label: 'الأنسجة الرخوة',  keys: ['LS', 'LI', 'Pn', 'Cm', 'SPog'] },
 ];
 
 type RightTab = 'report' | 'diagnosis';

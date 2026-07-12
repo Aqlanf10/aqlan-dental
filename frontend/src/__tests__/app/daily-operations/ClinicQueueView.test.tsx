@@ -52,6 +52,22 @@ const queueItem = {
   createdAt: "2026-07-12T00:00:00Z",
 };
 
+const newestQueueItem = {
+  ...queueItem,
+  id: "queue-newest",
+  patientId: "patient-newest",
+  patientName: "المريض الأحدث",
+  patientNumber: "P-NEW",
+};
+
+const staleQueueItem = {
+  ...queueItem,
+  id: "queue-stale",
+  patientId: "patient-stale",
+  patientName: "المريض القديم",
+  patientNumber: "P-OLD",
+};
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -63,13 +79,13 @@ function deferred<T>() {
 }
 
 function installQueueResponses(queueResponses: Array<Promise<unknown>>) {
-  let queueCall = 0;
+  const queueCalls: Array<{ signal?: AbortSignal }> = [];
 
-  vi.mocked(api.get).mockImplementation((url: string) => {
+  vi.mocked(api.get).mockImplementation((url: string, config?: { signal?: AbortSignal }) => {
     if (url.startsWith("/api/clinic-queue/today")) {
-      const response = queueResponses[queueCall];
-      queueCall += 1;
+      const response = queueResponses[queueCalls.length];
       if (!response) throw new Error(`Unexpected queue request ${url}`);
+      queueCalls.push({ signal: config?.signal });
       return response as never;
     }
 
@@ -84,7 +100,15 @@ function installQueueResponses(queueResponses: Array<Promise<unknown>>) {
     throw new Error(`Unexpected GET ${url}`);
   });
 
-  return () => queueCall;
+  return queueCalls;
+}
+
+function forceRefreshWhilePending() {
+  const refreshButton = screen.getByRole("button", {
+    name: "تحديث قائمة الانتظار",
+  }) as HTMLButtonElement;
+  refreshButton.disabled = false;
+  fireEvent.click(refreshButton);
 }
 
 describe("SEQ-35 ClinicQueueView load truth", () => {
@@ -106,7 +130,7 @@ describe("SEQ-35 ClinicQueueView load truth", () => {
   });
 
   it("shows the genuine empty state only after a successful retry", async () => {
-    const getQueueCalls = installQueueResponses([
+    const queueCalls = installQueueResponses([
       Promise.reject(new Error("Failed to fetch")),
       Promise.resolve({ data: [] }),
     ]);
@@ -118,7 +142,7 @@ describe("SEQ-35 ClinicQueueView load truth", () => {
 
     expect(await screen.findByText("لا يوجد مرضى في الانتظار")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(getQueueCalls()).toBe(2);
+    expect(queueCalls).toHaveLength(2);
   });
 
   it("keeps previously loaded patients visible when a later refresh fails", async () => {
@@ -147,5 +171,60 @@ describe("SEQ-35 ClinicQueueView load truth", () => {
     await waitFor(() => {
       expect(screen.queryByText("جارٍ تحديث قائمة الانتظار...")).not.toBeInTheDocument();
     });
+  });
+
+  it("keeps the newest queue data when an older success resolves last", async () => {
+    const olderRefresh = deferred<unknown>();
+    const newerRefresh = deferred<unknown>();
+    const queueCalls = installQueueResponses([
+      Promise.resolve({ data: [queueItem] }),
+      olderRefresh.promise,
+      newerRefresh.promise,
+    ]);
+
+    render(<ClinicQueueView searchQuery="" />);
+    expect(await screen.findByText("مريض الانتظار")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "تحديث قائمة الانتظار" }));
+    await waitFor(() => expect(queueCalls).toHaveLength(2));
+    forceRefreshWhilePending();
+    await waitFor(() => expect(queueCalls).toHaveLength(3));
+    expect(queueCalls[1].signal?.aborted).toBe(true);
+
+    newerRefresh.resolve({ data: [newestQueueItem] });
+    expect(await screen.findByText("المريض الأحدث")).toBeInTheDocument();
+
+    olderRefresh.resolve({ data: [staleQueueItem] });
+    await waitFor(() => {
+      expect(screen.queryByText("المريض القديم")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("المريض الأحدث")).toBeInTheDocument();
+  });
+
+  it("ignores an older failure after a newer queue refresh succeeds", async () => {
+    const olderRefresh = deferred<unknown>();
+    const newerRefresh = deferred<unknown>();
+    const queueCalls = installQueueResponses([
+      Promise.resolve({ data: [queueItem] }),
+      olderRefresh.promise,
+      newerRefresh.promise,
+    ]);
+
+    render(<ClinicQueueView searchQuery="" />);
+    expect(await screen.findByText("مريض الانتظار")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "تحديث قائمة الانتظار" }));
+    await waitFor(() => expect(queueCalls).toHaveLength(2));
+    forceRefreshWhilePending();
+    await waitFor(() => expect(queueCalls).toHaveLength(3));
+
+    newerRefresh.resolve({ data: [newestQueueItem] });
+    expect(await screen.findByText("المريض الأحدث")).toBeInTheDocument();
+
+    olderRefresh.reject(new Error("Network Error"));
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("المريض الأحدث")).toBeInTheDocument();
   });
 });

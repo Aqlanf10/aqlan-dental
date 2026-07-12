@@ -79,7 +79,7 @@ function deferred<T>() {
 }
 
 function installQueueResponses(queueResponses: Array<Promise<unknown>>) {
-  const queueCalls: Array<{ signal?: AbortSignal }> = [];
+  const queueCalls: Array<{ signal?: { aborted: boolean } }> = [];
 
   vi.mocked(api.get).mockImplementation((url, config) => {
     if (url.startsWith("/api/clinic-queue/today")) {

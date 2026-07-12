@@ -43,6 +43,8 @@ export function TopbarNotifications() {
   const queryClient = useQueryClient();
   const rootRef = useRef<HTMLDivElement>(null);
   const actionInFlightRef = useRef<string | null>(null);
+  const loadControllerRef = useRef<AbortController | null>(null);
+  const loadRequestSequenceRef = useRef(0);
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -67,7 +69,19 @@ export function TopbarNotifications() {
     if (unreadData?.count !== undefined) setUnreadCount(unreadData.count);
   }, [unreadData]);
 
+  const cancelActiveLoad = () => {
+    loadRequestSequenceRef.current += 1;
+    loadControllerRef.current?.abort();
+    loadControllerRef.current = null;
+    setLoading(false);
+  };
+
   const loadNotifications = async () => {
+    const requestId = ++loadRequestSequenceRef.current;
+    loadControllerRef.current?.abort();
+    const controller = new AbortController();
+    loadControllerRef.current = controller;
+
     setLoading(true);
     setLoadError(null);
     setActionError(null);
@@ -75,20 +89,32 @@ export function TopbarNotifications() {
     try {
       const { data } = await api.get<{ data: NotificationItem[]; unreadCount: number }>(
         "/api/notifications?page=1&pageSize=15",
+        { signal: controller.signal },
       );
+
+      if (controller.signal.aborted || requestId !== loadRequestSequenceRef.current) return;
       setNotifications(data.data);
       setUnreadCount(data.unreadCount);
       setLoadError(null);
     } catch (error) {
+      if (controller.signal.aborted || requestId !== loadRequestSequenceRef.current) return;
       setLoadError(extractErrorMessage(error, "تعذّر تحميل الإشعارات"));
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestSequenceRef.current) {
+        setLoading(false);
+        if (loadControllerRef.current === controller) loadControllerRef.current = null;
+      }
     }
+  };
+
+  const closeDropdown = () => {
+    cancelActiveLoad();
+    setOpen(false);
   };
 
   const toggleOpen = () => {
     if (open) {
-      setOpen(false);
+      closeDropdown();
       return;
     }
 
@@ -157,7 +183,7 @@ export function TopbarNotifications() {
     const urlForEntity = ENTITY_URL[notification.relatedEntity];
     if (!urlForEntity) return;
 
-    setOpen(false);
+    closeDropdown();
     router.push(urlForEntity(notification.relatedId));
   };
 
@@ -183,10 +209,24 @@ export function TopbarNotifications() {
 
   useEffect(() => {
     const handleOutside = (event: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        loadRequestSequenceRef.current += 1;
+        loadControllerRef.current?.abort();
+        loadControllerRef.current = null;
+        setLoading(false);
+        setOpen(false);
+      }
     };
     document.addEventListener("mousedown", handleOutside);
     return () => document.removeEventListener("mousedown", handleOutside);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      loadRequestSequenceRef.current += 1;
+      loadControllerRef.current?.abort();
+      loadControllerRef.current = null;
+    };
   }, []);
 
   const showInitialSkeleton = loading && notifications.length === 0;

@@ -26,6 +26,7 @@ import {
 import api from "@/lib/api";
 import { resolveImageUrl } from "@/hooks/useClinicBranding";
 import { downloadPdfFromApi, printPdfFromApi } from "@/lib/pdfDownload";
+import { CephMeasurementExportButton } from "@/components/ceph/CephMeasurementExportButton";
 import { cn, formatArabicDate } from "@/lib/utils";
 
 const LANDMARK_GROUPS = [
@@ -644,6 +645,12 @@ export default function CephAnalysisPage() {
             {pdfBusy === 'print' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
             طباعة التقرير
           </button>
+
+          <CephMeasurementExportButton
+            analysis={analysis}
+            placedCount={placedCount}
+            hasUnsavedEdits={isDirty}
+          />
 
           {/* Visual Treatment Objective — planned incisor movements preview.
               The VTO page refetches the SAVED analysis, so it is gated on a

@@ -164,6 +164,11 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
   const priorityDropdownRef = useRef<HTMLDivElement | null>(null);
   const queueControllerRef = useRef<AbortController | null>(null);
   const queueRequestSequenceRef = useRef(0);
+  // SEQ-38: when a mutation succeeded but the follow-up queue reload failed,
+  // the action stays locked (the card still shows stale status — re-enabling
+  // would allow a duplicate/invalid second submit). The next SUCCESSFUL queue
+  // fetch (e.g. the retry button) clears the lock along with the error.
+  const pendingSyncLockRef = useRef(false);
 
   // ── Close priority dropdown on outside click ──
   useEffect(() => {
@@ -194,12 +199,18 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
         signal: controller.signal,
       });
 
-      if (controller.signal.aborted || requestId !== queueRequestSequenceRef.current) return;
+      if (controller.signal.aborted || requestId !== queueRequestSequenceRef.current) return false;
       setItems(data);
       setLoadError(null);
+      if (pendingSyncLockRef.current) {
+        pendingSyncLockRef.current = false;
+        setActionLoading(null);
+      }
+      return true;
     } catch (error) {
-      if (controller.signal.aborted || requestId !== queueRequestSequenceRef.current) return;
+      if (controller.signal.aborted || requestId !== queueRequestSequenceRef.current) return false;
       setLoadError(extractErrorMessage(error, "تعذر تحميل قائمة الانتظار"));
+      return false;
     } finally {
       if (requestId === queueRequestSequenceRef.current) {
         setLoading(false);
@@ -324,6 +335,14 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
     speakArabic(text);
   }, [items, voiceEnabled]);
 
+  const syncQueueViewsAfterMutation = useCallback(async () => {
+    queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
+    queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
+    // Server truth = the queue reload; analytics failing must not hold the lock.
+    const [queueSynced] = await Promise.all([fetchQueue(), fetchAnalytics()]);
+    return queueSynced === true;
+  }, [queryClient, fetchQueue, fetchAnalytics]);
+
   const queueAction = async (url: string, body?: object, method: "post" | "patch" = "post") => {
     setActionLoading(url);
     try {
@@ -332,10 +351,12 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
       } else {
         await api.post(url, body);
       }
-      fetchQueue();
-      fetchAnalytics();
-    } catch { /* ignore */ }
-    finally { setActionLoading(null); }
+      if (await syncQueueViewsAfterMutation()) setActionLoading(null);
+      else pendingSyncLockRef.current = true; // stay locked until server truth arrives
+    } catch {
+      /* SEQ-36 surfaces the mutation failure */
+      setActionLoading(null);
+    }
   };
 
   // ── Voice call button handler ──
@@ -343,12 +364,12 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
     setActionLoading(item.id);
     try {
       await api.post(`/api/clinic-queue/${item.id}/call`, { roomName: rooms[0]?.arabicName });
-      // Keep all queue-backed views aligned even when SignalR is disconnected or delayed.
-      queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
-      queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
-      await Promise.all([fetchQueue(), fetchAnalytics()]);
-    } catch { /* SEQ-36 surfaces the mutation failure */ }
-    finally { setActionLoading(null); }
+      if (await syncQueueViewsAfterMutation()) setActionLoading(null);
+      else pendingSyncLockRef.current = true; // stay locked until server truth arrives
+    } catch {
+      /* SEQ-36 surfaces the mutation failure */
+      setActionLoading(null);
+    }
   };
 
   // ── Manual voice announce for a specific patient ──

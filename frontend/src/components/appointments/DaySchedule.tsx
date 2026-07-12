@@ -34,6 +34,8 @@ interface Props {
   doctorId?: string;
 }
 
+type VisitCheckState = "loading" | "ready" | "error";
+
 function newApptUrl(date: string, hour: number, doctorId?: string): string {
   const h = String(hour).padStart(2, "0");
   let url = `/appointments/new?date=${date}&startTime=${h}:00`;
@@ -232,6 +234,8 @@ function AppointmentCard({
   const { user } = useAuthStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [visitExists, setVisitExists] = useState(false);
+  const [visitCheckState, setVisitCheckState] = useState<VisitCheckState>("loading");
+  const [visitCheckAttempt, setVisitCheckAttempt] = useState(0);
   const [startingVisit, setStartingVisit] = useState(false);
   const [arrivalLoading, setArrivalLoading] = useState(false);
   const [queueLoading, setQueueLoading] = useState(false);
@@ -240,15 +244,30 @@ function AppointmentCard({
   const menuRef = useRef<HTMLDivElement>(null);
   const transitions = STATUS_TRANSITIONS[a.status] ?? [];
 
-  // Check if a visit already exists for this appointment
+  // The start-visit action remains blocked until the server explicitly confirms
+  // whether a visit already exists. A failed check must never mean "no visit".
   useEffect(() => {
+    let active = true;
+    setVisitCheckState("loading");
+
     api.get<{ data: { appointmentId?: string }[] }>(`/api/visits?patientId=${a.patientId}`)
       .then((r) => {
-        const hasVisit = (r.data.data ?? []).some((v: { appointmentId?: string }) => v.appointmentId === a.id);
+        if (!active) return;
+        const hasVisit = (r.data.data ?? []).some(
+          (v: { appointmentId?: string }) => v.appointmentId === a.id,
+        );
         setVisitExists(hasVisit);
+        setVisitCheckState("ready");
       })
-      .catch(() => {});
-  }, [a.patientId, a.id]);
+      .catch(() => {
+        if (!active) return;
+        setVisitCheckState("error");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [a.patientId, a.id, visitCheckAttempt]);
 
   // Check if patient has email for email reminder button state
   useEffect(() => {
@@ -269,12 +288,18 @@ function AppointmentCard({
     return () => document.removeEventListener("mousedown", handler);
   }, [menuOpen]);
 
+  const visitEligible = ["Scheduled", "Confirmed", "Arrived", "Waiting", "Called", "InRoom", "InProgress"].includes(a.status);
+  const canStartVisit = visitEligible && visitCheckState === "ready" && !visitExists;
+
   const handleStartVisit = async () => {
+    if (!canStartVisit || startingVisit) return;
+
     setStartingVisit(true);
     try {
       const { data } = await api.post(`/api/appointments/${a.id}/start-visit`);
       toast.success(data.message ?? "تم إنشاء الزيارة بنجاح");
       setVisitExists(true);
+      setVisitCheckState("ready");
       // Update status locally to InProgress
       onLocalStatus(a.id, "InProgress");
       setMenuOpen(false);
@@ -285,8 +310,6 @@ function AppointmentCard({
     }
   };
 
-  // Determine if "بدء الزيارة" should be shown
-  const canStartVisit = !visitExists && ["Scheduled", "Confirmed", "Arrived", "Waiting", "Called", "InRoom", "InProgress"].includes(a.status);
   const canDelete = !["InProgress", "Completed"].includes(a.status);
 
   const canArrive = ["Scheduled", "Confirmed"].includes(a.status) && hasPermission(user, PERMISSION_KEYS.PATIENT_JOURNEY_EDIT);
@@ -481,7 +504,7 @@ function AppointmentCard({
           <MoreVertical className="w-4 h-4" />
         </button>
         {menuOpen && (
-          <div className="absolute left-0 top-7 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[160px]">
+          <div className="absolute left-0 top-7 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[190px]">
             <Link
               href={`/appointments/${a.id}/edit`}
               onClick={() => setMenuOpen(false)}
@@ -498,6 +521,26 @@ function AppointmentCard({
               <Activity className="w-3.5 h-3.5" />
               عرض رحلة المريض
             </Link>
+            {visitEligible && visitCheckState === "loading" && (
+              <button
+                type="button"
+                disabled
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-400 cursor-wait"
+              >
+                <Stethoscope className="w-3.5 h-3.5" />
+                جارٍ التحقق من وجود زيارة...
+              </button>
+            )}
+            {visitEligible && visitCheckState === "error" && (
+              <button
+                type="button"
+                onClick={() => setVisitCheckAttempt((attempt) => attempt + 1)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-red-50 transition text-red-700 font-medium"
+              >
+                <Stethoscope className="w-3.5 h-3.5" />
+                تعذر التحقق من الزيارة — إعادة المحاولة
+              </button>
+            )}
             {canStartVisit && (
               <button
                 onClick={handleStartVisit}

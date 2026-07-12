@@ -28,6 +28,8 @@ const ENTITY_URL: Record<string, (id: string) => string> = {
   OrthoCase: (id) => `/ortho/${id}`,
 };
 
+const UNREAD_COUNT_QUERY_KEY = ["notificationUnreadCount"] as const;
+
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const min = Math.floor(diff / 60_000);
@@ -55,9 +57,11 @@ export function TopbarNotifications() {
   const [pendingAction, setPendingAction] = useState<string | null>(null);
 
   const { data: unreadData } = useQuery({
-    queryKey: ["notificationUnreadCount"],
-    queryFn: async () => {
-      const { data } = await api.get<{ count: number }>("/api/notifications/unread-count");
+    queryKey: UNREAD_COUNT_QUERY_KEY,
+    queryFn: async ({ signal }) => {
+      const { data } = await api.get<{ count: number }>("/api/notifications/unread-count", {
+        signal,
+      });
       return data;
     },
     staleTime: 120_000,
@@ -74,6 +78,15 @@ export function TopbarNotifications() {
     loadControllerRef.current?.abort();
     loadControllerRef.current = null;
     setLoading(false);
+  };
+
+  const cancelUnreadCountRefresh = async () => {
+    if (typeof queryClient.cancelQueries !== "function") return;
+
+    await queryClient.cancelQueries(
+      { queryKey: UNREAD_COUNT_QUERY_KEY },
+      { silent: true },
+    );
   };
 
   const loadNotifications = async () => {
@@ -143,11 +156,12 @@ export function TopbarNotifications() {
     try {
       await api.put("/api/notifications/read-all");
       cancelActiveLoad();
+      await cancelUnreadCountRefresh();
       setNotifications((current) =>
         current.map((notification) => ({ ...notification, isRead: true })),
       );
       setUnreadCount(0);
-      queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
+      queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_QUERY_KEY });
     } catch (error) {
       setActionError(extractErrorMessage(error, "تعذّر تعليم الإشعارات كمقروءة"));
     } finally {
@@ -162,13 +176,14 @@ export function TopbarNotifications() {
     try {
       await api.put(`/api/notifications/${id}/read`);
       cancelActiveLoad();
+      await cancelUnreadCountRefresh();
       setNotifications((current) =>
         current.map((notification) =>
           notification.id === id ? { ...notification, isRead: true } : notification,
         ),
       );
       setUnreadCount((current) => Math.max(0, current - 1));
-      queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
+      queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_QUERY_KEY });
       return true;
     } catch (error) {
       setActionError(extractErrorMessage(error, "تعذّر تعليم الإشعار كمقروء"));
@@ -200,8 +215,9 @@ export function TopbarNotifications() {
         current.filter((item) => item.id !== notification.id),
       );
       if (!notification.isRead) {
+        await cancelUnreadCountRefresh();
         setUnreadCount((current) => Math.max(0, current - 1));
-        queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
+        queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_QUERY_KEY });
       }
     } catch (error) {
       setActionError(extractErrorMessage(error, "تعذّر حذف الإشعار"));

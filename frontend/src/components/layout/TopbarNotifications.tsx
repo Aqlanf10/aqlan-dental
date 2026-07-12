@@ -211,11 +211,11 @@ export function TopbarNotifications() {
     try {
       await api.delete(`/api/notifications/${notification.id}`);
       cancelActiveLoad();
-      await cancelUnreadCountRefresh();
       setNotifications((current) =>
         current.filter((item) => item.id !== notification.id),
       );
       if (!notification.isRead) {
+        await cancelUnreadCountRefresh();
         setUnreadCount((current) => Math.max(0, current - 1));
         queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_QUERY_KEY });
       }

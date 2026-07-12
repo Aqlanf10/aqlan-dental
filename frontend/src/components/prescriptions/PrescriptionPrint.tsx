@@ -24,10 +24,13 @@ export function PrescriptionPrint({
 }: Props) {
   return (
     <>
+      {/* Codex P2 (#676): the old body>*:not(#root) selector hid the dashboard
+          ancestor that CONTAINS this component (it is never a direct child of
+          <body>), and a hidden ancestor cannot be re-shown — printing came out
+          blank. Chrome is hidden instead by the global body.printing print CSS
+          plus print:hidden on the page-level screen elements. */}
       <style>{`
         @media print {
-          body > *:not(#prescription-print-root) { display: none !important; }
-          #prescription-print-root { display: block !important; }
           @page { margin: 1cm; }
         }
       `}</style>

@@ -52,7 +52,7 @@ export default function RadiologyOrderDetailPage() {
   return (
     <div className="space-y-5 max-w-2xl">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-gray-500">
+      <div className="flex items-center gap-2 text-sm text-gray-500 print:hidden">
         <Link href="/prescriptions" className="hover:text-clinic-blue transition">الوصفات</Link>
         <span>/</span>
         <Link href={`/patients/${order.patientId}`} className="hover:text-clinic-blue transition">
@@ -63,7 +63,7 @@ export default function RadiologyOrderDetailPage() {
       </div>
 
       {/* Toolbar */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between print:hidden">
         <div className="flex items-center gap-3">
           <Link href="/prescriptions" className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500">
             <ArrowRight className="w-4 h-4" />

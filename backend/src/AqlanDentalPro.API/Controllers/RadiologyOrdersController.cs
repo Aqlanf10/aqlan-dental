@@ -79,6 +79,25 @@ public class RadiologyOrdersController(
 
         if (patientId.HasValue) query = query.Where(o => o.PatientId == patientId.Value);
 
+        // Codex P1 (#676): PatientAccessFilter only enforces access when a patientId
+        // is present in the route/query — a plain list request reached this query
+        // unfiltered, letting any doctor read every patient's orders. Mirror the
+        // PatientsController pattern: doctors see only their linked patients,
+        // fail-closed (500, not silent-empty) if the accessible set cannot load.
+        if (patientAccess.IsDoctor)
+        {
+            HashSet<Guid> accessible;
+            try
+            {
+                accessible = await patientAccess.GetAccessiblePatientIdsAsync() ?? [];
+            }
+            catch
+            {
+                return StatusCode(500, new { message = "تعذر تحميل طلبات الأشعة حالياً" });
+            }
+            query = query.Where(o => accessible.Contains(o.PatientId));
+        }
+
         var total = await query.CountAsync();
         var orders = await query
             .OrderByDescending(o => o.CreatedAt)

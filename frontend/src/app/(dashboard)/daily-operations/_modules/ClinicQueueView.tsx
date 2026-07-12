@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { useDoctors } from "@/hooks/useDoctors";
 import {
   RefreshCw, Loader2, UserPlus, Stethoscope,
@@ -142,6 +143,8 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
   // FE-13: useDoctors() replaces useState + fetch.
   const { data: doctors = [] } = useDoctors();
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [doctorFilter, setDoctorFilter] = useState("");
   const [signalrConnected, setSignalrConnected] = useState(false);
@@ -159,6 +162,8 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
   const connectionRef = useRef<HubConnection | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const priorityDropdownRef = useRef<HTMLDivElement | null>(null);
+  const queueControllerRef = useRef<AbortController | null>(null);
+  const queueRequestSequenceRef = useRef(0);
 
   // ── Close priority dropdown on outside click ──
   useEffect(() => {
@@ -172,14 +177,36 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
   }, [priorityDropdownOpen]);
 
   // ── Fetch queue data ──
-  const fetchQueue = useCallback(async () => {
+  const fetchQueue = useCallback(async (initialLoad = false) => {
+    const requestId = ++queueRequestSequenceRef.current;
+    queueControllerRef.current?.abort();
+    const controller = new AbortController();
+    queueControllerRef.current = controller;
+
+    if (initialLoad) setLoading(true);
+    else setRefreshing(true);
+
     try {
       const params = new URLSearchParams();
       if (doctorFilter) params.set("doctorId", doctorFilter);
       const qs = params.toString() ? `?${params.toString()}` : "";
-      const { data } = await api.get<ClinicQueueItem[]>(`/api/clinic-queue/today${qs}`);
+      const { data } = await api.get<ClinicQueueItem[]>(`/api/clinic-queue/today${qs}`, {
+        signal: controller.signal,
+      });
+
+      if (controller.signal.aborted || requestId !== queueRequestSequenceRef.current) return;
       setItems(data);
-    } catch { /* ignore */ } finally { setLoading(false); }
+      setLoadError(null);
+    } catch (error) {
+      if (controller.signal.aborted || requestId !== queueRequestSequenceRef.current) return;
+      setLoadError(extractErrorMessage(error, "تعذر تحميل قائمة الانتظار"));
+    } finally {
+      if (requestId === queueRequestSequenceRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+        if (queueControllerRef.current === controller) queueControllerRef.current = null;
+      }
+    }
   }, [doctorFilter]);
 
   // ── Fetch analytics ──
@@ -195,10 +222,20 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
 
   // ── Initial load + rooms ──
   useEffect(() => {
-    fetchQueue();
+    setItems([]);
+    setLoadError(null);
+    fetchQueue(true);
     fetchAnalytics();
     api.get<DbRoom[]>("/api/clinic-queue/rooms").then(r => setRooms(r.data)).catch(() => {});
   }, [fetchQueue, fetchAnalytics]);
+
+  useEffect(() => {
+    return () => {
+      queueRequestSequenceRef.current += 1;
+      queueControllerRef.current?.abort();
+      queueControllerRef.current = null;
+    };
+  }, []);
 
   // ── SignalR real-time connection ──
   useEffect(() => {
@@ -396,6 +433,11 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
     .filter(i => i.status === "Waiting")
     .sort((a, b) => a.sortOrder - b.sortOrder);
 
+  const hasVisibleQueueItems =
+    filtered(activeItems).length > 0 ||
+    filtered(completedItems).length > 0 ||
+    filtered(noShowItems).length > 0;
+
   return (
     <div className="flex flex-col h-full">
       {/* Stats + Filter bar */}
@@ -451,8 +493,14 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
           </select>
         )}
 
-        <button onClick={fetchQueue} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition">
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} style={{ color: "#64748b" }} />
+        <button
+          type="button"
+          aria-label="تحديث قائمة الانتظار"
+          onClick={() => fetchQueue()}
+          disabled={loading || refreshing}
+          className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition disabled:opacity-60"
+        >
+          <RefreshCw className={`w-4 h-4 ${loading || refreshing ? "animate-spin" : ""}`} style={{ color: "#64748b" }} />
         </button>
       </div>
 
@@ -497,11 +545,44 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
 
       {/* Queue list */}
       <div className="flex-1 overflow-auto p-3 space-y-2">
+        {!loading && loadError && (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="font-bold">{loadError}</p>
+              <p className="mt-0.5 text-xs text-red-600">
+                {items.length > 0
+                  ? "تم إبقاء بيانات الانتظار المحملة سابقًا حتى ينجح التحديث."
+                  : "تعذر التأكد من قائمة الانتظار الحالية؛ لا تُعامل الشاشة كقائمة فارغة."}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => fetchQueue(items.length === 0)}
+              disabled={loading || refreshing}
+              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-bold disabled:opacity-60"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${loading || refreshing ? "animate-spin" : ""}`} />
+              إعادة المحاولة
+            </button>
+          </div>
+        )}
+
+        {!loading && refreshing && items.length > 0 && (
+          <div className="flex items-center justify-center gap-2 py-1 text-xs font-semibold text-slate-500">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            جارٍ تحديث قائمة الانتظار...
+          </div>
+        )}
+
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="w-8 h-8 animate-spin" style={{ color: BLUE }} />
           </div>
-        ) : filtered(activeItems).length === 0 && filtered(completedItems).length === 0 && filtered(noShowItems).length === 0 ? (
+        ) : loadError && !hasVisibleQueueItems ? null : !hasVisibleQueueItems ? (
           <div className="text-center py-20" style={{ color: "#94a3b8" }}>
             <UserPlus className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <p className="font-medium">لا يوجد مرضى في الانتظار</p>
@@ -525,7 +606,6 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        {/* Up/Down arrows for Waiting items */}
                         {isWaiting && (
                           <span className="flex items-center gap-0.5">
                             <button
@@ -550,7 +630,6 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
                         <span className="font-bold text-sm" style={{ color: NAVY }}>{item.patientName}</span>
                         <span className="text-[11px] px-1.5 py-0.5 rounded-md font-mono" style={{ background: "#f1f5f9", color: "#64748b" }}>{item.patientNumber}</span>
 
-                        {/* Priority badge */}
                         {item.priority !== "Normal" && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold flex items-center gap-0.5" style={{ background: priCfg.bg, color: priCfg.color }}>
                             {item.priority === "Emergency" && <AlertTriangle className="w-2.5 h-2.5" />}
@@ -558,7 +637,6 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
                           </span>
                         )}
 
-                        {/* Recall count badge */}
                         {item.recallCount > 0 && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold" style={{ background: "#fef3c7", color: "#d97706" }}>
                             نداء {toArabicNum(item.recallCount)}
@@ -577,7 +655,6 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
                       <div className="flex items-center gap-3 text-xs flex-wrap" style={{ color: "#64748b" }}>
                         <span className="flex items-center gap-1"><Stethoscope className="w-3 h-3" />{item.doctorName || "—"}</span>
                         {item.appointmentTime && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{item.appointmentTime}</span>}
-                        {/* Position and estimated wait for waiting patients */}
                         {isWaiting && item.position != null && (
                           <span className="text-[11px] font-semibold" style={{ color: "#b45309" }}>
                             رقم {toArabicNum(item.position)}
@@ -597,7 +674,6 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
                             disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50" style={{ background: "#059669" }} title="نداء صوتي فقط (بدون تغيير الحالة)">
                             <Volume2 className="w-3 h-3" />
                           </button>
-                          {/* NoShow button for Waiting */}
                           <button onClick={(e) => { e.stopPropagation(); queueAction(`/api/clinic-queue/${item.id}/no-show`); }}
                             disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50 flex items-center gap-1" style={{ background: "#9333ea" }} title="لم يحضر">
                             لم يحضر
@@ -614,12 +690,10 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
                             disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50" style={{ background: "#7c3aed" }}>
                             <DoorOpen className="w-3 h-3 inline ml-1" />إدخال
                           </button>
-                          {/* Recall button */}
                           <button onClick={(e) => { e.stopPropagation(); queueAction(`/api/clinic-queue/${item.id}/recall`); }}
                             disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50 flex items-center gap-1" style={{ background: "#d97706" }} title="إعادة نداء">
                             <PhoneCall className="w-3 h-3" />إعادة نداء
                           </button>
-                          {/* NoShow button for Called */}
                           <button onClick={(e) => { e.stopPropagation(); queueAction(`/api/clinic-queue/${item.id}/no-show`); }}
                             disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50 flex items-center gap-1" style={{ background: "#9333ea" }} title="لم يحضر">
                             لم يحضر
@@ -639,7 +713,6 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
                         </button>
                       )}
 
-                      {/* Priority change dropdown — for any active item */}
                       <div className="relative" ref={priorityDropdownOpen === item.id ? priorityDropdownRef : null} onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={(e) => { e.stopPropagation(); setPriorityDropdownOpen(priorityDropdownOpen === item.id ? null : item.id); }}
@@ -669,7 +742,6 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
                         )}
                       </div>
 
-                      {/* SMS notification button — for any active item */}
                       <button onClick={(e) => { e.stopPropagation(); handleNotify(item); }}
                         disabled={isLoading} className="px-2 py-1 rounded-lg text-[11px] font-bold transition hover:opacity-80 disabled:opacity-50 flex items-center gap-1"
                         style={{ background: "#eff6ff", color: "#3b82f6", border: "1px solid #bfdbfe" }}
@@ -682,7 +754,6 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
               );
             })}
 
-            {/* NoShow section */}
             {filtered(noShowItems).length > 0 && (
               <div className="pt-3">
                 <div className="text-[11px] font-bold mb-2 flex items-center gap-1.5" style={{ color: "#9333ea" }}>
@@ -717,7 +788,6 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
               </div>
             )}
 
-            {/* Completed section */}
             {filtered(completedItems).length > 0 && (
               <div className="pt-3">
                 <div className="text-[11px] font-bold mb-2" style={{ color: "#94a3b8" }}>المنتهون ({toArabicNum(filtered(completedItems).length)})</div>

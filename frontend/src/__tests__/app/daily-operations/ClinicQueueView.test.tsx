@@ -241,7 +241,7 @@ describe("SEQ-35/37 ClinicQueueView load and call truth", () => {
     expect(screen.getByText("المريض الأحدث")).toBeInTheDocument();
   });
 
-  it("refreshes the queue immediately after a successful call without waiting for SignalR", async () => {
+  it("refreshes all queue views immediately after a successful call without waiting for SignalR", async () => {
     const queueCalls = installQueueResponses([
       () => Promise.resolve({ data: [queueItem] }),
       () => Promise.resolve({ data: [calledQueueItem] }),
@@ -261,5 +261,7 @@ describe("SEQ-35/37 ClinicQueueView load and call truth", () => {
     });
     expect(await screen.findByText("تم النداء")).toBeInTheDocument();
     expect(queueCalls).toHaveLength(2);
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["daily-ops"] });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["clinic-queue"] });
   });
 });

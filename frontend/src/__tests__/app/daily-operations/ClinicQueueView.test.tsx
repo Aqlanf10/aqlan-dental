@@ -80,6 +80,13 @@ const calledQueueItem = {
   calledAt: "2026-07-12T00:01:00Z",
 };
 
+const noShowQueueItem = {
+  ...queueItem,
+  status: "NoShow",
+  statusArabic: "تم تسجيل عدم الحضور",
+  noShowAt: "2026-07-12T00:02:00Z",
+};
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -131,7 +138,7 @@ async function startTwoFilteredLoads(queueCalls: Array<{ signal?: { aborted: boo
   expect(queueCalls[1].signal?.aborted).toBe(true);
 }
 
-describe("SEQ-35/37 ClinicQueueView load and call truth", () => {
+describe("SEQ-35/37/38 ClinicQueueView truth and synchronization", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
@@ -263,5 +270,36 @@ describe("SEQ-35/37 ClinicQueueView load and call truth", () => {
     expect(queueCalls).toHaveLength(2);
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["daily-ops"] });
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["clinic-queue"] });
+  });
+
+  it("keeps a generic queue action locked until refreshed server truth arrives", async () => {
+    const refreshedQueue = deferred<unknown>();
+    const queueCalls = installQueueResponses([
+      () => Promise.resolve({ data: [queueItem] }),
+      () => refreshedQueue.promise,
+    ]);
+    vi.mocked(api.post).mockResolvedValue({ data: {} } as never);
+
+    render(<ClinicQueueView searchQuery="" />);
+    expect(await screen.findByText("مريض الانتظار")).toBeInTheDocument();
+
+    const noShowButton = screen.getByRole("button", { name: "لم يحضر" });
+    fireEvent.click(noShowButton);
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith(
+        "/api/clinic-queue/queue-1/no-show",
+        undefined,
+      );
+    });
+    expect(noShowButton).toBeDisabled();
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["daily-ops"] });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["clinic-queue"] });
+    expect(queueCalls).toHaveLength(2);
+
+    refreshedQueue.resolve({ data: [noShowQueueItem] });
+
+    expect(await screen.findByText("تم تسجيل عدم الحضور")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "لم يحضر" })).not.toBeInTheDocument();
   });
 });

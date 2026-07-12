@@ -78,15 +78,17 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function installQueueResponses(queueResponses: Array<Promise<unknown>>) {
+type QueueResponseFactory = () => Promise<unknown>;
+
+function installQueueResponses(queueResponses: QueueResponseFactory[]) {
   const queueCalls: Array<{ signal?: { aborted: boolean } }> = [];
 
   vi.mocked(api.get).mockImplementation((url, config) => {
     if (url.startsWith("/api/clinic-queue/today")) {
-      const response = queueResponses[queueCalls.length];
-      if (!response) throw new Error(`Unexpected queue request ${url}`);
+      const responseFactory = queueResponses[queueCalls.length];
+      if (!responseFactory) throw new Error(`Unexpected queue request ${url}`);
       queueCalls.push({ signal: config?.signal });
-      return response as never;
+      return responseFactory() as never;
     }
 
     if (url.startsWith("/api/clinic-queue/analytics")) {
@@ -118,7 +120,7 @@ describe("SEQ-35 ClinicQueueView load truth", () => {
   });
 
   it("shows an Arabic error instead of a false empty queue on initial failure", async () => {
-    installQueueResponses([Promise.reject(new Error("Network Error"))]);
+    installQueueResponses([() => Promise.reject(new Error("Network Error"))]);
 
     render(<ClinicQueueView searchQuery="" />);
 
@@ -131,8 +133,8 @@ describe("SEQ-35 ClinicQueueView load truth", () => {
 
   it("shows the genuine empty state only after a successful retry", async () => {
     const queueCalls = installQueueResponses([
-      Promise.reject(new Error("Failed to fetch")),
-      Promise.resolve({ data: [] }),
+      () => Promise.reject(new Error("Failed to fetch")),
+      () => Promise.resolve({ data: [] }),
     ]);
 
     render(<ClinicQueueView searchQuery="" />);
@@ -148,8 +150,8 @@ describe("SEQ-35 ClinicQueueView load truth", () => {
   it("keeps previously loaded patients visible when a later refresh fails", async () => {
     const refreshRequest = deferred<unknown>();
     installQueueResponses([
-      Promise.resolve({ data: [queueItem] }),
-      refreshRequest.promise,
+      () => Promise.resolve({ data: [queueItem] }),
+      () => refreshRequest.promise,
     ]);
 
     render(<ClinicQueueView searchQuery="" />);
@@ -177,9 +179,9 @@ describe("SEQ-35 ClinicQueueView load truth", () => {
     const olderRefresh = deferred<unknown>();
     const newerRefresh = deferred<unknown>();
     const queueCalls = installQueueResponses([
-      Promise.resolve({ data: [queueItem] }),
-      olderRefresh.promise,
-      newerRefresh.promise,
+      () => Promise.resolve({ data: [queueItem] }),
+      () => olderRefresh.promise,
+      () => newerRefresh.promise,
     ]);
 
     render(<ClinicQueueView searchQuery="" />);
@@ -205,9 +207,9 @@ describe("SEQ-35 ClinicQueueView load truth", () => {
     const olderRefresh = deferred<unknown>();
     const newerRefresh = deferred<unknown>();
     const queueCalls = installQueueResponses([
-      Promise.resolve({ data: [queueItem] }),
-      olderRefresh.promise,
-      newerRefresh.promise,
+      () => Promise.resolve({ data: [queueItem] }),
+      () => olderRefresh.promise,
+      () => newerRefresh.promise,
     ]);
 
     render(<ClinicQueueView searchQuery="" />);

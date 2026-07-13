@@ -32,8 +32,8 @@ Evidence inspected:
 | Norm customization | `CephNormsController`, DB overrides | Complete | Admin runtime QA remains. |
 | Measurement/report export | Arabic PDF, print, UTF-8 CSV | Complete | Preserve approval and saved-snapshot gates. |
 | Clinical assessment | structured ceph assessment + approval-gated explicit handoff to canonical ortho problem list | Complete | Preserve doctor selection, approval gates, duplicate suppression, and patient access controls. |
-| Lateral soft tissue | profile photo analysis + S/E lines | Partial | Unify navigation and longitudinal comparison. |
-| Frontal soft tissue | `/ceph/photo/frontal` ratios/asymmetry | Partial | Unify navigation and longitudinal comparison. |
+| Lateral soft tissue | profile photo analysis + S/E lines; `/ceph/photo/compare?viewType=profile` saved-record image/measurement comparison | Complete | Preserve the named soft-tissue definitions, real saved dates, and no-growth-prediction statement. |
+| Frontal soft tissue | `/ceph/photo/frontal` ratios/asymmetry; `/ceph/photo/compare?viewType=frontal` saved-record image/measurement comparison | Complete | Preserve scale-independent ratios, patient-side conventions, chronological record order, and no interpolation. |
 | PA cephalometric x-ray | `analysisType=pa` in the existing ceph owner; 15-point `CephPaCanvas`; calibrated transverse/asymmetry/cant engine mirrored in backend/frontend; snapshots, approval, PDF/CSV | Complete | Preserve ZR→ZL patient-left sign convention, descriptive treatment of unconfigured age/sex norms, and the prohibition on deriving a lateral skeletal class from PA-only data. |
 | Occlusogram | canonical `/ortho/[id]/model-analysis` workflow; `OrthoModelAnalysesController`; `DentalModelAnalysisCalculator` | Complete | Preserve the three-mode tooth-size, arch-width/length, and irregularity presentation; case-photo reuse, version navigation, approval, and PDF must continue using the canonical model-analysis owner. |
 | Treatment simulation | `/ceph/vto` doctor-authored movements plus persisted named scenarios, immutable versions, before/after snapshots, notes, and Arabic PDF inclusion | Complete | Preserve approval/access gates, saved calibration/landmark inputs, version history, and the explicit no biological or soft-tissue response prediction statement. |
@@ -73,3 +73,7 @@ Parity is complete only when every matrix row is either `Complete` or explicitly
 accepted by the owner as out of scope, all linked requirements and tests pass,
 no open review/CI issue remains, production deployment is healthy, and the final
 authenticated workflow QA is recorded under `SEQ-51`.
+
+The implementation matrix has no remaining `Partial` row. Final runtime,
+accessibility, export, CI, and deployment evidence is recorded in
+`docs/audits/WEBCEPH_CEPH_PARITY_CLOSURE.md`.

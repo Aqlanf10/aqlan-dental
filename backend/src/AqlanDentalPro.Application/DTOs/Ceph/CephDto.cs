@@ -63,6 +63,7 @@ public class CephAnalysisListDto
     public bool AiAssisted { get; set; }
     public int LandmarkCount { get; set; }
     public bool HasMeasurements { get; set; }
+    public bool IsApproved { get; set; }
     public string? Notes { get; set; }
     /// <summary>
     /// Creation timestamp — the deterministic tiebreaker the presentation deck

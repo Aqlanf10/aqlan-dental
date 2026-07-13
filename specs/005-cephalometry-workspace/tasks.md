@@ -40,3 +40,10 @@
   formula prefixes in text cells. Frontend-only; no API, schema, permission, or
   clinical calculation changes. Strong model. — ✅ Done in PR #678; eight
   focused tests plus Backend, Frontend, E2E, Encoding Guard, and Vercel passed.
+- `CEPH-TASK-007`: SEQ-42 (owner directive 2026-07-13) — expose the existing
+  analysis approval flag in the ceph list DTO and derive an honest workflow
+  stage in `/ceph`. Saved measurements alone must not be presented as final-
+  report readiness; the next action becomes review/approval until the doctor
+  approves. No schema, permission, AI, or clinical-calculation changes. Strong
+  model. — ✅ Done in PR #679; Backend, Frontend, E2E, Encoding Guard, and
+  Vercel passed.

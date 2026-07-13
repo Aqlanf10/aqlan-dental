@@ -232,9 +232,48 @@ export interface CephAnalysisList {
   landmarkCount: number;
   hasMeasurements: boolean;
   isApproved: boolean;
+  clinicalTags?: CephClinicalTag[];
   /** Creation timestamp (ISO) — tiebreaker for selecting the latest analysis,
    *  matching the deck generator (analysisDate DESC, then createdAt DESC). */
   createdAt: string;
+}
+
+export interface CephClinicalTag {
+  key: string;
+  label: string;
+  group: "skeletal" | "vertical" | "incisor";
+}
+
+export interface CephCohortBucket {
+  key: string;
+  label: string;
+  count: number;
+  percentage: number;
+}
+
+export interface CephCohortMeasurement {
+  measurementName: string;
+  unit: string;
+  count: number;
+  mean: number;
+  minimum: number;
+  maximum: number;
+  standardDeviation: number;
+}
+
+export interface CephCohortResult {
+  suppressed: boolean;
+  minimumCohortSize: number;
+  cohortSize: number | null;
+  fromDate?: string | null;
+  toDate?: string | null;
+  analysisType?: string | null;
+  tag?: string | null;
+  availableTags: CephClinicalTag[];
+  skeletalDistribution: CephCohortBucket[];
+  verticalDistribution: CephCohortBucket[];
+  incisorDistribution: CephCohortBucket[];
+  measurements: CephCohortMeasurement[];
 }
 
 // ---------------------------------------------------------------------------

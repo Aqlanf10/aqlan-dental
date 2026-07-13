@@ -19,7 +19,10 @@
 - Multi-superimposition owner: existing `/ceph/compare`, `CephSuperimposeCanvas`, and similarity-transform math.
 - PA owner: existing `/ceph` module, ceph DTO/service/controller patterns, norms, readiness, versions, and report identity; no parallel module.
 - Occlusogram owner: existing `/ortho/[id]/model-analysis` and `OrthoModelAnalysesController`.
-- Timelapse/case/cohort owners: existing patient timeline, ortho case presentation, approved diagnosis/problem list, and patient-access services.
+- Timelapse owner: `/ceph/timelapse/[caseId]` composes existing ceph analysis images and ortho clinical photos in `buildCephTimelapseFrames`; it persists no duplicate media or synthetic frames.
+- Case review owner: `/ceph/case/[caseId]` reuses `CasePresentationPanel`, selected/prepared ortho photos, readiness, report/PPTX endpoints, and the canonical ortho case.
+- Approved-tag owner: `CephClinicalTagCatalog` allowlists structured diagnosis values and projects tags only when both the analysis and diagnosis are doctor-approved.
+- Cohort owner: `CephService.BuildCohortAsync` and `GET /api/ceph/cohort`; one latest approved record per accessible patient, aggregate-only DTOs, and a five-independent-patient threshold for the cohort and every measurement.
 
 Allowed files: existing ceph/ortho owners named in the parity matrix, their focused tests, and ceph specification/governance/audit files. Each delivery slice must narrow this list before editing.
 

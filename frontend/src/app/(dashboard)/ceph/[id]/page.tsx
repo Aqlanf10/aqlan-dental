@@ -7,7 +7,7 @@ import {
   Save, CheckCircle2, ChevronRight, ChevronDown, Loader2, FileDown, Printer,
   Sun, Contrast, RotateCcw, ListChecks, ImageIcon, FileText, ScanLine, Target,
   User, FolderOpen, History, Camera, Lock, X, ArrowLeftRight, ShieldCheck,
-  AlertTriangle,
+  AlertTriangle, Clock3, FileSearch,
 } from "lucide-react";
 import type {
   CephAnalysis, CephLandmark, CephDiagnosis, AnalysisType,
@@ -1204,7 +1204,11 @@ export default function CephAnalysisPage() {
             )}
           </div>
 
-          <div className="border-t border-gray-100 p-2">
+          <div className="grid gap-2 border-t border-gray-100 p-2">
+            <div className="grid grid-cols-2 gap-2">
+              <Link href={`/ceph/case/${analysis.orthoCaseId}`} className="flex items-center justify-center gap-2 rounded-md border border-gray-200 px-2 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50"><FileSearch className="h-4 w-4" />مراجعة الحالة</Link>
+              <Link href={`/ceph/timelapse/${analysis.orthoCaseId}`} className="flex items-center justify-center gap-2 rounded-md border border-gray-200 px-2 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50"><Clock3 className="h-4 w-4" />Timelapse</Link>
+            </div>
             <Link
               href={`/ortho/${analysis.orthoCaseId}/model-analysis`}
               className="flex w-full items-center justify-between rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-clinic-blue hover:bg-blue-100"

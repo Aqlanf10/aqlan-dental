@@ -20,6 +20,8 @@ public class CephController(
 {
     private static readonly HashSet<string> PaRequiredLandmarkKeys =
         ["Cg", "ZR", "ZL", "ANS", "JR", "JL", "AgR", "AgL", "Me", "UDM", "LDM", "U6R", "U6L", "L6R", "L6L"];
+    private static readonly HashSet<string> CohortAnalysisTypes =
+        ["steiner", "tweed", "mcnamara", "ricketts", "downs", "jarabak", "wits", "pa", "full"];
 
     private static bool IsPaReadyForApproval(CephAnalysisDetailDto detail) =>
         !string.Equals(detail.AnalysisType, "pa", StringComparison.OrdinalIgnoreCase)
@@ -39,6 +41,38 @@ public class CephController(
 
         var accessiblePatientIds = await patientAccess.GetAccessiblePatientIdsAsync();
         var result = await service.ListAsync(orthoCaseId, accessiblePatientIds);
+        return Ok(result);
+    }
+
+    // Aggregate-only cohort analytics. The service uses one latest approved,
+    // doctor-reviewed record per accessible patient and suppresses cohorts < 5.
+    [HttpGet("cohort")]
+    public async Task<IActionResult> Cohort(
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        [FromQuery] string? analysisType,
+        [FromQuery] string? tag)
+    {
+        if (from.HasValue && to.HasValue && from.Value > to.Value)
+            return BadRequest(new { message = "تاريخ البداية يجب أن يسبق تاريخ النهاية" });
+
+        analysisType = analysisType?.Trim().ToLowerInvariant();
+        if (analysisType == "all") analysisType = null;
+        if (analysisType is not null && !CohortAnalysisTypes.Contains(analysisType))
+            return BadRequest(new { message = "نوع تحليل السيفالو غير صالح" });
+
+        tag = tag?.Trim();
+        if (string.IsNullOrWhiteSpace(tag)) tag = null;
+        if (tag is not null && !CephClinicalTagCatalog.IsKnownKey(tag))
+            return BadRequest(new { message = "وسم السيفالو غير صالح" });
+
+        var accessiblePatientIds = await patientAccess.GetAccessiblePatientIdsAsync();
+        var result = await service.BuildCohortAsync(
+            accessiblePatientIds,
+            from,
+            to,
+            analysisType,
+            tag);
         return Ok(result);
     }
 

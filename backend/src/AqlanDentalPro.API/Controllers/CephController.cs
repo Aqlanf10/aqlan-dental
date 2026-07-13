@@ -414,6 +414,29 @@ public class CephController(
             : NotFound(new { message = "تحليل السيفالومتري غير موجود" });
     }
 
+    // POST /api/ceph/{id}/assessment/problem-list
+    [HttpPost("{id:guid}/assessment/problem-list")]
+    public async Task<IActionResult> ImportAssessmentProblems(
+        Guid id,
+        [FromBody] ImportCephAssessmentProblemsRequest req)
+    {
+        var accessError = await GetAnalysisAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        if (!currentUser.IsAdmin && !patientAccess.IsDoctor)
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new { message = "لا يُسمح إلا للطبيب المعالج أو المدير بنقل التقييم إلى قائمة المشكلات" });
+
+        var result = await service.ImportAssessmentProblemsAsync(id, req);
+        return result.Status switch
+        {
+            "not_found" => NotFound(new { message = "تحليل السيفالومتري غير موجود" }),
+            "analysis_not_approved" => BadRequest(new { message = "اعتمد التحليل أولاً قبل نقل التقييم" }),
+            "diagnosis_not_approved" => BadRequest(new { message = "يجب أن يوافق الطبيب على التشخيص قبل نقل التقييم" }),
+            _ => Ok(result),
+        };
+    }
+
     // DELETE /api/ceph/{id}
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)

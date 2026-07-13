@@ -200,6 +200,35 @@ public class SaveDiagnosisRequest
     public bool DoctorApproved { get; set; }
 }
 
+public sealed class ImportCephAssessmentProblemsRequest
+{
+    public List<CephAssessmentProblemInput> Items { get; set; } = [];
+}
+
+public sealed class CephAssessmentProblemInput
+{
+    public string Category { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string Severity { get; set; } = "moderate";
+}
+
+public sealed class CephAssessmentProblemImportResult
+{
+    public string Status { get; set; } = "ok";
+    public int Added { get; set; }
+    public int SkippedExisting { get; set; }
+    public List<CephAssessmentProblemImportItem> Items { get; set; } = [];
+}
+
+public sealed class CephAssessmentProblemImportItem
+{
+    public Guid Id { get; set; }
+    public string Category { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string Severity { get; set; } = string.Empty;
+    public int SortOrder { get; set; }
+}
+
 public class AiSimulateRequest
 {
     public int ImageWidth { get; set; }

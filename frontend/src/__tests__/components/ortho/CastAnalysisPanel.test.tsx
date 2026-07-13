@@ -25,7 +25,7 @@ describe("CastAnalysisPanel", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText("لا يوجد تحليل نماذج محفوظ بعد لهذه الحالة."),
+        screen.getByText("لا يوجد Occlusogram محفوظ بعد لهذه الحالة."),
       ).toBeInTheDocument(),
     );
     expect(
@@ -47,7 +47,7 @@ describe("CastAnalysisPanel", () => {
       ).toBeInTheDocument(),
     );
     expect(
-      screen.queryByText("لا يوجد تحليل نماذج محفوظ بعد لهذه الحالة."),
+      screen.queryByText("لا يوجد Occlusogram محفوظ بعد لهذه الحالة."),
     ).not.toBeInTheDocument();
   });
 
@@ -67,7 +67,7 @@ describe("CastAnalysisPanel", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText("لا يوجد تحليل نماذج محفوظ بعد لهذه الحالة."),
+        screen.getByText("لا يوجد Occlusogram محفوظ بعد لهذه الحالة."),
       ).toBeInTheDocument(),
     );
     expect(api.get).toHaveBeenCalledTimes(2);

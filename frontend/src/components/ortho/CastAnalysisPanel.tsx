@@ -31,8 +31,8 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Surfaces the existing cast / dental-model analysis (PR #364) inside the case
- *  workspace as a read summary + a link to the full calculator. No rebuild. */
+/** Surfaces the canonical occlusogram / dental-model analysis inside the case
+ * workspace as a read summary plus a link to the shared clinical workflow. */
 export function CastAnalysisPanel({ caseId }: { caseId: string }) {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["ortho-model-latest", caseId],
@@ -62,12 +62,12 @@ export function CastAnalysisPanel({ caseId }: { caseId: string }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="flex items-center gap-2 text-sm font-bold text-clinic-navy">
-          <Microscope className="h-4 w-4 text-clinic-blue" />تحليل النماذج (Cast)
+          <Microscope className="h-4 w-4 text-clinic-blue" />Occlusogram وتحليل النماذج
         </h3>
         <Link href={fullToolHref}
           className="inline-flex items-center gap-1.5 rounded-lg bg-clinic-blue px-3 py-1.5 text-xs font-medium text-white hover:opacity-90">
           <ExternalLink className="h-3.5 w-3.5" />
-          {data ? "فتح / تحرير التحليل" : "إنشاء تحليل نماذج"}
+          {data ? "فتح / تحرير Occlusogram" : "إنشاء Occlusogram"}
         </Link>
       </div>
 
@@ -88,7 +88,7 @@ export function CastAnalysisPanel({ caseId }: { caseId: string }) {
 
       {isError ? null : !data ? (
         <div className="rounded-lg border border-dashed border-gray-300 py-10 text-center text-sm text-gray-400">
-          لا يوجد تحليل نماذج محفوظ بعد لهذه الحالة.
+          لا يوجد Occlusogram محفوظ بعد لهذه الحالة.
         </div>
       ) : (
         <div className="space-y-3">
@@ -110,7 +110,7 @@ export function CastAnalysisPanel({ caseId }: { caseId: string }) {
             <Stat label="Pont (رحوي متوقع)" value={num(data.results?.pont?.predictedIntermolarWidth, " مم")} />
           </div>
           <p className="text-[11px] text-gray-400">
-            ملخّص للقراءة فقط — افتح الأداة الكاملة للحساب والتحرير والاعتماد.
+            ملخص للقراءة فقط. افتح سير Occlusogram للحساب والتحرير والاعتماد.
           </p>
         </div>
       )}

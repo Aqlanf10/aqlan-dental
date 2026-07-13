@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -8,18 +8,25 @@ import {
   BadgeCheck,
   Calculator,
   CheckCircle2,
-  ClipboardList,
+  Columns3,
   FilePlus2,
+  FileDown,
+  History,
+  ImageIcon,
   Loader2,
   Plus,
   Ruler,
   Save,
   ScanLine,
+  TableProperties,
   Trash2,
   TriangleAlert,
 } from "lucide-react";
 import api from "@/lib/api";
 import { cn, localDateString } from "@/lib/utils";
+import { resolveImageUrl } from "@/hooks/useClinicBranding";
+import { downloadPdfFromApi } from "@/lib/pdfDownload";
+import type { OrthoPhoto } from "@/types/ortho";
 import type {
   DentalModelAnalysisInput,
   DentalModelAnalysisRecord,
@@ -32,14 +39,12 @@ const UPPER_TEETH = ["16", "15", "14", "13", "12", "11", "21", "22", "23", "24",
 const LOWER_TEETH = ["36", "35", "34", "33", "32", "31", "41", "42", "43", "44", "45", "46"];
 const MOYERS_PERCENTILES = [5, 15, 25, 35, 50, 65, 75, 85, 95];
 
-type SectionKey = "teeth" | "pont-howe" | "mixed" | "huckaba" | "results";
+type SectionKey = "tooth-size" | "arch-dimensions" | "irregularity";
 
 const SECTIONS: { key: SectionKey; label: string; icon: typeof Ruler }[] = [
-  { key: "teeth", label: "الأسنان والمسافة", icon: Ruler },
-  { key: "pont-howe", label: "Pont وAshley Howe", icon: ClipboardList },
-  { key: "mixed", label: "الأسنان المختلطة", icon: Calculator },
-  { key: "huckaba", label: "Huckaba الشعاعي", icon: ScanLine },
-  { key: "results", label: "النتائج السريرية", icon: CheckCircle2 },
+  { key: "tooth-size", label: "حجم الأسنان", icon: Ruler },
+  { key: "arch-dimensions", label: "عرض وطول القوس", icon: Columns3 },
+  { key: "irregularity", label: "عدم الانتظام", icon: ScanLine },
 ];
 
 const createEmptyInputs = (): DentalModelAnalysisInput => ({
@@ -71,9 +76,12 @@ const getBackendMessage = (error: unknown, fallback: string) =>
 
 export default function ModelAnalysisPage() {
   const { id: orthoCaseId } = useParams<{ id: string }>();
-  const [section, setSection] = useState<SectionKey>("teeth");
+  const [section, setSection] = useState<SectionKey>("tooth-size");
   const [inputs, setInputs] = useState<DentalModelAnalysisInput>(createEmptyInputs);
   const [results, setResults] = useState<DentalModelAnalysisResult | null>(null);
+  const [records, setRecords] = useState<DentalModelAnalysisRecord[]>([]);
+  const [photos, setPhotos] = useState<OrthoPhoto[]>([]);
+  const [selectedPhotoId, setSelectedPhotoId] = useState("");
   const [recordId, setRecordId] = useState<string | null>(null);
   const [approvedAt, setApprovedAt] = useState<string | null>(null);
   const [analysisDate, setAnalysisDate] = useState(localDateString());
@@ -81,22 +89,44 @@ export default function ModelAnalysisPage() {
   const [notes, setNotes] = useState("");
   const [caseInfo, setCaseInfo] = useState<{ caseNumber?: string; patientName?: string } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busyAction, setBusyAction] = useState<"calculate" | "save" | "approve" | null>(null);
+  const [busyAction, setBusyAction] = useState<"calculate" | "save" | "approve" | "pdf" | null>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const loadRecord = useCallback((record: DentalModelAnalysisRecord) => {
+    setRecordId(record.id);
+    setInputs({ ...createEmptyInputs(), ...record.inputs });
+    setResults(record.results);
+    setAnalysisDate(record.analysisDate);
+    setDentitionStage(record.dentitionStage);
+    setNotes(record.notes ?? "");
+    setApprovedAt(record.approvedAt ?? null);
+  }, []);
 
   useEffect(() => {
     let active = true;
     Promise.allSettled([
       api.get(`/api/ortho-cases/${orthoCaseId}`),
-      api.get<DentalModelAnalysisRecord | null>(`/api/ortho-cases/${orthoCaseId}/model-analyses/latest`),
+      api.get<DentalModelAnalysisRecord[]>(`/api/ortho-cases/${orthoCaseId}/model-analyses`),
+      api.get<OrthoPhoto[]>(`/api/ortho-cases/${orthoCaseId}/photos`),
     ])
-      .then(([caseResult, analysisResult]) => {
+      .then(([caseResult, analysisResult, photosResult]) => {
         if (!active) return;
         if (caseResult.status === "fulfilled") {
           setCaseInfo(caseResult.value.data as { caseNumber?: string; patientName?: string });
         }
-        if (analysisResult.status === "fulfilled" && analysisResult.value.data) {
-          loadRecord(analysisResult.value.data);
+        if (analysisResult.status === "fulfilled") {
+          setRecords(analysisResult.value.data);
+          if (analysisResult.value.data[0]) loadRecord(analysisResult.value.data[0]);
+        }
+        if (photosResult.status === "fulfilled") {
+          const eligible = photosResult.value.data.filter(photo =>
+            photo.subtype === "UpperOcclusal" ||
+            photo.subtype === "LowerOcclusal" ||
+            photo.category === "Intraoral" ||
+            photo.photoType === "Intraoral",
+          ).sort((a, b) => Number(Boolean(b.subtype?.includes("Occlusal"))) - Number(Boolean(a.subtype?.includes("Occlusal"))));
+          setPhotos(eligible);
+          setSelectedPhotoId(eligible[0]?.id ?? "");
         }
       })
       .finally(() => {
@@ -105,7 +135,7 @@ export default function ModelAnalysisPage() {
     return () => {
       active = false;
     };
-  }, [orthoCaseId]);
+  }, [loadRecord, orthoCaseId]);
 
   const enteredToothCount = useMemo(
     () => Object.values(inputs.toothWidths).filter(value => value !== null && value > 0).length,
@@ -113,16 +143,7 @@ export default function ModelAnalysisPage() {
   );
 
   const isApproved = Boolean(approvedAt);
-
-  function loadRecord(record: DentalModelAnalysisRecord) {
-    setRecordId(record.id);
-    setInputs({ ...createEmptyInputs(), ...record.inputs });
-    setResults(record.results);
-    setAnalysisDate(record.analysisDate);
-    setDentitionStage(record.dentitionStage);
-    setNotes(record.notes ?? "");
-    setApprovedAt(record.approvedAt ?? null);
-  }
+  const selectedPhoto = photos.find(photo => photo.id === selectedPhotoId) ?? null;
 
   function markChanged(nextInputs: DentalModelAnalysisInput) {
     setInputs(nextInputs);
@@ -157,7 +178,6 @@ export default function ModelAnalysisPage() {
         inputs,
       );
       setResults(response.data);
-      setSection("results");
     } catch (error) {
       setMessage({ type: "error", text: getBackendMessage(error, "تعذر حساب التحاليل. راجع القياسات المدخلة.") });
     } finally {
@@ -185,8 +205,8 @@ export default function ModelAnalysisPage() {
             payload,
           );
       loadRecord(response.data);
+      setRecords(current => [response.data, ...current.filter(item => item.id !== response.data.id)]);
       setMessage({ type: "success", text: "تم حفظ التحليل وربطه بحالة التقويم." });
-      setSection("results");
     } catch (error) {
       setMessage({ type: "error", text: getBackendMessage(error, "تعذر حفظ تحليل النماذج.") });
     } finally {
@@ -206,6 +226,7 @@ export default function ModelAnalysisPage() {
         `/api/ortho-cases/${orthoCaseId}/model-analyses/${recordId}/approve`,
       );
       loadRecord(response.data);
+      setRecords(current => current.map(item => item.id === response.data.id ? response.data : item));
       setMessage({ type: "success", text: "تم اعتماد التحليل وتثبيت القياسات." });
     } catch (error) {
       setMessage({ type: "error", text: getBackendMessage(error, "تعذر اعتماد التحليل.") });
@@ -219,7 +240,35 @@ export default function ModelAnalysisPage() {
     setApprovedAt(null);
     setAnalysisDate(localDateString());
     setMessage({ type: "success", text: "بدأت نسخة جديدة. القياسات السابقة ما زالت محفوظة في السجل." });
-    setSection("teeth");
+    setSection("tooth-size");
+  }
+
+  async function downloadReport() {
+    if (!recordId) return;
+    setBusyAction("pdf");
+    setMessage(null);
+    try {
+      await downloadPdfFromApi(
+        `/api/ortho-cases/${orthoCaseId}/model-analyses/${recordId}/report/pdf`,
+        `occlusogram-${recordId}.pdf`,
+      );
+    } catch (error) {
+      setMessage({ type: "error", text: getBackendMessage(error, "تعذر تنزيل تقرير Occlusogram.") });
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  function selectRecord(value: string) {
+    if (value === "new") {
+      startNewVersion();
+      return;
+    }
+    const record = records.find(item => item.id === value);
+    if (record) {
+      loadRecord(record);
+      setMessage(null);
+    }
   }
 
   if (loading) {
@@ -236,81 +285,68 @@ export default function ModelAnalysisPage() {
             </Link>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-base font-extrabold text-gray-900">تحاليل النماذج وقياسات الأسنان</h1>
-                {isApproved && (
-                  <span className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">
-                    <BadgeCheck className="h-3.5 w-3.5" /> معتمد
-                  </span>
-                )}
+                <h1 className="text-base font-extrabold text-gray-900">Occlusogram وتحليل النماذج</h1>
+                <span className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700">المحرك السريري الموحد</span>
+                {isApproved && <span className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700"><BadgeCheck className="h-3.5 w-3.5" /> معتمد</span>}
               </div>
-              <p className="truncate text-xs text-gray-500">
-                {caseInfo?.patientName ?? "حالة التقويم"}
-                {caseInfo?.caseNumber ? ` | ${caseInfo.caseNumber}` : ""}
-              </p>
+              <p className="truncate text-xs text-gray-500">{caseInfo?.patientName ?? "حالة التقويم"}{caseInfo?.caseNumber ? ` | ${caseInfo.caseNumber}` : ""}</p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <input type="date" value={analysisDate} disabled={isApproved} onChange={event => setAnalysisDate(event.target.value)} className="h-9 rounded border border-gray-200 bg-white px-2 text-xs disabled:bg-gray-50" />
-            <div className="flex h-9 rounded border border-gray-200 bg-gray-50 p-0.5">
-              {([["Permanent", "دائمة"], ["Mixed", "مختلطة"]] as const).map(([value, label]) => (
-                <button key={value} type="button" disabled={isApproved} onClick={() => setDentitionStage(value)} className={cn("rounded px-3 text-xs font-medium disabled:opacity-60", dentitionStage === value ? "bg-white text-clinic-blue shadow-sm" : "text-gray-500")}>
-                  {label}
-                </button>
-              ))}
+            <label className="relative">
+              <History className="pointer-events-none absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+              <select aria-label="نسخة Occlusogram" value={recordId ?? "new"} onChange={event => selectRecord(event.target.value)} className="h-9 max-w-52 rounded border border-gray-200 bg-white pe-3 ps-8 text-xs">
+                <option value="new">نسخة عمل جديدة</option>
+                {records.map((record, index) => <option key={record.id} value={record.id}>{`نسخة ${records.length - index} | ${record.analysisDate}${record.approvedAt ? " | معتمدة" : ""}`}</option>)}
+              </select>
+            </label>
+            <input aria-label="تاريخ التحليل" type="date" value={analysisDate} disabled={isApproved} onChange={event => setAnalysisDate(event.target.value)} className="h-9 rounded border border-gray-200 bg-white px-2 text-xs disabled:bg-gray-50" />
+            <div className="flex h-9 rounded border border-gray-200 bg-gray-50 p-0.5" role="group" aria-label="مرحلة الإطباق">
+              {([["Permanent", "دائمة"], ["Mixed", "مختلطة"]] as const).map(([value, label]) => <button key={value} type="button" disabled={isApproved} onClick={() => setDentitionStage(value)} className={cn("rounded px-3 text-xs font-medium disabled:opacity-60", dentitionStage === value ? "bg-white text-clinic-blue shadow-sm" : "text-gray-500")}>{label}</button>)}
             </div>
             <ActionButton icon={Calculator} label="احسب" loading={busyAction === "calculate"} disabled={isApproved} onClick={calculate} variant="secondary" />
             <ActionButton icon={Save} label={recordId ? "حفظ" : "حفظ جديد"} loading={busyAction === "save"} disabled={isApproved} onClick={save} />
-            {recordId && !isApproved && (
-              <ActionButton icon={BadgeCheck} label="اعتماد" loading={busyAction === "approve"} onClick={approve} variant="approve" />
-            )}
+            {recordId && <ActionButton icon={FileDown} label="PDF" loading={busyAction === "pdf"} onClick={downloadReport} variant="secondary" />}
+            {recordId && !isApproved && <ActionButton icon={BadgeCheck} label="اعتماد" loading={busyAction === "approve"} onClick={approve} variant="approve" />}
             {isApproved && <ActionButton icon={FilePlus2} label="نسخة جديدة" onClick={startNewVersion} variant="secondary" />}
           </div>
         </div>
       </header>
 
-      {message && (
-        <div className={cn("mx-4 mt-3 rounded border px-3 py-2 text-xs", message.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700")}>
-          {message.text}
-        </div>
-      )}
+      {message && <div className={cn("mx-4 mt-3 rounded border px-3 py-2 text-xs", message.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700")}>{message.text}</div>}
 
-      <div className="grid gap-0 p-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <nav className="flex gap-1 overflow-x-auto border border-gray-200 bg-white p-2 lg:flex-col">
-          <div className="hidden border-b border-gray-100 px-2 pb-3 lg:block">
-            <p className="text-xs font-bold text-gray-800">اكتمال قياسات الأسنان</p>
-            <p className="mt-1 text-[11px] text-gray-500">{enteredToothCount} من 24 سنًا</p>
-            <div className="mt-2 h-1.5 overflow-hidden rounded bg-gray-100">
-              <div className="h-full bg-clinic-blue" style={{ width: `${enteredToothCount / 24 * 100}%` }} />
-            </div>
-          </div>
-          {SECTIONS.map(item => {
+      <div className="p-4">
+        <nav className="grid border border-gray-200 bg-white sm:grid-cols-3" aria-label="أوضاع تحليل Occlusogram">
+          {SECTIONS.map((item, index) => {
             const Icon = item.icon;
-            return (
-              <button key={item.key} type="button" onClick={() => setSection(item.key)} className={cn("flex flex-shrink-0 items-center gap-2 rounded px-3 py-2 text-start text-xs font-medium", section === item.key ? "bg-blue-50 text-clinic-blue" : "text-gray-600 hover:bg-gray-50")}>
-                <Icon className="h-4 w-4" /><span>{item.label}</span>
-              </button>
-            );
+            return <button key={item.key} type="button" onClick={() => setSection(item.key)} aria-current={section === item.key ? "page" : undefined} className={cn("flex min-h-14 items-center justify-center gap-2 px-3 py-2 text-xs font-bold transition", index > 0 && "border-t border-gray-200 sm:border-s sm:border-t-0", section === item.key ? "bg-blue-50 text-clinic-blue" : "text-gray-600 hover:bg-gray-50")}><Icon className="h-4 w-4" /><span>{item.label}</span></button>;
           })}
         </nav>
 
-        <main className="min-w-0 border-x border-b border-gray-200 bg-white p-4 lg:border-s-0 lg:border-t">
-          {section === "teeth" && (
-            <div className="space-y-6">
-              <SectionTitle title="القياسات الميزيوديستالية" description="أدخل أكبر عرض لكل سن بالملليمتر وفق ترقيم FDI. تُستخدم القيم في Bolton وتحليل المسافة وPont وHowe." />
+        <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <main className="min-w-0 border border-gray-200 bg-white p-4">
+            {section === "tooth-size" && <div className="space-y-6">
+              <SectionTitle title="تحليل حجم الأسنان" description="قياسات FDI الميزيوديستالية تغذي Bolton وتنبؤ الأسنان المختلطة وتصحيح Huckaba عبر محرك تحليل النماذج نفسه." />
               <ToothRow title="الفك العلوي" codes={UPPER_TEETH} values={inputs.toothWidths} disabled={isApproved} onChange={setToothWidth} />
               <ToothRow title="الفك السفلي" codes={LOWER_TEETH} values={inputs.toothWidths} disabled={isApproved} onChange={setToothWidth} />
-              <div className="grid gap-4 border-t border-gray-100 pt-5 md:grid-cols-2">
-                <MeasurementField label="المسافة المتاحة في القوس العلوي" hint="Arch perimeter الفعلي على مسار نقاط التماس" value={inputs.upperAvailableSpace} disabled={isApproved} onChange={value => setNumericField("upperAvailableSpace", value)} />
-                <MeasurementField label="المسافة المتاحة في القوس السفلي" hint="Arch perimeter الفعلي على مسار نقاط التماس" value={inputs.lowerAvailableSpace} disabled={isApproved} onChange={value => setNumericField("lowerAvailableSpace", value)} />
+              <ReadinessLine ready={enteredToothCount === 24} text="يتطلب Bolton الكامل قياسات 12 سنًا في كل فك من الرحى الأولى إلى الرحى الأولى." />
+              {results && <ResultsDashboard results={results} only={["bolton"]} />}
+              <div className="border-t border-gray-100 pt-5">
+                <SectionTitle title="الأسنان المختلطة" description="Moyers وTanaka-Johnston يعتمدان على عروض القواطع السفلية المسجلة أعلاه." />
+                <div className="mt-4 grid gap-4 md:grid-cols-3">
+                  <label className="space-y-1.5"><span className="text-xs font-bold text-gray-700">نسبة Moyers</span><select value={inputs.moyersPercentile} disabled={isApproved} onChange={event => markChanged({ ...inputs, moyersPercentile: Number(event.target.value) })} className="h-10 w-full rounded border border-gray-200 bg-white px-3 text-sm disabled:bg-gray-50">{MOYERS_PERCENTILES.map(value => <option key={value} value={value}>{value}%</option>)}</select></label>
+                  <MeasurementField label="المسافة العلوية المتاحة لكل جهة" value={inputs.mixedUpperAvailablePerSide} disabled={isApproved} onChange={value => setNumericField("mixedUpperAvailablePerSide", value)} />
+                  <MeasurementField label="المسافة السفلية المتاحة لكل جهة" value={inputs.mixedLowerAvailablePerSide} disabled={isApproved} onChange={value => setNumericField("mixedLowerAvailablePerSide", value)} />
+                </div>
+                <div className="mt-4"><ReadinessLine ready={["32", "31", "41", "42"].every(code => Boolean(inputs.toothWidths[code]))} text="أدخل عروض القواطع السفلية الأربع لتفعيل Moyers وTanaka-Johnston." /></div>
+                {results && <div className="mt-4"><ResultsDashboard results={results} only={["mixed"]} /></div>}
               </div>
-              <ReadinessLine ready={enteredToothCount === 24} text="يتطلب تحليل Bolton الكامل قياسات 12 سنًا في كل فك من الرحى الأولى إلى الرحى الأولى." />
-            </div>
-          )}
+              <div className="border-t border-gray-100 pt-5"><HuckabaEditor rows={inputs.huckabaTeeth} results={results} disabled={isApproved} onChange={updateHuckabaRows} /></div>
+            </div>}
 
-          {section === "pont-howe" && (
-            <div className="space-y-5">
-              <SectionTitle title="Pont وAshley Howe" description="مؤشرات تخطيطية مساعدة تُفسر مع الفحص السريري والسيفالومتري، ولا تُستخدم منفردة لاتخاذ قرار الخلع أو التوسيع." />
+            {section === "arch-dimensions" && <div className="space-y-5">
+              <SectionTitle title="عرض وطول القوس" description="Pont وAshley Howe مؤشرات تخطيطية مساعدة تُفسر مع الفحص السريري والسيفالومتري، ولا تحدد قرار التوسيع منفردة." />
               <div className="grid gap-4 md:grid-cols-2">
                 <MeasurementField label="العرض بين الضواحك العلوية" value={inputs.upperInterpremolarWidth} disabled={isApproved} onChange={value => setNumericField("upperInterpremolarWidth", value)} />
                 <MeasurementField label="العرض بين الأرحاء العلوية" value={inputs.upperIntermolarWidth} disabled={isApproved} onChange={value => setNumericField("upperIntermolarWidth", value)} />
@@ -318,51 +354,101 @@ export default function ModelAnalysisPage() {
                 <MeasurementField label="Premolar Basal Arch Width (PMBAW)" value={inputs.howePremolarBasalArchWidth} disabled={isApproved} onChange={value => setNumericField("howePremolarBasalArchWidth", value)} />
                 <MeasurementField label="Basal Arch Length" value={inputs.howeBasalArchLength} disabled={isApproved} onChange={value => setNumericField("howeBasalArchLength", value)} />
               </div>
-              {results && <ResultsDashboard results={results} only={["pont", "howe"]} />}
-            </div>
-          )}
+              {results ? <ResultsDashboard results={results} only={["pont", "howe"]} /> : <ResultPlaceholder />}
+            </div>}
 
-          {section === "mixed" && (
-            <div className="space-y-5">
-              <SectionTitle title="تحليل الأسنان المختلطة" description="Moyers يعتمد جدول الاحتمالات، بينما Tanaka-Johnston يحسب التنبؤ مباشرة من مجموع القواطع السفلية." />
-              <div className="grid gap-4 md:grid-cols-3">
-                <label className="space-y-1.5">
-                  <span className="text-xs font-bold text-gray-700">نسبة Moyers</span>
-                  <select value={inputs.moyersPercentile} disabled={isApproved} onChange={event => markChanged({ ...inputs, moyersPercentile: Number(event.target.value) })} className="h-10 w-full rounded border border-gray-200 bg-white px-3 text-sm disabled:bg-gray-50">
-                    {MOYERS_PERCENTILES.map(value => <option key={value} value={value}>{value}%</option>)}
-                  </select>
-                </label>
-                <MeasurementField label="المسافة العلوية المتاحة لكل جهة" value={inputs.mixedUpperAvailablePerSide} disabled={isApproved} onChange={value => setNumericField("mixedUpperAvailablePerSide", value)} />
-                <MeasurementField label="المسافة السفلية المتاحة لكل جهة" value={inputs.mixedLowerAvailablePerSide} disabled={isApproved} onChange={value => setNumericField("mixedLowerAvailablePerSide", value)} />
+            {section === "irregularity" && <div className="space-y-5">
+              <SectionTitle title="تحليل عدم الانتظام والمسافة" description="يُقارن محيط القوس المتاح بمجموع عروض الأسنان المطلوبة لإظهار ازدحام أو فراغات كل فك. لا تُستنتج قيمة Little دون نقاط إزاحة مقاسة." />
+              <div className="grid gap-4 md:grid-cols-2">
+                <MeasurementField label="المسافة المتاحة في القوس العلوي" hint="Arch perimeter الفعلي على مسار نقاط التماس" value={inputs.upperAvailableSpace} disabled={isApproved} onChange={value => setNumericField("upperAvailableSpace", value)} />
+                <MeasurementField label="المسافة المتاحة في القوس السفلي" hint="Arch perimeter الفعلي على مسار نقاط التماس" value={inputs.lowerAvailableSpace} disabled={isApproved} onChange={value => setNumericField("lowerAvailableSpace", value)} />
               </div>
-              <ReadinessLine ready={["32", "31", "41", "42"].every(code => Boolean(inputs.toothWidths[code]))} text="أدخل عروض القواطع السفلية الأربع لتفعيل Moyers وTanaka-Johnston." />
-              {results && <ResultsDashboard results={results} only={["mixed"]} />}
-            </div>
-          )}
+              <ReadinessLine ready={enteredToothCount === 24 && Boolean(inputs.upperAvailableSpace) && Boolean(inputs.lowerAvailableSpace)} text="يلزم مجموع عروض الأسنان والمسافة المتاحة في كل قوس لإظهار تفاوت المسافة." />
+              {results ? <ResultsDashboard results={results} only={["arches"]} /> : <ResultPlaceholder />}
+            </div>}
 
-          {section === "huckaba" && (
-            <HuckabaEditor rows={inputs.huckabaTeeth} results={results} disabled={isApproved} onChange={updateHuckabaRows} />
-          )}
+            <label className="mt-6 block space-y-1.5 border-t border-gray-100 pt-4">
+              <span className="text-xs font-bold text-gray-700">ملاحظات الطبيب</span>
+              <textarea value={notes} disabled={isApproved} onChange={event => setNotes(event.target.value)} rows={3} className="w-full resize-y rounded border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-50" placeholder="الملاحظات السريرية وقرار العلاج المرتبط بنتائج التحليل..." />
+            </label>
+          </main>
 
-          {section === "results" && (
-            <div className="space-y-5">
-              <SectionTitle title="ملخص التحليل السريري" description="نتائج محسوبة من القياسات الحالية. راجعها سريريًا ثم احفظ واعتمد النسخة النهائية." />
-              {results ? <ResultsDashboard results={results} /> : (
-                <div className="border border-dashed border-gray-300 px-4 py-14 text-center">
-                  <Calculator className="mx-auto mb-3 h-8 w-8 text-gray-300" />
-                  <p className="text-sm font-bold text-gray-600">لم تُحسب النتائج بعد</p>
-                  <p className="mt-1 text-xs text-gray-400">أدخل القياسات ثم اضغط «احسب»</p>
-                </div>
-              )}
-              <label className="block space-y-1.5 border-t border-gray-100 pt-4">
-                <span className="text-xs font-bold text-gray-700">ملاحظات الطبيب</span>
-                <textarea value={notes} disabled={isApproved} onChange={event => setNotes(event.target.value)} rows={4} className="w-full resize-y rounded border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-50" placeholder="الملاحظات السريرية وقرار العلاج المرتبط بنتائج التحليل..." />
-              </label>
+          <aside className="space-y-3">
+            <OcclusalImagePanel photos={photos} selectedPhoto={selectedPhoto} selectedPhotoId={selectedPhotoId} onSelect={setSelectedPhotoId} caseId={orthoCaseId} />
+            <AnalysisValuesTable results={results} />
+            <div className="border border-gray-200 bg-white p-3">
+              <div className="flex items-center justify-between text-xs"><span className="font-bold text-gray-800">اكتمال قياسات الأسنان</span><span className="font-mono text-gray-500" dir="ltr">{enteredToothCount}/24</span></div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded bg-gray-100"><div className="h-full bg-clinic-blue" style={{ width: `${enteredToothCount / 24 * 100}%` }} /></div>
             </div>
-          )}
-        </main>
+          </aside>
+        </div>
       </div>
     </div>
+  );
+}
+
+function ResultPlaceholder() {
+  return (
+    <div className="border border-dashed border-gray-300 px-4 py-10 text-center">
+      <Calculator className="mx-auto mb-2 h-7 w-7 text-gray-300" />
+      <p className="text-xs font-bold text-gray-600">لم تُحسب القيم الحالية بعد</p>
+    </div>
+  );
+}
+
+function OcclusalImagePanel({ photos, selectedPhoto, selectedPhotoId, onSelect, caseId }: {
+  photos: OrthoPhoto[];
+  selectedPhoto: OrthoPhoto | null;
+  selectedPhotoId: string;
+  onSelect: (value: string) => void;
+  caseId: string;
+}) {
+  return (
+    <section className="border border-gray-200 bg-white">
+      <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
+        <h2 className="flex items-center gap-2 text-xs font-extrabold text-gray-800"><ImageIcon className="h-4 w-4 text-clinic-blue" />الصورة الإطباقية</h2>
+        <Link href={`/ortho/${caseId}`} className="text-[10px] font-bold text-clinic-blue hover:underline">إدارة الصور</Link>
+      </div>
+      {photos.length > 1 && (
+        <div className="border-b border-gray-100 p-2">
+          <select aria-label="الصورة الإطباقية المرجعية" value={selectedPhotoId} onChange={event => onSelect(event.target.value)} className="h-9 w-full rounded border border-gray-200 bg-white px-2 text-xs">
+            {photos.map(photo => <option key={photo.id} value={photo.id}>{photo.caption || (photo.subtype === "UpperOcclusal" ? "إطباقية علوية" : photo.subtype === "LowerOcclusal" ? "إطباقية سفلية" : "صورة داخل الفم")}</option>)}
+          </select>
+        </div>
+      )}
+      {selectedPhoto ? (
+        <div className="aspect-square bg-gray-950 p-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={resolveImageUrl(selectedPhoto.preparedImageUrl || selectedPhoto.photoUrl)} alt={selectedPhoto.caption || "صورة إطباقية للحالة"} className="h-full w-full object-contain" />
+        </div>
+      ) : (
+        <div className="grid aspect-square place-items-center border-b border-dashed border-gray-200 bg-gray-50 p-6 text-center">
+          <div><ImageIcon className="mx-auto h-8 w-8 text-gray-300" /><p className="mt-2 text-xs font-bold text-gray-500">لا توجد صورة إطباقية في سجل الحالة</p></div>
+        </div>
+      )}
+      <p className="px-3 py-2 text-[10px] leading-5 text-gray-500">الصورة مرجع بصري من سجل التقويم؛ القياسات الرقمية أدناه هي المصدر المعتمد للحساب.</p>
+    </section>
+  );
+}
+
+function AnalysisValuesTable({ results }: { results: DentalModelAnalysisResult | null }) {
+  const rows = [
+    ["Bolton الكلي", results?.bolton ? `${results.bolton.overallRatio.toFixed(2)}%` : "-"],
+    ["Bolton الأمامي", results?.bolton ? `${results.bolton.anteriorRatio.toFixed(2)}%` : "-"],
+    ["تفاوت القوس العلوي", formatMeasurement(results?.upperArch?.discrepancy)],
+    ["تفاوت القوس السفلي", formatMeasurement(results?.lowerArch?.discrepancy)],
+    ["عرض الضواحك المتوقع", formatMeasurement(results?.pont?.predictedInterpremolarWidth)],
+    ["عرض الأرحاء المتوقع", formatMeasurement(results?.pont?.predictedIntermolarWidth)],
+  ];
+
+  return (
+    <section className="border border-gray-200 bg-white">
+      <h2 className="flex items-center gap-2 border-b border-gray-100 px-3 py-2 text-xs font-extrabold text-gray-800"><TableProperties className="h-4 w-4 text-clinic-blue" />القيم المحللة</h2>
+      <table className="w-full text-xs">
+        <tbody>{rows.map(([label, value]) => <tr key={label} className="border-b border-gray-100 last:border-b-0"><th className="px-3 py-2 text-start font-medium text-gray-600">{label}</th><td className="px-3 py-2 text-end font-mono font-bold text-gray-900" dir="ltr">{value}</td></tr>)}</tbody>
+      </table>
+      {!results && <p className="border-t border-gray-100 px-3 py-2 text-[10px] text-gray-400">تظهر القيم بعد تشغيل الحساب الموحد.</p>}
+    </section>
   );
 }
 

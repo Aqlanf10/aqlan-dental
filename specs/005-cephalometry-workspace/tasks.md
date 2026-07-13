@@ -47,7 +47,7 @@
   approves. No schema, permission, AI, or clinical-calculation changes. Strong
   model. — ✅ Done in PR #679; Backend, Frontend, E2E, Encoding Guard, and
   Vercel passed.
-- `CEPH-TASK-008`: SEQ-43 — establish and review the binding WebCeph functional-parity matrix. Strong model, documentation only.
+- `CEPH-TASK-008`: SEQ-43 — establish and review the binding WebCeph functional-parity matrix. Strong model, documentation only. — ✅ Done in PR #680; full CI and Vercel passed.
 - `CEPH-TASK-009`: SEQ-44 — implement non-destructive viewer rulers and preview transforms with regression tests.
 - `CEPH-TASK-010`: SEQ-45 — implement doctor-reviewed structured assessment and explicit problem-list handoff.
 - `CEPH-TASK-011`: SEQ-46 — persist named doctor-authored treatment/VTO scenarios and comparisons.

@@ -251,13 +251,14 @@
   تثبت إسقاط حالتي الاعتماد وترتيب المراحل والملخص والإجراء المناسب؛ Backend
   وFrontend وE2E وEncoding Guard وVercel خضراء، ولا schema أو صلاحيات تغيرت.
 
-### 🟡 SEQ-43 — سيفالو: خط أساس التكافؤ الوظيفي مع WebCeph (توجيه مالك 2026-07-13)
-- **Spec:** `specs/005-cephalometry-workspace/` (`CEPH-REQ-008`, `CEPH-TASK-008`).
+### ✅ SEQ-43 — سيفالو: خط أساس التكافؤ الوظيفي مع WebCeph (توجيه مالك 2026-07-13)
+- **PR:** #680. **Spec:** `specs/005-cephalometry-workspace/` (`CEPH-REQ-008`, `CEPH-TASK-008`).
 - **النطاق:** توثيق مصفوفة كاملة لكل أقسام WebCeph، مالكها الحالي، الفجوة، ترتيب
   التنفيذ، وقواعد القبول في `docs/audits/WEBCEPH_CEPH_PARITY.md`.
-- **معيار الخروج:** تغطي المصفوفة digitization، analysis، PA، soft tissue،
+- **معيار الخروج (تحقق):** تغطي المصفوفة digitization، analysis، PA، soft tissue،
   occlusogram، assessment، treatment، superimposition، viewer، case، timelapse،
-  tags/cohort، وترتبط ببنود SEQ-44..51 دون إنشاء كود أو ادعاء تكافؤ غير متحقق.
+  tags/cohort، وترتبط ببنود SEQ-44..51؛ جميع فحوصات CI وVercel خضراء، دون
+  إنشاء كود أو ادعاء تكافؤ غير متحقق.
 
 ### 🟡 SEQ-44 — سيفالو: أدوات Viewer سريرية غير هدامة
 - **Spec:** `CEPH-REQ-009`, `CEPH-TASK-009`.

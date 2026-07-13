@@ -31,7 +31,7 @@ Evidence inspected:
 | Analysis methods | Steiner, Tweed, McNamara, Ricketts, Downs, Jarabak, Wits | Complete | Add method visibility presets only if they reuse existing measurements/norms. |
 | Norm customization | `CephNormsController`, DB overrides | Complete | Admin runtime QA remains. |
 | Measurement/report export | Arabic PDF, print, UTF-8 CSV | Complete | Preserve approval and saved-snapshot gates. |
-| Clinical assessment | ceph diagnosis + ortho diagnosis/problem list | Partial | Build a doctor-reviewed skeletal/dental/soft-tissue assessment view and explicit copy-to-problem-list action; no automatic acceptance. |
+| Clinical assessment | structured ceph assessment + approval-gated explicit handoff to canonical ortho problem list | Complete | Preserve doctor selection, approval gates, duplicate suppression, and patient access controls. |
 | Lateral soft tissue | profile photo analysis + S/E lines | Partial | Unify navigation and longitudinal comparison. |
 | Frontal soft tissue | `/ceph/photo/frontal` ratios/asymmetry | Partial | Unify navigation and longitudinal comparison. |
 | PA cephalometric x-ray | no PA landmark/measurement owner | Missing | Add frontal radiograph workspace, calibration, landmarks, symmetry/transverse measurements, saved snapshots, report, and tests. |

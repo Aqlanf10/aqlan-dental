@@ -47,3 +47,12 @@
   approves. No schema, permission, AI, or clinical-calculation changes. Strong
   model. — ✅ Done in PR #679; Backend, Frontend, E2E, Encoding Guard, and
   Vercel passed.
+- `CEPH-TASK-008`: SEQ-43 — establish and review the binding WebCeph functional-parity matrix. Strong model, documentation only. — ✅ Done in PR #680; full CI and Vercel passed.
+- `CEPH-TASK-009`: SEQ-44 — implement non-destructive viewer rulers and preview transforms with regression tests.
+- `CEPH-TASK-010`: SEQ-45 — implement doctor-reviewed structured assessment and explicit problem-list handoff.
+- `CEPH-TASK-011`: SEQ-46 — persist named doctor-authored treatment/VTO scenarios and comparisons.
+- `CEPH-TASK-012`: SEQ-47 — extend structural superimposition to multiple dated records with reference/opacity/export controls.
+- `CEPH-TASK-013`: SEQ-48 — add documented PA cephalometric analysis inside the existing ceph module. Strong clinical review required.
+- `CEPH-TASK-014`: SEQ-49 — expose canonical model analysis as the occlusogram workflow without duplicate calculations.
+- `CEPH-TASK-015`: SEQ-50 — add real-record timelapse, unified case review, approved tags, and privacy-safe cohort analysis.
+- `CEPH-TASK-016`: SEQ-51 — run authenticated final parity, accessibility, responsive, export, security, CI, and deployment QA; close the matrix.

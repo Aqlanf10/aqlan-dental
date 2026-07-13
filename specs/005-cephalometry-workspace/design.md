@@ -12,7 +12,15 @@
 - Frontend tests: `frontend/src/__tests__/lib/cephMeasurementCsv.test.ts` and `frontend/src/__tests__/components/ceph/CephMeasurementExportButton.test.tsx` cover serialization, download, and the toolbar gate.
 - List workflow status: `CephAnalysisListDto.IsApproved` projects the existing entity flag; `frontend/src/lib/cephWorkflow.ts` derives the first unfinished stage without inventing clinical state. `/ceph` uses that projection for its summary, status column, and action label.
 - Workflow tests: `CephPatientAccessTests` pins the list DTO approval projection; `frontend/src/__tests__/lib/cephWorkflow.test.ts` and `frontend/src/__tests__/app/ceph/CephPage.test.tsx` pin stage precedence and rendered wording.
+- Parity source of truth: `docs/audits/WEBCEPH_CEPH_PARITY.md` maps each WebCeph workflow to an existing Aqlan owner and the remaining SEQ-44..51 delivery slice.
+- Viewer owner: existing `CephCanvas.tsx` and `/ceph/[id]`; transforms stay display-only until an explicitly audited save design exists.
+- Assessment owner: existing ceph diagnosis plus `OrthoCasesController` problem-list endpoints; no duplicate diagnosis entity.
+- Treatment owner: existing `/ceph/vto`, ceph versions, and report owners.
+- Multi-superimposition owner: existing `/ceph/compare`, `CephSuperimposeCanvas`, and similarity-transform math.
+- PA owner: existing `/ceph` module, ceph DTO/service/controller patterns, norms, readiness, versions, and report identity; no parallel module.
+- Occlusogram owner: existing `/ortho/[id]/model-analysis` and `OrthoModelAnalysesController`.
+- Timelapse/case/cohort owners: existing patient timeline, ortho case presentation, approved diagnosis/problem list, and patient-access services.
 
-Allowed files: existing ceph owners, `frontend/src/lib/cephMeasurementCsv.ts`, `frontend/src/lib/cephWorkflow.ts`, frontend/backend ceph tests, and ceph specification/governance files.
+Allowed files: existing ceph/ortho owners named in the parity matrix, their focused tests, and ceph specification/governance/audit files. Each delivery slice must narrow this list before editing.
 
 Forbidden files: fake providers, automatic clinical acceptance, migration edits without approved spec.

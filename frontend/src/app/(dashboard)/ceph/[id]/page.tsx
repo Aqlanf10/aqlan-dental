@@ -1209,7 +1209,7 @@ export default function CephAnalysisPage() {
               href={`/ortho/${analysis.orthoCaseId}/model-analysis`}
               className="flex w-full items-center justify-between rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-clinic-blue hover:bg-blue-100"
             >
-              <span>تحاليل النماذج والأسنان</span>
+              <span>Occlusogram وتحليل النماذج</span>
               <ChevronRight className="h-4 w-4 rtl:rotate-180" />
             </Link>
           </div>

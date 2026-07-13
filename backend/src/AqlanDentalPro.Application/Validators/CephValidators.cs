@@ -126,6 +126,26 @@ public sealed class ImportCephAssessmentProblemsRequestValidator
     }
 }
 
+public sealed class SaveCephVtoScenarioRequestValidator : AbstractValidator<SaveCephVtoScenarioRequest>
+{
+    public SaveCephVtoScenarioRequestValidator()
+    {
+        RuleFor(x => x.Name)
+            .NotEmpty().WithMessage("اسم السيناريو مطلوب")
+            .MaximumLength(100).WithMessage("اسم السيناريو يجب ألا يتجاوز 100 حرف");
+        RuleFor(x => x.UpperIncisorMoveMm)
+            .InclusiveBetween(-8, 8).WithMessage("حركة القاطع العلوي يجب أن تكون بين -8 و8 مم")
+            .Must(IsHalfMillimeterStep).WithMessage("حركة القاطع العلوي يجب أن تكون بخطوة 0.5 مم");
+        RuleFor(x => x.LowerIncisorMoveMm)
+            .InclusiveBetween(-8, 8).WithMessage("حركة القاطع السفلي يجب أن تكون بين -8 و8 مم")
+            .Must(IsHalfMillimeterStep).WithMessage("حركة القاطع السفلي يجب أن تكون بخطوة 0.5 مم");
+        RuleFor(x => x.Notes)
+            .MaximumLength(2000).WithMessage("الملاحظات يجب ألا تتجاوز 2000 حرف");
+    }
+
+    private static bool IsHalfMillimeterStep(decimal value) => value * 2 == decimal.Truncate(value * 2);
+}
+
 public sealed class SavePhotoAnalysisRequestValidator : AbstractValidator<SavePhotoAnalysisRequest>
 {
     public SavePhotoAnalysisRequestValidator()

@@ -264,3 +264,19 @@ export interface CephVersionDetail {
   measurements: CephMeasurement[];
   diagnosis?: CephDiagnosis;
 }
+
+export interface CephVtoScenario {
+  id: string;
+  cephAnalysisId: string;
+  scenarioGroupId: string;
+  versionNumber: number;
+  name: string;
+  upperIncisorMoveMm: number;
+  lowerIncisorMoveMm: number;
+  overjetBeforeMm?: number | null;
+  overjetAfterMm?: number | null;
+  notes?: string | null;
+  createdByUserId?: string | null;
+  createdAt: string;
+  disclaimer: string;
+}

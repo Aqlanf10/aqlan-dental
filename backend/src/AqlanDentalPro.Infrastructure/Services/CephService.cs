@@ -7,11 +7,14 @@ using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace AqlanDentalPro.Application.Services;
 
 public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogger<CephService> logger)
 {
+    public const string VtoDisclaimerAr =
+        "هذا هدف علاجي بصري من حركات أدخلها الطبيب، وليس تنبؤاً بالاستجابة الحيوية أو الأنسجة الرخوة.";
     // ──────────────────────────────────────────────────────────────────────────
     //  LIST
     // ──────────────────────────────────────────────────────────────────────────
@@ -1144,6 +1147,129 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
             await db.SaveChangesAsync();
         result.Added = result.Items.Count;
         return result;
+    }
+
+    public async Task<List<CephVtoScenarioDto>> ListVtoScenariosAsync(Guid analysisId)
+    {
+        return await db.CephVtoScenarios
+            .Where(x => x.CephAnalysisId == analysisId)
+            .OrderBy(x => x.Name)
+            .ThenByDescending(x => x.VersionNumber)
+            .Select(x => new CephVtoScenarioDto
+            {
+                Id = x.Id,
+                CephAnalysisId = x.CephAnalysisId,
+                ScenarioGroupId = x.ScenarioGroupId,
+                VersionNumber = x.VersionNumber,
+                Name = x.Name,
+                UpperIncisorMoveMm = x.UpperIncisorMoveMm,
+                LowerIncisorMoveMm = x.LowerIncisorMoveMm,
+                OverjetBeforeMm = x.OverjetBeforeMm,
+                OverjetAfterMm = x.OverjetAfterMm,
+                Notes = x.Notes,
+                CreatedByUserId = x.CreatedByUserId,
+                CreatedAt = x.CreatedAt,
+                Disclaimer = VtoDisclaimerAr,
+            })
+            .ToListAsync();
+    }
+
+    public async Task<SaveCephVtoScenarioResult> SaveVtoScenarioAsync(
+        Guid analysisId,
+        SaveCephVtoScenarioRequest req)
+    {
+        var analysis = await db.CephAnalyses
+            .Include(x => x.Landmarks)
+            .FirstOrDefaultAsync(x => x.Id == analysisId);
+        if (analysis is null)
+            return new SaveCephVtoScenarioResult { Status = "not_found" };
+        if (!analysis.IsApproved)
+            return new SaveCephVtoScenarioResult { Status = "analysis_not_approved" };
+
+        CephNotesData? notes = null;
+        if (!string.IsNullOrWhiteSpace(analysis.Notes))
+        {
+            try { notes = JsonSerializer.Deserialize<CephNotesData>(analysis.Notes); }
+            catch (JsonException) { }
+        }
+        if (notes is null || notes.PixelsPerMm <= 0)
+            return new SaveCephVtoScenarioResult { Status = "calibration_missing" };
+
+        var landmarkMap = analysis.Landmarks
+            .Where(x => x.IsActive && x.XCoord.HasValue && x.YCoord.HasValue)
+            .ToDictionary(x => x.LandmarkKey, StringComparer.OrdinalIgnoreCase);
+        if (!landmarkMap.ContainsKey("U1T") || !landmarkMap.ContainsKey("U1A") ||
+            !landmarkMap.ContainsKey("L1T") || !landmarkMap.ContainsKey("L1A"))
+            return new SaveCephVtoScenarioResult { Status = "incisors_missing" };
+
+        Guid groupId;
+        int versionNumber;
+        if (req.ScenarioGroupId.HasValue)
+        {
+            groupId = req.ScenarioGroupId.Value;
+            var previousVersion = await db.CephVtoScenarios
+                .Where(x => x.CephAnalysisId == analysisId && x.ScenarioGroupId == groupId)
+                .MaxAsync(x => (int?)x.VersionNumber);
+            if (!previousVersion.HasValue)
+                return new SaveCephVtoScenarioResult { Status = "scenario_not_found" };
+            versionNumber = previousVersion.Value + 1;
+        }
+        else
+        {
+            groupId = Guid.NewGuid();
+            versionNumber = 1;
+        }
+
+        var overjetBefore =
+            (landmarkMap["U1T"].XCoord!.Value - landmarkMap["L1T"].XCoord!.Value) /
+            (decimal)notes.PixelsPerMm;
+        var overjetAfter = overjetBefore + req.UpperIncisorMoveMm - req.LowerIncisorMoveMm;
+        var scenario = new CephVtoScenario
+        {
+            CephAnalysisId = analysisId,
+            ScenarioGroupId = groupId,
+            VersionNumber = versionNumber,
+            Name = req.Name.Trim(),
+            UpperIncisorMoveMm = req.UpperIncisorMoveMm,
+            LowerIncisorMoveMm = req.LowerIncisorMoveMm,
+            OverjetBeforeMm = decimal.Round(overjetBefore, 2),
+            OverjetAfterMm = decimal.Round(overjetAfter, 2),
+            Notes = string.IsNullOrWhiteSpace(req.Notes) ? null : req.Notes.Trim(),
+            CreatedByUserId = currentUser.UserId,
+        };
+        db.CephVtoScenarios.Add(scenario);
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is NpgsqlException { SqlState: "23505" })
+        {
+            db.Entry(scenario).State = EntityState.Detached;
+            logger.LogWarning(ex,
+                "[CephService] Concurrent VTO scenario version conflict for analysis {AnalysisId}, group {GroupId}",
+                analysisId, groupId);
+            return new SaveCephVtoScenarioResult { Status = "version_conflict" };
+        }
+
+        return new SaveCephVtoScenarioResult
+        {
+            Scenario = new CephVtoScenarioDto
+            {
+                Id = scenario.Id,
+                CephAnalysisId = scenario.CephAnalysisId,
+                ScenarioGroupId = scenario.ScenarioGroupId,
+                VersionNumber = scenario.VersionNumber,
+                Name = scenario.Name,
+                UpperIncisorMoveMm = scenario.UpperIncisorMoveMm,
+                LowerIncisorMoveMm = scenario.LowerIncisorMoveMm,
+                OverjetBeforeMm = scenario.OverjetBeforeMm,
+                OverjetAfterMm = scenario.OverjetAfterMm,
+                Notes = scenario.Notes,
+                CreatedByUserId = scenario.CreatedByUserId,
+                CreatedAt = scenario.CreatedAt,
+                Disclaimer = VtoDisclaimerAr,
+            },
+        };
     }
 
     // ──────────────────────────────────────────────────────────────────────────

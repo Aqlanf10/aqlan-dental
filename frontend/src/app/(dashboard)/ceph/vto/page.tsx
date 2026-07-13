@@ -5,11 +5,14 @@ import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, AlertTriangle, Target, RotateCcw, Printer, ShieldCheck } from "lucide-react";
+import {
+  ArrowRight, AlertTriangle, Target, RotateCcw, Printer, ShieldCheck,
+  Save, Loader2, Plus, History,
+} from "lucide-react";
 import api from "@/lib/api";
 import { applyVtoMovements, approxOverjetMm } from "@/lib/cephMath";
 import { CephVtoCanvas } from "@/components/ceph/CephVtoCanvas";
-import type { CephAnalysis } from "@/types/ceph";
+import type { CephAnalysis, CephVtoScenario } from "@/types/ceph";
 
 type Pt = { x: number; y: number };
 
@@ -44,12 +47,29 @@ function VtoPageInner() {
 
   const [u1, setU1] = useState(0);
   const [l1, setL1] = useState(0);
+  const [scenarioName, setScenarioName] = useState("");
+  const [scenarioNotes, setScenarioNotes] = useState("");
+  const [scenarioGroupId, setScenarioGroupId] = useState<string | null>(null);
+  const [scenarioSaving, setScenarioSaving] = useState(false);
+  const [scenarioError, setScenarioError] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["ceph-analysis-vto", analysisId],
     enabled: Boolean(analysisId),
     retry: false,
     queryFn: async () => (await api.get<CephAnalysis>(`/api/ceph/${encodeURIComponent(analysisId)}`)).data,
+  });
+  const {
+    data: scenarios = [],
+    isLoading: scenariosLoading,
+    refetch: refetchScenarios,
+  } = useQuery({
+    queryKey: ["ceph-vto-scenarios", analysisId],
+    enabled: Boolean(analysisId),
+    retry: false,
+    queryFn: async () => (
+      await api.get<{ data: CephVtoScenario[] }>(`/api/ceph/${encodeURIComponent(analysisId)}/vto-scenarios`)
+    ).data.data,
   });
 
   const pixelsPerMm = data?.pixelsPerMm ?? null;
@@ -70,6 +90,51 @@ function VtoPageInner() {
   const hasIncisors = Boolean(
     original["U1T"] && original["U1A"] && original["L1T"] && original["L1A"],
   );
+
+  const resetScenario = () => {
+    setScenarioGroupId(null);
+    setScenarioName("");
+    setScenarioNotes("");
+    setU1(0);
+    setL1(0);
+    setScenarioError(null);
+  };
+
+  const loadScenario = (scenario: CephVtoScenario) => {
+    setScenarioGroupId(scenario.scenarioGroupId);
+    setScenarioName(scenario.name);
+    setScenarioNotes(scenario.notes ?? "");
+    setU1(scenario.upperIncisorMoveMm);
+    setL1(scenario.lowerIncisorMoveMm);
+    setScenarioError(null);
+  };
+
+  const saveScenario = async () => {
+    if (!data?.isApproved || !calibrated || !hasIncisors || !scenarioName.trim() || scenarioSaving) return;
+    setScenarioSaving(true);
+    setScenarioError(null);
+    try {
+      const response = await api.post<CephVtoScenario>(
+        `/api/ceph/${encodeURIComponent(analysisId)}/vto-scenarios`,
+        {
+          scenarioGroupId,
+          name: scenarioName.trim(),
+          upperIncisorMoveMm: u1,
+          lowerIncisorMoveMm: l1,
+          notes: scenarioNotes.trim() || null,
+        },
+      );
+      setScenarioGroupId(response.data.scenarioGroupId);
+      await refetchScenarios();
+    } catch (saveError) {
+      setScenarioError(
+        (saveError as { response?: { data?: { message?: string } } }).response?.data?.message
+        ?? "تعذر حفظ سيناريو VTO",
+      );
+    } finally {
+      setScenarioSaving(false);
+    }
+  };
 
   if (!analysisId) {
     return (
@@ -150,6 +215,12 @@ function VtoPageInner() {
             </div>
           )}
 
+          {!data.isApproved && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-[11px] text-amber-800">
+              اعتماد التحليل مطلوب قبل حفظ سيناريو VTO. تبقى الحركات الحالية معاينة غير محفوظة.
+            </div>
+          )}
+
           <div className="grid lg:grid-cols-3 gap-4">
             {/* Tracing */}
             <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm p-4">
@@ -160,12 +231,26 @@ function VtoPageInner() {
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold text-gray-700">الحركات المخطّطة</h3>
-                <button
-                  onClick={() => { setU1(0); setL1(0); }}
-                  className="no-print flex items-center gap-1 text-[10px] text-gray-500 hover:text-clinic-blue transition"
-                >
-                  <RotateCcw className="w-3 h-3" />تصفير
-                </button>
+                <div className="no-print flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={resetScenario}
+                    className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-clinic-blue"
+                    title="سيناريو جديد"
+                    aria-label="سيناريو جديد"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setU1(0); setL1(0); }}
+                    className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-clinic-blue"
+                    title="تصفير الحركات"
+                    aria-label="تصفير الحركات"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
               <fieldset disabled={!calibrated || !hasIncisors} className="space-y-4 disabled:opacity-50">
@@ -192,8 +277,81 @@ function VtoPageInner() {
                   قيمة هندسية تقريبية (الفجوة الأفقية بين حافتَي القاطعين) — ليست قياسًا سريريًا معتمدًا للـ overjet.
                 </p>
               </div>
+
+              <div className="no-print space-y-2 border-t border-gray-100 pt-3">
+                <input
+                  type="text"
+                  value={scenarioName}
+                  maxLength={100}
+                  onChange={event => setScenarioName(event.target.value)}
+                  placeholder="اسم السيناريو"
+                  className="w-full rounded-md border border-gray-200 px-2.5 py-2 text-xs focus:border-clinic-blue focus:outline-none"
+                />
+                <textarea
+                  value={scenarioNotes}
+                  maxLength={2000}
+                  rows={3}
+                  onChange={event => setScenarioNotes(event.target.value)}
+                  placeholder="ملاحظات الطبيب"
+                  className="w-full resize-none rounded-md border border-gray-200 px-2.5 py-2 text-xs focus:border-clinic-blue focus:outline-none"
+                />
+                {scenarioError && <p className="text-[10px] text-red-600">{scenarioError}</p>}
+                <button
+                  type="button"
+                  onClick={saveScenario}
+                  disabled={!data.isApproved || !calibrated || !hasIncisors || !scenarioName.trim() || scenarioSaving}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-md bg-clinic-blue px-3 py-2 text-xs font-bold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {scenarioSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                  {scenarioGroupId ? "حفظ إصدار جديد" : "حفظ السيناريو"}
+                </button>
+              </div>
             </div>
           </div>
+
+          <section className="no-print border-t border-gray-200 pt-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-sm font-bold text-gray-800">
+                <History className="h-4 w-4 text-clinic-blue" />
+                السيناريوهات المحفوظة
+              </h2>
+              <span className="text-[10px] text-gray-400">{scenarios.length} إصدار</span>
+            </div>
+            {scenariosLoading ? (
+              <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-clinic-blue" /></div>
+            ) : scenarios.length === 0 ? (
+              <p className="py-6 text-center text-xs text-gray-400">لا توجد سيناريوهات محفوظة.</p>
+            ) : (
+              <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+                {scenarios.map(scenario => (
+                  <button
+                    key={scenario.id}
+                    type="button"
+                    onClick={() => loadScenario(scenario)}
+                    className={`rounded-md border p-3 text-start transition ${
+                      scenarioGroupId === scenario.scenarioGroupId &&
+                      u1 === scenario.upperIncisorMoveMm && l1 === scenario.lowerIncisorMoveMm
+                        ? "border-clinic-blue bg-blue-50"
+                        : "border-gray-200 bg-white hover:border-blue-200"
+                    }`}
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="truncate text-xs font-bold text-gray-800">{scenario.name}</span>
+                      <span className="font-mono text-[9px] text-gray-400">v{scenario.versionNumber}</span>
+                    </span>
+                    <span className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-gray-500" dir="ltr">
+                      <span>U1 {scenario.upperIncisorMoveMm > 0 ? "+" : ""}{scenario.upperIncisorMoveMm} mm</span>
+                      <span>L1 {scenario.lowerIncisorMoveMm > 0 ? "+" : ""}{scenario.lowerIncisorMoveMm} mm</span>
+                    </span>
+                    <span className="mt-1 block text-[10px] text-clinic-blue" dir="rtl">
+                      Overjet: {scenario.overjetBeforeMm ?? "—"} ← {scenario.overjetAfterMm ?? "—"} مم
+                    </span>
+                    {scenario.notes && <span className="mt-1 block truncate text-[9px] text-gray-400">{scenario.notes}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
         </>
       )}
     </div>

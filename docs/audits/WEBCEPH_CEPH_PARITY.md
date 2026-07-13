@@ -36,7 +36,7 @@ Evidence inspected:
 | Frontal soft tissue | `/ceph/photo/frontal` ratios/asymmetry | Partial | Unify navigation and longitudinal comparison. |
 | PA cephalometric x-ray | no PA landmark/measurement owner | Missing | Add frontal radiograph workspace, calibration, landmarks, symmetry/transverse measurements, saved snapshots, report, and tests. |
 | Occlusogram | rich `/ortho/[id]/model-analysis` engine | Partial | Present arch-width/length/crowding analysis as the canonical occlusogram workflow; avoid a duplicate calculator. |
-| Treatment simulation | `/ceph/vto` manual incisor movement preview | Partial | Persist named doctor-authored scenarios, before/after comparison, notes, versions, and report inclusion. No response prediction claim. |
+| Treatment simulation | `/ceph/vto` doctor-authored movements plus persisted named scenarios, immutable versions, before/after snapshots, notes, and Arabic PDF inclusion | Complete | Preserve approval/access gates, saved calibration/landmark inputs, version history, and the explicit no biological or soft-tissue response prediction statement. |
 | Superimposition | analysis/version comparison and SN similarity transform | Partial | Add multi-record selection, color legend, stable reference choice, opacity controls, and export. |
 | Case review | ortho case presentation, records checklist, photos, PDFs | Partial | Add a unified ceph case-review entry and saved composition metadata without duplicating the ortho case. |
 | Timelapse | patient timeline and comparison primitives | Missing | Add ordered image/analysis playback with date/phase labels and no fabricated interpolation. |

@@ -229,6 +229,38 @@ public sealed class CephAssessmentProblemImportItem
     public int SortOrder { get; set; }
 }
 
+public sealed class SaveCephVtoScenarioRequest
+{
+    public Guid? ScenarioGroupId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public decimal UpperIncisorMoveMm { get; set; }
+    public decimal LowerIncisorMoveMm { get; set; }
+    public string? Notes { get; set; }
+}
+
+public sealed class CephVtoScenarioDto
+{
+    public Guid Id { get; set; }
+    public Guid CephAnalysisId { get; set; }
+    public Guid ScenarioGroupId { get; set; }
+    public int VersionNumber { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public decimal UpperIncisorMoveMm { get; set; }
+    public decimal LowerIncisorMoveMm { get; set; }
+    public decimal? OverjetBeforeMm { get; set; }
+    public decimal? OverjetAfterMm { get; set; }
+    public string? Notes { get; set; }
+    public Guid? CreatedByUserId { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public string Disclaimer { get; set; } = string.Empty;
+}
+
+public sealed class SaveCephVtoScenarioResult
+{
+    public string Status { get; set; } = "ok";
+    public CephVtoScenarioDto? Scenario { get; set; }
+}
+
 public class AiSimulateRequest
 {
     public int ImageWidth { get; set; }

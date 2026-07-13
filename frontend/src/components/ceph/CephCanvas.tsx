@@ -676,7 +676,11 @@ export function CephCanvas({
       else if (e.key === '-' || e.key === '_') { centerZoom(1 / 1.2); e.preventDefault(); }
       else if (e.key === '0') { resetFit(); }
       else if (e.key === 'Escape' && calMode) { setCalMode(false); setCalCursor(null); }
-      else if (e.key === 'Escape' && viewerTool) { setViewerTool(null); setViewerCursor(null); }
+      else if (e.key === 'Escape' && viewerTool) {
+        setViewerTool(null);
+        setViewerPoints([]);
+        setViewerCursor(null);
+      }
     };
     const onKeyUp = (e: KeyboardEvent) => { if (e.key === ' ') setSpaceHeld(false); };
     window.addEventListener('keydown', onKeyDown);

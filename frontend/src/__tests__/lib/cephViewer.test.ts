@@ -47,6 +47,22 @@ describe("ceph viewer preview transforms", () => {
       .toMatchObject({ width: 800, height: 600 });
   });
 
+  it("applies horizontal and vertical flips in displayed axes after rotation", () => {
+    const source = { x: 100, y: 200 };
+    const horizontal = buildViewerMatrix(800, 600, {
+      rotation: 90,
+      flipHorizontal: true,
+      flipVertical: false,
+    });
+    const vertical = buildViewerMatrix(800, 600, {
+      rotation: 90,
+      flipHorizontal: false,
+      flipVertical: true,
+    });
+    expect(applyViewerMatrix(source, horizontal)).toEqual({ x: 200, y: 100 });
+    expect(applyViewerMatrix(source, vertical)).toEqual({ x: 400, y: 700 });
+  });
+
   it("keeps every transformed corner inside the transformed image bounds", () => {
     const matrix = buildViewerMatrix(800, 600, {
       rotation: 270,

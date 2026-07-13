@@ -21,6 +21,17 @@ beforeAll(() => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
     context as unknown as CanvasRenderingContext2D,
   );
+  vi.spyOn(HTMLCanvasElement.prototype, "getBoundingClientRect").mockReturnValue({
+    x: 0,
+    y: 0,
+    top: 0,
+    right: 300,
+    bottom: 150,
+    left: 0,
+    width: 300,
+    height: 150,
+    toJSON: () => ({}),
+  });
 });
 
 function renderCanvas(onResetImageAdjustments = vi.fn()) {
@@ -74,5 +85,20 @@ describe("CephCanvas viewer-only controls", () => {
     expect(flip).toHaveAttribute("aria-pressed", "false");
     expect(onResetImageAdjustments).toHaveBeenCalledOnce();
     expect(onLandmarksChange).not.toHaveBeenCalled();
+  });
+
+  it("clears transient ruler state when Escape exits the active tool", () => {
+    renderCanvas();
+    fireEvent.click(screen.getByRole("button", { name: "قياس مسافة مؤقتة" }));
+    const canvas = document.querySelector("canvas");
+    expect(canvas).not.toBeNull();
+    fireEvent.mouseDown(canvas!, { button: 0, clientX: 100, clientY: 70 });
+    fireEvent.mouseDown(canvas!, { button: 0, clientX: 180, clientY: 90 });
+    expect(screen.getByText("عرض مؤقت · غير محفوظ")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "مسح قياسات العارض" })).toBeEnabled();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(screen.queryByText("عرض مؤقت · غير محفوظ")).not.toBeInTheDocument();
   });
 });

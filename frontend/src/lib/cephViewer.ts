@@ -33,21 +33,40 @@ export function buildViewerMatrix(
   height: number,
   transform: ViewerTransform,
 ): ViewerMatrix {
-  const sx = transform.flipHorizontal ? -1 : 1;
-  const sy = transform.flipVertical ? -1 : 1;
-  const fx = transform.flipHorizontal ? width : 0;
-  const fy = transform.flipVertical ? height : 0;
-
+  let matrix: ViewerMatrix;
   switch (transform.rotation) {
     case 90:
-      return { a: 0, b: sx, c: -sy, d: 0, e: height - fy, f: fx, width: height, height: width };
+      matrix = { a: 0, b: 1, c: -1, d: 0, e: height, f: 0, width: height, height: width };
+      break;
     case 180:
-      return { a: -sx, b: 0, c: 0, d: -sy, e: width - fx, f: height - fy, width, height };
+      matrix = { a: -1, b: 0, c: 0, d: -1, e: width, f: height, width, height };
+      break;
     case 270:
-      return { a: 0, b: -sx, c: sy, d: 0, e: fy, f: width - fx, width: height, height: width };
+      matrix = { a: 0, b: -1, c: 1, d: 0, e: 0, f: width, width: height, height: width };
+      break;
     default:
-      return { a: sx, b: 0, c: 0, d: sy, e: fx, f: fy, width, height };
+      matrix = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0, width, height };
+      break;
   }
+
+  // Flip in the displayed axes after rotation, matching the toolbar labels.
+  if (transform.flipHorizontal) {
+    matrix = {
+      ...matrix,
+      a: -matrix.a,
+      c: -matrix.c,
+      e: matrix.width - matrix.e,
+    };
+  }
+  if (transform.flipVertical) {
+    matrix = {
+      ...matrix,
+      b: -matrix.b,
+      d: -matrix.d,
+      f: matrix.height - matrix.f,
+    };
+  }
+  return matrix;
 }
 
 export function applyViewerMatrix(point: ViewerPoint, matrix: ViewerMatrix): ViewerPoint {

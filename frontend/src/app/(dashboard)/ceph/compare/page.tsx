@@ -27,6 +27,7 @@ import type {
 } from "@/types/ceph";
 import { CephSuperimposeCanvas } from "@/components/ceph/CephSuperimposeCanvas";
 import { CephImageSliderCompare } from "@/components/ceph/CephImageSliderCompare";
+import { CephMultiSuperimpositionWorkspace } from "@/components/ceph/CephMultiSuperimpositionWorkspace";
 
 // ─── Labels ──────────────────────────────────────────────────────────────────
 
@@ -140,6 +141,11 @@ function ComparePageInner() {
   const baseId = params.get("baseId") ?? "";
   const targetId = params.get("targetId") ?? "";
   const versionId = params.get("versionId") ?? "";
+  const multiRecordIds = useMemo(
+    () => [...new Set((params.get("records") ?? "").split(",").filter(Boolean))].slice(0, 6),
+    [params],
+  );
+  const isMultiMode = multiRecordIds.length >= 2;
 
   // C-B: two modes on this page:
   //   • Analysis-vs-Analysis: ?baseId=&targetId= → server CompareAsync + slider
@@ -152,7 +158,7 @@ function ComparePageInner() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["ceph-compare", baseId, targetId],
-    enabled: Boolean(baseId && targetId) && !isVersionMode,
+    enabled: Boolean(baseId && targetId) && !isVersionMode && !isMultiMode,
     retry: false,
     queryFn: async () => {
       const res = await api.get<CephCompareResult>(
@@ -165,13 +171,13 @@ function ComparePageInner() {
   // Full analyses (with landmark coordinates) for the visual superimposition.
   const baseAnalysis = useQuery({
     queryKey: ["ceph-analysis", baseId],
-    enabled: Boolean(baseId),
+    enabled: Boolean(baseId) && !isMultiMode,
     retry: false,
     queryFn: async () => (await api.get<CephAnalysis>(`/api/ceph/${encodeURIComponent(baseId)}`)).data,
   });
   const targetAnalysis = useQuery({
     queryKey: ["ceph-analysis", targetId],
-    enabled: Boolean(targetId) && !isVersionMode,
+    enabled: Boolean(targetId) && !isVersionMode && !isMultiMode,
     retry: false,
     queryFn: async () => (await api.get<CephAnalysis>(`/api/ceph/${encodeURIComponent(targetId)}`)).data,
   });
@@ -179,7 +185,7 @@ function ComparePageInner() {
   // C-B: version snapshot fetch (only in version mode).
   const versionDetail = useQuery({
     queryKey: ["ceph-version", baseId, versionId],
-    enabled: isVersionMode,
+    enabled: isVersionMode && !isMultiMode,
     retry: false,
     queryFn: async () =>
       (await api.get<CephVersionDetail>(
@@ -259,6 +265,15 @@ function ComparePageInner() {
     ? ((versionDetail.error as { response?: { data?: { message?: string } } })
         ?.response?.data?.message ?? "تعذر تحميل النسخة المحفوظة")
     : null;
+
+  if (isMultiMode) {
+    return (
+      <div className="max-w-6xl space-y-5">
+        <Breadcrumb />
+        <CephMultiSuperimpositionWorkspace initialAnalysisIds={multiRecordIds} />
+      </div>
+    );
+  }
 
   // Missing params
   if (!baseId || (!targetId && !versionId)) {
@@ -396,14 +411,27 @@ function ComparePageInner() {
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 avoid-break">
               <h2 className="text-sm font-bold text-gray-700 mb-3">التراكب البنيوي (قاعدة الجمجمة)</h2>
               <CephSuperimposeCanvas
-                baseLandmarks={baseAnalysis.data.landmarks}
-                targetLandmarks={
-                  isVersionMode
-                    ? versionDetail.data!.landmarks
-                    : targetAnalysis.data!.landmarks
-                }
-                baseDate={baseDateLabel}
-                targetDate={targetDateLabel}
+                records={[
+                  {
+                    id: `analysis:${baseAnalysis.data.id}`,
+                    label: isVersionMode ? "التحليل الحالي" : "قبل",
+                    date: baseDateLabel,
+                    color: "#2563eb",
+                    landmarks: baseAnalysis.data.landmarks,
+                  },
+                  {
+                    id: isVersionMode
+                      ? `version:${versionDetail.data!.id}`
+                      : `analysis:${targetAnalysis.data!.id}`,
+                    label: isVersionMode ? `نسخة: ${versionDetail.data!.label}` : "بعد",
+                    date: targetDateLabel,
+                    color: "#059669",
+                    landmarks: isVersionMode
+                      ? versionDetail.data!.landmarks
+                      : targetAnalysis.data!.landmarks,
+                  },
+                ]}
+                initialReferenceId={`analysis:${baseAnalysis.data.id}`}
               />
             </div>
           )}

@@ -437,6 +437,42 @@ public class CephController(
         };
     }
 
+    [HttpGet("{id:guid}/vto-scenarios")]
+    public async Task<IActionResult> GetVtoScenarios(Guid id)
+    {
+        var accessError = await GetAnalysisAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+        return Ok(new
+        {
+            data = await service.ListVtoScenariosAsync(id),
+            disclaimer = CephService.VtoDisclaimerAr,
+        });
+    }
+
+    [HttpPost("{id:guid}/vto-scenarios")]
+    public async Task<IActionResult> SaveVtoScenario(
+        Guid id,
+        [FromBody] SaveCephVtoScenarioRequest req)
+    {
+        var accessError = await GetAnalysisAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+        if (!currentUser.IsAdmin && !patientAccess.IsDoctor)
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new { message = "لا يُسمح إلا للطبيب المعالج أو المدير بحفظ سيناريو VTO" });
+
+        var result = await service.SaveVtoScenarioAsync(id, req);
+        return result.Status switch
+        {
+            "not_found" => NotFound(new { message = "تحليل السيفالومتري غير موجود" }),
+            "analysis_not_approved" => BadRequest(new { message = "اعتمد التحليل قبل حفظ سيناريو VTO" }),
+            "calibration_missing" => BadRequest(new { message = "معايرة الصورة المحفوظة مطلوبة لحفظ سيناريو VTO" }),
+            "incisors_missing" => BadRequest(new { message = "معالم القواطع الأربعة المحفوظة مطلوبة لحفظ سيناريو VTO" }),
+            "scenario_not_found" => NotFound(new { message = "مجموعة سيناريو VTO غير موجودة" }),
+            "version_conflict" => Conflict(new { message = "حُفظ إصدار آخر بالتزامن؛ أعد المحاولة لإنشاء الإصدار التالي" }),
+            _ => Ok(result.Scenario),
+        };
+    }
+
     // DELETE /api/ceph/{id}
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)

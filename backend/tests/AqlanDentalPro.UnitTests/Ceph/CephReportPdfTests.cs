@@ -110,6 +110,32 @@ public class CephReportPdfTests
     }
 
     [Fact]
+    public async Task GenerateAsync_WithVtoScenario_IncludesScenarioSectionWithoutFailing()
+    {
+        await using var db = CreateDb();
+        var analysisId = await SeedFullAnalysisAsync(db, xrayFileUrl: null);
+        db.CephVtoScenarios.Add(new CephVtoScenario
+        {
+            CephAnalysisId = analysisId,
+            ScenarioGroupId = Guid.NewGuid(),
+            VersionNumber = 1,
+            Name = "خطة إرجاع القواطع",
+            UpperIncisorMoveMm = -2m,
+            LowerIncisorMoveMm = 0.5m,
+            OverjetBeforeMm = 5m,
+            OverjetAfterMm = 2.5m,
+            Notes = "مراجعة الطبيب قبل الاعتماد",
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var pdf = await new CephReportPdfGenerator(db).GenerateAsync(analysisId);
+
+        pdf.Length.Should().BeGreaterThan(500);
+        System.Text.Encoding.ASCII.GetString(pdf, 0, 4).Should().Be("%PDF");
+    }
+
+    [Fact]
     public async Task GenerateAsync_NoLandmarksNoMeasurementsNoDiagnosis_StillGeneratesPdf()
     {
         await using var db = CreateDb();

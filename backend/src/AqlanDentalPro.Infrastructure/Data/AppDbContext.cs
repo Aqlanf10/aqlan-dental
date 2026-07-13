@@ -35,6 +35,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     // CEPH-EPIC batch C-B — named snapshots of an analysis (landmarks +
     // measurements + diagnosis as JSON) for longitudinal progress tracking.
     public DbSet<CephAnalysisVersion> CephAnalysisVersions => Set<CephAnalysisVersion>();
+    public DbSet<CephVtoScenario> CephVtoScenarios => Set<CephVtoScenario>();
     public DbSet<ModelAnalysis> ModelAnalyses => Set<ModelAnalysis>();
     public DbSet<ExtractionDecision> ExtractionDecisions => Set<ExtractionDecision>();
     public DbSet<DentalChart> DentalCharts => Set<DentalChart>();

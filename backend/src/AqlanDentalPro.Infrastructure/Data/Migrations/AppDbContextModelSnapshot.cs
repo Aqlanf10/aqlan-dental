@@ -1086,6 +1086,74 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.ToTable("CephNorms", (string)null);
                 });
 
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.CephVtoScenario", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CephAnalysisId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<decimal>("LowerIncisorMoveMm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<decimal?>("OverjetAfterMm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)");
+
+                    b.Property<decimal?>("OverjetBeforeMm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)");
+
+                    b.Property<Guid>("ScenarioGroupId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("UpperIncisorMoveMm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)");
+
+                    b.Property<int>("VersionNumber")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CephAnalysisId");
+
+                    b.HasIndex("CephAnalysisId", "ScenarioGroupId", "VersionNumber")
+                        .IsUnique();
+
+                    b.ToTable("CephVtoScenarios", (string)null);
+                });
+
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.ClinicQueueItem", b =>
                 {
                     b.Property<Guid>("Id")
@@ -7775,6 +7843,17 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.HasOne("AqlanDentalPro.Domain.Entities.CephAnalysis", "Analysis")
                         .WithMany("Measurements")
                         .HasForeignKey("AnalysisId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Analysis");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.CephVtoScenario", b =>
+                {
+                    b.HasOne("AqlanDentalPro.Domain.Entities.CephAnalysis", "Analysis")
+                        .WithMany()
+                        .HasForeignKey("CephAnalysisId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 

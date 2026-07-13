@@ -160,6 +160,11 @@ public class CephReportPdfGenerator(AppDbContext db)
         var normByName = norms
             .GroupBy(n => n.MeasurementName)
             .ToDictionary(g => g.Key, g => g.First());
+        var vtoScenarios = await db.CephVtoScenarios
+            .Where(x => x.CephAnalysisId == analysisId)
+            .OrderBy(x => x.ScenarioGroupId)
+            .ThenByDescending(x => x.VersionNumber)
+            .ToListAsync();
 
         // Async file I/O — never block a request thread on the radiograph read.
         byte[]? xrayImageBytes = null;
@@ -178,7 +183,7 @@ public class CephReportPdfGenerator(AppDbContext db)
 
         // CPU-bound PDF generation — offloaded so the request thread is released
         // while QuestPDF composes and rasterizes the document.
-        return await Task.Run(() => Generate(analysis, identity, normByName, xrayImageBytes));
+        return await Task.Run(() => Generate(analysis, identity, normByName, vtoScenarios, xrayImageBytes));
     }
 
     /// <summary>
@@ -259,6 +264,7 @@ public class CephReportPdfGenerator(AppDbContext db)
         CephAnalysis analysis,
         CephReportClinicIdentity identity,
         IReadOnlyDictionary<string, CephNorm> normByName,
+        List<CephVtoScenario> vtoScenarios,
         byte[]? xrayImageBytes)
     {
         QuestPDF.Settings.License = LicenseType.Community;
@@ -299,7 +305,8 @@ public class CephReportPdfGenerator(AppDbContext db)
 
                 page.Header().Element(c => ComposeHeader(c, analysis, identity));
                 page.Content().Element(c => ComposeContent(
-                    c, analysis, identity, landmarks, measurements, normByName, xrayImage, overlaySvg, imageWidth, imageHeight));
+                    c, analysis, identity, landmarks, measurements, normByName, vtoScenarios,
+                    xrayImage, overlaySvg, imageWidth, imageHeight));
                 page.Footer().Element(c => ComposeFooter(c, identity));
             });
         });
@@ -355,6 +362,7 @@ public class CephReportPdfGenerator(AppDbContext db)
         List<CephLandmark> landmarks,
         List<CephMeasurement> measurements,
         IReadOnlyDictionary<string, CephNorm> normByName,
+        List<CephVtoScenario> vtoScenarios,
         Image? xrayImage,
         string? overlaySvg,
         int imageWidth,
@@ -403,6 +411,9 @@ public class CephReportPdfGenerator(AppDbContext db)
 
             // ── Diagnosis ──
             ComposeDiagnosis(column, analysis.Diagnosis);
+
+            // ── Latest doctor-authored VTO scenario versions ──
+            ComposeVtoScenarios(column, vtoScenarios);
 
             // ── Signature block ──
             column.Item().PaddingTop(15).Row(row =>
@@ -513,6 +524,61 @@ public class CephReportPdfGenerator(AppDbContext db)
                 }
             });
         }
+    }
+
+    private static void ComposeVtoScenarios(ColumnDescriptor column, List<CephVtoScenario> scenarios)
+    {
+        if (scenarios.Count == 0) return;
+
+        var latest = scenarios
+            .GroupBy(x => x.ScenarioGroupId)
+            .Select(group => group.OrderByDescending(x => x.VersionNumber).First())
+            .OrderBy(x => x.Name)
+            .ToList();
+
+        column.Item().PaddingTop(4)
+            .Text("أهداف العلاج البصرية المحفوظة (VTO)")
+            .Bold().FontSize(11).FontFamily(FontName);
+        column.Item().Text(CephService.VtoDisclaimerAr)
+            .FontSize(8).FontColor(Colors.Orange.Darken2).FontFamily(FontName);
+        column.Item().Table(table =>
+        {
+            table.ColumnsDefinition(columns =>
+            {
+                columns.RelativeColumn(2.4f);
+                columns.RelativeColumn(0.8f);
+                columns.RelativeColumn(1.2f);
+                columns.RelativeColumn(1.2f);
+                columns.RelativeColumn(1.4f);
+                columns.RelativeColumn(1.4f);
+            });
+            table.Header(header =>
+            {
+                header.Cell().Element(HeaderCellStyle).Text("السيناريو").Bold().FontFamily(FontName);
+                header.Cell().Element(HeaderCellStyle).Text("الإصدار").Bold().FontFamily(FontName);
+                header.Cell().Element(HeaderCellStyle).Text("U1 مم").Bold().FontFamily(FontName);
+                header.Cell().Element(HeaderCellStyle).Text("L1 مم").Bold().FontFamily(FontName);
+                header.Cell().Element(HeaderCellStyle).Text("قبل").Bold().FontFamily(FontName);
+                header.Cell().Element(HeaderCellStyle).Text("بعد").Bold().FontFamily(FontName);
+            });
+            foreach (var scenario in latest)
+            {
+                table.Cell().Element(CellStyle).Column(c =>
+                {
+                    c.Item().Text(scenario.Name).FontFamily(FontName);
+                    if (!string.IsNullOrWhiteSpace(scenario.Notes))
+                        c.Item().Text(scenario.Notes).FontSize(7.5f)
+                            .FontColor(Colors.Grey.Darken1).FontFamily(FontName);
+                });
+                table.Cell().Element(CellStyle).Text($"v{scenario.VersionNumber}").FontFamily(FontName);
+                table.Cell().Element(CellStyle).Text($"{scenario.UpperIncisorMoveMm:+0.0;-0.0;0.0}").FontFamily(FontName);
+                table.Cell().Element(CellStyle).Text($"{scenario.LowerIncisorMoveMm:+0.0;-0.0;0.0}").FontFamily(FontName);
+                table.Cell().Element(CellStyle).Text(scenario.OverjetBeforeMm.HasValue
+                    ? $"{scenario.OverjetBeforeMm:0.00} مم" : "—").FontFamily(FontName);
+                table.Cell().Element(CellStyle).Text(scenario.OverjetAfterMm.HasValue
+                    ? $"{scenario.OverjetAfterMm:0.00} مم" : "—").FontFamily(FontName);
+            }
+        });
     }
 
     private static void ComposeDiagnosis(ColumnDescriptor column, CephDiagnosis? diagnosis)

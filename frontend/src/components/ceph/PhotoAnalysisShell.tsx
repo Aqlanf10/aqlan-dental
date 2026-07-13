@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowRight, ImagePlus, Loader2, Save, CheckCircle2, Clock, FileDown, Printer } from "lucide-react";
+import { ArrowRight, ImagePlus, Loader2, Save, CheckCircle2, Clock, FileDown, Printer, GitCompareArrows } from "lucide-react";
 import api from "@/lib/api";
 import { resolveImageUrl } from "@/hooks/useClinicBranding";
 import { usePhotoAnalysisCase, type SavedPhotoAnalysis } from "@/hooks/usePhotoAnalysisCase";
@@ -33,6 +33,12 @@ function ShellInner({ viewType, title, icon, uploadLabel, renderAnalyzer }: Prop
   const searchParams = useSearchParams();
   const orthoCaseId = searchParams.get("orthoCaseId");
   const returnHref = orthoCaseId ? `/ortho/${orthoCaseId}?tab=ceph` : "/ceph";
+  const caseQuery = orthoCaseId ? `?orthoCaseId=${encodeURIComponent(orthoCaseId)}` : "";
+  const profileHref = `/ceph/photo${caseQuery}`;
+  const frontalHref = `/ceph/photo/frontal${caseQuery}`;
+  const compareHref = orthoCaseId
+    ? `/ceph/photo/compare?orthoCaseId=${encodeURIComponent(orthoCaseId)}&viewType=${viewType}`
+    : null;
 
   const inputRef = useRef<HTMLInputElement>(null);
   const stateRef = useRef<{ points: Record<string, Pt>; measurements: unknown }>({ points: {}, measurements: [] });
@@ -195,6 +201,22 @@ function ShellInner({ viewType, title, icon, uploadLabel, renderAnalyzer }: Prop
         </div>
       </div>
 
+      <nav aria-label="أنواع تحليل الصور" className="no-print flex flex-wrap gap-2 border border-gray-200 bg-white p-2">
+        <Link href={profileHref} aria-current={viewType === "profile" ? "page" : undefined}
+          className={cn("border px-3 py-2 text-xs font-bold", viewType === "profile" ? "border-blue-300 bg-blue-50 text-clinic-blue" : "border-gray-200 text-gray-700")}>
+          تحليل البروفايل
+        </Link>
+        <Link href={frontalHref} aria-current={viewType === "frontal" ? "page" : undefined}
+          className={cn("border px-3 py-2 text-xs font-bold", viewType === "frontal" ? "border-blue-300 bg-blue-50 text-clinic-blue" : "border-gray-200 text-gray-700")}>
+          التحليل الأمامي
+        </Link>
+        {compareHref && saved.length >= 2 && (
+          <Link href={compareHref} className="inline-flex items-center gap-1.5 border border-gray-200 px-3 py-2 text-xs font-bold text-gray-700 hover:border-blue-300 hover:text-clinic-blue">
+            <GitCompareArrows className="h-4 w-4" />مقارنة قبل وبعد
+          </Link>
+        )}
+      </nav>
+
       <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) onPick(f); e.target.value = ""; }} />
 
@@ -204,7 +226,10 @@ function ShellInner({ viewType, title, icon, uploadLabel, renderAnalyzer }: Prop
 
       {orthoCaseId && saved.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-xl p-3">
-          <p className="text-xs font-bold text-gray-600 mb-2">تحاليل محفوظة لهذه الحالة</p>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-bold text-gray-600">تحاليل محفوظة لهذه الحالة</p>
+            {compareHref && saved.length >= 2 && <Link href={compareHref} className="inline-flex items-center gap-1 text-[11px] font-bold text-clinic-blue"><GitCompareArrows className="h-3.5 w-3.5" />مقارنة طولية</Link>}
+          </div>
           <div className="flex flex-wrap gap-2">
             {saved.map((s) => (
               <button key={s.id} onClick={() => loadSaved(s)}

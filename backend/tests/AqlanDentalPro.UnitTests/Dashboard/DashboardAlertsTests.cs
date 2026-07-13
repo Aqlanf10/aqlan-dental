@@ -103,7 +103,9 @@ public class DashboardAlertsTests
     public async Task LongWaiting_CountsOnlyWaitingOlderThanThreshold()
     {
         await using var db = CreateDb();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        // QueueDate is a clinic-local calendar date while CreatedAt is UTC.
+        // Using the UTC date makes this test fail after local midnight in Aden.
+        var today = DateOnly.FromDateTime(DateTime.Today);
         var p = NewPatient();
         db.Patients.Add(p);
 

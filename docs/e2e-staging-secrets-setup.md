@@ -59,7 +59,7 @@ If a spec fails, download the `playwright-report` artifact to view the full trac
 
 ## Current e2e coverage (minimal)
 
-The specs cover the **login golden paths only**. The audit's full e2e wishlist (booking, payment, receipt PDF, cashier-session-close) requires deterministic seeded staging data and is tracked as a follow-up. To add a new spec, create `frontend/playwright-tests/<name>.spec.ts` — the CI job picks up all `*.spec.ts` files automatically.
+The deployed login surface smoke test runs whenever `E2E_API_URL` is configured. Authenticated specs are skipped until their matching credentials are configured, so a missing secret is reported as an explicit skip rather than a product build failure. The audit's full e2e wishlist (booking, payment, receipt PDF, cashier-session-close) requires deterministic seeded staging data and is tracked as a follow-up. To add a new spec, create `frontend/playwright-tests/<name>.spec.ts` — the CI job picks up all `*.spec.ts` files automatically.
 
 ## Related
 - PR #509 — added the `e2e` job + specs (TEST-16)

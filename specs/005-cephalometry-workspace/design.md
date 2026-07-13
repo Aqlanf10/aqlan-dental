@@ -23,6 +23,8 @@
 - Case review owner: `/ceph/case/[caseId]` reuses `CasePresentationPanel`, selected/prepared ortho photos, readiness, report/PPTX endpoints, and the canonical ortho case.
 - Approved-tag owner: `CephClinicalTagCatalog` allowlists structured diagnosis values and projects tags only when both the analysis and diagnosis are doctor-approved.
 - Cohort owner: `CephService.BuildCohortAsync` and `GET /api/ceph/cohort`; one latest approved record per accessible patient, aggregate-only DTOs, and a five-independent-patient threshold for the cohort and every measurement.
+- Soft-tissue longitudinal owner: `/ceph/photo/compare` composes two existing `PhotoAnalysis` records from the same case/view type; `photoAnalysisComparison.ts` accepts only saved finite values and creates no new clinical record or prediction.
+- Final runtime owner: `playwright-tests/ceph-runtime.spec.ts` uses environment-held staff credentials to verify deployed authenticated routes, responsive behavior, privacy state, and eligible PDF/CSV downloads without source-controlled credentials.
 
 Allowed files: existing ceph/ortho owners named in the parity matrix, their focused tests, and ceph specification/governance/audit files. Each delivery slice must narrow this list before editing.
 

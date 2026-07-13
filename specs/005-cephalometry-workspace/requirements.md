@@ -49,4 +49,5 @@ Automatic diagnosis acceptance, hidden AI assumptions, unaudited provider change
 - WHEN a ceph clinical tag is shown THEN its value SHALL be allowlisted and both its source analysis and structured diagnosis SHALL be doctor-approved.
 - WHEN cohort analytics are requested THEN only the latest approved record per accessible patient SHALL be counted, no patient identifier SHALL be returned, and the complete result plus each measurement SHALL be suppressed below five independent patients.
 - WHEN Timelapse runs THEN every frame SHALL correspond to a persisted dated image or analysis; no interpolated treatment frame SHALL be generated.
-- Needs runtime verification for doctor review flow.
+- WHEN longitudinal soft-tissue comparison runs THEN both records SHALL belong to the same case and view type, the before date SHALL precede the after date, and deltas SHALL use saved finite values only.
+- WHEN final parity is closed THEN a deployed authenticated test SHALL cover the canonical list, cohort privacy surface, case review, Timelapse, responsive layout, and any eligible PDF/CSV downloads without embedding credentials or patient fixtures in source.

@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
-import { UserSquare2, Smile, FileDown, Loader2, Clock } from "lucide-react";
+import { UserSquare2, Smile, FileDown, Loader2, Clock, GitCompareArrows } from "lucide-react";
 import api from "@/lib/api";
 import { downloadPdfFromApi } from "@/lib/pdfDownload";
 import { formatArabicDate } from "@/lib/utils";
@@ -81,7 +81,7 @@ export function FacialPhotoPanel({ caseId }: { caseId: string }) {
           </div>
           {isLoading ? <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
             : profile.length === 0 ? <p className="py-4 text-center text-xs text-gray-400">لا تحاليل بروفايل بعد</p>
-            : <div className="space-y-1.5">{profile.map((a) => <Row key={a.id} a={a} />)}</div>}
+            : <div className="space-y-1.5">{profile.map((a) => <Row key={a.id} a={a} />)}{profile.length >= 2 && <Link href={`/ceph/photo/compare?orthoCaseId=${caseId}&viewType=profile`} className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-clinic-blue"><GitCompareArrows className="h-3.5 w-3.5" />مقارنة قبل وبعد</Link>}</div>}
         </div>
 
         {/* Frontal */}
@@ -97,7 +97,7 @@ export function FacialPhotoPanel({ caseId }: { caseId: string }) {
           </div>
           {isLoading ? <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
             : frontal.length === 0 ? <p className="py-4 text-center text-xs text-gray-400">لا تحاليل أمامية بعد</p>
-            : <div className="space-y-1.5">{frontal.map((a) => <Row key={a.id} a={a} />)}</div>}
+            : <div className="space-y-1.5">{frontal.map((a) => <Row key={a.id} a={a} />)}{frontal.length >= 2 && <Link href={`/ceph/photo/compare?orthoCaseId=${caseId}&viewType=frontal`} className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-clinic-blue"><GitCompareArrows className="h-3.5 w-3.5" />مقارنة قبل وبعد</Link>}</div>}
         </div>
       </div>
       <p className="text-[11px] text-gray-400">

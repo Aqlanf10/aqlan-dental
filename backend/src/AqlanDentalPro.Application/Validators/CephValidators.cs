@@ -96,6 +96,36 @@ public sealed class SaveDiagnosisRequestValidator : AbstractValidator<SaveDiagno
     }
 }
 
+public sealed class ImportCephAssessmentProblemsRequestValidator
+    : AbstractValidator<ImportCephAssessmentProblemsRequest>
+{
+    private static readonly HashSet<string> AllowedCategories =
+        ["skeletal", "dental", "soft_tissue", "functional", "space", "esthetic"];
+
+    private static readonly HashSet<string> AllowedSeverities =
+        ["mild", "moderate", "severe"];
+
+    public ImportCephAssessmentProblemsRequestValidator()
+    {
+        RuleFor(x => x.Items)
+            .NotEmpty().WithMessage("اختر عنصراً واحداً على الأقل")
+            .Must(items => items is { Count: <= 20 }).WithMessage("لا يمكن نقل أكثر من 20 عنصراً دفعة واحدة");
+
+        RuleForEach(x => x.Items).ChildRules(item =>
+        {
+            item.RuleFor(x => x.Category)
+                .Must(category => AllowedCategories.Contains(category))
+                .WithMessage("تصنيف المشكلة غير صالح");
+            item.RuleFor(x => x.Description)
+                .NotEmpty().WithMessage("وصف المشكلة مطلوب")
+                .MaximumLength(500).WithMessage("وصف المشكلة يجب ألا يتجاوز 500 حرف");
+            item.RuleFor(x => x.Severity)
+                .Must(severity => AllowedSeverities.Contains(severity))
+                .WithMessage("شدة المشكلة غير صالحة");
+        });
+    }
+}
+
 public sealed class SavePhotoAnalysisRequestValidator : AbstractValidator<SavePhotoAnalysisRequest>
 {
     public SavePhotoAnalysisRequestValidator()

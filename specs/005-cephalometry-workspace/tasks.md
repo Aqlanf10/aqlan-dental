@@ -49,7 +49,7 @@
   Vercel passed.
 - `CEPH-TASK-008`: SEQ-43 — establish and review the binding WebCeph functional-parity matrix. Strong model, documentation only. — ✅ Done in PR #680; full CI and Vercel passed.
 - `CEPH-TASK-009`: SEQ-44 — implement non-destructive viewer rulers and preview transforms with regression tests. — ✅ Done in PR #681; full CI and Vercel passed.
-- `CEPH-TASK-010`: SEQ-45 — implement doctor-reviewed structured assessment and explicit problem-list handoff.
+- `CEPH-TASK-010`: SEQ-45 — implement doctor-reviewed structured assessment and explicit problem-list handoff. — ✅ Done in PR #682; full CI and Vercel passed.
 - `CEPH-TASK-011`: SEQ-46 — persist named doctor-authored treatment/VTO scenarios and comparisons.
 - `CEPH-TASK-012`: SEQ-47 — extend structural superimposition to multiple dated records with reference/opacity/export controls.
 - `CEPH-TASK-013`: SEQ-48 — add documented PA cephalometric analysis inside the existing ceph module. Strong clinical review required.

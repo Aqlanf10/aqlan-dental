@@ -27,6 +27,7 @@ import api from "@/lib/api";
 import { resolveImageUrl } from "@/hooks/useClinicBranding";
 import { downloadPdfFromApi, printPdfFromApi } from "@/lib/pdfDownload";
 import { CephMeasurementExportButton } from "@/components/ceph/CephMeasurementExportButton";
+import { CephAssessmentPanel } from "@/components/ceph/CephAssessmentPanel";
 import { cn, formatArabicDate } from "@/lib/utils";
 
 const LANDMARK_GROUPS = [
@@ -37,7 +38,7 @@ const LANDMARK_GROUPS = [
   { key: 'soft',     label: 'الأنسجة الرخوة',  keys: ['LS', 'LI', 'Pn', 'Cm', 'SPog'] },
 ];
 
-type RightTab = 'report' | 'diagnosis';
+type RightTab = 'report' | 'diagnosis' | 'assessment';
 
 export default function CephAnalysisPage() {
   const { id } = useParams<{ id: string }>();
@@ -1116,6 +1117,7 @@ export default function CephAnalysisPage() {
             {([
               { key: 'report', label: 'التحليل والقياسات' },
               { key: 'diagnosis', label: 'التشخيص' },
+              { key: 'assessment', label: 'التقييم' },
             ] as { key: RightTab; label: string }[]).map(t => (
               <button
                 key={t.key}
@@ -1157,6 +1159,19 @@ export default function CephAnalysisPage() {
                   calibrated={pixelsPerMm !== null && pixelsPerMm > 0}
                   defaultGroup="steiner"
                   analysisId={id}
+                />
+              </div>
+            )}
+
+            {rightTab === 'assessment' && (
+              <div className="flex-1 overflow-hidden p-2">
+                <CephAssessmentPanel
+                  analysisId={id}
+                  orthoCaseId={analysis.orthoCaseId}
+                  analysisApproved={analysis.isApproved}
+                  hasUnsavedChanges={isDirty}
+                  diagnosis={diagnosis}
+                  measurements={analysis.measurements ?? []}
                 />
               </div>
             )}

@@ -1085,6 +1085,67 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         return true;
     }
 
+    public async Task<CephAssessmentProblemImportResult> ImportAssessmentProblemsAsync(
+        Guid id,
+        ImportCephAssessmentProblemsRequest req)
+    {
+        var analysis = await db.CephAnalyses
+            .Include(a => a.Diagnosis)
+            .FirstOrDefaultAsync(a => a.Id == id);
+
+        if (analysis is null)
+            return new CephAssessmentProblemImportResult { Status = "not_found" };
+        if (!analysis.IsApproved)
+            return new CephAssessmentProblemImportResult { Status = "analysis_not_approved" };
+        if (analysis.Diagnosis?.DoctorApproved != true)
+            return new CephAssessmentProblemImportResult { Status = "diagnosis_not_approved" };
+
+        var existingDescriptions = await db.ProblemListItems
+            .Where(item => item.OrthoCaseId == analysis.OrthoCaseId)
+            .Select(item => item.Description)
+            .ToListAsync();
+        var knownDescriptions = new HashSet<string>(
+            existingDescriptions.Select(description => description.Trim()),
+            StringComparer.OrdinalIgnoreCase);
+        var maxOrder = await db.ProblemListItems
+            .Where(item => item.OrthoCaseId == analysis.OrthoCaseId)
+            .MaxAsync(item => (int?)item.SortOrder) ?? 0;
+
+        var result = new CephAssessmentProblemImportResult();
+        foreach (var input in req.Items)
+        {
+            var description = input.Description.Trim();
+            if (!knownDescriptions.Add(description))
+            {
+                result.SkippedExisting++;
+                continue;
+            }
+
+            var item = new ProblemListItem
+            {
+                OrthoCaseId = analysis.OrthoCaseId,
+                Category = input.Category,
+                Description = description,
+                Severity = input.Severity,
+                SortOrder = ++maxOrder,
+            };
+            db.ProblemListItems.Add(item);
+            result.Items.Add(new CephAssessmentProblemImportItem
+            {
+                Id = item.Id,
+                Category = item.Category,
+                Description = item.Description,
+                Severity = item.Severity,
+                SortOrder = item.SortOrder,
+            });
+        }
+
+        if (result.Items.Count > 0)
+            await db.SaveChangesAsync();
+        result.Added = result.Items.Count;
+        return result;
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     //  MAPPING HELPERS
     // ──────────────────────────────────────────────────────────────────────────

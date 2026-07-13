@@ -51,7 +51,7 @@
 - `CEPH-TASK-009`: SEQ-44 — implement non-destructive viewer rulers and preview transforms with regression tests. — ✅ Done in PR #681; full CI and Vercel passed.
 - `CEPH-TASK-010`: SEQ-45 — implement doctor-reviewed structured assessment and explicit problem-list handoff. — ✅ Done in PR #682; full CI and Vercel passed.
 - `CEPH-TASK-011`: SEQ-46 — persist named doctor-authored treatment/VTO scenarios and comparisons. — ✅ Implemented in PR #683 with immutable versions, approval/access gates, saved before/after snapshots, PDF inclusion, and an explicit no-response-prediction disclaimer; local backend/frontend suites and production builds passed.
-- `CEPH-TASK-012`: SEQ-47 — extend structural superimposition to multiple dated records with reference/opacity/export controls.
+- `CEPH-TASK-012`: SEQ-47 — extend structural superimposition to multiple dated records with reference/opacity/export controls. — ✅ Implemented in PR #684 with 2–6 same-case analyses/versions, explicit reference, stable colors, per-layer opacity, non-overlapping legend, and metadata-bearing SVG export; frontend suites and production build passed locally.
 - `CEPH-TASK-013`: SEQ-48 — add documented PA cephalometric analysis inside the existing ceph module. Strong clinical review required.
 - `CEPH-TASK-014`: SEQ-49 — expose canonical model analysis as the occlusogram workflow without duplicate calculations.
 - `CEPH-TASK-015`: SEQ-50 — add real-record timelapse, unified case review, approved tags, and privacy-safe cohort analysis.

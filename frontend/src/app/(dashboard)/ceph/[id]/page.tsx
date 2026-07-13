@@ -1169,8 +1169,9 @@ export default function CephAnalysisPage() {
                   analysisId={id}
                   orthoCaseId={analysis.orthoCaseId}
                   analysisApproved={analysis.isApproved}
+                  hasUnsavedChanges={isDirty}
                   diagnosis={diagnosis}
-                  measurements={activeReportData}
+                  measurements={analysis.measurements ?? []}
                 />
               </div>
             )}

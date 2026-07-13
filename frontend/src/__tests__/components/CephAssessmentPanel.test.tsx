@@ -31,6 +31,7 @@ describe("CephAssessmentPanel", () => {
         analysisId="analysis-1"
         orthoCaseId="case-1"
         analysisApproved
+        hasUnsavedChanges={false}
         diagnosis={approvedDiagnosis}
         measurements={[]}
       />,
@@ -59,6 +60,7 @@ describe("CephAssessmentPanel", () => {
         analysisId="analysis-1"
         orthoCaseId="case-1"
         analysisApproved={false}
+        hasUnsavedChanges={false}
         diagnosis={approvedDiagnosis}
         measurements={[]}
       />,
@@ -80,6 +82,7 @@ describe("CephAssessmentPanel", () => {
         analysisId="analysis-1"
         orthoCaseId="case-1"
         analysisApproved
+        hasUnsavedChanges={false}
         diagnosis={approvedDiagnosis}
         measurements={[]}
       />,
@@ -87,5 +90,22 @@ describe("CephAssessmentPanel", () => {
 
     expect(await screen.findByText("موجودة في قائمة المشكلات")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "إضافة العلاقة الهيكلية" })).toBeDisabled();
+  });
+
+  it("blocks handoff while the canvas has unsaved landmark or calibration changes", async () => {
+    render(
+      <CephAssessmentPanel
+        analysisId="analysis-1"
+        orthoCaseId="case-1"
+        analysisApproved
+        hasUnsavedChanges
+        diagnosis={approvedDiagnosis}
+        measurements={[]}
+      />,
+    );
+
+    expect(screen.getByText("احفظ تغييرات المعالم والمعايرة قبل التسليم.")).toBeInTheDocument();
+    const checkbox = await screen.findByRole("checkbox", { name: "إضافة العلاقة الهيكلية" });
+    expect(checkbox).toBeDisabled();
   });
 });

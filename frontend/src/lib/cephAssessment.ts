@@ -32,7 +32,12 @@ const VERTICAL_AR: Record<string, string> = {
 function measurementSection(name: string): CephAssessmentSection {
   const normalized = name.toUpperCase();
   if (/^(U1|L1|IMPA|FMIA|OVERJET|INTERINCISAL)/.test(normalized)) return "dental";
-  if (normalized.includes("E-LINE") || normalized.includes("S-LINE") || normalized.includes("LIP")) {
+  if (
+    normalized.includes("ELINE") ||
+    normalized.includes("SLINE") ||
+    normalized.includes("LIP") ||
+    normalized.includes("NASOLABIAL")
+  ) {
     return "soft_tissue";
   }
   return "skeletal";

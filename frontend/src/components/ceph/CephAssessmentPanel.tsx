@@ -12,6 +12,7 @@ interface Props {
   analysisId: string;
   orthoCaseId: string;
   analysisApproved: boolean;
+  hasUnsavedChanges: boolean;
   diagnosis: CephDiagnosis | null;
   measurements: CephMeasurement[];
 }
@@ -36,6 +37,7 @@ export function CephAssessmentPanel({
   analysisId,
   orthoCaseId,
   analysisApproved,
+  hasUnsavedChanges,
   diagnosis,
   measurements,
 }: Props) {
@@ -64,7 +66,7 @@ export function CephAssessmentPanel({
   }, [orthoCaseId]);
 
   const diagnosisApproved = diagnosis?.doctorApproved === true;
-  const canTransfer = analysisApproved && diagnosisApproved;
+  const canTransfer = analysisApproved && diagnosisApproved && !hasUnsavedChanges;
   const selectedFindings = findings.filter(finding => selected.has(finding.id));
 
   const toggle = (finding: CephAssessmentFinding) => {
@@ -114,7 +116,11 @@ export function CephAssessmentPanel({
           <div className="mb-3 flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2 text-[10px] text-amber-800">
             <CircleAlert className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
             <span>
-              {!analysisApproved ? "اعتماد التحليل مطلوب قبل التسليم." : "موافقة الطبيب على التشخيص مطلوبة قبل التسليم."}
+              {hasUnsavedChanges
+                ? "احفظ تغييرات المعالم والمعايرة قبل التسليم."
+                : !analysisApproved
+                  ? "اعتماد التحليل مطلوب قبل التسليم."
+                  : "موافقة الطبيب على التشخيص مطلوبة قبل التسليم."}
             </span>
           </div>
         )}

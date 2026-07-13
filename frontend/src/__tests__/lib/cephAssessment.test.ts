@@ -53,4 +53,12 @@ describe("buildCephAssessment", () => {
   it("does not invent findings when no saved diagnosis or abnormal measurement exists", () => {
     expect(buildCephAssessment(null, [])).toEqual([]);
   });
+
+  it.each(["UL-SLine", "LL-SLine", "Upper-Lip-ELine", "Lower-Lip-ELine", "Nasolabial"])(
+    "classifies %s as a soft-tissue finding",
+    name => {
+      const findings = buildCephAssessment(null, [{ ...measurement, name }]);
+      expect(findings[0].section).toBe("soft_tissue");
+    },
+  );
 });

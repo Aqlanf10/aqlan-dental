@@ -39,18 +39,21 @@ const GROUP_AR: Record<string, string> = {
   downs: "تحليل Downs",
   jarabak: "تحليل Jarabak",
   wits: "تحليل Wits",
+  pa: "تحليل PA الأمامي",
 };
-const GROUP_ORDER = ["steiner", "tweed", "mcnamara", "ricketts", "downs", "jarabak", "wits", "other"];
+const GROUP_ORDER = ["steiner", "tweed", "mcnamara", "ricketts", "downs", "jarabak", "wits", "pa", "other"];
 
 const SEVERITY_AR: Record<MeasurementSeverity, string> = {
   normal: "طبيعي",
   mild: "انحراف بسيط",
   severe: "انحراف شديد",
+  unclassified: "وصفي",
 };
 const SEVERITY_CLS: Record<MeasurementSeverity, string> = {
   normal: "bg-green-50 text-green-700 border-green-200",
   mild: "bg-yellow-50 text-yellow-700 border-yellow-200",
   severe: "bg-red-50 text-red-700 border-red-200",
+  unclassified: "bg-gray-50 text-gray-700 border-gray-200",
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

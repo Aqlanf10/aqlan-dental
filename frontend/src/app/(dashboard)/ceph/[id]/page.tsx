@@ -16,6 +16,8 @@ import type {
 import { ANALYSIS_GROUPS, ANALYSIS_TYPE_AR } from "@/types/ceph";
 import { buildMeasurementList, applyNormOverrides, type ApiNorm } from "@/lib/cephMath";
 import { CephCanvas, LANDMARK_DEFS, LANDMARK_ORDER, SIMULATION_SCENARIOS } from "@/components/ceph/CephCanvas";
+import { CephPaCanvas } from "@/components/ceph/CephPaCanvas";
+import { buildPaMeasurements, PA_LANDMARK_DEFS, PA_LANDMARK_GROUPS, PA_LANDMARK_ORDER } from "@/lib/cephPa";
 import { AnalysisReport } from "@/components/ceph/AnalysisReport";
 import { CephReadinessBadge } from "@/components/ceph/CephReadinessBadge";
 import { CephQualityPanel } from "@/components/ceph/CephQualityPanel";
@@ -164,6 +166,11 @@ export default function CephAnalysisPage() {
     return m;
   }, [landmarks]);
 
+  const isPa = analysis?.analysisType === "pa";
+  const landmarkDefs = isPa ? PA_LANDMARK_DEFS : LANDMARK_DEFS;
+  const landmarkOrder = isPa ? PA_LANDMARK_ORDER : LANDMARK_ORDER;
+  const landmarkGroups = isPa ? PA_LANDMARK_GROUPS : LANDMARK_GROUPS;
+
   const analysisGroups = useMemo(() => {
     if (!analysis) return ['steiner','tweed','mcnamara','ricketts','downs'] as const;
     return ANALYSIS_GROUPS[analysis.analysisType as AnalysisType] ?? ANALYSIS_GROUPS['full'];
@@ -177,15 +184,18 @@ export default function CephAnalysisPage() {
     void normsVersion;
     const pts: Record<string, { x: number; y: number }> = {};
     landmarks.forEach(l => { pts[l.key] = { x: l.x, y: l.y }; });
-    return buildMeasurementList(pts, pixelsPerMm, analysisGroups);
-  }, [landmarks, pixelsPerMm, analysisGroups, normsVersion]);
+    return isPa
+      ? buildPaMeasurements(landmarks, pixelsPerMm)
+      : buildMeasurementList(pts, pixelsPerMm, analysisGroups);
+  }, [landmarks, pixelsPerMm, analysisGroups, normsVersion, isPa]);
 
   const activeReportData = (analysis?.measurements?.length && !isDirty)
     ? analysis.measurements
     : computedMeasurements;
 
   const placedCount = landmarks.length;
-  const totalCount  = LANDMARK_ORDER.length;
+  const totalCount  = landmarkOrder.length;
+  const requiredPointsComplete = !isPa || PA_LANDMARK_ORDER.every((key) => Boolean(lmMap[key]));
 
   // Readiness of the SAVED record (image/calibration/points/measurements) plus
   // the live unsaved-edits flag — the same gate the PDF/VTO buttons enforce.
@@ -205,8 +215,9 @@ export default function CephAnalysisPage() {
         landmarks,
         measurementCount: analysis?.measurements?.length ?? 0,
         isDirty,
+        requiredLandmarkKeys: isPa ? PA_LANDMARK_ORDER : undefined,
       }),
-    [pixelsPerMm, landmarks, analysis?.measurements?.length, isDirty],
+    [pixelsPerMm, landmarks, analysis?.measurements?.length, isDirty, isPa],
   );
   const lowConfidenceSet = useMemo(
     () => new Set(quality.lowConfidenceKeys),
@@ -347,7 +358,7 @@ export default function CephAnalysisPage() {
           key:        l.key,
           name:       l.name,
           nameAr:     l.nameAr,
-          group:      l.group ?? LANDMARK_DEFS[l.key]?.group,
+          group:      l.group ?? landmarkDefs[l.key]?.group,
           x:          l.x,
           y:          l.y,
           isAiPlaced: l.isAiPlaced,
@@ -465,7 +476,7 @@ export default function CephAnalysisPage() {
 
         {/* Toolbar */}
         <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
-          <button
+          {!isPa && <button
             type="button"
             onClick={() => handleAiTrace("draft")}
             disabled={aiTracing || !analysis.xrayFileUrl}
@@ -473,13 +484,13 @@ export default function CephAnalysisPage() {
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-violet-300 bg-violet-50 text-violet-800 hover:bg-violet-100 disabled:opacity-50 transition">
             {aiTracing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
             {aiTracing ? "جارٍ تحليل الصورة..." : "مسودة AI للنقاط"}
-          </button>
+          </button>}
 
           {/* Precise auto-trace: same Gemini endpoint, precision=high. The model
               takes a slower, deliberate pass and omits any landmark it cannot
               place with confidence > 0.5. The result is STILL an unsaved AI
               draft — the disclaimer banner remains mandatory. */}
-          <button
+          {!isPa && <button
             type="button"
             onClick={() => handleAiTrace("high")}
             disabled={aiTracing || !analysis.xrayFileUrl}
@@ -487,14 +498,14 @@ export default function CephAnalysisPage() {
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-indigo-300 bg-indigo-50 text-indigo-800 hover:bg-indigo-100 disabled:opacity-50 transition">
             {aiTracing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Target className="w-3.5 h-3.5" />}
             {aiTracing ? "جارٍ التحليل الدقيق..." : "تتبع آلي دقيق"}
-          </button>
+          </button>}
 
-          <button onClick={handleTemplateSimulation} disabled={detecting}
+          {!isPa && <button onClick={handleTemplateSimulation} disabled={detecting}
             title="محاكاة (تجريبية) — قالب تدريبي لمواضع المعالم وليس ذكاءً اصطناعيًا حقيقيًا"
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 disabled:opacity-60 transition">
             {detecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
             {detecting ? 'جارٍ التوليد...' : 'محاكاة (تجريبية)'}
-          </button>
+          </button>}
 
           <button onClick={handleSaveAndCompute} disabled={saving || !landmarks.length}
             className={cn(
@@ -612,8 +623,8 @@ export default function CephAnalysisPage() {
             </span>
           ) : (
             <button onClick={handleApprove}
-              disabled={approving || placedCount === 0 || isDirty || !analysis?.measurements?.length}
-              title={placedCount === 0 || isDirty || !analysis?.measurements?.length
+              disabled={approving || placedCount === 0 || !requiredPointsComplete || isDirty || !analysis?.measurements?.length}
+              title={placedCount === 0 || !requiredPointsComplete || isDirty || !analysis?.measurements?.length
                 ? 'ضع المعالم واحسب القياسات واحفظها أولًا ثم اعتمد التحليل'
                 : 'اعتماد التحليل لإتاحة إصدار التقرير النهائي'}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed transition">
@@ -626,7 +637,7 @@ export default function CephAnalysisPage() {
               computed state so a stale report can never be exported. The final
               report is additionally blocked until the analysis is approved. */}
           <button onClick={() => handleReportPdf('download')}
-            disabled={!analysis?.isApproved || placedCount === 0 || isDirty || !analysis?.measurements?.length || pdfBusy !== null}
+            disabled={!analysis?.isApproved || placedCount === 0 || !requiredPointsComplete || isDirty || !analysis?.measurements?.length || pdfBusy !== null}
             title={!analysis?.isApproved ? 'لا يمكن إصدار التقرير النهائي قبل اعتماد الطبيب للتحليل'
               : placedCount === 0 ? 'ضع المعالم واحسب القياسات أولًا لإنشاء التقرير'
               : isDirty || !analysis?.measurements?.length ? 'اضغط «احسب» لحفظ المعالم والقياسات قبل إصدار التقرير'
@@ -637,7 +648,7 @@ export default function CephAnalysisPage() {
           </button>
 
           <button onClick={() => handleReportPdf('print')}
-            disabled={!analysis?.isApproved || placedCount === 0 || isDirty || !analysis?.measurements?.length || pdfBusy !== null}
+            disabled={!analysis?.isApproved || placedCount === 0 || !requiredPointsComplete || isDirty || !analysis?.measurements?.length || pdfBusy !== null}
             title={!analysis?.isApproved ? 'لا يمكن إصدار التقرير النهائي قبل اعتماد الطبيب للتحليل'
               : placedCount === 0 ? 'ضع المعالم واحسب القياسات أولًا لإنشاء التقرير'
               : isDirty || !analysis?.measurements?.length ? 'اضغط «احسب» لحفظ المعالم والقياسات قبل إصدار التقرير'
@@ -651,13 +662,14 @@ export default function CephAnalysisPage() {
             analysis={analysis}
             placedCount={placedCount}
             hasUnsavedEdits={isDirty}
+            pointsComplete={requiredPointsComplete}
           />
 
           {/* Visual Treatment Objective — planned incisor movements preview.
               The VTO page refetches the SAVED analysis, so it is gated on a
               clean state: unsaved landmark/calibration edits must be saved
               first or the preview would build from stale positions. */}
-          {placedCount === 0 || isDirty ? (
+          {!isPa && (placedCount === 0 || isDirty ? (
             <span
               title={placedCount === 0
                 ? 'ضع المعالم واحفظها أولًا لفتح هدف العلاج'
@@ -673,7 +685,7 @@ export default function CephAnalysisPage() {
               <Target className="w-3.5 h-3.5" />
               هدف العلاج VTO
             </Link>
-          )}
+          ))}
 
           <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
             <button onClick={() => setShowPlanes(!showPlanes)}
@@ -681,16 +693,16 @@ export default function CephAnalysisPage() {
               title="المستويات المرجعية">
               {showPlanes ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
             </button>
-            <button onClick={() => setShowTracing(!showTracing)}
+            {!isPa && <button onClick={() => setShowTracing(!showTracing)}
               className={cn("p-1.5 rounded-md transition", showTracing ? "bg-white shadow-sm text-pink-600" : "text-gray-400")}
               title="التتبّع التشريحي">
               <ScanLine className="w-3.5 h-3.5" />
-            </button>
-            <button onClick={() => setShowSim(!showSim)}
+            </button>}
+            {!isPa && <button onClick={() => setShowSim(!showSim)}
               className={cn("p-1.5 rounded-md transition", showSim ? "bg-white shadow-sm text-green-600" : "text-gray-400")}
               title="محاكاة العلاج">
               {showSim ? <PlayCircle className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-            </button>
+            </button>}
           </div>
 
           {isDirty && (
@@ -854,7 +866,7 @@ export default function CephAnalysisPage() {
       )}
 
       {/* Simulation scenario bar */}
-      {showSim && (
+      {!isPa && showSim && (
         <div className="flex-shrink-0 flex items-center gap-2 px-1 pb-2 flex-wrap">
           <span className="text-[10px] text-gray-500">سيناريو:</span>
           {Object.entries(SIMULATION_SCENARIOS).map(([k, sc]) => (
@@ -893,11 +905,11 @@ export default function CephAnalysisPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto px-2 py-2">
-            {LANDMARK_GROUPS.map(group => (
+            {landmarkGroups.map(group => (
               <section key={group.key} className="mb-2">
                 <p className="px-2 py-1 text-[9px] font-bold text-gray-400">{group.label}</p>
                 {group.keys.map(key => {
-                  const def = LANDMARK_DEFS[key];
+                  const def = landmarkDefs[key];
                   const placed = lmMap[key];
                   const isSelected = selectedKey === key;
                   // Audit §12: per-landmark quality. AI-placed points stay a
@@ -1052,7 +1064,22 @@ export default function CephAnalysisPage() {
           </div>
 
           <div className="min-h-0 flex-1">
-            <CephCanvas
+            {isPa ? <CephPaCanvas
+              imageUrl={resolveImageUrl(analysis.xrayFileUrl) || null}
+              imageWidth={imageSize.w}
+              imageHeight={imageSize.h}
+              landmarks={landmarks}
+              onLandmarksChange={handleLandmarksChange}
+              selectedKey={selectedKey}
+              onSelectKey={setSelectedKey}
+              showPlanes={showPlanes}
+              showMeasurements={showMeasurements}
+              measurements={activeReportData}
+              onCalibrate={handleCalibrationChange}
+              pixelsPerMm={pixelsPerMm}
+              imageAdjustments={{ brightness, contrast, inverted }}
+              onImageDimensions={handleImageDimensions}
+            /> : <CephCanvas
               imageUrl={resolveImageUrl(analysis.xrayFileUrl) || null}
               imageWidth={imageSize.w}
               imageHeight={imageSize.h}
@@ -1077,7 +1104,7 @@ export default function CephAnalysisPage() {
               onImageDimensions={handleImageDimensions}
               onRefineLandmark={handleRefineLandmark}
               refining={refiningKey !== null}
-            />
+            />}
           </div>
 
           <div className="flex flex-shrink-0 flex-wrap items-center gap-3 border-t border-white/10 bg-slate-900 px-3 py-1.5 text-[10px] text-slate-400">
@@ -1105,7 +1132,7 @@ export default function CephAnalysisPage() {
               <>
                 <span>·</span>
                 <span className="font-semibold text-blue-300">
-                  انقر لوضع: {LANDMARK_DEFS[selectedKey]?.nameAr ?? selectedKey}
+                  انقر لوضع: {landmarkDefs[selectedKey]?.nameAr ?? selectedKey}
                 </span>
               </>
             )}
@@ -1157,7 +1184,7 @@ export default function CephAnalysisPage() {
                   patientName={analysis.patientName}
                   analysisDate={analysis.analysisDate}
                   calibrated={pixelsPerMm !== null && pixelsPerMm > 0}
-                  defaultGroup="steiner"
+                  defaultGroup={isPa ? "pa" : "steiner"}
                   analysisId={id}
                 />
               </div>

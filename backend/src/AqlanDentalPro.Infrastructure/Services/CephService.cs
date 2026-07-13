@@ -229,7 +229,7 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         // un-stratified fallback > null (caller uses hardcoded default).
         var dbNorms = await db.CephNorms.ToListAsync();
 
-        var results = new List<(string name, string group, double value, double normal, double sd, string unit, decimal? min, decimal? max)>();
+        var results = new List<(string name, string group, double value, double? normal, double? sd, string unit, decimal? min, decimal? max)>();
         void Add(string name, string group, double value, double normal, double sd, string unit)
         {
             decimal? min = null, max = null;
@@ -264,8 +264,53 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
             }
             results.Add((name, group, R1(value), normal, sd, unit, min, max));
         }
+        void AddObserved(string name, double value, string unit) =>
+            results.Add((name, "pa", R1(value), null, null, unit, null, null));
 
         var groups = GetAnalysisGroups(analysis.AnalysisType ?? "full");
+
+        // ── Posteroanterior (PA / Grummons-style asymmetry) ────────────────
+        // ZR→ZL is the patient's anatomical right-to-left horizontal axis.
+        // Positive lateral values point to the patient's left. The perpendicular
+        // axis points inferiorly, so positive cant/asymmetry means left side lower.
+        if (groups.Contains("pa") && Has("ZR", "ZL"))
+        {
+            var zr = G("ZR");
+            var zl = G("ZL");
+            double hdx = zl.x - zr.x, hdy = zl.y - zr.y;
+            double hlen = Math.Sqrt(hdx * hdx + hdy * hdy);
+            if (hlen > 1e-9)
+            {
+                double hx = hdx / hlen, hy = hdy / hlen;
+                double vx = -hy, vy = hx;
+                double AlongH((double x, double y) p, (double x, double y) origin) =>
+                    (p.x - origin.x) * hx + (p.y - origin.y) * hy;
+                double AlongV((double x, double y) p, (double x, double y) origin) =>
+                    (p.x - origin.x) * vx + (p.y - origin.y) * vy;
+                double Cant((double x, double y) right, (double x, double y) left) =>
+                    Math.Atan2(AlongV(left, right), AlongH(left, right)) * 180 / Math.PI;
+
+                if (cal && Has("JR", "JL"))
+                    AddObserved("PA-JJ-Width", DistT(G("JR"), G("JL")) / pixelsPerMm, "mm");
+                if (cal && Has("AgR", "AgL"))
+                    AddObserved("PA-AgAg-Width", DistT(G("AgR"), G("AgL")) / pixelsPerMm, "mm");
+                if (cal && Has("JR", "JL", "AgR", "AgL"))
+                    AddObserved("PA-Width-Differential",
+                        (DistT(G("AgR"), G("AgL")) - DistT(G("JR"), G("JL"))) / pixelsPerMm,
+                        "mm");
+
+                if (cal && Has("Cg"))
+                {
+                    foreach (var key in new[] { "ANS", "UDM", "LDM", "Me" })
+                        if (Has(key)) AddObserved($"PA-{key}-MSR", AlongH(G(key), G("Cg")) / pixelsPerMm, "mm");
+                }
+
+                if (Has("U6R", "U6L")) AddObserved("PA-Maxillary-Cant", Cant(G("U6R"), G("U6L")), "°");
+                if (Has("L6R", "L6L")) AddObserved("PA-Mandibular-Cant", Cant(G("L6R"), G("L6L")), "°");
+                if (cal && Has("JR", "JL")) AddObserved("PA-J-Vertical-Asymmetry", AlongV(G("JL"), G("JR")) / pixelsPerMm, "mm");
+                if (cal && Has("AgR", "AgL")) AddObserved("PA-Ag-Vertical-Asymmetry", AlongV(G("AgL"), G("AgR")) / pixelsPerMm, "mm");
+            }
+        }
 
         // ── Steiner ─────────────────────────────────────────────────────────
         if (groups.Contains("steiner"))
@@ -432,18 +477,20 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
 
         foreach (var (name, group, value, normal, sd, unit, min, max) in results)
         {
-            double rawDev = value - normal;
-            string classification = ClassifyMeasurement(value, normal, sd, min, max);
+            double? rawDev = normal.HasValue ? value - normal.Value : null;
+            string? classification = normal.HasValue && sd.HasValue
+                ? ClassifyMeasurement(value, normal.Value, sd.Value, min, max)
+                : "unclassified";
 
             db.CephMeasurements.Add(new CephMeasurement
             {
                 AnalysisId       = id,
                 MeasurementName  = name,
                 MeasurementValue = (decimal)value,
-                NormalValue      = (decimal)normal,
-                StdDeviation     = (decimal)sd,
+                NormalValue      = normal.HasValue ? (decimal)normal.Value : null,
+                StdDeviation     = sd.HasValue ? (decimal)sd.Value : null,
                 Unit             = unit,
-                Deviation        = (decimal)Math.Round(rawDev, 2),
+                Deviation        = rawDev.HasValue ? (decimal)Math.Round(rawDev.Value, 2) : null,
                 Classification   = classification
             });
         }
@@ -477,6 +524,52 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         var measurements = await db.CephMeasurements
             .Where(m => m.AnalysisId == id && m.IsActive)
             .ToListAsync();
+
+        var analysisType = await db.CephAnalyses
+            .Where(a => a.Id == id)
+            .Select(a => a.AnalysisType)
+            .FirstOrDefaultAsync();
+
+        if (string.Equals(analysisType, "pa", StringComparison.OrdinalIgnoreCase))
+        {
+            string Display(string name, string label)
+            {
+                var measurement = measurements.FirstOrDefault(m => m.MeasurementName == name);
+                if (measurement?.MeasurementValue is not decimal value) return $"{label}: —";
+                var sign = value > 0 ? "+" : string.Empty;
+                return $"{label}: {sign}{value:0.0} {measurement.Unit}";
+            }
+
+            var summary = string.Join(Environment.NewLine,
+            [
+                "ملخص التحليل الأمامي PA (وصفي):",
+                Display("PA-ANS-MSR", "انحراف ANS عن الخط الناصف"),
+                Display("PA-UDM-MSR", "منتصف الأسنان العلوية"),
+                Display("PA-LDM-MSR", "منتصف الأسنان السفلية"),
+                Display("PA-Me-MSR", "انحراف الذقن"),
+                Display("PA-Maxillary-Cant", "ميل المستوى العلوي"),
+                Display("PA-Mandibular-Cant", "ميل المستوى السفلي"),
+                "الإشارة الموجبة نحو يسار المريض؛ والميل الموجب يعني أن الجانب الأيسر أخفض.",
+                "هذه القياسات وصفية وتحتاج تفسيرًا حسب العمر والجنس والفحص السريري؛ لا تُنتج تصنيفًا هيكليًا جانبيًا.",
+            ]);
+
+            var paDiagnosis = await db.CephDiagnoses
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(d => d.AnalysisId == id);
+            if (paDiagnosis is null)
+            {
+                paDiagnosis = new CephDiagnosis { AnalysisId = id };
+                db.CephDiagnoses.Add(paDiagnosis);
+            }
+            paDiagnosis.IsActive = true;
+            paDiagnosis.SkeletalClass = null;
+            paDiagnosis.VerticalPattern = null;
+            paDiagnosis.IncisorInclination = null;
+            paDiagnosis.SoftTissueSummary = null;
+            paDiagnosis.AiRecommendation = summary;
+            await db.SaveChangesAsync();
+            return;
+        }
 
         double? GetValue(string name) =>
             measurements.FirstOrDefault(m => m.MeasurementName == name)?.MeasurementValue is decimal d
@@ -1340,7 +1433,8 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
                         : null;
                     double sd = m.StdDeviation.HasValue ? (double)m.StdDeviation.Value : 1.0;
                     double? sdNorm = rawDev.HasValue && sd > 0 ? rawDev.Value / sd : null;
-                    string severity = m.Classification ?? (sdNorm.HasValue ? ClassifyDeviation(sdNorm.Value) : "normal");
+                    string severity = m.Classification
+                        ?? (m.NormalValue.HasValue ? (sdNorm.HasValue ? ClassifyDeviation(sdNorm.Value) : "normal") : "unclassified");
                     string direction = rawDev.HasValue
                         ? (rawDev.Value > 0.001 ? "above" : rawDev.Value < -0.001 ? "below" : "within")
                         : "within";
@@ -1359,7 +1453,7 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
                         AnalysisGroup = GetMeasurementGroup(m.MeasurementName),
                         InterpretationAr = rawDev.HasValue
                             ? GetInterpretationAr(m.MeasurementName, rawDev.Value, severity)
-                            : null
+                            : GetObservedMeasurementInterpretationAr(m.MeasurementName)
                     };
                 })
                 .ToList(),
@@ -1566,6 +1660,7 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         "downs"    => ["downs"],
         "jarabak"  => ["jarabak"],
         "wits"     => ["wits"],
+        "pa"       => ["pa"],
         _          => ["steiner", "tweed", "mcnamara", "ricketts", "downs", "jarabak", "wits"]
     };
 
@@ -1583,6 +1678,10 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         "Saddle-Angle" or "Articular-Angle" or "Gonial-Angle"
             or "Bjork-Sum" or "Jarabak-Ratio"                          => "jarabak",
         "Wits"                                                          => "wits",
+        "PA-JJ-Width" or "PA-AgAg-Width" or "PA-Width-Differential"
+            or "PA-ANS-MSR" or "PA-UDM-MSR" or "PA-LDM-MSR" or "PA-Me-MSR"
+            or "PA-Maxillary-Cant" or "PA-Mandibular-Cant"
+            or "PA-J-Vertical-Asymmetry" or "PA-Ag-Vertical-Asymmetry" => "pa",
         _                                                               => "steiner"
     };
 
@@ -1635,7 +1734,33 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         "Jarabak-Ratio"    => "نسبة جاراباك (الارتفاع الخلفي/الأمامي)",
         // Wits
         "Wits"             => "مسافة وتس (AO-BO)",
+        // PA / frontal
+        "PA-JJ-Width"                  => "عرض الفك العلوي (J–J)",
+        "PA-AgAg-Width"                => "عرض الفك السفلي (Ag–Ag)",
+        "PA-Width-Differential"        => "فرق العرض السفلي − العلوي",
+        "PA-ANS-MSR"                   => "انحراف ANS عن الخط الناصف",
+        "PA-UDM-MSR"                   => "انحراف منتصف الأسنان العلوية",
+        "PA-LDM-MSR"                   => "انحراف منتصف الأسنان السفلية",
+        "PA-Me-MSR"                    => "انحراف الذقن (Me)",
+        "PA-Maxillary-Cant"            => "ميل المستوى الإطباقي العلوي",
+        "PA-Mandibular-Cant"           => "ميل المستوى الإطباقي السفلي",
+        "PA-J-Vertical-Asymmetry"      => "عدم التناظر الرأسي عند J",
+        "PA-Ag-Vertical-Asymmetry"     => "عدم التناظر الرأسي عند Ag",
         _                  => name
+    };
+
+    public static string GetObservedMeasurementInterpretationAr(string name) => name switch
+    {
+        "PA-JJ-Width" or "PA-AgAg-Width" =>
+            "قياس عرض وصفي — يُقارن بمرجع مناسب لعمر المريض وجنسه وطريقة التصوير.",
+        "PA-Width-Differential" =>
+            "القيمة الموجبة تعني أن عرض الفك السفلي أكبر من عرض الفك العلوي.",
+        "PA-Maxillary-Cant" or "PA-Mandibular-Cant"
+            or "PA-J-Vertical-Asymmetry" or "PA-Ag-Vertical-Asymmetry" =>
+            "القيمة الموجبة تعني أن الجانب الأيسر للمريض أخفض من الأيمن.",
+        "PA-ANS-MSR" or "PA-UDM-MSR" or "PA-LDM-MSR" or "PA-Me-MSR" =>
+            "القيمة الموجبة تعني انحرافًا نحو يسار المريض، والسالبة نحو يمينه.",
+        _ => "قياس وصفي — لا توجد قيمة مرجعية عامة آمنة؛ فسّره حسب السياق السريري.",
     };
 
     private static string GetInterpretationAr(string name, double rawDev, string severity)

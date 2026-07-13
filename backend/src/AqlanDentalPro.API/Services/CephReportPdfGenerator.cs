@@ -41,14 +41,17 @@ public class CephReportPdfGenerator(AppDbContext db)
     {
         // cranial
         ["S"] = "cranial", ["N"] = "cranial", ["Or"] = "cranial", ["Po"] = "cranial",
+        ["Cg"] = "cranial", ["ZR"] = "cranial", ["ZL"] = "cranial",
         // maxilla
-        ["ANS"] = "maxilla", ["PNS"] = "maxilla", ["A"] = "maxilla",
+        ["ANS"] = "maxilla", ["PNS"] = "maxilla", ["A"] = "maxilla", ["JR"] = "maxilla", ["JL"] = "maxilla",
         // mandible
         ["B"] = "mandible", ["Pog"] = "mandible", ["Gn"] = "mandible", ["Me"] = "mandible",
         ["Go"] = "mandible", ["Co"] = "mandible", ["Ar"] = "mandible", ["D"] = "mandible", ["Pm"] = "mandible",
+        ["AgR"] = "mandible", ["AgL"] = "mandible",
         // dental (U6/L6: SEQ-40 first-molar points for the occlusal plane / Wits)
         ["U1T"] = "dental", ["U1A"] = "dental", ["L1T"] = "dental", ["L1A"] = "dental",
-        ["U6"] = "dental", ["L6"] = "dental",
+        ["U6"] = "dental", ["L6"] = "dental", ["UDM"] = "dental", ["LDM"] = "dental",
+        ["U6R"] = "dental", ["U6L"] = "dental", ["L6R"] = "dental", ["L6L"] = "dental",
         // soft tissue (SPog: SEQ-40 soft-tissue Pogonion)
         ["LS"] = "soft", ["LI"] = "soft", ["Pn"] = "soft", ["Cm"] = "soft",
         ["SPog"] = "soft",
@@ -95,7 +98,7 @@ public class CephReportPdfGenerator(AppDbContext db)
         (["L1A", "L1T"], "#10B981"),
     ];
 
-    private static readonly string[] GroupOrder = ["steiner", "tweed", "mcnamara", "ricketts", "downs", "jarabak", "wits"];
+    private static readonly string[] GroupOrder = ["steiner", "tweed", "mcnamara", "ricketts", "downs", "jarabak", "wits", "pa"];
 
     private static readonly Dictionary<string, string> AnalysisGroupTitleAr = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -106,6 +109,7 @@ public class CephReportPdfGenerator(AppDbContext db)
         ["downs"]    = "تحليل داونز",
         ["jarabak"]  = "تحليل جاراباك (اتجاه النمو)",
         ["wits"]     = "مؤشر وتس (Wits)",
+        ["pa"]       = "التحليل الأمامي PA (عدم التناظر والميل)",
     };
 
     private static readonly Dictionary<string, string> AnalysisTypeAr = new(StringComparer.OrdinalIgnoreCase)
@@ -118,6 +122,7 @@ public class CephReportPdfGenerator(AppDbContext db)
         ["jarabak"]  = "جاراباك",
         ["wits"]     = "وتس",
         ["full"]     = "شامل",
+        ["pa"]       = "أمامي PA (Grummons/Canting)",
     };
 
     private static readonly string[] ArabicMonths =
@@ -491,7 +496,9 @@ public class CephReportPdfGenerator(AppDbContext db)
                     var nameAr = !string.IsNullOrWhiteSpace(norm?.NameAr)
                         ? norm!.NameAr!
                         : CephService.GetMeasurementNameAr(m.MeasurementName);
-                    var interpretation = GetOutOfRangeInterpretation(m, norm);
+                    var interpretation = string.Equals(m.Classification, "unclassified", StringComparison.OrdinalIgnoreCase)
+                        ? CephService.GetObservedMeasurementInterpretationAr(m.MeasurementName)
+                        : GetOutOfRangeInterpretation(m, norm);
 
                     table.Cell().Element(CellStyle).Column(c =>
                     {
@@ -508,7 +515,7 @@ public class CephReportPdfGenerator(AppDbContext db)
                     table.Cell().Element(CellStyle)
                         .Text(m.NormalValue.HasValue
                             ? $"{m.NormalValue.Value:0.0} ± {m.StdDeviation ?? 0:0.0}"
-                            : "—")
+                            : "وصفي")
                         .FontFamily(FontName);
 
                     var deviation = m.MeasurementValue.HasValue && m.NormalValue.HasValue
@@ -691,6 +698,39 @@ public class CephReportPdfGenerator(AppDbContext db)
                 $"stroke=\"{color}\" stroke-width=\"{lineW:0.##}\" stroke-opacity=\"0.85\"/>"));
         }
 
+        // PA frontal overlay: right-to-left horizontal reference, perpendicular
+        // mid-sagittal reference through Cg, transverse widths and occlusal cants.
+        void AppendPaLine(string from, string to, string color, bool dashed = false)
+        {
+            if (!points.TryGetValue(from, out var p1) || !points.TryGetValue(to, out var p2)) return;
+            var dash = dashed ? $" stroke-dasharray=\"{lineW * 4:0.##} {lineW * 2:0.##}\"" : string.Empty;
+            sb.Append(string.Create(inv,
+                $"<line x1=\"{p1.Item1:0.##}\" y1=\"{p1.Item2:0.##}\" x2=\"{p2.Item1:0.##}\" y2=\"{p2.Item2:0.##}\" " +
+                $"stroke=\"{color}\" stroke-width=\"{lineW:0.##}\" stroke-opacity=\"0.9\"{dash}/>"));
+        }
+        AppendPaLine("ZR", "ZL", "#C4B5FD", dashed: true);
+        AppendPaLine("JR", "JL", "#FB923C");
+        AppendPaLine("AgR", "AgL", "#F87171");
+        AppendPaLine("U6R", "U6L", "#2DD4BF");
+        AppendPaLine("L6R", "L6L", "#14B8A6");
+        if (points.TryGetValue("Cg", out var cg) && points.TryGetValue("ZR", out var zr) && points.TryGetValue("ZL", out var zl))
+        {
+            var dx = zl.Item1 - zr.Item1;
+            var dy = zl.Item2 - zr.Item2;
+            var length = Math.Sqrt(dx * dx + dy * dy);
+            if (length > 1e-9)
+            {
+                var vx = -dy / length;
+                var vy = dx / length;
+                var extent = Math.Max(w, h) * 1.5;
+                sb.Append(string.Create(inv,
+                    $"<line x1=\"{cg.Item1 - vx * extent:0.##}\" y1=\"{cg.Item2 - vy * extent:0.##}\" " +
+                    $"x2=\"{cg.Item1 + vx * extent:0.##}\" y2=\"{cg.Item2 + vy * extent:0.##}\" " +
+                    $"stroke=\"#FCD34D\" stroke-width=\"{lineW:0.##}\" stroke-opacity=\"0.9\" " +
+                    $"stroke-dasharray=\"{lineW * 4:0.##} {lineW * 2:0.##}\"/>"));
+            }
+        }
+
         // SEQ-40 occlusal plane (Codex P2 #677): the canvas draws OcP between the
         // incisal overbite midpoint and the molar occlusion midpoint — mirror it
         // here so the exported report matches the on-screen measurement overlay.
@@ -801,6 +841,7 @@ public class CephReportPdfGenerator(AppDbContext db)
             "normal" => ("طبيعي",        "#DCFCE7"), // green tint
             "mild"   => ("انحراف بسيط", "#FEF9C3"), // yellow tint
             "severe" => ("انحراف شديد", "#FEE2E2"), // red tint
+            "unclassified" => ("وصفي",   "#F3F4F6"),
             _        => ("—",            "#FFFFFF"),
         };
 

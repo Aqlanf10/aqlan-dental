@@ -11,6 +11,7 @@ export type AnalysisType =
   | 'downs'
   | 'jarabak'
   | 'wits'
+  | 'pa'
   | 'full';
 
 /** Arabic labels for analysis types. */
@@ -22,6 +23,7 @@ export const ANALYSIS_TYPE_AR: Record<AnalysisType, string> = {
   downs:    'داونز',
   jarabak:  'جاراباك',
   wits:     'وتس',
+  pa:       'أمامي PA (Grummons/Canting)',
   full:     'شامل',
 };
 
@@ -34,6 +36,7 @@ export const ANALYSIS_GROUPS: Record<AnalysisType, MeasurementGroup[]> = {
   downs:    ['downs'],
   jarabak:  ['jarabak'],
   wits:     ['wits'],
+  pa:       ['pa'],
   full:     ['steiner', 'tweed', 'mcnamara', 'ricketts', 'downs', 'jarabak', 'wits'],
 };
 
@@ -45,7 +48,8 @@ export type MeasurementGroup =
   | 'ricketts'
   | 'downs'
   | 'jarabak'
-  | 'wits';
+  | 'wits'
+  | 'pa';
 
 /** Anatomical region of a landmark — used only for UI grouping. */
 export type LandmarkGroup =
@@ -56,7 +60,7 @@ export type LandmarkGroup =
   | 'soft';
 
 /** Severity of deviation from the norm (magnitude only). */
-export type MeasurementSeverity = 'normal' | 'mild' | 'severe';
+export type MeasurementSeverity = 'normal' | 'mild' | 'severe' | 'unclassified';
 
 /** Direction of deviation relative to the norm. */
 export type MeasurementDirection = 'above' | 'below' | 'within';
@@ -91,8 +95,8 @@ export interface CephMeasurement {
   name: string;
   nameAr: string;
   value: number | null;
-  normal: number;
-  stdDev: number;
+  normal: number | null;
+  stdDev: number | null;
   unit: '°' | 'mm' | '%';
   /** value − normal. `null` iff `value` is null. */
   deviation: number | null;

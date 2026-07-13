@@ -167,6 +167,70 @@ public class CephApprovalTests : IDisposable
         ok.Value!.ToString().Should().Contain("معتمد مسبقاً");
     }
 
+    [Fact]
+    public async Task Approve_IncompletePaAnalysis_ReturnsBadRequest()
+    {
+        var seeded = await SeedAnalysisAsync(approved: false);
+        var analysis = await _db.CephAnalyses.FirstAsync(x => x.Id == seeded.AnalysisId);
+        analysis.AnalysisType = "pa";
+        await _db.SaveChangesAsync();
+        _patientAccess.Setup(x => x.CanAccessPatientAsync(seeded.PatientId)).ReturnsAsync(true);
+        _currentUser.Setup(x => x.IsAdmin).Returns(true);
+
+        var result = await _controller.Approve(seeded.AnalysisId, null);
+
+        var bad = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        bad.Value!.ToString().Should().Contain("النقاط الـ15");
+        analysis.IsApproved.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetReportPdf_ApprovedButIncompletePaAnalysis_ReturnsBadRequest()
+    {
+        var seeded = await SeedAnalysisAsync(approved: true);
+        var analysis = await _db.CephAnalyses.FirstAsync(x => x.Id == seeded.AnalysisId);
+        analysis.AnalysisType = "pa";
+        await _db.SaveChangesAsync();
+        _patientAccess.Setup(x => x.CanAccessPatientAsync(seeded.PatientId)).ReturnsAsync(true);
+
+        var result = await _controller.GetReportPdf(
+            seeded.AnalysisId,
+            new CephReportPdfGenerator(_db),
+            new Mock<ILogger<CephController>>().Object);
+
+        var bad = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        bad.Value!.ToString().Should().Contain("تقرير PA");
+    }
+
+    [Fact]
+    public async Task Approve_CompletePaAnalysis_Succeeds()
+    {
+        var seeded = await SeedAnalysisAsync(approved: false);
+        var analysis = await _db.CephAnalyses.FirstAsync(x => x.Id == seeded.AnalysisId);
+        analysis.AnalysisType = "pa";
+        analysis.Notes = "{\"PixelsPerMm\":5,\"ImageWidth\":800,\"ImageHeight\":1000}";
+        var keys = new[] { "Cg", "ZR", "ZL", "ANS", "JR", "JL", "AgR", "AgL", "Me", "UDM", "LDM", "U6R", "U6L", "L6R", "L6L" };
+        _db.CephLandmarks.AddRange(keys.Select((key, index) => new CephLandmark
+        {
+            AnalysisId = analysis.Id, LandmarkKey = key, LandmarkName = key,
+            XCoord = index * 10, YCoord = index * 5, IsActive = true,
+        }));
+        _db.CephMeasurements.Add(new CephMeasurement
+        {
+            AnalysisId = analysis.Id, MeasurementName = "PA-JJ-Width",
+            MeasurementValue = 60, Unit = "mm", Classification = "unclassified", IsActive = true,
+        });
+        await _db.SaveChangesAsync();
+        _patientAccess.Setup(x => x.CanAccessPatientAsync(seeded.PatientId)).ReturnsAsync(true);
+        _currentUser.Setup(x => x.IsAdmin).Returns(true);
+        _currentUser.Setup(x => x.UserId).Returns(Guid.NewGuid());
+
+        var result = await _controller.Approve(seeded.AnalysisId, null);
+
+        result.Should().BeOfType<OkObjectResult>();
+        analysis.IsApproved.Should().BeTrue();
+    }
+
     private async Task<(Guid PatientId, Guid AnalysisId)> SeedAnalysisAsync(bool approved)
     {
         var patient = new Patient

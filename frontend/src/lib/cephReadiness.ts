@@ -45,6 +45,8 @@ export interface CephReadinessInput {
   hasMeasurements: boolean;
   /** The doctor has edited points/calibration without pressing "save & compute". */
   isDirty?: boolean;
+  /** Required count used in the blocking message (PA uses a distinct set). */
+  requiredPointCount?: number;
 }
 
 export interface CephReadinessItem {
@@ -123,7 +125,7 @@ export function computeCephReadiness(input: CephReadinessInput): CephReadiness {
   let reason: string | null = null;
   if (dirty) reason = "لديك تعديلات غير محفوظة — اضغط «حفظ وحساب»";
   else if (!input.hasImage) reason = "لا توجد صورة أشعة بعد";
-  else if (!input.hasPoints) reason = `النقاط غير مكتملة (يلزم وضع ${REQUIRED_LANDMARKS} نقطة)`;
+  else if (!input.hasPoints) reason = `النقاط غير مكتملة (يلزم وضع ${input.requiredPointCount ?? REQUIRED_LANDMARKS} نقطة)`;
   else if (!input.hasMeasurements) reason = "لم تُحسب القياسات — اضغط «حفظ وحساب»";
   else if (!input.hasCalibration) reason = "المعايرة غير محفوظة (القياسات الخطية بالمليمتر تحتاج معايرة)";
 
@@ -140,16 +142,20 @@ export function cephReadinessFromAnalysis(
   analysis: Pick<
     CephAnalysis,
     "xrayFileUrl" | "pixelsPerMm" | "landmarks" | "measurements"
-  > & Partial<Pick<CephAnalysis, "notes" | "isAutoTraced" | "doctorId">>,
+  > & Partial<Pick<CephAnalysis, "notes" | "isAutoTraced" | "doctorId" | "analysisType">>,
   isDirty: boolean,
 ): CephReadiness {
   return {
     ...computeCephReadiness({
       hasImage: Boolean(analysis.xrayFileUrl),
       hasCalibration: Boolean(analysis.pixelsPerMm && analysis.pixelsPerMm > 0),
-      hasPoints: hasAllCoreLandmarks((analysis.landmarks ?? []).map((l) => l.key)),
+      hasPoints: analysis.analysisType === "pa"
+        ? ["Cg", "ZR", "ZL", "ANS", "JR", "JL", "AgR", "AgL", "Me", "UDM", "LDM", "U6R", "U6L", "L6R", "L6L"]
+            .every((key) => (analysis.landmarks ?? []).some((landmark) => landmark.key === key))
+        : hasAllCoreLandmarks((analysis.landmarks ?? []).map((l) => l.key)),
       hasMeasurements: (analysis.measurements?.length ?? 0) > 0,
       isDirty,
+      requiredPointCount: analysis.analysisType === "pa" ? 15 : REQUIRED_LANDMARKS,
     }),
     analysisMetadata: {
       notes: extractCephUserNotes(analysis.notes),
@@ -210,6 +216,8 @@ export interface CephQualityInput {
   measurementCount: number;
   /** Unsaved landmark/calibration edits pending a "save & compute". */
   isDirty?: boolean;
+  /** Override the lateral core set for another projection such as PA. */
+  requiredLandmarkKeys?: readonly string[];
 }
 
 export interface CephQualityReport {
@@ -261,7 +269,9 @@ export function computeCephQuality(input: CephQualityInput): CephQualityReport {
   const dirty = Boolean(input.isDirty);
   const landmarks = input.landmarks ?? [];
   const placedKeys = new Set(landmarks.map((l) => l.key));
-  const placed = CORE_LANDMARK_KEYS.filter((k) => placedKeys.has(k)).length;
+  const requiredKeys = input.requiredLandmarkKeys ?? CORE_LANDMARK_KEYS;
+  const placed = requiredKeys.filter((k) => placedKeys.has(k)).length;
+  const requiredCount = requiredKeys.length;
   const calibrationValid = isCalibrationValid(input.pixelsPerMm);
   const lowConfidenceKeys = lowConfidenceLandmarks(landmarks);
 
@@ -293,11 +303,11 @@ export function computeCephQuality(input: CephQualityInput): CephQualityReport {
     });
   }
 
-  if (placed < REQUIRED_LANDMARKS) {
+  if (placed < requiredCount) {
     warnings.push({
       key: "incompleteLandmarks",
       severity: "warning",
-      message: `النقاط غير مكتملة (${placed}/${REQUIRED_LANDMARKS}) — أكمل وضع جميع النقاط قبل الاعتماد على القياسات.`,
+      message: `النقاط غير مكتملة (${placed}/${requiredCount}) — أكمل وضع جميع النقاط قبل الاعتماد على القياسات.`,
     });
   }
 

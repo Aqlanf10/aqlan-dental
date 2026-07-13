@@ -43,6 +43,7 @@ const ANALYSIS_LABELS: Record<string, string> = {
   downs: "داونز",
   jarabak: "جاراباك (اتجاه النمو)",
   wits: "وتس (Wits)",
+  pa: "أمامي PA (Grummons/Canting)",
 };
 
 /** FE-11: getApiErrorMessage removed — use extractErrorMessage from @/lib/errors. */
@@ -186,7 +187,7 @@ function NewCephPageInner() {
               إنشاء تحليل سيفالومتري
             </h1>
             <p className="text-sm text-gray-500 mt-0.5">
-              ارفع صورة الأشعة الجانبية واختر الحالة ونوع التحليل
+              ارفع صورة الأشعة الجانبية أو الأمامية واختر الحالة ونوع التحليل
             </p>
           </div>
         </div>
@@ -297,6 +298,7 @@ function NewCephPageInner() {
                   <option value="downs">داونز</option>
                   <option value="jarabak">جاراباك (اتجاه النمو)</option>
                   <option value="wits">وتس (Wits)</option>
+                  <option value="pa">أمامي PA (Grummons / Canting)</option>
                 </select>
               </div>
 

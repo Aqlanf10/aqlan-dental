@@ -1,9 +1,23 @@
 "use client";
 import { useRef, useEffect, useState, useCallback, useMemo } from "react";
-import { ZoomIn, ZoomOut, Hand, Ruler, Brain, Loader2 } from "lucide-react";
+import {
+  ZoomIn, ZoomOut, Hand, Ruler, Brain, Loader2, RotateCw,
+  RotateCcw, FlipHorizontal, FlipVertical, Trash2, DraftingCompass,
+} from "lucide-react";
 import type { CephLandmark, CephMeasurement } from "@/types/ceph";
 import { tracingPolylines } from "@/lib/cephTracing";
 import { cn } from "@/lib/utils";
+import {
+  applyViewerMatrix,
+  buildViewerMatrix,
+  DEFAULT_VIEWER_TRANSFORM,
+  invertViewerMatrix,
+  isDefaultViewerTransform,
+  viewerAngle,
+  viewerDistance,
+  type ViewerPoint,
+  type ViewerTransform,
+} from "@/lib/cephViewer";
 
 const HIT_RADIUS = 10;
 const MIN_ZOOM = 0.25;
@@ -134,12 +148,16 @@ interface Props {
   measurements?: CephMeasurement[];
   /** Called when the two-point ruler calibration is applied (px per mm). */
   onCalibrate?: (pixelsPerMm: number) => void;
+  /** Saved calibration used by the transient viewer distance ruler. */
+  pixelsPerMm?: number | null;
   imageAdjustments?: {
     brightness: number;
     contrast: number;
     inverted: boolean;
   };
   onImageDimensions?: (width: number, height: number) => void;
+  /** Restores page-owned brightness/contrast/invert controls. */
+  onResetImageAdjustments?: () => void;
   /**
    * AI-assisted per-landmark refinement callback. Fired when the orthodontist
    * right-clicks (or long-presses on touch) an AI-placed landmark and picks
@@ -156,8 +174,10 @@ export function CephCanvas({
   imageUrl, imageWidth, imageHeight, landmarks, onLandmarksChange,
   selectedKey, onSelectKey, showPlanes, showTracing = false, showSimulation, simulationScenario,
   showMeasurements = false, measurements, onCalibrate,
+  pixelsPerMm = null,
   imageAdjustments = { brightness: 100, contrast: 100, inverted: false },
   onImageDimensions,
+  onResetImageAdjustments,
   onRefineLandmark,
   refining = false,
 }: Props) {
@@ -184,6 +204,12 @@ export function CephCanvas({
   const [calPoints, setCalPoints] = useState<Pt[]>([]);
   const [calCursor, setCalCursor] = useState<Pt | null>(null);
   const [calMm, setCalMm]         = useState('10');
+
+  // Viewer-only tools never modify or persist landmarks/image data.
+  const [viewerTool, setViewerTool] = useState<'distance' | 'angle' | null>(null);
+  const [viewerPoints, setViewerPoints] = useState<ViewerPoint[]>([]);
+  const [viewerCursor, setViewerCursor] = useState<ViewerPoint | null>(null);
+  const [viewerTransform, setViewerTransform] = useState<ViewerTransform>(DEFAULT_VIEWER_TRANSFORM);
 
   useEffect(() => {
     if (!imageUrl) { setImg(null); setImgError(false); return; }
@@ -221,9 +247,19 @@ export function CephCanvas({
     const W = c.width, H = c.height;
     const iW = imageWidth  || img?.naturalWidth  || W;
     const iH = imageHeight || img?.naturalHeight || H;
-    const s = Math.min(W / iW, H / iH);
-    return { s, ox: (W - iW * s) / 2, oy: (H - iH * s) / 2, iW, iH };
-  }, [imageWidth, imageHeight, img]);
+    const matrix = buildViewerMatrix(iW, iH, viewerTransform);
+    const s = Math.min(W / matrix.width, H / matrix.height);
+    return {
+      s,
+      ox: (W - matrix.width * s) / 2,
+      oy: (H - matrix.height * s) / 2,
+      iW,
+      iH,
+      displayW: matrix.width,
+      displayH: matrix.height,
+      matrix,
+    };
+  }, [imageWidth, imageHeight, img, viewerTransform]);
 
   /** Active transform: explicit view (zoom/pan) or fit. Landmarks stay in image space. */
   const getT = useCallback(() => {
@@ -231,9 +267,16 @@ export function CephCanvas({
     if (!fit) return null;
     const v = view ?? fit;
     return {
-      s: v.s, ox: v.ox, oy: v.oy, iW: fit.iW, iH: fit.iH, fitS: fit.s,
-      tc: (x: number, y: number) => ({ x: v.ox + x * v.s, y: v.oy + y * v.s }),
-      ti: (cx: number, cy: number) => ({ x: (cx - v.ox) / v.s, y: (cy - v.oy) / v.s }),
+      s: v.s, ox: v.ox, oy: v.oy, iW: fit.iW, iH: fit.iH,
+      displayW: fit.displayW, displayH: fit.displayH, matrix: fit.matrix, fitS: fit.s,
+      tc: (x: number, y: number) => {
+        const p = applyViewerMatrix({ x, y }, fit.matrix);
+        return { x: v.ox + p.x * v.s, y: v.oy + p.y * v.s };
+      },
+      ti: (cx: number, cy: number) => invertViewerMatrix({
+        x: (cx - v.ox) / v.s,
+        y: (cy - v.oy) / v.s,
+      }, fit.matrix),
     };
   }, [getFit, view]);
 
@@ -275,14 +318,20 @@ export function CephCanvas({
         `contrast(${imageAdjustments.contrast}%)`,
         imageAdjustments.inverted ? "invert(1)" : "invert(0)",
       ].join(" ");
-      ctx.drawImage(img, T.ox, T.oy, T.iW * T.s, T.iH * T.s);
+      ctx.translate(T.ox, T.oy);
+      ctx.scale(T.s, T.s);
+      ctx.transform(
+        T.matrix.a, T.matrix.b, T.matrix.c,
+        T.matrix.d, T.matrix.e, T.matrix.f,
+      );
+      ctx.drawImage(img, 0, 0, T.iW, T.iH);
       ctx.restore();
       // A light veil keeps colored landmarks legible without obscuring anatomy.
       ctx.fillStyle = 'rgba(0,0,0,0.06)';
-      ctx.fillRect(T.ox, T.oy, T.iW * T.s, T.iH * T.s);
+      ctx.fillRect(T.ox, T.oy, T.displayW * T.s, T.displayH * T.s);
     } else {
       ctx.fillStyle = '#1E293B';
-      ctx.fillRect(T.ox, T.oy, T.iW * T.s, T.iH * T.s);
+      ctx.fillRect(T.ox, T.oy, T.displayW * T.s, T.displayH * T.s);
       ctx.textAlign = 'center';
       if (imageUrl && imgError) {
         // A URL is set but the file could not be loaded (missing/expired upload
@@ -506,8 +555,71 @@ export function CephCanvas({
       ctx.restore();
     }
 
+    // Transient viewer rulers. Points remain in original image space so the
+    // result is stable while the preview is rotated, flipped, zoomed or panned.
+    if (viewerTool && viewerPoints.length > 0) {
+      const required = viewerTool === 'distance' ? 2 : 3;
+      const previewPoints = viewerPoints.length < required && viewerCursor
+        ? [...viewerPoints, viewerCursor]
+        : viewerPoints;
+      const canvasPoints = previewPoints.map(point => T.tc(point.x, point.y));
+      ctx.save();
+      ctx.strokeStyle = '#22D3EE';
+      ctx.fillStyle = '#22D3EE';
+      ctx.lineWidth = 2;
+      ctx.setLineDash(viewerPoints.length < required ? [5, 4] : []);
+      ctx.beginPath();
+      canvasPoints.forEach((point, index) => {
+        if (index === 0) ctx.moveTo(point.x, point.y);
+        else ctx.lineTo(point.x, point.y);
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
+      viewerPoints.forEach(point => {
+        const cp = T.tc(point.x, point.y);
+        ctx.beginPath();
+        ctx.arc(cp.x, cp.y, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ECFEFF';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.strokeStyle = '#22D3EE';
+        ctx.lineWidth = 2;
+      });
+
+      let label: string | null = null;
+      let labelPoint: Pt | null = null;
+      if (viewerTool === 'distance' && viewerPoints.length === 2) {
+        const result = viewerDistance(viewerPoints[0], viewerPoints[1], pixelsPerMm);
+        label = result.millimeters === null
+          ? `${result.pixels.toFixed(1)} px (غير معاير)`
+          : `${result.millimeters.toFixed(2)} mm`;
+        const a = T.tc(viewerPoints[0].x, viewerPoints[0].y);
+        const b = T.tc(viewerPoints[1].x, viewerPoints[1].y);
+        labelPoint = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 12 };
+      } else if (viewerTool === 'angle' && viewerPoints.length === 3) {
+        label = `${viewerAngle(viewerPoints[0], viewerPoints[1], viewerPoints[2]).toFixed(1)}°`;
+        const vertex = T.tc(viewerPoints[1].x, viewerPoints[1].y);
+        labelPoint = { x: vertex.x + 14, y: vertex.y - 14 };
+      }
+
+      if (label && labelPoint) {
+        ctx.font = 'bold 12px monospace';
+        const width = ctx.measureText(label).width + 12;
+        ctx.fillStyle = 'rgba(8,47,73,0.92)';
+        ctx.fillRect(labelPoint.x - width / 2, labelPoint.y - 13, width, 20);
+        ctx.strokeStyle = '#22D3EE';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(labelPoint.x - width / 2, labelPoint.y - 13, width, 20);
+        ctx.fillStyle = '#CFFAFE';
+        ctx.textAlign = 'center';
+        ctx.fillText(label, labelPoint.x, labelPoint.y + 2);
+      }
+      ctx.restore();
+    }
+
     // Selected crosshair
-    if (selectedKey && !lmMap[selectedKey] && !calMode) {
+    if (selectedKey && !lmMap[selectedKey] && !calMode && !viewerTool) {
       ctx.save();
       ctx.strokeStyle = '#FBBF24';
       ctx.lineWidth = 1;
@@ -517,8 +629,8 @@ export function CephCanvas({
       ctx.restore();
     }
   }, [landmarks, lmMap, measMap, img, imgError, imageUrl, selectedKey, hovered, showPlanes, showTracing, showSimulation,
-      simulationScenario, showMeasurements, calMode, calPoints, calCursor, getT,
-      imageAdjustments]);
+      simulationScenario, showMeasurements, calMode, calPoints, calCursor, viewerTool,
+      viewerPoints, viewerCursor, pixelsPerMm, getT, imageAdjustments]);
 
   useEffect(() => { draw(); }, [draw]);
 
@@ -551,7 +663,7 @@ export function CephCanvas({
     return () => c.removeEventListener('wheel', onWheel);
   }, [zoomAt]);
 
-  // Keyboard: +/- zoom, 0 reset-fit, Space = temporary pan, Escape exits calibration.
+  // Keyboard: +/- zoom, 0 reset-fit, Space = temporary pan, Escape exits a ruler.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
@@ -564,6 +676,11 @@ export function CephCanvas({
       else if (e.key === '-' || e.key === '_') { centerZoom(1 / 1.2); e.preventDefault(); }
       else if (e.key === '0') { resetFit(); }
       else if (e.key === 'Escape' && calMode) { setCalMode(false); setCalCursor(null); }
+      else if (e.key === 'Escape' && viewerTool) {
+        setViewerTool(null);
+        setViewerPoints([]);
+        setViewerCursor(null);
+      }
     };
     const onKeyUp = (e: KeyboardEvent) => { if (e.key === ' ') setSpaceHeld(false); };
     window.addEventListener('keydown', onKeyDown);
@@ -572,7 +689,7 @@ export function CephCanvas({
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [centerZoom, resetFit, calMode]);
+  }, [centerZoom, resetFit, calMode, viewerTool]);
 
   const coords = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const c = canvasRef.current!;
@@ -649,6 +766,14 @@ export function CephCanvas({
       return;
     }
 
+    if (viewerTool) {
+      const ip = T.ti(cx, cy);
+      if (ip.x < 0 || ip.y < 0 || ip.x > T.iW || ip.y > T.iH) return;
+      const required = viewerTool === 'distance' ? 2 : 3;
+      setViewerPoints(prev => prev.length >= required ? [ip] : [...prev, ip]);
+      return;
+    }
+
     const hit = hitLandmark(cx, cy);
     if (hit) {
       setDragging(hit); onSelectKey(hit);
@@ -695,6 +820,14 @@ export function CephCanvas({
       return;
     }
 
+    if (viewerTool) {
+      const ip = T.ti(cx, cy);
+      setViewerCursor(ip.x >= 0 && ip.y >= 0 && ip.x <= T.iW && ip.y <= T.iH ? ip : null);
+      setHovered(null);
+      if (canvasRef.current) canvasRef.current.style.cursor = 'crosshair';
+      return;
+    }
+
     const hit = hitLandmark(cx, cy);
     setHovered(hit);
     if (dragging) {
@@ -735,6 +868,41 @@ export function CephCanvas({
     setCalCursor(null);
   };
 
+  const toggleViewerTool = (tool: 'distance' | 'angle') => {
+    setCalMode(false);
+    setCalCursor(null);
+    setViewerCursor(null);
+    setViewerTool(viewerTool === tool ? null : tool);
+    setViewerPoints([]);
+  };
+
+  const updateViewerTransform = (update: (current: ViewerTransform) => ViewerTransform) => {
+    setViewerTransform(current => update(current));
+    setView(null);
+  };
+
+  const resetViewer = () => {
+    setView(null);
+    setPanMode(false);
+    setCalMode(false);
+    setCalCursor(null);
+    setCalPoints([]);
+    setViewerTool(null);
+    setViewerPoints([]);
+    setViewerCursor(null);
+    setViewerTransform(DEFAULT_VIEWER_TRANSFORM);
+    onResetImageAdjustments?.();
+  };
+
+  const hasTemporaryView =
+    view !== null ||
+    viewerPoints.length > 0 ||
+    viewerTool !== null ||
+    !isDefaultViewerTransform(viewerTransform) ||
+    imageAdjustments.brightness !== 100 ||
+    imageAdjustments.contrast !== 100 ||
+    imageAdjustments.inverted;
+
   const toolBtn = "p-1.5 rounded-md text-gray-300 hover:bg-white/15 hover:text-white transition";
 
   return (
@@ -745,7 +913,7 @@ export function CephCanvas({
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onMouseLeave={() => { handleMouseUp(); setViewerCursor(null); }}
         // Suppress the browser's default right-click menu on the canvas so the
         // AI-refine context menu is the only one the orthodontist sees.
         onContextMenu={e => { if (onRefineLandmark) e.preventDefault(); }}
@@ -772,7 +940,12 @@ export function CephCanvas({
           <Hand className="w-3.5 h-3.5" />
         </button>
         <button type="button"
-          onClick={() => { setCalMode(m => !m); setCalCursor(null); }}
+          onClick={() => {
+            setCalMode(m => !m);
+            setCalCursor(null);
+            setViewerTool(null);
+            setViewerCursor(null);
+          }}
           className={cn(
             "flex items-center gap-1 px-1.5 py-1 rounded-md text-[10px] font-semibold transition",
             calMode ? "bg-amber-400/90 text-gray-900" : "text-gray-300 hover:bg-white/15 hover:text-white"
@@ -783,9 +956,92 @@ export function CephCanvas({
         </button>
       </div>
 
+      {/* Viewer-only tools: no source image, landmark or analysis mutation. */}
+      <div className="absolute top-12 left-3 z-10 flex items-center gap-0.5 bg-black/70 backdrop-blur-sm rounded-lg p-1" dir="ltr">
+        <button
+          type="button"
+          onClick={() => toggleViewerTool('distance')}
+          className={cn(toolBtn, viewerTool === 'distance' && "bg-cyan-400/25 text-cyan-200")}
+          title="قياس مسافة مؤقتة"
+          aria-label="قياس مسافة مؤقتة"
+          aria-pressed={viewerTool === 'distance'}
+        >
+          <Ruler className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => toggleViewerTool('angle')}
+          className={cn(toolBtn, viewerTool === 'angle' && "bg-cyan-400/25 text-cyan-200")}
+          title="قياس زاوية مؤقتة"
+          aria-label="قياس زاوية مؤقتة"
+          aria-pressed={viewerTool === 'angle'}
+        >
+          <DraftingCompass className="w-3.5 h-3.5" />
+        </button>
+        <span className="w-px h-4 bg-white/20 mx-0.5" />
+        <button
+          type="button"
+          onClick={() => updateViewerTransform(current => ({
+            ...current,
+            rotation: ((current.rotation + 90) % 360) as ViewerTransform['rotation'],
+          }))}
+          className={toolBtn}
+          title="تدوير العرض 90 درجة"
+          aria-label="تدوير العرض 90 درجة"
+        >
+          <RotateCw className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => updateViewerTransform(current => ({ ...current, flipHorizontal: !current.flipHorizontal }))}
+          className={cn(toolBtn, viewerTransform.flipHorizontal && "bg-white/25 text-white")}
+          title="قلب العرض أفقياً"
+          aria-label="قلب العرض أفقياً"
+          aria-pressed={viewerTransform.flipHorizontal}
+        >
+          <FlipHorizontal className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => updateViewerTransform(current => ({ ...current, flipVertical: !current.flipVertical }))}
+          className={cn(toolBtn, viewerTransform.flipVertical && "bg-white/25 text-white")}
+          title="قلب العرض عمودياً"
+          aria-label="قلب العرض عمودياً"
+          aria-pressed={viewerTransform.flipVertical}
+        >
+          <FlipVertical className="w-3.5 h-3.5" />
+        </button>
+        <span className="w-px h-4 bg-white/20 mx-0.5" />
+        <button
+          type="button"
+          onClick={() => setViewerPoints([])}
+          disabled={viewerPoints.length === 0}
+          className={cn(toolBtn, "disabled:opacity-35 disabled:cursor-not-allowed")}
+          title="مسح قياسات العارض"
+          aria-label="مسح قياسات العارض"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={resetViewer}
+          className={toolBtn}
+          title="إعادة ضبط العارض بالكامل"
+          aria-label="إعادة ضبط العارض بالكامل"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {hasTemporaryView && (
+        <div className="absolute top-3 right-3 z-10 rounded border border-cyan-300/30 bg-cyan-950/85 px-2 py-1 text-[10px] font-semibold text-cyan-100">
+          عرض مؤقت · غير محفوظ
+        </div>
+      )}
+
       {/* ── Calibration panel ── */}
       {calMode && (
-        <div className="absolute top-12 left-3 z-10 w-60 bg-black/80 backdrop-blur-sm rounded-lg p-2.5 space-y-2">
+        <div className="absolute top-24 left-3 z-10 w-60 bg-black/80 backdrop-blur-sm rounded-lg p-2.5 space-y-2">
           <p className="text-[10px] font-semibold text-amber-300">
             وضع المعايرة: انقر نقطتين على مسطرة صورة الأشعة
           </p>
@@ -830,7 +1086,7 @@ export function CephCanvas({
         </div>
       )}
 
-      {hovered && !calMode && (
+      {hovered && !calMode && !viewerTool && (
         <div className="absolute bottom-3 left-3 bg-black/80 text-white text-xs px-2.5 py-1.5 rounded-lg pointer-events-none flex items-center gap-1.5 max-w-[80%]">
           <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: LANDMARK_DEFS[hovered]?.color }} />
           {LANDMARK_DEFS[hovered]?.nameAr ?? hovered}

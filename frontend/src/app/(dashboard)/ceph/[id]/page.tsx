@@ -1066,7 +1066,13 @@ export default function CephAnalysisPage() {
               showMeasurements={showMeasurements}
               measurements={activeReportData}
               onCalibrate={handleCalibrationChange}
+              pixelsPerMm={pixelsPerMm}
               imageAdjustments={{ brightness, contrast, inverted }}
+              onResetImageAdjustments={() => {
+                setBrightness(100);
+                setContrast(100);
+                setInverted(false);
+              }}
               onImageDimensions={handleImageDimensions}
               onRefineLandmark={handleRefineLandmark}
               refining={refiningKey !== null}

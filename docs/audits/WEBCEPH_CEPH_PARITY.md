@@ -27,7 +27,7 @@ Evidence inspected:
 |---|---|---:|---|
 | Patient/record progress | `/ceph`, `cephWorkflow.ts`, ortho records checklist | Complete | Keep approval-aware workflow wording under regression tests. |
 | Lateral digitization | `CephCanvas.tsx`, `CephService.cs`, 27 landmarks, calibration | Complete | Preserve manual editing and AI-draft review gates. |
-| Image processing | page brightness/contrast/invert; canvas zoom/pan/fit | Partial | Add non-destructive distance/angle rulers, rotate/flip preview, reset, and explicit unsaved-view state. Crop must not silently invalidate landmarks. |
+| Image processing | brightness/contrast/invert; zoom/pan/fit; transient distance/angle rulers and reversible rotate/flip preview | Complete | Crop remains intentionally unavailable rather than silently invalidating source-pixel landmarks. |
 | Analysis methods | Steiner, Tweed, McNamara, Ricketts, Downs, Jarabak, Wits | Complete | Add method visibility presets only if they reuse existing measurements/norms. |
 | Norm customization | `CephNormsController`, DB overrides | Complete | Admin runtime QA remains. |
 | Measurement/report export | Arabic PDF, print, UTF-8 CSV | Complete | Preserve approval and saved-snapshot gates. |

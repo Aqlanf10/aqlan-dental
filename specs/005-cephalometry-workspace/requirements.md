@@ -46,4 +46,7 @@ Automatic diagnosis acceptance, hidden AI assumptions, unaudited provider change
 - WHEN list data is loaded THEN each analysis SHALL show the first unfinished workflow stage in this order: landmarks, saved measurements, doctor approval.
 - WHEN measurements are saved but approval is pending THEN the list SHALL prompt review and approval rather than claim completion.
 - WHEN a parity feature is implemented THEN its matrix row, requirement, tests, and deployment evidence SHALL be updated together.
+- WHEN a ceph clinical tag is shown THEN its value SHALL be allowlisted and both its source analysis and structured diagnosis SHALL be doctor-approved.
+- WHEN cohort analytics are requested THEN only the latest approved record per accessible patient SHALL be counted, no patient identifier SHALL be returned, and the complete result plus each measurement SHALL be suppressed below five independent patients.
+- WHEN Timelapse runs THEN every frame SHALL correspond to a persisted dated image or analysis; no interpolated treatment frame SHALL be generated.
 - Needs runtime verification for doctor review flow.

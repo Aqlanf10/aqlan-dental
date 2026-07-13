@@ -64,6 +64,11 @@ public class CephAnalysisListDto
     public int LandmarkCount { get; set; }
     public bool HasMeasurements { get; set; }
     public bool IsApproved { get; set; }
+    /// <summary>
+    /// Stable clinical labels derived only from an approved analysis whose
+    /// structured diagnosis was explicitly doctor-approved.
+    /// </summary>
+    public List<CephClinicalTagDto> ClinicalTags { get; set; } = [];
     public string? Notes { get; set; }
     /// <summary>
     /// Creation timestamp — the deterministic tiebreaker the presentation deck
@@ -71,6 +76,49 @@ public class CephAnalysisListDto
     /// "latest" analysis. Exposed so the UI selects the same record.
     /// </summary>
     public DateTime CreatedAt { get; set; }
+}
+
+public sealed class CephClinicalTagDto
+{
+    public string Key { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string Group { get; set; } = string.Empty;
+}
+
+public sealed class CephCohortBucketDto
+{
+    public string Key { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public int Count { get; set; }
+    public decimal Percentage { get; set; }
+}
+
+public sealed class CephCohortMeasurementDto
+{
+    public string MeasurementName { get; set; } = string.Empty;
+    public string Unit { get; set; } = string.Empty;
+    public int Count { get; set; }
+    public decimal Mean { get; set; }
+    public decimal Minimum { get; set; }
+    public decimal Maximum { get; set; }
+    public decimal StandardDeviation { get; set; }
+}
+
+public sealed class CephCohortResultDto
+{
+    public const int PrivacyMinimum = 5;
+    public bool Suppressed { get; set; }
+    public int MinimumCohortSize { get; set; } = PrivacyMinimum;
+    public int? CohortSize { get; set; }
+    public string? FromDate { get; set; }
+    public string? ToDate { get; set; }
+    public string? AnalysisType { get; set; }
+    public string? Tag { get; set; }
+    public List<CephClinicalTagDto> AvailableTags { get; set; } = [];
+    public List<CephCohortBucketDto> SkeletalDistribution { get; set; } = [];
+    public List<CephCohortBucketDto> VerticalDistribution { get; set; } = [];
+    public List<CephCohortBucketDto> IncisorDistribution { get; set; } = [];
+    public List<CephCohortMeasurementDto> Measurements { get; set; } = [];
 }
 
 public class CephLandmarkDto

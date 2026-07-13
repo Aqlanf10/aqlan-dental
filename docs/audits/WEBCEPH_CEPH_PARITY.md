@@ -38,10 +38,10 @@ Evidence inspected:
 | Occlusogram | canonical `/ortho/[id]/model-analysis` workflow; `OrthoModelAnalysesController`; `DentalModelAnalysisCalculator` | Complete | Preserve the three-mode tooth-size, arch-width/length, and irregularity presentation; case-photo reuse, version navigation, approval, and PDF must continue using the canonical model-analysis owner. |
 | Treatment simulation | `/ceph/vto` doctor-authored movements plus persisted named scenarios, immutable versions, before/after snapshots, notes, and Arabic PDF inclusion | Complete | Preserve approval/access gates, saved calibration/landmark inputs, version history, and the explicit no biological or soft-tissue response prediction statement. |
 | Superimposition | same-case analysis/version selection, multi-layer SN registration, explicit reference, stable colors, opacity controls, visible legend, and metadata-bearing SVG export | Complete | Preserve same-case and patient-access guards, required registration landmarks, record/date identity, and exported reference context. |
-| Case review | ortho case presentation, records checklist, photos, PDFs | Partial | Add a unified ceph case-review entry and saved composition metadata without duplicating the ortho case. |
-| Timelapse | patient timeline and comparison primitives | Missing | Add ordered image/analysis playback with date/phase labels and no fabricated interpolation. |
-| Case tags/search | ortho problem list/diagnosis exists; ceph list has no clinical filters | Missing | Derive doctor-reviewed filters from approved structured records; never treat generated tags as definitive diagnosis. |
-| Cohort analysis | general reports exist; no ceph cohort analytics | Missing | Add permission-filtered aggregate distributions with minimum cohort size and no patient leakage. |
+| Case review | `/ceph/case/[caseId]` reuses `CasePresentationPanel`, report/photo selections, readiness, PDF/PPTX, superimposition, Occlusogram, and the canonical ortho case | Complete | Preserve the ortho case as the sole data owner; selected/prepared report photos remain the saved composition metadata. |
+| Timelapse | `/ceph/timelapse/[caseId]`, canonical ceph analyses and ortho clinical photos, `buildCephTimelapseFrames` | Complete | Preserve real date ordering, explicit record selection, and the prohibition on fabricated/interpolated frames. |
+| Case tags/search | approved `CephDiagnosis` fields projected through `CephClinicalTagCatalog`; `/ceph` approved-tag filter | Complete | Unknown/free-text diagnosis values must never become tags, and both analysis and diagnosis approval remain required. |
+| Cohort analysis | `GET /api/ceph/cohort`, `/ceph/cohort`, latest approved record per accessible patient | Complete | Preserve the five-patient threshold for the whole cohort and each measurement, aggregate-only DTO, allowlisted filters, and patient-access scope. |
 
 ## Delivery Sequence
 

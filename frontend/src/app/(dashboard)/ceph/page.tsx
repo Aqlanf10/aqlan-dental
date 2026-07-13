@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Activity, AlertCircle, Brain, CheckCircle2, FileText, GitCompareArrows, Layers3, Plus, Ruler, ShieldCheck, Smile, UserSquare2, X } from "lucide-react";
+import { Activity, AlertCircle, BarChart3, Brain, CheckCircle2, Clock3, FileSearch, FileText, GitCompareArrows, Layers3, Plus, Ruler, ShieldCheck, Smile, Tag, UserSquare2, X } from "lucide-react";
 import type { CephAnalysisList } from "@/types/ceph";
 import { ANALYSIS_TYPE_AR } from "@/types/ceph";
 import api from "@/lib/api";
@@ -19,6 +19,7 @@ export default function CephPage() {
   const [compareBase, setCompareBase] = useState<CephAnalysisList | null>(null);
   const [multiSelectMode, setMultiSelectMode] = useState(false);
   const [multiSelection, setMultiSelection] = useState<CephAnalysisList[]>([]);
+  const [clinicalTagFilter, setClinicalTagFilter] = useState("");
 
   useEffect(() => {
     api.get<CephAnalysisList[]>("/api/ceph")
@@ -35,6 +36,14 @@ export default function CephPage() {
     const incomplete = total - approved;
     return { total, traced, measured, approved, incomplete };
   }, [analyses]);
+  const availableTags = useMemo(() => {
+    const tags = new Map<string, string>();
+    analyses.forEach(item => (item.clinicalTags ?? []).forEach(tag => tags.set(tag.key, tag.label)));
+    return [...tags.entries()].sort((a, b) => a[1].localeCompare(b[1], "ar"));
+  }, [analyses]);
+  const visibleAnalyses = useMemo(() => clinicalTagFilter
+    ? analyses.filter(item => (item.clinicalTags ?? []).some(tag => tag.key === clinicalTagFilter))
+    : analyses, [analyses, clinicalTagFilter]);
 
   const toggleMultiSelection = (analysis: CephAnalysisList) => {
     setMultiSelection(current => {
@@ -79,6 +88,7 @@ export default function CephPage() {
             تراكب متعدد
           </button>
           <Link href="/ceph/quality" className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 transition"><ShieldCheck className="w-4 h-4" />فحص الجودة</Link>
+          <Link href="/ceph/cohort" className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"><BarChart3 className="w-4 h-4" />تحليل المجموعات</Link>
           <Link href="/ceph/photo" className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"><UserSquare2 className="w-4 h-4" />تحليل صورة بروفايل</Link>
           <Link href="/ceph/photo/frontal" className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"><Smile className="w-4 h-4" />تحليل صورة أمامية</Link>
           <Link href="/ceph/new" className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"><Plus className="w-4 h-4" />تحليل جديد</Link>
@@ -135,6 +145,18 @@ export default function CephPage() {
         </div>
       )}
 
+      {availableTags.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border border-gray-200 bg-white px-3 py-2">
+          <Tag className="h-4 w-4 text-gray-400" />
+          <label className="text-xs font-bold text-gray-600" htmlFor="ceph-clinical-tag-filter">وسم سريري معتمد</label>
+          <select id="ceph-clinical-tag-filter" value={clinicalTagFilter} onChange={event => setClinicalTagFilter(event.target.value)} className="h-9 rounded border border-gray-200 bg-white px-2 text-xs">
+            <option value="">كل الوسوم</option>
+            {availableTags.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+          {clinicalTagFilter && <span className="text-[10px] text-gray-400">{visibleAnalyses.length} سجل</span>}
+        </div>
+      )}
+
       {loading ? (
         <div className="space-y-2 animate-pulse">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-xl" />)}</div>
       ) : analyses.length === 0 ? (
@@ -150,7 +172,7 @@ export default function CephPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200"><tr>{[...(multiSelectMode ? ["اختيار"] : []), "المريض", "نوع التحليل", "التاريخ", "جاهزية النقاط", "القياسات", "مرحلة العمل", ""].map((h) => <th key={h} className="text-start px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>)}</tr></thead>
               <tbody className="divide-y divide-gray-100">
-                {analyses.map((a) => {
+                {visibleAnalyses.map((a) => {
                   const isBase = compareBase?.id === a.id;
                   const isSameCase = !!compareBase && !isBase && compareBase.orthoCaseId === a.orthoCaseId;
                   const isMultiSelected = multiSelection.some(item => item.id === a.id);
@@ -171,13 +193,13 @@ export default function CephPage() {
                           />
                         </td>
                       )}
-                      <td className="px-4 py-3"><div className="font-medium text-gray-900">{a.patientName}</div>{a.caseNumber && <div className="text-xs text-gray-400 font-mono">{a.caseNumber}</div>}</td>
+                      <td className="px-4 py-3"><div className="font-medium text-gray-900">{a.patientName}</div>{a.caseNumber && <div className="text-xs text-gray-400 font-mono">{a.caseNumber}</div>}<div className="mt-1 flex max-w-64 flex-wrap gap-1">{(a.clinicalTags ?? []).map(tag => <span key={tag.key} className="rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">{tag.label}</span>)}</div></td>
                       <td className="px-4 py-3"><span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">{ANALYSIS_TYPE_AR[a.analysisType] ?? a.analysisType}</span></td>
                       <td className="px-4 py-3 text-gray-500 text-xs">{formatArabicDate(a.analysisDate)}</td>
                       <td className="px-4 py-3"><div className="flex items-center gap-2"><span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold", landmarkReady ? "bg-green-50 text-green-700" : a.landmarkCount > 0 ? "bg-amber-50 text-amber-700" : "bg-gray-100 text-gray-500")}><Ruler className="h-3.5 w-3.5" />{a.landmarkCount >= 24 ? "مكتمل" : `${a.landmarkCount}/24`}</span>{a.aiAssisted && <span title="مساعدة الذكاء الاصطناعي"><Brain className="w-3.5 h-3.5 text-purple-500" /></span>}</div></td>
                       <td className="px-4 py-3">{a.hasMeasurements ? <span className="inline-flex items-center gap-1 text-xs text-green-600 font-medium"><FileText className="h-3.5 w-3.5" />محسوبة</span> : <span className="inline-flex items-center gap-1 text-xs text-amber-600"><AlertCircle className="h-3.5 w-3.5" />تحتاج حفظ وحساب</span>}</td>
                       <td className="px-4 py-3"><span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold", workflow.complete ? "bg-green-50 text-green-700" : workflow.key === "approval" ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700")}>{workflow.complete ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}{workflow.label}</span></td>
-                      <td className="px-4 py-3"><div className="flex items-center gap-3 whitespace-nowrap"><Link href={`/ceph/${a.id}`} className={cn("text-xs font-medium hover:underline", workflow.complete ? "text-clinic-blue" : "text-amber-700")}>{workflow.actionLabel}</Link><Link href={`/ceph/${a.id}/quality`} className="text-xs text-blue-700 hover:underline font-medium">فحص الجودة</Link>{!multiSelectMode && (isBase ? <span className="text-xs text-blue-600 font-medium">أساس المقارنة</span> : isSameCase ? <Link href={`/ceph/compare?baseId=${compareBase!.id}&targetId=${a.id}`} className="text-xs px-2 py-1 rounded-lg bg-emerald-600 text-white hover:opacity-90 transition font-medium">قارن مع هذا</Link> : !compareBase ? <button onClick={() => setCompareBase(a)} className="text-xs text-gray-500 hover:text-clinic-blue hover:underline transition font-medium">قارن</button> : null)}</div></td>
+                      <td className="px-4 py-3"><div className="flex items-center gap-3 whitespace-nowrap"><Link href={`/ceph/${a.id}`} className={cn("text-xs font-medium hover:underline", workflow.complete ? "text-clinic-blue" : "text-amber-700")}>{workflow.actionLabel}</Link><Link href={`/ceph/${a.id}/quality`} className="text-xs text-blue-700 hover:underline font-medium">فحص الجودة</Link><Link href={`/ceph/case/${a.orthoCaseId}`} title="مراجعة الحالة" className="text-gray-500 hover:text-clinic-blue"><FileSearch className="h-4 w-4" /></Link><Link href={`/ceph/timelapse/${a.orthoCaseId}`} title="Timelapse" className="text-gray-500 hover:text-clinic-blue"><Clock3 className="h-4 w-4" /></Link>{!multiSelectMode && (isBase ? <span className="text-xs text-blue-600 font-medium">أساس المقارنة</span> : isSameCase ? <Link href={`/ceph/compare?baseId=${compareBase!.id}&targetId=${a.id}`} className="text-xs px-2 py-1 rounded-lg bg-emerald-600 text-white hover:opacity-90 transition font-medium">قارن مع هذا</Link> : !compareBase ? <button onClick={() => setCompareBase(a)} className="text-xs text-gray-500 hover:text-clinic-blue hover:underline transition font-medium">قارن</button> : null)}</div></td>
                     </tr>
                   );
                 })}

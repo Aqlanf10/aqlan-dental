@@ -22,7 +22,7 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         Guid? orthoCaseId,
         HashSet<Guid>? accessiblePatientIds = null)
     {
-        return await db.CephAnalyses
+        var rows = await db.CephAnalyses
             .Where(a => orthoCaseId == null || a.OrthoCaseId == orthoCaseId)
             .Where(a => accessiblePatientIds == null ||
                         accessiblePatientIds.Contains(a.OrthoCase.PatientId))
@@ -31,23 +31,183 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
             // Without the CreatedAt tiebreak, same-day analyses ordered arbitrarily.
             .OrderByDescending(a => a.AnalysisDate)
             .ThenByDescending(a => a.CreatedAt)
-            .Select(a => new CephAnalysisListDto
+            .Select(a => new
             {
-                Id              = a.Id,
-                OrthoCaseId     = a.OrthoCaseId,
-                CaseNumber      = a.OrthoCase.CaseNumber,
-                PatientName     = a.OrthoCase.Patient.FirstName + " " + a.OrthoCase.Patient.LastName,
-                AnalysisType    = a.AnalysisType,
-                AnalysisDate    = a.AnalysisDate.ToString("yyyy-MM-dd"),
-                XrayFileUrl     = a.XrayFileUrl,
-                AiAssisted      = a.AiAssisted,
-                LandmarkCount   = a.Landmarks.Count(l => l.IsActive),
+                a.Id,
+                a.OrthoCaseId,
+                a.OrthoCase.CaseNumber,
+                PatientName = a.OrthoCase.Patient.FirstName + " " + a.OrthoCase.Patient.LastName,
+                a.AnalysisType,
+                AnalysisDate = a.AnalysisDate.ToString("yyyy-MM-dd"),
+                a.XrayFileUrl,
+                a.AiAssisted,
+                LandmarkCount = a.Landmarks.Count(l => l.IsActive),
                 HasMeasurements = a.Measurements.Any(m => m.IsActive),
-                IsApproved      = a.IsApproved,
-                Notes           = a.Notes,
-                CreatedAt       = a.CreatedAt
+                a.IsApproved,
+                a.Notes,
+                a.CreatedAt,
+                DiagnosisApproved = a.Diagnosis != null && a.Diagnosis.IsActive && a.Diagnosis.DoctorApproved,
+                SkeletalClass = a.Diagnosis == null ? null : a.Diagnosis.SkeletalClass,
+                VerticalPattern = a.Diagnosis == null ? null : a.Diagnosis.VerticalPattern,
+                IncisorInclination = a.Diagnosis == null ? null : a.Diagnosis.IncisorInclination,
             })
             .ToListAsync();
+
+        return rows.Select(a => new CephAnalysisListDto
+        {
+            Id = a.Id,
+            OrthoCaseId = a.OrthoCaseId,
+            CaseNumber = a.CaseNumber,
+            PatientName = a.PatientName,
+            AnalysisType = a.AnalysisType,
+            AnalysisDate = a.AnalysisDate,
+            XrayFileUrl = a.XrayFileUrl,
+            AiAssisted = a.AiAssisted,
+            LandmarkCount = a.LandmarkCount,
+            HasMeasurements = a.HasMeasurements,
+            IsApproved = a.IsApproved,
+            Notes = a.Notes,
+            CreatedAt = a.CreatedAt,
+            ClinicalTags = CephClinicalTagCatalog.Build(
+                a.IsApproved,
+                a.DiagnosisApproved,
+                a.SkeletalClass,
+                a.VerticalPattern,
+                a.IncisorInclination),
+        }).ToList();
+    }
+
+    public async Task<CephCohortResultDto> BuildCohortAsync(
+        HashSet<Guid>? accessiblePatientIds,
+        DateOnly? from,
+        DateOnly? to,
+        string? analysisType,
+        string? tag)
+    {
+        var query = db.CephAnalyses
+            .AsNoTracking()
+            .Include(a => a.OrthoCase)
+            .Include(a => a.Diagnosis)
+            .Include(a => a.Measurements)
+            .Where(a => a.IsApproved)
+            .Where(a => a.Diagnosis != null && a.Diagnosis.IsActive && a.Diagnosis.DoctorApproved)
+            .Where(a => accessiblePatientIds == null ||
+                        accessiblePatientIds.Contains(a.OrthoCase.PatientId));
+
+        if (from.HasValue) query = query.Where(a => a.AnalysisDate >= from.Value);
+        if (to.HasValue) query = query.Where(a => a.AnalysisDate <= to.Value);
+        if (!string.IsNullOrWhiteSpace(analysisType))
+            query = query.Where(a => a.AnalysisType == analysisType);
+
+        var records = await query.ToListAsync();
+        var latestPerPatient = records
+            .GroupBy(a => a.OrthoCase.PatientId)
+            .Select(group => group
+                .OrderByDescending(a => a.AnalysisDate)
+                .ThenByDescending(a => a.CreatedAt)
+                .First())
+            .ToList();
+
+        if (!string.IsNullOrWhiteSpace(tag))
+        {
+            latestPerPatient = latestPerPatient
+                .Where(a => CephClinicalTagCatalog.Build(
+                    a.IsApproved,
+                    a.Diagnosis?.DoctorApproved == true,
+                    a.Diagnosis?.SkeletalClass,
+                    a.Diagnosis?.VerticalPattern,
+                    a.Diagnosis?.IncisorInclination)
+                    .Any(item => item.Key == tag))
+                .ToList();
+        }
+
+        var result = new CephCohortResultDto
+        {
+            Suppressed = latestPerPatient.Count < CephCohortResultDto.PrivacyMinimum,
+            CohortSize = latestPerPatient.Count < CephCohortResultDto.PrivacyMinimum
+                ? null
+                : latestPerPatient.Count,
+            FromDate = from?.ToString("yyyy-MM-dd"),
+            ToDate = to?.ToString("yyyy-MM-dd"),
+            AnalysisType = analysisType,
+            Tag = tag,
+            AvailableTags = CephClinicalTagCatalog.All(),
+        };
+
+        if (result.Suppressed) return result;
+
+        var tags = latestPerPatient
+            .SelectMany(a => CephClinicalTagCatalog.Build(
+                a.IsApproved,
+                a.Diagnosis?.DoctorApproved == true,
+                a.Diagnosis?.SkeletalClass,
+                a.Diagnosis?.VerticalPattern,
+                a.Diagnosis?.IncisorInclination))
+            .ToList();
+
+        result.SkeletalDistribution = BuildDistribution(tags, "skeletal", latestPerPatient.Count);
+        result.VerticalDistribution = BuildDistribution(tags, "vertical", latestPerPatient.Count);
+        result.IncisorDistribution = BuildDistribution(tags, "incisor", latestPerPatient.Count);
+        result.Measurements = BuildMeasurementSummaries(latestPerPatient);
+        return result;
+    }
+
+    private static List<CephCohortBucketDto> BuildDistribution(
+        IEnumerable<CephClinicalTagDto> tags,
+        string group,
+        int cohortSize) =>
+        tags.Where(tag => tag.Group == group)
+            .GroupBy(tag => new { tag.Key, tag.Label })
+            .Select(bucket => new CephCohortBucketDto
+            {
+                Key = bucket.Key.Key,
+                Label = bucket.Key.Label,
+                Count = bucket.Count(),
+                Percentage = decimal.Round(bucket.Count() * 100m / cohortSize, 1),
+            })
+            .OrderByDescending(bucket => bucket.Count)
+            .ThenBy(bucket => bucket.Label)
+            .ToList();
+
+    private static List<CephCohortMeasurementDto> BuildMeasurementSummaries(
+        IReadOnlyCollection<CephAnalysis> analyses)
+    {
+        var grouped = analyses.SelectMany(a => a.Measurements
+                .Where(m => m.IsActive && m.MeasurementValue.HasValue)
+                .Select(m => new
+                {
+                    AnalysisId = a.Id,
+                    m.MeasurementName,
+                    Unit = m.Unit ?? string.Empty,
+                    Value = m.MeasurementValue!.Value,
+                }))
+            .GroupBy(item => new { item.MeasurementName, item.Unit });
+
+        var result = new List<CephCohortMeasurementDto>();
+        foreach (var group in grouped)
+        {
+            // One value per latest patient record. Duplicate measurement rows
+            // must never satisfy the five-patient privacy threshold.
+            var values = group.GroupBy(item => item.AnalysisId)
+                .Select(rows => rows.First().Value)
+                .ToArray();
+            if (values.Length < CephCohortResultDto.PrivacyMinimum) continue;
+
+            var mean = values.Average();
+            var variance = values.Average(value => (value - mean) * (value - mean));
+            result.Add(new CephCohortMeasurementDto
+            {
+                MeasurementName = group.Key.MeasurementName,
+                Unit = group.Key.Unit,
+                Count = values.Length,
+                Mean = decimal.Round(mean, 2),
+                Minimum = decimal.Round(values.Min(), 2),
+                Maximum = decimal.Round(values.Max(), 2),
+                StandardDeviation = decimal.Round((decimal)Math.Sqrt((double)variance), 2),
+            });
+        }
+
+        return result.OrderBy(item => item.MeasurementName).Take(40).ToList();
     }
 
     // ──────────────────────────────────────────────────────────────────────────

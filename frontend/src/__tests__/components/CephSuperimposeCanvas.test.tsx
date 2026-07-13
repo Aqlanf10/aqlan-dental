@@ -58,6 +58,18 @@ describe("CephSuperimposeCanvas", () => {
     expect(screen.getByRole("img")).toHaveAttribute("aria-label", expect.stringContaining("3 سجلات"));
   });
 
+  it("syncs the reference when the pairwise comparison swaps its base analysis", () => {
+    const { rerender } = render(
+      <CephSuperimposeCanvas records={records} initialReferenceId="analysis:first" />,
+    );
+    expect(screen.getByRole("radio", { name: "اختيار قبل العلاج كمرجع" })).toBeChecked();
+
+    rerender(<CephSuperimposeCanvas records={records} initialReferenceId="analysis:second" />);
+
+    expect(screen.getByRole("radio", { name: "اختيار بعد العلاج كمرجع" })).toBeChecked();
+    expect(screen.getByText(/المرجع: بعد العلاج/)).toBeInTheDocument();
+  });
+
   it("exports SVG with auditable record and reference metadata", () => {
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:ceph-superimposition");
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);

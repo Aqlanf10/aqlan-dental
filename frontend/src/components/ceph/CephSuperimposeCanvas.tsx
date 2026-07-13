@@ -66,9 +66,16 @@ export function CephSuperimposeCanvas({
   const [opacities, setOpacities] = useState<Record<string, number>>({});
 
   useEffect(() => {
+    if (initialReferenceId) setReferenceId(initialReferenceId);
+  }, [initialReferenceId]);
+
+  useEffect(() => {
     if (!records.some(record => record.id === referenceId)) {
       setReferenceId(initialReferenceId ?? records[0]?.id ?? "");
     }
+  }, [records, referenceId, initialReferenceId]);
+
+  useEffect(() => {
     setOpacities(current => {
       const next = Object.fromEntries(records.map(record => [record.id, current[record.id] ?? 0.9]));
       const currentKeys = Object.keys(current);
@@ -77,7 +84,7 @@ export function CephSuperimposeCanvas({
         && nextKeys.every(key => current[key] === next[key]);
       return unchanged ? current : next;
     });
-  }, [records, referenceId, initialReferenceId]);
+  }, [records]);
 
   const result = useMemo(
     () => registerSuperimpositionRecords(records, referenceId, registerKeys),

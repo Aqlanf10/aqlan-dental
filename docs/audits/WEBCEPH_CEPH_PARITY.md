@@ -32,8 +32,8 @@ Evidence inspected:
 | Norm customization | `CephNormsController`, DB overrides | Complete | Admin runtime QA remains. |
 | Measurement/report export | Arabic PDF, print, UTF-8 CSV | Complete | Preserve approval and saved-snapshot gates. |
 | Clinical assessment | ceph diagnosis + ortho diagnosis/problem list | Partial | Build a doctor-reviewed skeletal/dental/soft-tissue assessment view and explicit copy-to-problem-list action; no automatic acceptance. |
-| Lateral soft tissue | profile photo analysis + S/E lines | Complete | Unify navigation and longitudinal comparison. |
-| Frontal soft tissue | `/ceph/photo/frontal` ratios/asymmetry | Complete | Unify navigation and longitudinal comparison. |
+| Lateral soft tissue | profile photo analysis + S/E lines | Partial | Unify navigation and longitudinal comparison. |
+| Frontal soft tissue | `/ceph/photo/frontal` ratios/asymmetry | Partial | Unify navigation and longitudinal comparison. |
 | PA cephalometric x-ray | no PA landmark/measurement owner | Missing | Add frontal radiograph workspace, calibration, landmarks, symmetry/transverse measurements, saved snapshots, report, and tests. |
 | Occlusogram | rich `/ortho/[id]/model-analysis` engine | Partial | Present arch-width/length/crowding analysis as the canonical occlusogram workflow; avoid a duplicate calculator. |
 | Treatment simulation | `/ceph/vto` manual incisor movement preview | Partial | Persist named doctor-authored scenarios, before/after comparison, notes, versions, and report inclusion. No response prediction claim. |

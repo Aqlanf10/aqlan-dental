@@ -72,4 +72,19 @@ describe("CephMeasurementExportButton", () => {
       measurements: [measurement],
     });
   });
+
+  it("blocks export when the projection-specific landmark set is incomplete", () => {
+    render(
+      <CephMeasurementExportButton
+        analysis={analysis}
+        placedCount={14}
+        hasUnsavedEdits={false}
+        pointsComplete={false}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "تصدير القياسات CSV" });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("title", expect.stringContaining("أكمل النقاط"));
+  });
 });

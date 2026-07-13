@@ -1,7 +1,7 @@
 "use client";
 import { printScreen } from "@/lib/printUtils";
 import { useState } from "react";
-import { Printer, CheckCircle, AlertTriangle, XCircle, ArrowUp, ArrowDown, Loader2 } from "lucide-react";
+import { Printer, CheckCircle, AlertTriangle, XCircle, ArrowUp, ArrowDown, Loader2, Info } from "lucide-react";
 import type { CephMeasurement, CephDiagnosis, CephAiDraftResponse, MeasurementGroup } from "@/types/ceph";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -31,12 +31,14 @@ const SCIENTIST_TABS: { key: MeasurementGroup; label: string; labelFull: string 
   { key: 'downs',    label: 'داونز',     labelFull: 'تحليل داونز' },
   { key: 'jarabak',  label: 'جاراباك',   labelFull: 'تحليل جاراباك' },
   { key: 'wits',     label: 'وتس',       labelFull: 'تحليل وتس' },
+  { key: 'pa',       label: 'PA أمامي',  labelFull: 'تحليل عدم التناظر والميل الأمامي' },
 ];
 
 const SEVERITY_CFG = {
   normal: { icon: CheckCircle,   color: 'text-green-500',  bg: 'bg-green-50 text-green-700',  label: 'طبيعي' },
   mild:   { icon: AlertTriangle, color: 'text-amber-500',  bg: 'bg-amber-50 text-amber-700',  label: 'خفيف' },
   severe: { icon: XCircle,       color: 'text-red-500',    bg: 'bg-red-50 text-red-700',       label: 'واضح' },
+  unclassified: { icon: Info, color: 'text-gray-500', bg: 'bg-gray-100 text-gray-700', label: 'وصفي' },
 } as const;
 
 const SKELETAL_CLASS_AR: Record<string, string> = {
@@ -84,8 +86,8 @@ export function AnalysisReport({
 
   const grouped = measurements.filter(m => m.analysisGroup === activeGroup);
   const hasMeas = measurements.length > 0;
-  const totalAbnormal = measurements.filter(m => m.severity !== 'normal' && m.value !== null).length;
-  const groupAbnormal = grouped.filter(m => m.severity !== 'normal' && m.value !== null).length;
+  const totalAbnormal = measurements.filter(m => m.severity !== 'normal' && m.severity !== 'unclassified' && m.value !== null).length;
+  const groupAbnormal = grouped.filter(m => m.severity !== 'normal' && m.severity !== 'unclassified' && m.value !== null).length;
 
   const availableTabs = SCIENTIST_TABS.filter(t =>
     !hasMeas || measurements.some(m => m.analysisGroup === t.key)
@@ -141,7 +143,7 @@ export function AnalysisReport({
       {hasMeas && (
         <div className="flex-shrink-0 flex gap-1 mb-2 flex-wrap">
           {availableTabs.map(t => {
-            const cnt = measurements.filter(m => m.analysisGroup === t.key && m.severity !== 'normal' && m.value !== null).length;
+            const cnt = measurements.filter(m => m.analysisGroup === t.key && m.severity !== 'normal' && m.severity !== 'unclassified' && m.value !== null).length;
             return (
               <button key={t.key} onClick={() => setActiveGroup(t.key)}
                 className={cn(
@@ -229,13 +231,13 @@ export function AnalysisReport({
                               : <span className="text-gray-300 text-xs font-normal">—</span>}
                           </div>
                           <div className="text-[9px] text-gray-400 font-mono mt-0.5">
-                            {m.normal}{m.unit} <span className="text-gray-300">±{m.stdDev}</span>
+                            {m.normal === null ? "وصفي بلا معيار عام" : <>{m.normal}{m.unit} <span className="text-gray-300">±{m.stdDev}</span></>}
                           </div>
                         </div>
                       </div>
 
                       {/* Deviation bar */}
-                      {m.deviation !== null && m.value !== null && (
+                      {m.deviation !== null && m.value !== null && m.stdDev !== null && m.stdDev > 0 && (
                         <div className="mt-2 flex items-center gap-2">
                           <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-visible relative">
                             <div className="absolute inset-y-0 left-[20%] right-[20%] bg-green-100 rounded-full" />

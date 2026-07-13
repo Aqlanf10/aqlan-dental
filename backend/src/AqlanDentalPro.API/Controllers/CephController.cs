@@ -18,6 +18,14 @@ public class CephController(
     IPatientAccessService patientAccess,
     ICurrentUserService currentUser) : ControllerBase
 {
+    private static readonly HashSet<string> PaRequiredLandmarkKeys =
+        ["Cg", "ZR", "ZL", "ANS", "JR", "JL", "AgR", "AgL", "Me", "UDM", "LDM", "U6R", "U6L", "L6R", "L6L"];
+
+    private static bool IsPaReadyForApproval(CephAnalysisDetailDto detail) =>
+        !string.Equals(detail.AnalysisType, "pa", StringComparison.OrdinalIgnoreCase)
+        || (detail.PixelsPerMm is > 0
+            && PaRequiredLandmarkKeys.IsSubsetOf(detail.Landmarks.Select(x => x.Key))
+            && detail.Measurements.Count > 0);
     // GET /api/ceph                          — all analyses
     // GET /api/ceph?orthoCaseId={id}         — filtered by ortho case
     [HttpGet]
@@ -353,6 +361,10 @@ public class CephController(
             return Ok(new { message = "التحليل معتمد مسبقاً", analysis = detailAlready });
         }
 
+        var approvalDetail = await service.GetByIdAsync(id);
+        if (approvalDetail is null || !IsPaReadyForApproval(approvalDetail))
+            return BadRequest(new { message = "لا يمكن اعتماد تحليل PA قبل حفظ المعايرة وإكمال النقاط الـ15 وحساب القياسات" });
+
         analysis.IsApproved = true;
         analysis.ApprovedByUserId = currentUser.UserId;
         analysis.ApprovedAt = DateTime.UtcNow;
@@ -375,13 +387,11 @@ public class CephController(
 
         // Clinical approval gate: the final report cannot be issued until an
         // authorized doctor/admin approves the analysis (CEPH-EPIC).
-        var isApproved = await db.CephAnalyses
-            .AsNoTracking()
-            .Where(x => x.Id == id && x.IsActive)
-            .Select(x => (bool?)x.IsApproved)
-            .FirstOrDefaultAsync();
-        if (isApproved != true)
+        var reportDetail = await service.GetByIdAsync(id);
+        if (reportDetail?.IsApproved != true)
             return BadRequest(new { message = "لا يمكن إصدار التقرير النهائي قبل اعتماد الطبيب للتحليل" });
+        if (!IsPaReadyForApproval(reportDetail))
+            return BadRequest(new { message = "لا يمكن إصدار تقرير PA قبل حفظ المعايرة وإكمال النقاط الـ15 وحساب القياسات" });
 
         try
         {

@@ -10,12 +10,14 @@ const GROUP_LABELS: Record<MeasurementGroup, string> = {
   downs: "داونز",
   jarabak: "جاراباك",
   wits: "وتس",
+  pa: "أمامي PA",
 };
 
 const SEVERITY_LABELS: Record<CephMeasurement["severity"], string> = {
   normal: "طبيعي",
   mild: "انحراف خفيف",
   severe: "انحراف واضح",
+  unclassified: "وصفي بلا معيار عام",
 };
 
 const DIRECTION_LABELS: Record<CephMeasurement["direction"], string> = {

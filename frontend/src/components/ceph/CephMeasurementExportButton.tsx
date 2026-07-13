@@ -8,16 +8,19 @@ interface Props {
   analysis: CephAnalysis;
   placedCount: number;
   hasUnsavedEdits: boolean;
+  pointsComplete?: boolean;
 }
 
 export function CephMeasurementExportButton({
   analysis,
   placedCount,
   hasUnsavedEdits,
+  pointsComplete = true,
 }: Props) {
   const hasSavedMeasurements = Boolean(analysis.measurements?.length);
   const disabled = !analysis.isApproved
     || placedCount === 0
+    || !pointsComplete
     || hasUnsavedEdits
     || !hasSavedMeasurements;
 
@@ -25,6 +28,8 @@ export function CephMeasurementExportButton({
     ? "لا يمكن تصدير القياسات قبل اعتماد الطبيب للتحليل"
     : placedCount === 0
       ? "ضع المعالم واحسب القياسات أولًا"
+      : !pointsComplete
+        ? "أكمل النقاط المطلوبة واحفظ القياسات قبل التصدير"
       : hasUnsavedEdits || !hasSavedMeasurements
         ? "اضغط «احسب» لحفظ المعالم والقياسات قبل التصدير"
         : "تصدير جدول القياسات المحفوظة بصيغة CSV متوافقة مع Excel";

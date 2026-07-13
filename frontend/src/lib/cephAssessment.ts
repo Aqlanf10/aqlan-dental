@@ -108,7 +108,7 @@ export function buildCephAssessment(
   }
 
   for (const measurement of measurements) {
-    if (measurement.value === null || measurement.severity === "normal") continue;
+    if (measurement.value === null || measurement.severity === "normal" || measurement.severity === "unclassified") continue;
     const section = measurementSection(measurement.name);
     const interpretation = measurement.interpretationAr
       ?? measurement.apiInterpretation

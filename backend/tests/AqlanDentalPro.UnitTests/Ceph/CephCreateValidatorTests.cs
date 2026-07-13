@@ -30,6 +30,7 @@ public class CephCreateValidatorTests
     [InlineData("downs")]
     [InlineData("jarabak")]
     [InlineData("wits")]
+    [InlineData("pa")]
     public void AcceptsEveryAnalysisTypeOfferedByTheForm(string type)
     {
         var result = _validator.Validate(Req(type));

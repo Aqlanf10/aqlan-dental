@@ -6,6 +6,7 @@ import type { CephAnalysisList } from "@/types/ceph";
 import { ANALYSIS_TYPE_AR } from "@/types/ceph";
 import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
+import { getCephWorkflowStage } from "@/lib/cephWorkflow";
 
 function ReadinessCard({ label, value, hint, tone }: { label: string; value: string | number; hint: string; tone: "green" | "blue" | "amber" | "gray" }) {
   const cls = tone === "green" ? "border-emerald-100 bg-emerald-50 text-emerald-800" : tone === "blue" ? "border-blue-100 bg-blue-50 text-blue-800" : tone === "amber" ? "border-amber-100 bg-amber-50 text-amber-800" : "border-gray-100 bg-gray-50 text-gray-700";
@@ -28,9 +29,9 @@ export default function CephPage() {
     const total = analyses.length;
     const traced = analyses.filter((item) => item.landmarkCount >= 24).length;
     const measured = analyses.filter((item) => item.hasMeasurements).length;
-    const ai = analyses.filter((item) => item.aiAssisted).length;
-    const incomplete = analyses.filter((item) => item.landmarkCount < 24 || !item.hasMeasurements).length;
-    return { total, traced, measured, ai, incomplete };
+    const approved = analyses.filter((item) => getCephWorkflowStage(item).complete).length;
+    const incomplete = total - approved;
+    return { total, traced, measured, approved, incomplete };
   }, [analyses]);
 
   return (
@@ -51,9 +52,9 @@ export default function CephPage() {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <ReadinessCard label="إجمالي التحاليل" value={stats.total} hint="كل تحاليل السيفالو المحفوظة" tone="blue" />
         <ReadinessCard label="نقاط مكتملة" value={stats.traced} hint="24/24 نقطة موضوعة" tone="green" />
-        <ReadinessCard label="قياسات محسوبة" value={stats.measured} hint="جاهزة للتقرير و VTO" tone="green" />
-        <ReadinessCard label="مساعدة AI" value={stats.ai} hint="تحاليل بدأت بمسودة AI" tone="gray" />
-        <ReadinessCard label="تحتاج إكمال" value={stats.incomplete} hint="نقاط أو قياسات ناقصة" tone={stats.incomplete ? "amber" : "green"} />
+        <ReadinessCard label="قياسات محفوظة" value={stats.measured} hint="لا تعني اعتماد التقرير" tone="blue" />
+        <ReadinessCard label="مكتملة ومعتمدة" value={stats.approved} hint="اجتازت اعتماد الطبيب" tone="green" />
+        <ReadinessCard label="تحتاج متابعة" value={stats.incomplete} hint="تتبع أو قياسات أو اعتماد" tone={stats.incomplete ? "amber" : "green"} />
       </div>
 
       <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs leading-6 text-blue-900">
@@ -82,13 +83,13 @@ export default function CephPage() {
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200"><tr>{["المريض", "نوع التحليل", "التاريخ", "جاهزية النقاط", "القياسات", ""].map((h) => <th key={h} className="text-start px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>)}</tr></thead>
+              <thead className="bg-gray-50 border-b border-gray-200"><tr>{["المريض", "نوع التحليل", "التاريخ", "جاهزية النقاط", "القياسات", "مرحلة العمل", ""].map((h) => <th key={h} className="text-start px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>)}</tr></thead>
               <tbody className="divide-y divide-gray-100">
                 {analyses.map((a) => {
                   const isBase = compareBase?.id === a.id;
                   const isSameCase = !!compareBase && !isBase && compareBase.orthoCaseId === a.orthoCaseId;
                   const landmarkReady = a.landmarkCount >= 24;
-                  const rowReady = landmarkReady && a.hasMeasurements;
+                  const workflow = getCephWorkflowStage(a);
                   return (
                     <tr key={a.id} className={cn("transition", isBase ? "bg-blue-50/60" : isSameCase ? "bg-emerald-50/40 hover:bg-emerald-50/70" : "hover:bg-gray-50", compareBase && !isBase && !isSameCase && "opacity-50")}>
                       <td className="px-4 py-3"><div className="font-medium text-gray-900">{a.patientName}</div>{a.caseNumber && <div className="text-xs text-gray-400 font-mono">{a.caseNumber}</div>}</td>
@@ -96,7 +97,8 @@ export default function CephPage() {
                       <td className="px-4 py-3 text-gray-500 text-xs">{formatArabicDate(a.analysisDate)}</td>
                       <td className="px-4 py-3"><div className="flex items-center gap-2"><span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold", landmarkReady ? "bg-green-50 text-green-700" : a.landmarkCount > 0 ? "bg-amber-50 text-amber-700" : "bg-gray-100 text-gray-500")}><Ruler className="h-3.5 w-3.5" />{a.landmarkCount >= 24 ? "مكتمل" : `${a.landmarkCount}/24`}</span>{a.aiAssisted && <span title="مساعدة الذكاء الاصطناعي"><Brain className="w-3.5 h-3.5 text-purple-500" /></span>}</div></td>
                       <td className="px-4 py-3">{a.hasMeasurements ? <span className="inline-flex items-center gap-1 text-xs text-green-600 font-medium"><FileText className="h-3.5 w-3.5" />محسوبة</span> : <span className="inline-flex items-center gap-1 text-xs text-amber-600"><AlertCircle className="h-3.5 w-3.5" />تحتاج حفظ وحساب</span>}</td>
-                      <td className="px-4 py-3"><div className="flex items-center gap-3 whitespace-nowrap"><Link href={`/ceph/${a.id}`} className={cn("text-xs font-medium hover:underline", rowReady ? "text-clinic-blue" : "text-amber-700")}>{rowReady ? "فتح التحليل" : "إكمال التحليل"}</Link><Link href={`/ceph/${a.id}/quality`} className="text-xs text-blue-700 hover:underline font-medium">فحص الجودة</Link>{isBase ? <span className="text-xs text-blue-600 font-medium">أساس المقارنة</span> : isSameCase ? <Link href={`/ceph/compare?baseId=${compareBase!.id}&targetId=${a.id}`} className="text-xs px-2 py-1 rounded-lg bg-emerald-600 text-white hover:opacity-90 transition font-medium">قارن مع هذا</Link> : !compareBase ? <button onClick={() => setCompareBase(a)} className="text-xs text-gray-500 hover:text-clinic-blue hover:underline transition font-medium">قارن</button> : null}</div></td>
+                      <td className="px-4 py-3"><span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold", workflow.complete ? "bg-green-50 text-green-700" : workflow.key === "approval" ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700")}>{workflow.complete ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}{workflow.label}</span></td>
+                      <td className="px-4 py-3"><div className="flex items-center gap-3 whitespace-nowrap"><Link href={`/ceph/${a.id}`} className={cn("text-xs font-medium hover:underline", workflow.complete ? "text-clinic-blue" : "text-amber-700")}>{workflow.actionLabel}</Link><Link href={`/ceph/${a.id}/quality`} className="text-xs text-blue-700 hover:underline font-medium">فحص الجودة</Link>{isBase ? <span className="text-xs text-blue-600 font-medium">أساس المقارنة</span> : isSameCase ? <Link href={`/ceph/compare?baseId=${compareBase!.id}&targetId=${a.id}`} className="text-xs px-2 py-1 rounded-lg bg-emerald-600 text-white hover:opacity-90 transition font-medium">قارن مع هذا</Link> : !compareBase ? <button onClick={() => setCompareBase(a)} className="text-xs text-gray-500 hover:text-clinic-blue hover:underline transition font-medium">قارن</button> : null}</div></td>
                     </tr>
                   );
                 })}

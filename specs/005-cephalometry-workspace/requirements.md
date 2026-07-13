@@ -10,6 +10,7 @@ Evidence: `frontend/src/app/(dashboard)/ceph/`, `frontend/src/components/ceph/`,
 - `CEPH-REQ-004`: Reports SHALL use Arabic PDF identity rules.
 - `CEPH-REQ-005`: No fake AI provider, fake measurement, or fake clinical claim is allowed.
 - `CEPH-REQ-006`: Measurement-table export SHALL use the saved measurement snapshot only, SHALL be blocked while edits are unsaved or the analysis is not doctor-approved, and SHALL preserve Arabic text safely in spreadsheet software without executable formula cells.
+- `CEPH-REQ-007`: The cephalometry list SHALL distinguish saved measurements from doctor approval and SHALL NOT describe an unapproved analysis as final-report ready.
 
 ## Target State
 
@@ -33,4 +34,6 @@ Automatic diagnosis acceptance, hidden AI assumptions, unaudited provider change
 - WHEN a report is generated THEN it SHALL use existing PDF identity rules.
 - WHEN a doctor exports the measurement table THEN the CSV SHALL contain the saved values, norms, deviations, analysis groups, and interpretations with UTF-8 Arabic support.
 - WHEN the analysis is unapproved, has unsaved edits, or has no saved measurements THEN measurement-table export SHALL remain unavailable.
+- WHEN list data is loaded THEN each analysis SHALL show the first unfinished workflow stage in this order: landmarks, saved measurements, doctor approval.
+- WHEN measurements are saved but approval is pending THEN the list SHALL prompt review and approval rather than claim completion.
 - Needs runtime verification for doctor review flow.

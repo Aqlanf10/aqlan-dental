@@ -82,7 +82,24 @@ public class CephPatientAccessTests : IDisposable
         rows.Should().NotContain(x => x.Id == second.AnalysisId);
     }
 
-    private async Task<(Guid PatientId, Guid AnalysisId)> SeedAnalysisAsync()
+    [Fact]
+    public async Task List_ProjectsExistingApprovalState()
+    {
+        var approved = await SeedAnalysisAsync(isApproved: true);
+        var pending = await SeedAnalysisAsync(isApproved: false);
+        _patientAccess
+            .Setup(x => x.GetAccessiblePatientIdsAsync())
+            .ReturnsAsync([approved.PatientId, pending.PatientId]);
+
+        var result = await _controller.List(null);
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var rows = ok.Value.Should().BeAssignableTo<List<AqlanDentalPro.Application.DTOs.Ceph.CephAnalysisListDto>>().Subject;
+
+        rows.Should().Contain(x => x.Id == approved.AnalysisId && x.IsApproved);
+        rows.Should().Contain(x => x.Id == pending.AnalysisId && !x.IsApproved);
+    }
+
+    private async Task<(Guid PatientId, Guid AnalysisId)> SeedAnalysisAsync(bool isApproved = false)
     {
         var patient = new Patient
         {
@@ -101,6 +118,7 @@ public class CephPatientAccessTests : IDisposable
             OrthoCase = orthoCase,
             AnalysisType = "steiner",
             XrayFileUrl = "/uploads/test.jpg",
+            IsApproved = isApproved,
             IsActive = true,
         };
         _db.CephAnalyses.Add(analysis);

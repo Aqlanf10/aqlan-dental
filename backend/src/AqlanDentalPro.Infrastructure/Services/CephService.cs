@@ -40,6 +40,7 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
                 AiAssisted      = a.AiAssisted,
                 LandmarkCount   = a.Landmarks.Count(l => l.IsActive),
                 HasMeasurements = a.Measurements.Any(m => m.IsActive),
+                IsApproved      = a.IsApproved,
                 Notes           = a.Notes,
                 CreatedAt       = a.CreatedAt
             })

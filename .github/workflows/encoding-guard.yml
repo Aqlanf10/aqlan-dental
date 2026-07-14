@@ -16,3 +16,7 @@ jobs:
 
       - name: Check Arabic UTF-8 text is not corrupted
         run: bash scripts/check-mojibake.sh
+
+      - name: Check cephalometric AI documentation contract
+        shell: pwsh
+        run: ./scripts/check-ceph-ai-docs.ps1

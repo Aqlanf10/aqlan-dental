@@ -22,6 +22,10 @@ public sealed class CephBenchmarkController : ControllerBase
         landmarkDefinitionVersion = CephBenchmarkManifestValidator.LandmarkDefinitionVersion,
         adjudicationThresholdMm = CephBenchmarkManifestValidator.AdjudicationThresholdMm,
         evaluationProtocolVersion = CephLandmarkEvaluationEngine.ProtocolVersion,
+        measurementEvaluationProtocolVersion = CephMeasurementEvaluationEngine.ProtocolVersion,
+        repeatabilityEvaluationProtocolVersion = CephRepeatabilityEvaluationEngine.ProtocolVersion,
+        requiredRepeatabilityRuns = CephRepeatabilityEvaluationEngine.RequiredRunCount,
+        geometryVersion = CephLateralGeometryEngine.Version,
         sdrThresholdsMm = new[] { 1d, 1.5d, 2d, 2.5d, 3d, 4d },
         bootstrapReplicates = new
         {
@@ -72,6 +76,48 @@ public sealed class CephBenchmarkController : ControllerBase
                 return BadRequest(new { code = "request.required" });
 
             return Ok(CephLandmarkEvaluationEngine.Evaluate(request));
+        }
+        catch (JsonException)
+        {
+            return BadRequest(new { code = "request.invalid-json-contract" });
+        }
+    }
+
+    [HttpPost("evaluate-measurements")]
+    [Consumes("application/json")]
+    public IActionResult EvaluateMeasurements([FromBody] JsonElement requestJson)
+    {
+        if (requestJson.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            return BadRequest(new { code = "request.required" });
+
+        try
+        {
+            var request = requestJson.Deserialize<CephMeasurementEvaluationRequestDto>(StrictJsonOptions);
+            if (request is null)
+                return BadRequest(new { code = "request.required" });
+
+            return Ok(CephMeasurementEvaluationEngine.Evaluate(request));
+        }
+        catch (JsonException)
+        {
+            return BadRequest(new { code = "request.invalid-json-contract" });
+        }
+    }
+
+    [HttpPost("evaluate-repeatability")]
+    [Consumes("application/json")]
+    public IActionResult EvaluateRepeatability([FromBody] JsonElement requestJson)
+    {
+        if (requestJson.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            return BadRequest(new { code = "request.required" });
+
+        try
+        {
+            var request = requestJson.Deserialize<CephRepeatabilityEvaluationRequestDto>(StrictJsonOptions);
+            if (request is null)
+                return BadRequest(new { code = "request.required" });
+
+            return Ok(CephRepeatabilityEvaluationEngine.Evaluate(request));
         }
         catch (JsonException)
         {

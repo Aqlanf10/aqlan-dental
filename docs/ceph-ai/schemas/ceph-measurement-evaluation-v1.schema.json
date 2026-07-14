@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aqlan.dental/schemas/ceph-measurement-evaluation-v1.schema.json",
+  "title": "Aqlan Dental Pro derived cephalometric measurement evaluation request",
+  "description": "Candidate and optional comparator landmarks evaluated through one frozen geometry engine against adjudicated gold landmarks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "geometryVersion",
+    "modelVersion",
+    "preprocessingVersion",
+    "evaluationSplit",
+    "toleranceRegistryVersion",
+    "toleranceApprovalId",
+    "tolerancesFrozenBeforeUnblinding",
+    "bootstrapReplicates",
+    "randomSeed",
+    "benchmark",
+    "candidatePredictions",
+    "comparatorPredictions",
+    "tolerances"
+  ],
+  "properties": {
+    "protocolVersion": { "const": "ADP-CEPH-MEAS-VAL-v1" },
+    "geometryVersion": { "const": "ADP-CEPH-GEOMETRY-v1" },
+    "modelVersion": { "$ref": "ceph-landmark-evaluation-v1.schema.json#/$defs/versionToken" },
+    "preprocessingVersion": { "$ref": "ceph-landmark-evaluation-v1.schema.json#/$defs/versionToken" },
+    "evaluationSplit": { "enum": ["Validation", "InternalTest", "ExternalClinicalTest"] },
+    "toleranceRegistryVersion": { "$ref": "ceph-landmark-evaluation-v1.schema.json#/$defs/versionToken" },
+    "toleranceApprovalId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$"
+    },
+    "tolerancesFrozenBeforeUnblinding": { "const": true },
+    "bootstrapReplicates": { "type": "integer", "minimum": 100, "maximum": 5000 },
+    "randomSeed": { "type": "integer" },
+    "benchmark": { "$ref": "ceph-benchmark-manifest-v1.schema.json" },
+    "candidatePredictions": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "ceph-landmark-evaluation-v1.schema.json#/$defs/predictionCase" }
+    },
+    "comparatorVersion": {
+      "oneOf": [
+        { "$ref": "ceph-landmark-evaluation-v1.schema.json#/$defs/versionToken" },
+        { "type": "null" }
+      ]
+    },
+    "comparatorPredictions": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "ceph-landmark-evaluation-v1.schema.json#/$defs/predictionCase" }
+    },
+    "tolerances": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/tolerance" }
+    }
+  },
+  "$defs": {
+    "tolerance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["measurementName", "unit", "maximumAbsoluteError", "categories"],
+      "properties": {
+        "measurementName": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "unit": { "enum": ["mm", "°", "%"] },
+        "maximumAbsoluteError": { "type": "number", "exclusiveMinimum": 0 },
+        "categories": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "$ref": "#/$defs/category" }
+        }
+      }
+    },
+    "category": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label"],
+      "properties": {
+        "label": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "minimumInclusive": { "type": ["number", "null"] },
+        "maximumExclusive": { "type": ["number", "null"] }
+      }
+    }
+  }
+}

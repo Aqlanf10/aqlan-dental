@@ -105,4 +105,42 @@ foreach ($requiredToken in @(
     }
 }
 
-Write-Output "Ceph-AI documentation contract passed: $($requiredFiles.Count) documents, $($landmarkKeys.Count) landmarks, and 2 schemas."
+$measurementSchemaPath = Join-Path $docsRoot 'schemas/ceph-measurement-evaluation-v1.schema.json'
+if (-not (Test-Path -LiteralPath $measurementSchemaPath -PathType Leaf)) {
+    throw 'Missing cephalometric measurement evaluation schema.'
+}
+$measurementSchemaText = Get-Content -Raw -Encoding utf8 $measurementSchemaPath
+[void]($measurementSchemaText | ConvertFrom-Json)
+foreach ($requiredToken in @(
+    '"ADP-CEPH-MEAS-VAL-v1"',
+    '"ADP-CEPH-GEOMETRY-v1"',
+    '"toleranceApprovalId"',
+    '"tolerancesFrozenBeforeUnblinding"',
+    '"candidatePredictions"',
+    '"comparatorPredictions"'
+)) {
+    if (-not $measurementSchemaText.Contains($requiredToken)) {
+        throw "The cephalometric measurement schema is missing required token: $requiredToken"
+    }
+}
+
+$repeatabilitySchemaPath = Join-Path $docsRoot 'schemas/ceph-repeatability-evaluation-v1.schema.json'
+if (-not (Test-Path -LiteralPath $repeatabilitySchemaPath -PathType Leaf)) {
+    throw 'Missing cephalometric repeatability evaluation schema.'
+}
+$repeatabilitySchemaText = Get-Content -Raw -Encoding utf8 $repeatabilitySchemaPath
+[void]($repeatabilitySchemaText | ConvertFrom-Json)
+foreach ($requiredToken in @(
+    '"ADP-CEPH-REPEAT-v1"',
+    '"ADP-CEPH-GEOMETRY-v1"',
+    '"clinicalErrorThresholdMm"',
+    '"confidenceThresholds"',
+    '"minItems": 3',
+    '"maxItems": 3'
+)) {
+    if (-not $repeatabilitySchemaText.Contains($requiredToken)) {
+        throw "The cephalometric repeatability schema is missing required token: $requiredToken"
+    }
+}
+
+Write-Output "Ceph-AI documentation contract passed: $($requiredFiles.Count) documents, $($landmarkKeys.Count) landmarks, and 4 schemas."

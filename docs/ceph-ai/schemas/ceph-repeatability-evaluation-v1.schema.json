@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aqlan.dental/schemas/ceph-repeatability-evaluation-v1.schema.json",
+  "title": "Aqlan Dental Pro cephalometric repeatability evaluation request",
+  "description": "Exactly three pinned inference runs evaluated for landmark drift, derived-measurement ICC and confidence/error coverage.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "geometryVersion",
+    "modelVersion",
+    "preprocessingVersion",
+    "evaluationSplit",
+    "clinicalErrorThresholdMm",
+    "confidenceThresholds",
+    "benchmark",
+    "runs"
+  ],
+  "properties": {
+    "protocolVersion": { "const": "ADP-CEPH-REPEAT-v1" },
+    "geometryVersion": { "const": "ADP-CEPH-GEOMETRY-v1" },
+    "modelVersion": { "$ref": "ceph-landmark-evaluation-v1.schema.json#/$defs/versionToken" },
+    "preprocessingVersion": { "$ref": "ceph-landmark-evaluation-v1.schema.json#/$defs/versionToken" },
+    "evaluationSplit": { "enum": ["Validation", "InternalTest", "ExternalClinicalTest"] },
+    "clinicalErrorThresholdMm": { "type": "number", "exclusiveMinimum": 0 },
+    "confidenceThresholds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": { "type": "number", "minimum": 0, "maximum": 1 }
+    },
+    "benchmark": { "$ref": "ceph-benchmark-manifest-v1.schema.json" },
+    "runs": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "$ref": "#/$defs/run" }
+    }
+  },
+  "$defs": {
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "predictions"],
+      "properties": {
+        "runId": { "$ref": "ceph-landmark-evaluation-v1.schema.json#/$defs/versionToken" },
+        "predictions": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "ceph-landmark-evaluation-v1.schema.json#/$defs/predictionCase" }
+        }
+      }
+    }
+  }
+}

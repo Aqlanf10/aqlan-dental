@@ -52,4 +52,6 @@ A rate is null, rather than zero, when its denominator is zero. This applies, fo
 
 ## Evidence Boundary
 
-This stage does not yet calculate derived-measurement bias, Bland-Altman limits, repeatability/ICC, calibrated uncertainty, paired comparator deltas, or non-inferiority. Those require a shared frozen geometry engine and repeated or paired inference contracts. Until those stages and the locked adjudicated study are complete, the baseline remains `not measured` and WebCeph-equivalent accuracy must not be claimed.
+The clinical lateral calculation path now consumes the pure, deterministic `ADP-CEPH-GEOMETRY-v1` engine in `CephLateralGeometryEngine`. The version freezes the existing angle, line, signed-distance, calibration, soft-tissue Pogonion, molar-plane Wits, and one-decimal output rules; changing those rules requires a new version rather than silently reinterpreting stored analyses.
+
+This stage does not yet calculate derived-measurement bias, Bland-Altman limits, repeatability/ICC, calibrated uncertainty, paired comparator deltas, or non-inferiority. Those still require repeated or paired inference contracts and reviewed clinical tolerances. Until those stages and the locked adjudicated study are complete, the baseline remains `not measured` and WebCeph-equivalent accuracy must not be claimed.

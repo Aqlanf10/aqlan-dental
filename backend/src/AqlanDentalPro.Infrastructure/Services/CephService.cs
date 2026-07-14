@@ -820,6 +820,28 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
             // No landmarks available — skip (frontend shows "—" via real-time compute)
         }
 
+        // SEQ-55: the versioned pure engine is authoritative for every lateral
+        // measurement persisted by the clinical path. PA remains separate because
+        // its coordinate frame and landmark contract are projection-specific.
+        var canonicalLandmarks = lm.ToDictionary(
+            item => item.Key,
+            item => new CephGeometryPoint(item.Value.x, item.Value.y));
+        var canonicalMeasurements = CephLateralGeometryEngine.Calculate(
+            canonicalLandmarks,
+            pixelsPerMm,
+            groups);
+        results.RemoveAll(item => item.group != "pa");
+        foreach (var measurement in canonicalMeasurements)
+        {
+            Add(
+                measurement.Name,
+                measurement.Group,
+                measurement.Value,
+                measurement.Normal,
+                measurement.StandardDeviation,
+                measurement.Unit);
+        }
+
         // ── Persist ──────────────────────────────────────────────────────────
         var oldMeasurements = await db.CephMeasurements.Where(m => m.AnalysisId == id).ToListAsync();
         foreach (var m in oldMeasurements) m.IsActive = false;

@@ -54,4 +54,26 @@ A rate is null, rather than zero, when its denominator is zero. This applies, fo
 
 The clinical lateral calculation path now consumes the pure, deterministic `ADP-CEPH-GEOMETRY-v1` engine in `CephLateralGeometryEngine`. The version freezes the existing angle, line, signed-distance, calibration, soft-tissue Pogonion, molar-plane Wits, and one-decimal output rules; changing those rules requires a new version rather than silently reinterpreting stored analyses.
 
-This stage does not yet calculate derived-measurement bias, Bland-Altman limits, repeatability/ICC, calibrated uncertainty, paired comparator deltas, or non-inferiority. Those still require repeated or paired inference contracts and reviewed clinical tolerances. Until those stages and the locked adjudicated study are complete, the baseline remains `not measured` and WebCeph-equivalent accuracy must not be claimed.
+## Derived Measurement Evaluation
+
+- Schema: `schemas/ceph-measurement-evaluation-v1.schema.json`
+- Endpoint: `POST /api/ceph-benchmark/evaluate-measurements`
+- Protocol: `ADP-CEPH-MEAS-VAL-v1`
+- Geometry: exactly `ADP-CEPH-GEOMETRY-v1`
+
+The endpoint accepts the adjudicated benchmark plus candidate and optional comparator landmark predictions. Gold, candidate, and comparator measurements are all calculated inside the same frozen geometry engine. It reports signed bias, mean/median/P95 absolute error, sample SD, Bland-Altman 95% limits of agreement, missing-derived-measurement failures, within-tolerance rate, prespecified category disagreement, and paired candidate-minus-comparator absolute-error deltas. Paired delta confidence intervals use deterministic percentile bootstrap resampling by patient cluster; patient linkage hashes are never returned.
+
+Clinical tolerance and category rules are request data rather than invented defaults. Every request must pin a tolerance-registry version, approval identifier, and affirmative pre-unblinding freeze. This proves that the calculator used a declared contract; it does not independently prove that an approval is genuine or that a tolerance is clinically valid.
+
+## Repeatability And Confidence Evaluation
+
+- Schema: `schemas/ceph-repeatability-evaluation-v1.schema.json`
+- Endpoint: `POST /api/ceph-benchmark/evaluate-repeatability`
+- Protocol: `ADP-CEPH-REPEAT-v1`
+- Runs: exactly three independently supplied prediction sets
+
+For every core landmark the report includes pairwise displacement, within-case radial SD, maximum drift, complete-triplet count, and consistency of predicted versus missing status. Derived measurements are recalculated through `ADP-CEPH-GEOMETRY-v1`; complete triplets report within-case sample SD and ICC(A,1), the two-way random-effects single-measure absolute-agreement intraclass correlation.
+
+Prespecified confidence thresholds produce coverage, retained MRE, referral sensitivity for numeric errors above a pinned clinical-error threshold, and explicit missing/rejected referral rates. Missing and rejected outputs are never treated as retained predictions. The calculator does not select a confidence threshold; selection must happen on validation data and be frozen before locked testing.
+
+These reports do not perform or declare non-inferiority. Until the locked adjudicated study, approved tolerances/margins, sufficient patient clusters, subgroup review, and clinical sign-off are complete, the baseline remains `not measured` and WebCeph-equivalent accuracy must not be claimed.

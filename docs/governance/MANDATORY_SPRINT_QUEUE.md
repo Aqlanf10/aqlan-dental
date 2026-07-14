@@ -381,6 +381,8 @@
 - Extract one versioned geometry engine shared by clinical analysis and offline evaluation; validate derived-measurement bias/absolute error/Bland-Altman/category disagreement, three-run repeatability and ICC, paired comparator deltas, and confidence/coverage behavior.
 - **Exit:** backend/frontend geometry parity fixtures, repeated and paired request schemas, deterministic statistics review, clinical tolerance registry, focused/full tests, PR CI, and deployment checks pass. No equivalence claim without the preregistered locked study.
 - **In progress:** `ADP-CEPH-GEOMETRY-v1` extraction is the first independently reviewable sub-step; the clinical persistence path and later offline evaluators must consume its outputs.
+- **Delivered in PR #693:** the clinical persistence path now consumes the frozen pure lateral geometry engine; all six CI/deployment checks passed.
+- **In progress:** strict derived-measurement, paired-comparator, three-run repeatability/ICC, and confidence/coverage calculators are implemented on `codex/seq-55-ceph-advanced-evaluation`; PR CI and independent statistics/clinical review remain required before SEQ-55 exits.
 
 ---
 

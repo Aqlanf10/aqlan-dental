@@ -78,9 +78,16 @@ export interface CephLandmark {
    * Optional short note (Arabic or English) explaining WHY the AI placed this
    * landmark at this position. Surfaced in the canvas tooltip and the side
    * panel so the orthodontist can read the model's reasoning before accepting
-   * or moving the point. Not persisted on save.
+   * or moving the point.
    */
   reasoning?: string;
+  placementSource?: 'manual' | 'ai' | 'webceph-import';
+  sourceLandmarkKey?: string;
+  sourceModelId?: string;
+  aiProposalX?: number;
+  aiProposalY?: number;
+  isReviewed?: boolean;
+  reviewErrorMm?: number;
   /** Present when the landmark was created with a LANDMARK_DEFS entry; may be
    *  absent on records loaded from older rows. Consumers should fall back to a
    *  lookup table when they need the group. */
@@ -138,6 +145,28 @@ export interface CephAiDraftResponse {
   /** Mandatory Arabic review disclaimer — always shown prominently. */
   disclaimer: string;
   generatedAt: string;
+}
+
+export interface CephAiAccuracyModel {
+  modelId: string;
+  reviewedPointCount: number;
+  analysisCount: number;
+  sufficientSample: boolean;
+  meanErrorMm: number;
+  medianErrorMm: number;
+  p95ErrorMm: number;
+  withinOneMmPercent: number;
+  withinTwoMmPercent: number;
+}
+
+export interface CephAiAccuracySummary {
+  reviewedPointCount: number;
+  reviewedAnalysisCount: number;
+  minimumReviewedPoints: number;
+  minimumReviewedAnalyses: number;
+  sufficientSample: boolean;
+  notice: string;
+  models: CephAiAccuracyModel[];
 }
 
 export interface CephDiagnosis {

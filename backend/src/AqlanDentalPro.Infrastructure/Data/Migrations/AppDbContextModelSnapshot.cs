@@ -904,6 +904,14 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<Guid>("AnalysisId")
                         .HasColumnType("uuid");
 
+                    b.Property<decimal?>("AiProposalXCoord")
+                        .HasPrecision(12, 4)
+                        .HasColumnType("numeric(12,4)");
+
+                    b.Property<decimal?>("AiProposalYCoord")
+                        .HasPrecision(12, 4)
+                        .HasColumnType("numeric(12,4)");
+
                     b.Property<decimal?>("Confidence")
                         .HasColumnType("numeric");
 
@@ -922,12 +930,38 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<bool>("IsAiPlaced")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsReviewed")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("LandmarkKey")
                         .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<string>("LandmarkName")
                         .HasColumnType("text");
+
+                    b.Property<string>("PlacementSource")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("manual");
+
+                    b.Property<string>("Reasoning")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<decimal?>("ReviewErrorMm")
+                        .HasPrecision(10, 4)
+                        .HasColumnType("numeric(10,4)");
+
+                    b.Property<string>("SourceLandmarkKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("SourceModelId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -941,6 +975,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AnalysisId");
+
+                    b.HasIndex("SourceModelId", "IsReviewed", "IsActive");
 
                     b.ToTable("CephLandmarks");
                 });

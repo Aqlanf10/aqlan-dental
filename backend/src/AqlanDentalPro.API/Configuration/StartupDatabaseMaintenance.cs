@@ -163,6 +163,7 @@ public static class StartupDatabaseMaintenance
         await EnsurePhotoAnalysisSchemaAsync(app);
         await EnsureCephAnalysisVersionsSchemaAsync(app);
         await EnsureCephApprovalColumnsAsync(app);
+        await EnsureCephLandmarkProvenanceColumnsAsync(app);
         await EnsurePaymentCurrencyColumnAsync(app);
         await EnsureMultiCurrencyColumnsAsync(app);
         await EnsureFinanceEnumColumnTypesAsync(app);
@@ -2176,6 +2177,43 @@ public static class StartupDatabaseMaintenance
         {
             app.Services.GetRequiredService<ILogger<Program>>()
                 .LogWarning(ex, "CephAnalyses approval-columns hotfix failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// Keeps deployed databases compatible with the cephalometric AI review
+    /// and account-owned WebCeph import workflow when the legacy migration
+    /// chain cannot advance. Every operation is idempotent.
+    /// </summary>
+    private static async Task EnsureCephLandmarkProvenanceColumnsAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                DO $$ BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'CephLandmarks') THEN
+                        ALTER TABLE "CephLandmarks" ADD COLUMN IF NOT EXISTS "AiProposalXCoord" numeric(12,4) NULL;
+                        ALTER TABLE "CephLandmarks" ADD COLUMN IF NOT EXISTS "AiProposalYCoord" numeric(12,4) NULL;
+                        ALTER TABLE "CephLandmarks" ADD COLUMN IF NOT EXISTS "IsReviewed" boolean NOT NULL DEFAULT false;
+                        ALTER TABLE "CephLandmarks" ADD COLUMN IF NOT EXISTS "PlacementSource" character varying(30) NOT NULL DEFAULT 'manual';
+                        ALTER TABLE "CephLandmarks" ADD COLUMN IF NOT EXISTS "Reasoning" character varying(200) NULL;
+                        ALTER TABLE "CephLandmarks" ADD COLUMN IF NOT EXISTS "ReviewErrorMm" numeric(10,4) NULL;
+                        ALTER TABLE "CephLandmarks" ADD COLUMN IF NOT EXISTS "SourceLandmarkKey" character varying(100) NULL;
+                        ALTER TABLE "CephLandmarks" ADD COLUMN IF NOT EXISTS "SourceModelId" character varying(100) NULL;
+                        CREATE INDEX IF NOT EXISTS "IX_CephLandmarks_SourceModelId_IsReviewed_IsActive"
+                            ON "CephLandmarks" ("SourceModelId", "IsReviewed", "IsActive");
+                    END IF;
+                END $$;
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "CephLandmarks provenance-columns hotfix failed (non-fatal)");
         }
     }
 

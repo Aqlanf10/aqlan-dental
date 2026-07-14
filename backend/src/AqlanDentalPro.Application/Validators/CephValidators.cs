@@ -51,7 +51,8 @@ public sealed class SaveLandmarksRequestValidator : AbstractValidator<SaveLandma
     public SaveLandmarksRequestValidator()
     {
         RuleFor(x => x.Landmarks)
-            .NotEmpty().WithMessage("يجب إضافة نقطة مرجعية واحدة على الأقل");
+            .NotEmpty().WithMessage("يجب إضافة نقطة مرجعية واحدة على الأقل")
+            .Must(items => items.Count <= 100).WithMessage("لا يمكن حفظ أكثر من 100 نقطة مرجعية");
 
         // 0 = uncalibrated. Angle-only and ratio analyses (e.g. Jarabak's
         // saddle/articular/gonial angles and the S-Go/N-Me facial-height ratio)
@@ -70,12 +71,47 @@ public sealed class SaveLandmarksRequestValidator : AbstractValidator<SaveLandma
             .ChildRules(landmark =>
             {
                 landmark.RuleFor(l => l.Key)
-                    .NotEmpty().WithMessage("مفتاح النقطة المرجعية مطلوب");
+                    .NotEmpty().WithMessage("مفتاح النقطة المرجعية مطلوب")
+                    .MaximumLength(100).WithMessage("مفتاح النقطة المرجعية طويل جدًا");
                 landmark.RuleFor(l => l.X)
+                    .Must(double.IsFinite).WithMessage("الإحداثي الأفقي غير صالح")
                     .GreaterThanOrEqualTo(0).WithMessage("الإحداثي الأفقي يجب أن يكون صفر أو أكبر");
                 landmark.RuleFor(l => l.Y)
+                    .Must(double.IsFinite).WithMessage("الإحداثي العمودي غير صالح")
                     .GreaterThanOrEqualTo(0).WithMessage("الإحداثي العمودي يجب أن يكون صفر أو أكبر");
+                landmark.RuleFor(l => l.Confidence)
+                    .Must(value => !value.HasValue || (double.IsFinite(value.Value) && value is >= 0 and <= 1))
+                    .WithMessage("ثقة نقطة الذكاء الاصطناعي يجب أن تكون بين صفر وواحد");
+                landmark.RuleFor(l => l.Reasoning)
+                    .MaximumLength(200).WithMessage("سبب وضع النقطة يجب ألا يتجاوز 200 حرف");
+                landmark.RuleFor(l => l.SourceLandmarkKey)
+                    .MaximumLength(100).WithMessage("اسم النقطة في المصدر يجب ألا يتجاوز 100 حرف");
+                landmark.RuleFor(l => l.SourceModelId)
+                    .MaximumLength(100).WithMessage("معرّف نموذج الذكاء الاصطناعي يجب ألا يتجاوز 100 حرف");
+                landmark.RuleFor(l => l.PlacementSource)
+                    .Must(value => string.IsNullOrWhiteSpace(value)
+                        || value is "manual" or "ai" or "webceph-import")
+                    .WithMessage("مصدر النقطة غير صالح");
+                landmark.RuleFor(l => l)
+                    .Must(l => l.AiProposalX.HasValue == l.AiProposalY.HasValue
+                        && (!l.AiProposalX.HasValue
+                            || (double.IsFinite(l.AiProposalX.Value)
+                                && double.IsFinite(l.AiProposalY!.Value))))
+                    .WithMessage("يجب إرسال إحداثيي اقتراح الذكاء الاصطناعي معًا وبقيم صالحة");
             });
+
+        RuleFor(x => x).Custom((request, context) =>
+        {
+            foreach (var landmark in request.Landmarks)
+            {
+                if (landmark.X > request.ImageWidth || landmark.Y > request.ImageHeight)
+                {
+                    context.AddFailure(
+                        "Landmarks",
+                        $"النقطة {landmark.Key} تقع خارج حدود الصورة");
+                }
+            }
+        });
     }
 }
 

@@ -276,6 +276,13 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         var analysis = await db.CephAnalyses.FindAsync(id);
         if (analysis is null) return false;
 
+        // A landmark or calibration change invalidates the previously approved
+        // clinical snapshot. The doctor must review and approve the new data.
+        analysis.IsApproved = false;
+        analysis.ApprovedByUserId = null;
+        analysis.ApprovedAt = null;
+        analysis.ApprovalNotes = null;
+
         // Store calibration data in Notes as JSON so ComputeMeasurements can use it.
         var notesData = new CephNotesData
         {
@@ -295,6 +302,20 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
 
         foreach (var input in req.Landmarks)
         {
+            var placementSource = NormalizePlacementSource(input.PlacementSource, input.IsAiPlaced);
+            var hasProposal = input.AiProposalX.HasValue
+                && input.AiProposalY.HasValue
+                && double.IsFinite(input.AiProposalX.Value)
+                && double.IsFinite(input.AiProposalY.Value);
+            decimal? reviewErrorMm = null;
+            if (placementSource == "ai" && input.IsReviewed && hasProposal && req.PixelsPerMm > 0)
+            {
+                var deltaX = input.X - input.AiProposalX!.Value;
+                var deltaY = input.Y - input.AiProposalY!.Value;
+                var correctionPixels = Math.Sqrt(deltaX * deltaX + deltaY * deltaY);
+                reviewErrorMm = (decimal)(correctionPixels / req.PixelsPerMm);
+            }
+
             db.CephLandmarks.Add(new CephLandmark
             {
                 AnalysisId    = id,
@@ -303,13 +324,181 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
                 XCoord        = (decimal)input.X,
                 YCoord        = (decimal)input.Y,
                 IsAiPlaced    = input.IsAiPlaced,
-                Confidence    = input.Confidence.HasValue ? (decimal)input.Confidence.Value : null
+                Confidence    = input.Confidence.HasValue ? (decimal)input.Confidence.Value : null,
+                PlacementSource = placementSource,
+                SourceLandmarkKey = TrimToNull(input.SourceLandmarkKey, 100),
+                SourceModelId = TrimToNull(input.SourceModelId, 100),
+                Reasoning = TrimToNull(input.Reasoning, 200),
+                AiProposalXCoord = hasProposal ? (decimal)input.AiProposalX!.Value : null,
+                AiProposalYCoord = hasProposal ? (decimal)input.AiProposalY!.Value : null,
+                IsReviewed = input.IsReviewed,
+                ReviewErrorMm = reviewErrorMm,
             });
         }
 
         await db.SaveChangesAsync();
         await ComputeMeasurementsAsync(id);
         return true;
+    }
+
+    public async Task<WebCephLandmarkImportResultDto?> ImportWebCephLandmarksAsync(
+        Guid id,
+        Stream file,
+        WebCephLandmarkImportOptions options)
+    {
+        if (!double.IsFinite(options.PixelsPerMm) || options.PixelsPerMm <= 0)
+            throw new ArgumentException("يجب حفظ معايرة موجبة قبل استيراد نقاط WebCeph.");
+        if (!double.IsFinite(options.AnchorX) || !double.IsFinite(options.AnchorY))
+            throw new ArgumentException("موضع نقطة S المرجعية غير صالح.");
+        if (options.ImageWidth <= 0 || options.ImageHeight <= 0)
+            throw new ArgumentException("أبعاد صورة السيفالومتري غير صالحة.");
+        if (options.AnchorX < 0 || options.AnchorX > options.ImageWidth
+            || options.AnchorY < 0 || options.AnchorY > options.ImageHeight)
+            throw new ArgumentException("يجب أن تقع نقطة S المرجعية داخل الصورة.");
+
+        var analysis = await db.CephAnalyses
+            .Include(item => item.Landmarks)
+            .FirstOrDefaultAsync(item => item.Id == id && item.IsActive);
+        if (analysis is null) return null;
+        if (string.Equals(analysis.AnalysisType, "pa", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("تصدير Landmark Table من WebCeph مخصص للتحليل الجانبي ولا يمكن استيراده إلى تحليل PA.");
+
+        var document = WebCephLandmarkImportParser.Parse(file);
+        var activeByKey = analysis.Landmarks
+            .Where(item => item.IsActive)
+            .GroupBy(item => item.LandmarkKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+        var result = new WebCephLandmarkImportResultDto
+        {
+            Parsed = document.Landmarks.Count,
+            RecordingDate = document.RecordingDate,
+        };
+
+        foreach (var row in document.Landmarks)
+        {
+            var x = options.AnchorX + row.XMm * options.PixelsPerMm;
+            var y = options.AnchorY + row.YMm * options.PixelsPerMm;
+            if (!double.IsFinite(x) || !double.IsFinite(y)
+                || x < 0 || x > options.ImageWidth
+                || y < 0 || y > options.ImageHeight)
+            {
+                result.SkippedOutOfBounds++;
+                if (result.SkippedNames.Count < 25) result.SkippedNames.Add(row.SourceName);
+                continue;
+            }
+
+            if (activeByKey.TryGetValue(row.LandmarkKey, out var existing))
+            {
+                if (!options.ReplaceExisting)
+                {
+                    result.SkippedExisting++;
+                    continue;
+                }
+
+                existing.IsActive = false;
+                result.Replaced++;
+            }
+
+            db.CephLandmarks.Add(new CephLandmark
+            {
+                AnalysisId = id,
+                LandmarkKey = row.LandmarkKey,
+                LandmarkName = row.SourceName,
+                XCoord = (decimal)x,
+                YCoord = (decimal)y,
+                IsAiPlaced = false,
+                PlacementSource = "webceph-import",
+                SourceLandmarkKey = row.SourceName,
+                IsReviewed = false,
+            });
+            result.Imported++;
+        }
+
+        if (result.Imported == 0)
+            throw new ArgumentException(
+                "لم تُستورد أي نقطة. راجع موضع S والمعايرة وأبعاد الصورة ثم حاول مجددًا.");
+
+        analysis.Notes = JsonSerializer.Serialize(new CephNotesData
+        {
+            PixelsPerMm = options.PixelsPerMm,
+            ImageWidth = options.ImageWidth,
+            ImageHeight = options.ImageHeight,
+            UserNotes = ExtractUserNotes(analysis.Notes),
+        });
+        analysis.IsApproved = false;
+        analysis.ApprovedByUserId = null;
+        analysis.ApprovedAt = null;
+        analysis.ApprovalNotes = null;
+
+        await db.SaveChangesAsync();
+        await ComputeMeasurementsAsync(id);
+        return result;
+    }
+
+    public async Task<CephAiAccuracySummaryDto> GetAiAccuracyAsync(
+        HashSet<Guid>? accessiblePatientIds = null)
+    {
+        var query = db.CephLandmarks
+            .AsNoTracking()
+            .Where(item => item.IsActive
+                && item.PlacementSource == "ai"
+                && item.IsReviewed
+                && item.ReviewErrorMm.HasValue
+                && item.SourceModelId != null);
+
+        if (accessiblePatientIds is not null)
+        {
+            query = query.Where(item => accessiblePatientIds.Contains(
+                item.Analysis.OrthoCase.PatientId));
+        }
+
+        var rows = await query
+            .Select(item => new
+            {
+                item.AnalysisId,
+                ModelId = item.SourceModelId!,
+                ErrorMm = (double)item.ReviewErrorMm!.Value,
+            })
+            .ToListAsync();
+
+        var models = rows
+            .GroupBy(item => item.ModelId, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var errors = group.Select(item => item.ErrorMm).OrderBy(value => value).ToArray();
+                var analysisCount = group.Select(item => item.AnalysisId).Distinct().Count();
+                return new CephAiAccuracyModelDto
+                {
+                    ModelId = group.Key,
+                    ReviewedPointCount = errors.Length,
+                    AnalysisCount = analysisCount,
+                    SufficientSample = errors.Length >= CephAiAccuracySummaryDto.MinimumReviewedPointCount
+                        && analysisCount >= CephAiAccuracySummaryDto.MinimumReviewedAnalysisCount,
+                    MeanErrorMm = RoundMetric(errors.Average()),
+                    MedianErrorMm = RoundMetric(Median(errors)),
+                    P95ErrorMm = RoundMetric(Percentile(errors, 0.95)),
+                    WithinOneMmPercent = RoundMetric(errors.Count(value => value <= 1) * 100d / errors.Length),
+                    WithinTwoMmPercent = RoundMetric(errors.Count(value => value <= 2) * 100d / errors.Length),
+                };
+            })
+            .OrderByDescending(item => item.ReviewedPointCount)
+            .ThenBy(item => item.ModelId)
+            .ToList();
+
+        var reviewedAnalysisCount = rows.Select(item => item.AnalysisId).Distinct().Count();
+        var sufficientSample = models.Any(model => model.SufficientSample);
+
+        return new CephAiAccuracySummaryDto
+        {
+            ReviewedPointCount = rows.Count,
+            ReviewedAnalysisCount = reviewedAnalysisCount,
+            SufficientSample = sufficientSample,
+            Notice = sufficientSample
+                ? "المؤشرات محسوبة من تصحيحات أخصائيي التقويم المحفوظة وليست ادعاءً تنظيميًا أو بديلًا للمراجعة السريرية."
+                : $"يلزم لكل إصدار نموذج {CephAiAccuracySummaryDto.MinimumReviewedPointCount} نقطة مصححة من {CephAiAccuracySummaryDto.MinimumReviewedAnalysisCount} تحليلات مستقلة على الأقل قبل عرض نتيجته كمؤشر قابل للمتابعة.",
+            Models = models,
+        };
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1580,7 +1769,15 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
                     X          = (double)(l.XCoord ?? 0),
                     Y          = (double)(l.YCoord ?? 0),
                     IsAiPlaced = l.IsAiPlaced,
-                    Confidence = l.Confidence.HasValue ? (double)l.Confidence.Value : null
+                    Confidence = l.Confidence.HasValue ? (double)l.Confidence.Value : null,
+                    PlacementSource = l.PlacementSource,
+                    SourceLandmarkKey = l.SourceLandmarkKey,
+                    SourceModelId = l.SourceModelId,
+                    Reasoning = l.Reasoning,
+                    AiProposalX = l.AiProposalXCoord.HasValue ? (double)l.AiProposalXCoord.Value : null,
+                    AiProposalY = l.AiProposalYCoord.HasValue ? (double)l.AiProposalYCoord.Value : null,
+                    IsReviewed = l.IsReviewed,
+                    ReviewErrorMm = l.ReviewErrorMm.HasValue ? (double)l.ReviewErrorMm.Value : null,
                 })
                 .ToList(),
             Measurements = a.Measurements
@@ -1971,6 +2168,40 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
             "Wits"          => above ? $"تنافر هيكلي من الصنف الثاني (AO أمام BO) {s}" : $"تنافر هيكلي من الصنف الثالث (BO أمام AO) {s}",
             _               => above ? $"أعلى من المعدل {s}" : $"أقل من المعدل {s}"
         };
+    }
+
+    private static string NormalizePlacementSource(string? value, bool isAiPlaced) =>
+        value?.Trim().ToLowerInvariant() switch
+        {
+            "ai" => "ai",
+            "webceph-import" => "webceph-import",
+            "manual" => "manual",
+            _ => isAiPlaced ? "ai" : "manual",
+        };
+
+    private static string? TrimToNull(string? value, int maxLength)
+    {
+        var trimmed = value?.Trim();
+        if (string.IsNullOrEmpty(trimmed)) return null;
+        return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength];
+    }
+
+    private static double RoundMetric(double value) => Math.Round(value, 3);
+
+    private static double Median(IReadOnlyList<double> sorted)
+    {
+        if (sorted.Count == 0) return 0;
+        var middle = sorted.Count / 2;
+        return sorted.Count % 2 == 0
+            ? (sorted[middle - 1] + sorted[middle]) / 2d
+            : sorted[middle];
+    }
+
+    private static double Percentile(IReadOnlyList<double> sorted, double percentile)
+    {
+        if (sorted.Count == 0) return 0;
+        var index = Math.Clamp((int)Math.Ceiling(sorted.Count * percentile) - 1, 0, sorted.Count - 1);
+        return sorted[index];
     }
 
     // ──────────────────────────────────────────────────────────────────────────

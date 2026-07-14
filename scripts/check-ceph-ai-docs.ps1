@@ -13,7 +13,8 @@ $requiredFiles = @(
     'CEPH_AI_LANDMARK_DEFINITIONS.md',
     'CEPH_AI_BASELINE_REPORT.md',
     'CEPH_AI_GOLD_STANDARD_TOOLING.md',
-    'CEPH_AI_EVALUATION_ENGINE.md'
+    'CEPH_AI_EVALUATION_ENGINE.md',
+    'CEPH_AI_MODEL_LINEAGE.md'
 )
 
 foreach ($name in $requiredFiles) {
@@ -143,4 +144,23 @@ foreach ($requiredToken in @(
     }
 }
 
-Write-Output "Ceph-AI documentation contract passed: $($requiredFiles.Count) documents, $($landmarkKeys.Count) landmarks, and 4 schemas."
+$modelSchemaPath = Join-Path $docsRoot 'schemas/ceph-ai-model-version-v1.schema.json'
+if (-not (Test-Path -LiteralPath $modelSchemaPath -PathType Leaf)) {
+    throw 'Missing cephalometric AI model-version schema.'
+}
+$modelSchemaText = Get-Content -Raw -Encoding utf8 $modelSchemaPath
+[void]($modelSchemaText | ConvertFrom-Json)
+foreach ($requiredToken in @(
+    '"additionalProperties": false',
+    '"preprocessingVersion"',
+    '"datasetVersion"',
+    '"landmarkDefinitionVersion"',
+    '"artifactSha256"',
+    '"^[0-9a-fA-F]{64}$"'
+)) {
+    if (-not $modelSchemaText.Contains($requiredToken)) {
+        throw "The cephalometric model-version schema is missing required token: $requiredToken"
+    }
+}
+
+Write-Output "Ceph-AI documentation contract passed: $($requiredFiles.Count) documents, $($landmarkKeys.Count) landmarks, and 5 schemas."

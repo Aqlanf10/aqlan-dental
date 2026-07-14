@@ -129,20 +129,21 @@ public class CephLandmarkDto
     public double X { get; set; }
     public double Y { get; set; }
     public bool IsAiPlaced { get; set; }
-      public double? Confidence { get; set; }
+    public double? Confidence { get; set; }
     /// <summary>
     /// Optional short note (Arabic or English) explaining WHY the AI placed this
     /// landmark at this position. Surfaced in the canvas UI so the orthodontist
     /// can read the model's reasoning before accepting or moving the point.
     /// </summary>
-      public string? Reasoning { get; set; }
-      public string PlacementSource { get; set; } = "manual";
-      public string? SourceLandmarkKey { get; set; }
-      public string? SourceModelId { get; set; }
-      public double? AiProposalX { get; set; }
-      public double? AiProposalY { get; set; }
-      public bool IsReviewed { get; set; }
-      public double? ReviewErrorMm { get; set; }
+    public string? Reasoning { get; set; }
+    public string PlacementSource { get; set; } = "manual";
+    public string? SourceLandmarkKey { get; set; }
+    public string? SourceModelId { get; set; }
+    public Guid? SourceInferenceRunId { get; set; }
+    public double? AiProposalX { get; set; }
+    public double? AiProposalY { get; set; }
+    public bool IsReviewed { get; set; }
+    public double? ReviewErrorMm { get; set; }
 }
 
 public class CephMeasurementDto
@@ -246,6 +247,7 @@ public class LandmarkInput
     public string? PlacementSource { get; set; }
     public string? SourceLandmarkKey { get; set; }
     public string? SourceModelId { get; set; }
+    public Guid? SourceInferenceRunId { get; set; }
     public double? AiProposalX { get; set; }
     public double? AiProposalY { get; set; }
     public bool IsReviewed { get; set; }
@@ -403,6 +405,10 @@ public class CephAiTraceResultDto
 {
     public List<CephLandmarkDto> Landmarks { get; set; } = [];
     public string ModelId { get; set; } = string.Empty;
+    public Guid InferenceRunId { get; set; }
+    public string ModelRegistryKey { get; set; } = string.Empty;
+    public string PreprocessingVersion { get; set; } = string.Empty;
+    public string LandmarkDefinitionVersion { get; set; } = string.Empty;
     public string Disclaimer { get; set; } = string.Empty;
     public DateTime GeneratedAt { get; set; }
 }
@@ -426,6 +432,10 @@ public class CephAiRefineResultDto
 {
     public CephLandmarkDto? Landmark { get; set; }
     public string ModelId { get; set; } = string.Empty;
+    public Guid InferenceRunId { get; set; }
+    public string ModelRegistryKey { get; set; } = string.Empty;
+    public string PreprocessingVersion { get; set; } = string.Empty;
+    public string LandmarkDefinitionVersion { get; set; } = string.Empty;
     public string Disclaimer { get; set; } = string.Empty;
     public DateTime GeneratedAt { get; set; }
 }

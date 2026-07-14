@@ -141,6 +141,18 @@ public class CephController(
             : Ok(result);
     }
 
+    [HttpGet("{id:guid}/ai/inference-runs")]
+    public async Task<IActionResult> GetInferenceRuns(
+        Guid id,
+        [FromServices] CephAiModelRegistryService registry,
+        CancellationToken cancellationToken)
+    {
+        var accessError = await GetAnalysisAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        return Ok(await registry.GetInferenceRunsAsync(id, cancellationToken));
+    }
+
     // POST /api/ceph
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateCephAnalysisRequest req)
@@ -159,7 +171,15 @@ public class CephController(
         var accessError = await GetAnalysisAccessErrorAsync(id);
         if (accessError is not null) return accessError;
 
-        var ok = await service.SaveLandmarksAsync(id, req);
+        bool ok;
+        try
+        {
+            ok = await service.SaveLandmarksAsync(id, req);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { code = "ceph.invalid-landmark-lineage", message = ex.Message });
+        }
         if (!ok) return NotFound(new { message = "تحليل السيفالومتري غير موجود" });
         var detail = await service.GetByIdAsync(id);
         return Ok(detail);

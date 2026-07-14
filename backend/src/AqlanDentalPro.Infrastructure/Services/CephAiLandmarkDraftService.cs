@@ -13,6 +13,7 @@ public sealed class CephAiLandmarkDraftService(
     CephAiDraftService settingsService,
     IEnumerable<ICephLandmarkDraftProvider> providers,
     AiApiKeyVault keyVault,
+    CephAiModelRegistryService modelRegistry,
     ICurrentUserService currentUser,
     ILogger<CephAiLandmarkDraftService> logger)
 {
@@ -77,14 +78,16 @@ public sealed class CephAiLandmarkDraftService(
             throw new CephAiUnavailableException(CephAiDraftService.DisabledMessageAr);
         }
 
+        var runtimeModel = await modelRegistry.ResolveForInferenceAsync(
+            settings.Provider, settings.Model, cancellationToken);
         var provider = providers.FirstOrDefault(p =>
-            string.Equals(p.ProviderName, settings.Provider, StringComparison.OrdinalIgnoreCase));
+            string.Equals(p.ProviderName, runtimeModel.Provider, StringComparison.OrdinalIgnoreCase));
         if (provider is null)
         {
             await WriteAuditAsync(
-                analysisId, null, false, $"vision_provider_unsupported:{settings.Provider}", inputSummary, 0, bestEffort: true);
+                analysisId, null, false, $"vision_provider_unsupported:{runtimeModel.Provider}", inputSummary, 0, bestEffort: true);
             throw new CephAiUnavailableException(
-                $"مزود {settings.Provider} لا يدعم مسودة نقاط السيفالومتري حالياً");
+                $"مزود {runtimeModel.Provider} لا يدعم مسودة نقاط السيفالومتري حالياً");
         }
 
         var secret = await keyVault.ResolveAsync(
@@ -99,19 +102,32 @@ public sealed class CephAiLandmarkDraftService(
             && await settingsService.CountUsageThisMonthAsync() >= settings.MonthlyLimit)
         {
             await WriteAuditAsync(
-                analysisId, $"{provider.ProviderName}/{settings.Model}", false,
+                analysisId, $"{provider.ProviderName}/{runtimeModel.ModelId}", false,
                 "monthly_limit_reached", inputSummary, 0, bestEffort: true);
             throw new CephAiLimitReachedException(CephAiDraftService.MonthlyLimitMessageAr);
         }
 
         var (imageBytes, mimeType) = await ReadImageAsync(
             analysis.XrayFileUrl, cancellationToken);
-        var modelId = $"{provider.ProviderName}/{settings.Model}";
+        var modelId = $"{provider.ProviderName}/{runtimeModel.ModelId}";
+        var inferenceRun = await modelRegistry.BeginInferenceAsync(
+            analysisId, runtimeModel, Action, precisionLabel,
+            imageWidth, imageHeight, imageBytes, cancellationToken);
 
         try
         {
             var points = await provider.GenerateAsync(
-                imageBytes, mimeType, settings.Model, secret, precision, cancellationToken);
+                imageBytes, mimeType, runtimeModel.ModelId, secret, precision, cancellationToken);
+            await modelRegistry.CompleteInferenceAsync(
+                inferenceRun.Id,
+                points.Select(point => new
+                {
+                    point.Key,
+                    point.XNormalized,
+                    point.YNormalized,
+                    point.Confidence,
+                }).ToList(),
+                cancellationToken);
             var landmarks = points.Select(point => new CephLandmarkDto
             {
                 Key = point.Key,
@@ -130,6 +146,10 @@ public sealed class CephAiLandmarkDraftService(
             {
                 Landmarks = landmarks,
                 ModelId = modelId,
+                InferenceRunId = inferenceRun.Id,
+                ModelRegistryKey = runtimeModel.RegistryKey,
+                PreprocessingVersion = runtimeModel.PreprocessingVersion,
+                LandmarkDefinitionVersion = runtimeModel.LandmarkDefinitionVersion,
                 Disclaimer = ReviewDisclaimer,
                 GeneratedAt = DateTime.UtcNow,
             };
@@ -146,10 +166,18 @@ public sealed class CephAiLandmarkDraftService(
                 CephAiUpstreamException upstream => upstream.Message,
                 _ => "vision_network_error",
             };
+            await modelRegistry.FailInferenceAsync(inferenceRun.Id, reason, CancellationToken.None);
             await WriteAuditAsync(analysisId, modelId, false, reason, inputSummary, 0, bestEffort: true);
             if (ex is CephAiUpstreamException)
                 throw;
             throw new CephAiUpstreamException(reason, ex);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected AI landmark draft failure for analysis {AnalysisId}", analysisId);
+            await modelRegistry.TryFailInferenceAsync(
+                inferenceRun.Id, "vision_unexpected_error", CancellationToken.None);
+            throw;
         }
     }
 
@@ -186,14 +214,16 @@ public sealed class CephAiLandmarkDraftService(
             throw new CephAiUnavailableException(CephAiDraftService.DisabledMessageAr);
         }
 
+        var runtimeModel = await modelRegistry.ResolveForInferenceAsync(
+            settings.Provider, settings.Model, cancellationToken);
         var provider = providers.FirstOrDefault(p =>
-            string.Equals(p.ProviderName, settings.Provider, StringComparison.OrdinalIgnoreCase));
+            string.Equals(p.ProviderName, runtimeModel.Provider, StringComparison.OrdinalIgnoreCase));
         if (provider is null)
         {
             await WriteAuditAsync(
-                analysisId, null, false, $"vision_provider_unsupported:{settings.Provider}", inputSummary, 0, bestEffort: true, action: RefineAction);
+                analysisId, null, false, $"vision_provider_unsupported:{runtimeModel.Provider}", inputSummary, 0, bestEffort: true, action: RefineAction);
             throw new CephAiUnavailableException(
-                $"مزود {settings.Provider} لا يدعم تحسين نقاط السيفالومتري حالياً");
+                $"مزود {runtimeModel.Provider} لا يدعم تحسين نقاط السيفالومتري حالياً");
         }
 
         var secret = await keyVault.ResolveAsync(
@@ -208,14 +238,17 @@ public sealed class CephAiLandmarkDraftService(
             && await settingsService.CountUsageThisMonthAsync() >= settings.MonthlyLimit)
         {
             await WriteAuditAsync(
-                analysisId, $"{provider.ProviderName}/{settings.Model}", false,
+                analysisId, $"{provider.ProviderName}/{runtimeModel.ModelId}", false,
                 "monthly_limit_reached", inputSummary, 0, bestEffort: true, action: RefineAction);
             throw new CephAiLimitReachedException(CephAiDraftService.MonthlyLimitMessageAr);
         }
 
         var (imageBytes, mimeType) = await ReadImageAsync(
             analysis.XrayFileUrl, cancellationToken);
-        var modelId = $"{provider.ProviderName}/{settings.Model}";
+        var modelId = $"{provider.ProviderName}/{runtimeModel.ModelId}";
+        var inferenceRun = await modelRegistry.BeginInferenceAsync(
+            analysisId, runtimeModel, RefineAction, "refine",
+            imageWidth, imageHeight, imageBytes, cancellationToken);
 
         // Convert pixel coordinates back to the normalized 0..1000 grid the
         // provider expects.
@@ -226,7 +259,27 @@ public sealed class CephAiLandmarkDraftService(
         try
         {
             var refined = await provider.RefineAsync(
-                imageBytes, mimeType, settings.Model, secret, target, cancellationToken);
+                imageBytes, mimeType, runtimeModel.ModelId, secret, target, cancellationToken);
+            if (refined is null)
+            {
+                await modelRegistry.CompleteInferenceAsync(
+                    inferenceRun.Id, Array.Empty<object>(), cancellationToken);
+            }
+            else
+            {
+                await modelRegistry.CompleteInferenceAsync(
+                    inferenceRun.Id,
+                    [
+                        new
+                        {
+                            refined.Key,
+                            refined.XNormalized,
+                            refined.YNormalized,
+                            refined.Confidence,
+                        },
+                    ],
+                    cancellationToken);
+            }
 
             await WriteAuditAsync(
                 analysisId, modelId, true, null, inputSummary,
@@ -238,6 +291,10 @@ public sealed class CephAiLandmarkDraftService(
                 {
                     Landmark = null,
                     ModelId = modelId,
+                    InferenceRunId = inferenceRun.Id,
+                    ModelRegistryKey = runtimeModel.RegistryKey,
+                    PreprocessingVersion = runtimeModel.PreprocessingVersion,
+                    LandmarkDefinitionVersion = runtimeModel.LandmarkDefinitionVersion,
                     Disclaimer = ReviewDisclaimer,
                     GeneratedAt = DateTime.UtcNow,
                 };
@@ -256,6 +313,10 @@ public sealed class CephAiLandmarkDraftService(
                     Reasoning = refined.Reasoning,
                 },
                 ModelId = modelId,
+                InferenceRunId = inferenceRun.Id,
+                ModelRegistryKey = runtimeModel.RegistryKey,
+                PreprocessingVersion = runtimeModel.PreprocessingVersion,
+                LandmarkDefinitionVersion = runtimeModel.LandmarkDefinitionVersion,
                 Disclaimer = ReviewDisclaimer,
                 GeneratedAt = DateTime.UtcNow,
             };
@@ -272,10 +333,20 @@ public sealed class CephAiLandmarkDraftService(
                 CephAiUpstreamException upstream => upstream.Message,
                 _ => "vision_network_error",
             };
+            await modelRegistry.FailInferenceAsync(inferenceRun.Id, reason, CancellationToken.None);
             await WriteAuditAsync(analysisId, modelId, false, reason, inputSummary, 0, bestEffort: true, action: RefineAction);
             if (ex is CephAiUpstreamException)
                 throw;
             throw new CephAiUpstreamException(reason, ex);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Unexpected AI landmark refine failure for analysis {AnalysisId} key {Key}",
+                analysisId, landmarkKey);
+            await modelRegistry.TryFailInferenceAsync(
+                inferenceRun.Id, "vision_unexpected_error", CancellationToken.None);
+            throw;
         }
     }
 

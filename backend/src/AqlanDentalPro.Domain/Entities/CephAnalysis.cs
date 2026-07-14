@@ -24,5 +24,6 @@ public class CephAnalysis : BaseEntity
     public Doctor? Doctor { get; set; }
     public ICollection<CephLandmark> Landmarks { get; set; } = [];
     public ICollection<CephMeasurement> Measurements { get; set; } = [];
+    public ICollection<CephAiInferenceRun> AiInferenceRuns { get; set; } = [];
     public CephDiagnosis? Diagnosis { get; set; }
 }

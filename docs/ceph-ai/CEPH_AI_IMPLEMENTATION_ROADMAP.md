@@ -3,7 +3,7 @@
 Status: proposed sequence after the documentation/validation-foundation PR
 Constraint: each PR is independently reviewable, updates specs/governance, includes focused tests, and does not claim clinical accuracy from build success.
 
-Implementation status: PR 1 was merged as #690, PR 2 as #691, landmark statistics as #692, and frozen clinical geometry as #693. SEQ-55 advanced measurement and repeatability evaluation remains in progress; none of these stages alone establishes clinical accuracy.
+Implementation status: PR 1 was merged as #690, PR 2 as #691, landmark statistics as #692, frozen clinical geometry as #693, and advanced measurement/repeatability calculators as #694. Independent statistics/clinical review and a locked study remain outstanding. PR 4 model/inference lineage is active in SEQ-56; none of these stages alone establishes clinical accuracy.
 
 ## Product direction
 

@@ -284,6 +284,13 @@ public class CephAiLandmarkDraftTests
                         new AnthropicCephLandmarkDraftProvider(factory),
                     ],
                     vault,
+                    new CephAiModelRegistryService(
+                        db,
+                        [
+                            new GeminiCephLandmarkDraftProvider(factory),
+                            new AnthropicCephLandmarkDraftProvider(factory),
+                        ],
+                        user.Object),
                     user.Object,
                     new Mock<ILogger<CephAiLandmarkDraftService>>().Object);
 
@@ -292,6 +299,8 @@ public class CephAiLandmarkDraftTests
 
                 result.Should().NotBeNull();
                 result!.Landmarks.Should().HaveCount(8);
+                result.InferenceRunId.Should().NotBeEmpty();
+                result.ModelRegistryKey.Should().StartWith("observed:");
                 result.Landmarks[0].X.Should().Be(200);
                 result.Landmarks.Should().OnlyContain(point => point.IsAiPlaced);
                 result.Disclaimer.Should().Contain("مراجعة وتحريك كل نقطة");
@@ -300,6 +309,9 @@ public class CephAiLandmarkDraftTests
                 handler.Request!.Headers.Contains("x-api-key").Should().BeTrue();
                 (await db.CephLandmarks.CountAsync()).Should().Be(0,
                     "the AI result must remain an unsaved draft");
+                var inference = await db.CephAiInferenceRuns.SingleAsync();
+                inference.Status.Should().Be("succeeded");
+                inference.OriginalPredictionsJson.Should().Contain("xNormalized");
                 (await db.OrthodonticAiLogs.SingleAsync()).ModelId
                     .Should().Contain("anthropic");
             }
@@ -361,6 +373,8 @@ public class CephAiLandmarkDraftTests
                     settingsService,
                     [new GeminiCephLandmarkDraftProvider(factory)],
                     vault,
+                    new CephAiModelRegistryService(
+                        db, [new GeminiCephLandmarkDraftProvider(factory)], user.Object),
                     user.Object,
                     new Mock<ILogger<CephAiLandmarkDraftService>>().Object);
 
@@ -392,8 +406,10 @@ public class CephAiLandmarkDraftTests
         await using var db = CreateDb();
         var analysis = new CephAnalysis
         {
-            Id = Guid.NewGuid(), OrthoCaseId = Guid.NewGuid(),
-            AnalysisType = "steiner", XrayFileUrl = "/uploads/trace.jpg",
+            Id = Guid.NewGuid(),
+            OrthoCaseId = Guid.NewGuid(),
+            AnalysisType = "steiner",
+            XrayFileUrl = "/uploads/trace.jpg",
         };
         db.CephAnalyses.Add(analysis);
         await db.SaveChangesAsync(); // no ai.* settings → AI disabled by default
@@ -412,7 +428,9 @@ public class CephAiLandmarkDraftTests
             new Mock<ILogger<CephAiDraftService>>().Object);
         var service = new CephAiLandmarkDraftService(
             db, settingsService, [new GeminiCephLandmarkDraftProvider(factory)], vault,
-            user.Object, new Mock<ILogger<CephAiLandmarkDraftService>>().Object);
+            new CephAiModelRegistryService(
+                db, [new GeminiCephLandmarkDraftProvider(factory)], user.Object), user.Object,
+            new Mock<ILogger<CephAiLandmarkDraftService>>().Object);
 
         // The honest "AI not enabled / no key" message must surface — never the
         // generic 500 that an audit-write failure used to mask it behind.
@@ -480,6 +498,8 @@ public class CephAiLandmarkDraftTests
                     settingsService,
                     [new GeminiCephLandmarkDraftProvider(factory)],
                     vault,
+                    new CephAiModelRegistryService(
+                        db, [new GeminiCephLandmarkDraftProvider(factory)], user.Object),
                     user.Object,
                     new Mock<ILogger<CephAiLandmarkDraftService>>().Object);
 
@@ -560,6 +580,8 @@ public class CephAiLandmarkDraftTests
                     settingsService,
                     [new GeminiCephLandmarkDraftProvider(factory)],
                     vault,
+                    new CephAiModelRegistryService(
+                        db, [new GeminiCephLandmarkDraftProvider(factory)], user.Object),
                     user.Object,
                     new Mock<ILogger<CephAiLandmarkDraftService>>().Object);
 

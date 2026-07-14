@@ -124,6 +124,7 @@ public static class ServiceRegistrationConfiguration
         // generation is slower than messaging webhooks.
         services.AddScoped<CephAiDraftService>();
         services.AddScoped<CephAiLandmarkDraftService>();
+        services.AddScoped<CephAiModelRegistryService>();
         services.AddScoped<OrthoCaseDraftService>();
         services.AddScoped<OrthoSurgicalDraftService>();
         services.AddScoped<AiApiKeyVault>();

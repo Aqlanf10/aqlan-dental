@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using AqlanDentalPro.API.Controllers;
 using AqlanDentalPro.Application.DTOs.Ceph;
 using AqlanDentalPro.Application.Services;
@@ -258,7 +259,7 @@ public sealed class CephBenchmarkManifestTests
         authorize!.Policy.Should().Be("AdminOnly");
 
         var controller = new CephBenchmarkController();
-        var response = controller.Validate(BuildValidManifest())
+        var response = controller.Validate(ToJsonElement(BuildValidManifest()))
             .Should().BeOfType<OkObjectResult>().Subject;
         response.Value.Should().BeOfType<CephBenchmarkValidationResultDto>()
             .Which.IsReleaseReady.Should().BeTrue();
@@ -308,18 +309,54 @@ public sealed class CephBenchmarkManifestTests
             "\"split\":\"InternalTest\"",
             "\"split\":1",
             StringComparison.Ordinal);
+        var withCompositeEnum = json.Replace(
+            "\"split\":\"InternalTest\"",
+            "\"split\":\"Training, Validation\"",
+            StringComparison.Ordinal);
 
         withUndeclaredProperty.Should().NotBe(json);
         withNumericEnum.Should().NotBe(json);
+        withCompositeEnum.Should().NotBe(json);
 
         var deserializeUndeclared = () =>
             JsonSerializer.Deserialize<CephBenchmarkManifestDto>(withUndeclaredProperty, options);
         var deserializeNumeric = () =>
             JsonSerializer.Deserialize<CephBenchmarkManifestDto>(withNumericEnum, options);
+        var deserializeComposite = () =>
+            JsonSerializer.Deserialize<CephBenchmarkManifestDto>(withCompositeEnum, options);
 
         deserializeUndeclared.Should().Throw<JsonException>();
         deserializeNumeric.Should().Throw<JsonException>();
+        deserializeComposite.Should().Throw<JsonException>();
     }
+
+    [Fact]
+    public void Controller_UsesStrictJsonContract_DespiteGlobalMvcEnumConverter()
+    {
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        options.Converters.Add(new JsonStringEnumConverter());
+        var json = JsonSerializer.Serialize(BuildValidManifest(), options);
+        var numeric = json.Replace("\"split\":\"InternalTest\"", "\"split\":3", StringComparison.Ordinal);
+        var composite = json.Replace(
+            "\"split\":\"InternalTest\"",
+            "\"split\":\"Training, Validation\"",
+            StringComparison.Ordinal);
+        var undeclared = json.Replace(
+            "\"schemaVersion\":",
+            "\"patientName\":\"synthetic-only\",\"schemaVersion\":",
+            StringComparison.Ordinal);
+        var controller = new CephBenchmarkController();
+
+        controller.Validate(ParseJsonElement(numeric)).Should().BeOfType<BadRequestObjectResult>();
+        controller.Validate(ParseJsonElement(composite)).Should().BeOfType<BadRequestObjectResult>();
+        controller.Validate(ParseJsonElement(undeclared)).Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    private static JsonElement ToJsonElement(CephBenchmarkManifestDto manifest) =>
+        JsonSerializer.SerializeToElement(manifest, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+    private static JsonElement ParseJsonElement(string json) =>
+        JsonSerializer.Deserialize<JsonElement>(json);
 
     private static CephBenchmarkManifestDto BuildValidManifest() => new()
     {

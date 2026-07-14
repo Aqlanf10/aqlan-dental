@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AqlanDentalPro.Application.DTOs.Ceph;
 using AqlanDentalPro.Application.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -11,6 +12,9 @@ namespace AqlanDentalPro.API.Controllers;
 [RequestSizeLimit(5 * 1024 * 1024)]
 public sealed class CephBenchmarkController : ControllerBase
 {
+    private static readonly JsonSerializerOptions StrictJsonOptions =
+        new(JsonSerializerDefaults.Web);
+
     [HttpGet("contract")]
     public IActionResult Contract() => Ok(new
     {
@@ -27,11 +31,22 @@ public sealed class CephBenchmarkController : ControllerBase
 
     [HttpPost("validate")]
     [Consumes("application/json")]
-    public IActionResult Validate([FromBody] CephBenchmarkManifestDto? manifest)
+    public IActionResult Validate([FromBody] JsonElement manifestJson)
     {
-        if (manifest is null)
+        if (manifestJson.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
             return BadRequest(new { code = "manifest.required" });
 
-        return Ok(CephBenchmarkManifestValidator.Validate(manifest));
+        try
+        {
+            var manifest = manifestJson.Deserialize<CephBenchmarkManifestDto>(StrictJsonOptions);
+            if (manifest is null)
+                return BadRequest(new { code = "manifest.required" });
+
+            return Ok(CephBenchmarkManifestValidator.Validate(manifest));
+        }
+        catch (JsonException)
+        {
+            return BadRequest(new { code = "manifest.invalid-json-contract" });
+        }
     }
 }

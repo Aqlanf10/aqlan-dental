@@ -17,7 +17,7 @@ public sealed class StrictJsonStringEnumConverter<TEnum> : JsonConverter<TEnum>
         var raw = reader.GetString();
         if (raw is null
             || !Enum.TryParse<TEnum>(raw, ignoreCase: false, out var value)
-            || !Enum.IsDefined(value))
+            || !string.Equals(Enum.GetName(value), raw, StringComparison.Ordinal))
         {
             throw new JsonException($"Unsupported {typeof(TEnum).Name} value.");
         }

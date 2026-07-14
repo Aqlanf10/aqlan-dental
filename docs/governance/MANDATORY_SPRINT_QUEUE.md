@@ -362,6 +362,14 @@
 
 ---
 
+### 🟡 SEQ-53 — Cephalometry gold-standard manifest and adjudication gate
+- **Spec:** `CEPH-REQ-027`, `CEPH-TASK-019`.
+- Add a strict de-identified manifest contract for the 24-point lateral benchmark, patient-cluster split isolation, independent reviewer annotations, and explicit gold-standard decisions.
+- Add an Admin-only stateless validator that blocks incomplete de-identification, disagreement above 1.5 mm, visibility/double-contour conflict, missing reviewer evidence, and automatic coordinate averaging.
+- **Exit:** focused backend tests, ceph suite, backend build, schema/document contract, encoding guard, PR CI, and deployment checks pass. This exit proves tooling integrity only; it does not claim WebCeph-equivalent accuracy.
+
+---
+
 ## آلية التحديث
 
 - عند اكتشاف عمل جديد: أضفه في آخر الطابور بحالة `🟡` أو `🔴`، ولا تنفذه قبل البنود السابقة.

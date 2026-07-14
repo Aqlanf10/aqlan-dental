@@ -3,6 +3,8 @@
 Status: proposed sequence after the documentation/validation-foundation PR
 Constraint: each PR is independently reviewable, updates specs/governance, includes focused tests, and does not claim clinical accuracy from build success.
 
+Implementation status: PR 1 was merged as #690. PR 2 is implemented on `codex/seq-53-ceph-ai-gold-standard-schema` and remains non-clinical until review and CI complete.
+
 ## Product direction
 
 Aqlan's own workflow is primary: upload, quality/orientation check, calibration, native AI draft, grouped doctor review, deterministic analysis, approval, and report. WebCeph import remains under migration/interoperability and is not the path to Aqlan accuracy.

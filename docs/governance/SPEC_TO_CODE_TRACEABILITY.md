@@ -41,6 +41,7 @@ Initial table based on static repo inspection. Incomplete rows are marked `Needs
 | `003` | Doctor clinic | Doctor workflow | doctor-clinic UI, patient journey APIs | Needs completion in future sprint | needs review | 2026-07-02 | High |
 | `004` | Orthodontics | Ortho workspace | ortho UI/API/services | Ortho tests | active | 2026-07-02 | High |
 | `005` | Cephalometry | Draft AI and reports | ceph UI/API/services | Ceph tests | active | 2026-07-02 | High |
+| `CEPH-REQ-021..026` | Cephalometry AI validation | Gold-standard validation, governed data, immutable model lineage, native workflow priority, versioned landmark semantics, and controlled release | `docs/ceph-ai/`, `specs/005-cephalometry-workspace/` | Documentation/schema checks now; evaluation, MLOps, and clinical tests in subsequent PRs | validation design active; implementation pending | 2026-07-14 | Critical |
 | `006` | Finance | Finance stability | finance UI/API/services/settings | Finance tests | active | 2026-07-02 | Critical |
 | `007` | Lab/inventory | Lab-inventory integration | lab/inventory UI/API | Lab/Inventory tests | partial | 2026-07-02 | High |
 | `008` | Users/roles | Auth and permissions | auth/users/policies/route guard | Auth/Authorization tests | active | 2026-07-02 | Critical |

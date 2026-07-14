@@ -300,6 +300,21 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
 
         foreach (var lm in existing) lm.IsActive = false;
 
+        var referencedRunIds = req.Landmarks
+            .Where(item => item.SourceInferenceRunId.HasValue)
+            .Select(item => item.SourceInferenceRunId!.Value)
+            .Distinct()
+            .ToList();
+        var inferenceRuns = await db.CephAiInferenceRuns
+            .AsNoTracking()
+            .Include(item => item.ModelVersion)
+            .Where(item => referencedRunIds.Contains(item.Id)
+                && item.AnalysisId == id
+                && item.Status == "succeeded")
+            .ToDictionaryAsync(item => item.Id);
+        if (inferenceRuns.Count != referencedRunIds.Count)
+            throw new ArgumentException("AI inference lineage is invalid, incomplete, or belongs to another analysis.");
+
         foreach (var input in req.Landmarks)
         {
             var placementSource = NormalizePlacementSource(input.PlacementSource, input.IsAiPlaced);
@@ -308,6 +323,14 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
                 && double.IsFinite(input.AiProposalX.Value)
                 && double.IsFinite(input.AiProposalY.Value);
             decimal? reviewErrorMm = null;
+            CephAiInferenceRun? sourceRun = null;
+            if (input.SourceInferenceRunId is Guid sourceRunId)
+            {
+                sourceRun = inferenceRuns[sourceRunId];
+                if (!RunContainsLandmark(sourceRun, input.Key))
+                    throw new ArgumentException(
+                        $"AI inference run does not contain landmark '{input.Key}'.");
+            }
             if (placementSource == "ai" && input.IsReviewed && hasProposal && req.PixelsPerMm > 0)
             {
                 var deltaX = input.X - input.AiProposalX!.Value;
@@ -327,7 +350,12 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
                 Confidence    = input.Confidence.HasValue ? (decimal)input.Confidence.Value : null,
                 PlacementSource = placementSource,
                 SourceLandmarkKey = TrimToNull(input.SourceLandmarkKey, 100),
-                SourceModelId = TrimToNull(input.SourceModelId, 100),
+                SourceModelId = TrimToNull(
+                    sourceRun is null
+                        ? input.SourceModelId
+                        : $"{sourceRun.ModelVersion.Provider}/{sourceRun.ModelVersion.ModelId}",
+                    100),
+                SourceInferenceRunId = input.SourceInferenceRunId,
                 Reasoning = TrimToNull(input.Reasoning, 200),
                 AiProposalXCoord = hasProposal ? (decimal)input.AiProposalX!.Value : null,
                 AiProposalYCoord = hasProposal ? (decimal)input.AiProposalY!.Value : null,
@@ -339,6 +367,25 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         await db.SaveChangesAsync();
         await ComputeMeasurementsAsync(id);
         return true;
+    }
+
+    private static bool RunContainsLandmark(CephAiInferenceRun run, string landmarkKey)
+    {
+        if (string.IsNullOrWhiteSpace(run.OriginalPredictionsJson)) return false;
+
+        try
+        {
+            using var document = JsonDocument.Parse(run.OriginalPredictionsJson);
+            return document.RootElement.ValueKind == JsonValueKind.Array
+                && document.RootElement.EnumerateArray().Any(item =>
+                    item.ValueKind == JsonValueKind.Object
+                    && item.TryGetProperty("key", out var key)
+                    && string.Equals(key.GetString(), landmarkKey, StringComparison.OrdinalIgnoreCase));
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     public async Task<WebCephLandmarkImportResultDto?> ImportWebCephLandmarksAsync(
@@ -1795,6 +1842,7 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
                     PlacementSource = l.PlacementSource,
                     SourceLandmarkKey = l.SourceLandmarkKey,
                     SourceModelId = l.SourceModelId,
+                    SourceInferenceRunId = l.SourceInferenceRunId,
                     Reasoning = l.Reasoning,
                     AiProposalX = l.AiProposalXCoord.HasValue ? (double)l.AiProposalXCoord.Value : null,
                     AiProposalY = l.AiProposalYCoord.HasValue ? (double)l.AiProposalYCoord.Value : null,

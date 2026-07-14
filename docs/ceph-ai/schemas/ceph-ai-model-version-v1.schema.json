@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aqlan.dental/schemas/ceph-ai-model-version-v1.schema.json",
+  "title": "Aqlan Dental Pro cephalometric AI model version candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "provider",
+    "modelId",
+    "modelVersion",
+    "preprocessingVersion",
+    "datasetVersion",
+    "landmarkDefinitionVersion",
+    "artifactSha256"
+  ],
+  "properties": {
+    "provider": { "type": "string", "minLength": 1, "maxLength": 50 },
+    "modelId": { "type": "string", "minLength": 1, "maxLength": 150 },
+    "modelVersion": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "preprocessingVersion": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "datasetVersion": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "landmarkDefinitionVersion": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "artifactSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    }
+  }
+}

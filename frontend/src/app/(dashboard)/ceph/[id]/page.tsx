@@ -296,6 +296,10 @@ export default function CephAnalysisPage() {
       const { data } = await api.post<{
         landmarks: CephLandmark[];
         modelId: string;
+        inferenceRunId: string;
+        modelRegistryKey: string;
+        preprocessingVersion: string;
+        landmarkDefinitionVersion: string;
         disclaimer: string;
         generatedAt: string;
       }>(`/api/ceph/${id}/ai/auto-trace`, {
@@ -312,6 +316,7 @@ export default function CephAnalysisPage() {
         isAiPlaced: true,
         placementSource: "ai" as const,
         sourceModelId: data.modelId,
+        sourceInferenceRunId: data.inferenceRunId,
         aiProposalX: landmark.x,
         aiProposalY: landmark.y,
         isReviewed: false,
@@ -340,6 +345,10 @@ export default function CephAnalysisPage() {
       const { data } = await api.post<{
         landmark: CephLandmark | null;
         modelId: string;
+        inferenceRunId: string;
+        modelRegistryKey: string;
+        preprocessingVersion: string;
+        landmarkDefinitionVersion: string;
         disclaimer: string;
         generatedAt: string;
       }>(`/api/ceph/${id}/ai/refine-landmark`, {
@@ -364,6 +373,7 @@ export default function CephAnalysisPage() {
         isAiPlaced: true,
         placementSource: "ai" as const,
         sourceModelId: data.modelId,
+        sourceInferenceRunId: data.inferenceRunId,
         aiProposalX: data.landmark.x,
         aiProposalY: data.landmark.y,
         isReviewed: false,
@@ -399,6 +409,7 @@ export default function CephAnalysisPage() {
           placementSource: l.placementSource,
           sourceLandmarkKey: l.sourceLandmarkKey,
           sourceModelId: l.sourceModelId,
+          sourceInferenceRunId: l.sourceInferenceRunId,
           aiProposalX: l.aiProposalX,
           aiProposalY: l.aiProposalY,
           isReviewed: l.isReviewed,

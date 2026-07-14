@@ -12,6 +12,7 @@ public class CephLandmark : BaseEntity
     public string PlacementSource { get; set; } = "manual";
     public string? SourceLandmarkKey { get; set; }
     public string? SourceModelId { get; set; }
+    public Guid? SourceInferenceRunId { get; set; }
     public string? Reasoning { get; set; }
     public decimal? AiProposalXCoord { get; set; }
     public decimal? AiProposalYCoord { get; set; }
@@ -19,4 +20,5 @@ public class CephLandmark : BaseEntity
     public decimal? ReviewErrorMm { get; set; }
 
     public CephAnalysis Analysis { get; set; } = null!;
+    public CephAiInferenceRun? SourceInferenceRun { get; set; }
 }

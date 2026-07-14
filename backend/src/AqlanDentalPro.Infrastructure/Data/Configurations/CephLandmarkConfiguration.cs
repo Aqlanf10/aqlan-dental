@@ -18,6 +18,10 @@ public sealed class CephLandmarkConfiguration : IEntityTypeConfiguration<CephLan
         builder.Property(item => item.AiProposalXCoord).HasPrecision(12, 4);
         builder.Property(item => item.AiProposalYCoord).HasPrecision(12, 4);
         builder.Property(item => item.ReviewErrorMm).HasPrecision(10, 4);
+        builder.HasOne(item => item.SourceInferenceRun)
+            .WithMany()
+            .HasForeignKey(item => item.SourceInferenceRunId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(item => new
         {
@@ -25,5 +29,6 @@ public sealed class CephLandmarkConfiguration : IEntityTypeConfiguration<CephLan
             item.IsReviewed,
             item.IsActive,
         });
+        builder.HasIndex(item => item.SourceInferenceRunId);
     }
 }

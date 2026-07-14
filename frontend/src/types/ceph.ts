@@ -84,6 +84,7 @@ export interface CephLandmark {
   placementSource?: 'manual' | 'ai' | 'webceph-import';
   sourceLandmarkKey?: string;
   sourceModelId?: string;
+  sourceInferenceRunId?: string;
   aiProposalX?: number;
   aiProposalY?: number;
   isReviewed?: boolean;

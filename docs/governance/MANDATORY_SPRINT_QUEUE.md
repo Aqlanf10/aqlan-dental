@@ -382,7 +382,14 @@
 - **Exit:** backend/frontend geometry parity fixtures, repeated and paired request schemas, deterministic statistics review, clinical tolerance registry, focused/full tests, PR CI, and deployment checks pass. No equivalence claim without the preregistered locked study.
 - **In progress:** `ADP-CEPH-GEOMETRY-v1` extraction is the first independently reviewable sub-step; the clinical persistence path and later offline evaluators must consume its outputs.
 - **Delivered in PR #693:** the clinical persistence path now consumes the frozen pure lateral geometry engine; all six CI/deployment checks passed.
-- **In progress:** strict derived-measurement, paired-comparator, three-run repeatability/ICC, and confidence/coverage calculators are implemented on `codex/seq-55-ceph-advanced-evaluation`; PR CI and independent statistics/clinical review remain required before SEQ-55 exits.
+- **Delivered in PR #694:** strict derived-measurement, paired-comparator, three-run repeatability/ICC, and confidence/coverage calculators; all six CI/deployment checks passed.
+- **Remaining gate:** independent statistics/clinical review, an approved tolerance registry, and the locked study remain required before SEQ-55 exits or any equivalence statement is allowed.
+
+### 🟡 SEQ-56 — Cephalometry immutable model and inference lineage
+- **Spec:** `CEPH-REQ-030`, `CEPH-TASK-022`.
+- Add immutable model/preprocessing/dataset/definition/artifact identity, append-oriented inference runs with original normalized predictions and hashes, correction-to-run linkage, and Admin-only evidence approval plus pin/rollback.
+- Provider-managed models with undisclosed artifacts remain `observed` and cannot be promoted. Existing unsaved-draft and doctor-review gates remain unchanged.
+- **Exit:** focused model/lineage/migration tests, old-analysis compatibility, ceph/frontend regression suites, full builds, documentation/schema contract, PR CI, and deployment checks pass. This exit proves traceability, not clinical accuracy.
 
 ---
 

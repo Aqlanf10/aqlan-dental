@@ -12,7 +12,8 @@ $requiredFiles = @(
     'CEPH_AI_IMPLEMENTATION_ROADMAP.md',
     'CEPH_AI_LANDMARK_DEFINITIONS.md',
     'CEPH_AI_BASELINE_REPORT.md',
-    'CEPH_AI_GOLD_STANDARD_TOOLING.md'
+    'CEPH_AI_GOLD_STANDARD_TOOLING.md',
+    'CEPH_AI_EVALUATION_ENGINE.md'
 )
 
 foreach ($name in $requiredFiles) {
@@ -83,4 +84,25 @@ foreach ($prohibitedProperty in @('"patientName"', '"patientId"', '"dateOfBirth"
     }
 }
 
-Write-Output "Ceph-AI documentation contract passed: $($requiredFiles.Count) documents, $($landmarkKeys.Count) landmarks, and 1 manifest schema."
+$evaluationSchemaPath = Join-Path $docsRoot 'schemas/ceph-landmark-evaluation-v1.schema.json'
+if (-not (Test-Path -LiteralPath $evaluationSchemaPath -PathType Leaf)) {
+    throw 'Missing cephalometric landmark evaluation schema.'
+}
+$evaluationSchemaText = Get-Content -Raw -Encoding utf8 $evaluationSchemaPath
+[void]($evaluationSchemaText | ConvertFrom-Json)
+foreach ($requiredToken in @(
+    '"protocolVersion"',
+    '"modelVersion"',
+    '"preprocessingVersion"',
+    '"evaluationSplit"',
+    '"bootstrapReplicates"',
+    '"predictions"',
+    '"NotFound"',
+    '"Rejected"'
+)) {
+    if (-not $evaluationSchemaText.Contains($requiredToken)) {
+        throw "The cephalometric evaluation schema is missing required token: $requiredToken"
+    }
+}
+
+Write-Output "Ceph-AI documentation contract passed: $($requiredFiles.Count) documents, $($landmarkKeys.Count) landmarks, and 2 schemas."

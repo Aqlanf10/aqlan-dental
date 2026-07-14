@@ -21,6 +21,14 @@ public sealed class CephBenchmarkController : ControllerBase
         schemaVersion = CephBenchmarkManifestValidator.SchemaVersion,
         landmarkDefinitionVersion = CephBenchmarkManifestValidator.LandmarkDefinitionVersion,
         adjudicationThresholdMm = CephBenchmarkManifestValidator.AdjudicationThresholdMm,
+        evaluationProtocolVersion = CephLandmarkEvaluationEngine.ProtocolVersion,
+        sdrThresholdsMm = new[] { 1d, 1.5d, 2d, 2.5d, 3d, 4d },
+        bootstrapReplicates = new
+        {
+            minimum = CephLandmarkEvaluationEngine.MinimumBootstrapReplicates,
+            maximum = CephLandmarkEvaluationEngine.MaximumBootstrapReplicates,
+        },
+        evaluationScope = "one-selected-non-training-split-core-landmarks",
         coreLandmarkKeys = CephBenchmarkManifestValidator.CoreLandmarkKeys.OrderBy(key => key),
         optionalLandmarkKeys = CephBenchmarkManifestValidator.AllowedLandmarkKeys
             .Except(CephBenchmarkManifestValidator.CoreLandmarkKeys)
@@ -47,6 +55,27 @@ public sealed class CephBenchmarkController : ControllerBase
         catch (JsonException)
         {
             return BadRequest(new { code = "manifest.invalid-json-contract" });
+        }
+    }
+
+    [HttpPost("evaluate-landmarks")]
+    [Consumes("application/json")]
+    public IActionResult EvaluateLandmarks([FromBody] JsonElement requestJson)
+    {
+        if (requestJson.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            return BadRequest(new { code = "request.required" });
+
+        try
+        {
+            var request = requestJson.Deserialize<CephLandmarkEvaluationRequestDto>(StrictJsonOptions);
+            if (request is null)
+                return BadRequest(new { code = "request.required" });
+
+            return Ok(CephLandmarkEvaluationEngine.Evaluate(request));
+        }
+        catch (JsonException)
+        {
+            return BadRequest(new { code = "request.invalid-json-contract" });
         }
     }
 }

@@ -11,6 +11,7 @@ This contract creates the locked, de-identified reference data required to measu
 - Schema: `schemas/ceph-benchmark-manifest-v1.schema.json`
 - Runtime contract: `GET /api/ceph-benchmark/contract`
 - Validation: `POST /api/ceph-benchmark/validate`
+- Landmark evaluation: `POST /api/ceph-benchmark/evaluate-landmarks` (documented separately in `CEPH_AI_EVALUATION_ENGINE.md`)
 - Authorization: `AdminOnly`
 - Request limit: 5 MB
 - Storage: none; validation is stateless and never writes a manifest or image

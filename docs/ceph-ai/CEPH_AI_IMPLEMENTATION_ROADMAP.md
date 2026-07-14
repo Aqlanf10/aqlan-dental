@@ -3,7 +3,7 @@
 Status: proposed sequence after the documentation/validation-foundation PR
 Constraint: each PR is independently reviewable, updates specs/governance, includes focused tests, and does not claim clinical accuracy from build success.
 
-Implementation status: PR 1 was merged as #690. PR 2 is implemented on `codex/seq-53-ceph-ai-gold-standard-schema` and remains non-clinical until review and CI complete.
+Implementation status: PR 1 was merged as #690 and PR 2 as #691. PR 3 is split into a landmark-statistics stage (SEQ-54) and a shared-geometry/measurement/repeatability stage (SEQ-55); neither stage alone establishes clinical accuracy.
 
 ## Product direction
 
@@ -15,7 +15,8 @@ Aqlan's own workflow is primary: upload, quality/orientation check, calibration,
 |---|---|---|---|
 | 1 | Validation specification | Benchmark, gap, protocol, data governance, landmark definitions, baseline template, roadmap | Docs/schema checks; clinical/engineering review; no runtime/model change |
 | 2 | Gold-standard tooling | De-identified manifest schema, annotation export/import, two-reviewer disagreement and adjudication workflow | Schema/unit tests; sample synthetic fixture; privacy review |
-| 3 | Evaluation engine | Patient-clustered MRE/median/SD/P95, SDR 1-4 mm, per-landmark/subgroup/measurement/repeatability metrics and CIs | Deterministic golden fixtures; independent stats review |
+| 3A | Landmark evaluation engine | Patient-clustered MRE/median/SD/P90/P95/max, SDR 1-4 mm, failures, completeness, not-visible errors, and per-landmark/image/subgroup reports | Deterministic golden fixtures; strict stateless API/schema; independent stats review |
+| 3B | Geometry, measurement and repeatability | Shared frozen geometry, measurement bias/absolute error/Bland-Altman, repeatability/ICC, paired comparator deltas, confidence/coverage | Backend/frontend parity fixtures; repeated/paired schemas; clinical tolerance and stats review |
 | 4 | Inference contract and model registry | Immutable model/preprocessing/dataset/definition versions, inference runs, original predictions, corrections, hashes, pin/rollback fields | Migrations/API tests; old analyses remain readable; no provider promotion |
 | 5 | Specialized baseline model | License-approved ceph model adapter, versioned letterbox preprocessing, local/container inference, partial/failure contract | Reproduced benchmark on validation set; security/license review; draft-only UI |
 | 6 | Quality, confidence, anatomy | Orientation/OOD/image-quality gate, calibrated uncertainty, anatomical plausibility warnings | Sensitivity/error-coverage and subgroup validation; all low-confidence points referred |

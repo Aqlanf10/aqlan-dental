@@ -51,7 +51,7 @@ Populate only from the same locked images and adjudicated reference coordinates.
 1. Ratify the landmark definitions with at least two orthodontists.
 2. Approve a de-identified pilot dataset and patient-level split manifest.
 3. Complete independent double annotation and adjudication.
-4. Implement the reproducible evaluation engine and confidence intervals.
+4. Complete independent statistical review of the implemented landmark evaluator and the shared derived-measurement/repeatability stage.
 5. Run current Aqlan only as a baseline, then run licensed specialized candidates on the same validation set.
 6. Lock the selected candidate and perform internal plus external testing.
 7. When lawful coordinate export is available, run WebCeph on the same locked test images; otherwise do not claim paired accuracy.

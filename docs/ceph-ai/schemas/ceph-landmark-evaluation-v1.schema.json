@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aqlan.dental/schemas/ceph-landmark-evaluation-v1.schema.json",
+  "title": "Aqlan Dental Pro cephalometric landmark evaluation request",
+  "description": "Pinned model predictions evaluated against a de-identified ADP-CEPH-VAL-v1 gold-standard manifest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "modelVersion",
+    "preprocessingVersion",
+    "evaluationSplit",
+    "bootstrapReplicates",
+    "randomSeed",
+    "benchmark",
+    "predictions"
+  ],
+  "properties": {
+    "protocolVersion": { "const": "ADP-CEPH-VAL-v1" },
+    "modelVersion": { "$ref": "#/$defs/versionToken" },
+    "preprocessingVersion": { "$ref": "#/$defs/versionToken" },
+    "evaluationSplit": {
+      "enum": ["Validation", "InternalTest", "ExternalClinicalTest"]
+    },
+    "bootstrapReplicates": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 5000
+    },
+    "randomSeed": { "type": "integer" },
+    "benchmark": { "$ref": "ceph-benchmark-manifest-v1.schema.json" },
+    "predictions": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/predictionCase" }
+    }
+  },
+  "$defs": {
+    "versionToken": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "landmarkKey": {
+      "enum": [
+        "S", "N", "Or", "Po", "ANS", "PNS", "A", "B", "Pog", "Gn", "Me", "Go",
+        "Co", "Ar", "D", "Pm", "U1T", "U1A", "L1T", "L1A", "LS", "LI", "Pn", "Cm",
+        "SPog", "U6", "L6"
+      ]
+    },
+    "predictionCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["imageId", "points"],
+      "properties": {
+        "imageId": { "type": "string", "format": "uuid" },
+        "points": {
+          "type": "array",
+          "maxItems": 27,
+          "items": { "$ref": "#/$defs/predictionPoint" }
+        }
+      }
+    },
+    "predictionPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["landmarkKey", "status"],
+      "properties": {
+        "landmarkKey": { "$ref": "#/$defs/landmarkKey" },
+        "status": { "enum": ["Predicted", "NotFound", "Rejected"] },
+        "x": { "type": ["number", "null"] },
+        "y": { "type": ["number", "null"] },
+        "confidence": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "status": { "const": "Predicted" } },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["x", "y"],
+            "properties": {
+              "x": { "type": "number" },
+              "y": { "type": "number" }
+            }
+          },
+          "else": {
+            "properties": {
+              "x": { "type": "null" },
+              "y": { "type": "null" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

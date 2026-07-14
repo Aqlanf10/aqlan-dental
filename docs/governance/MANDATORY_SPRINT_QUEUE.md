@@ -362,11 +362,23 @@
 
 ---
 
-### 🟡 SEQ-53 — Cephalometry gold-standard manifest and adjudication gate
+### ✅ SEQ-53 — Cephalometry gold-standard manifest and adjudication gate
 - **Spec:** `CEPH-REQ-027`, `CEPH-TASK-019`.
 - Add a strict de-identified manifest contract for the 24-point lateral benchmark, patient-cluster split isolation, independent reviewer annotations, and explicit gold-standard decisions.
 - Add an Admin-only stateless validator that blocks incomplete de-identification, disagreement above 1.5 mm, visibility/double-contour conflict, missing reviewer evidence, and automatic coordinate averaging.
 - **Exit:** focused backend tests, ceph suite, backend build, schema/document contract, encoding guard, PR CI, and deployment checks pass. This exit proves tooling integrity only; it does not claim WebCeph-equivalent accuracy.
+- **Delivered in PR #691:** strict manifest/schema, Admin-only stateless validation, de-identification and patient-cluster leakage gates, independent two-reviewer evidence, explicit adjudication without automatic averaging, 207 passing ceph tests, and green Backend/Frontend/E2E/Encoding/Vercel checks.
+
+### 🟡 SEQ-54 — Cephalometry patient-clustered landmark evaluation engine
+- **Spec:** `CEPH-REQ-028`, `CEPH-TASK-020`.
+- Add a strict stateless evaluation contract for a pinned protocol/model/preprocessing/dataset identity and exactly one validation/internal/external split per report. Evaluate only the 24 core landmarks, count every omitted visible point as a failure, and report observed-only plus failure-penalized SDR.
+- Report MRE, median, sample SD, P90, P95, maximum, failure/completeness, not-visible false predictions, per-image/per-landmark/subgroup results, and deterministic 95% confidence intervals bootstrapped by patient cluster. Never return patient linkage hashes.
+- **Exit:** deterministic golden fixtures, strict endpoint tests, ceph suite, backend build, schema/document contract, encoding guard, PR CI, and deployment checks pass. Derived measurements, repeatability/ICC, paired comparator deltas, and non-inferiority remain explicitly assigned to the next evaluation stage.
+
+### 🟡 SEQ-55 — Frozen cephalometric geometry, measurement and repeatability evaluation
+- **Spec:** `CEPH-REQ-029`, `CEPH-TASK-021`.
+- Extract one versioned geometry engine shared by clinical analysis and offline evaluation; validate derived-measurement bias/absolute error/Bland-Altman/category disagreement, three-run repeatability and ICC, paired comparator deltas, and confidence/coverage behavior.
+- **Exit:** backend/frontend geometry parity fixtures, repeated and paired request schemas, deterministic statistics review, clinical tolerance registry, focused/full tests, PR CI, and deployment checks pass. No equivalence claim without the preregistered locked study.
 
 ---
 

@@ -3,6 +3,7 @@ using AqlanDentalPro.Application.DTOs.Ceph;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -76,6 +77,38 @@ public class CephController(
         return Ok(result);
     }
 
+    // Aggregate validation evidence from doctor-corrected AI points. This is
+    // deliberately labelled as a local QA indicator, never as a regulatory or
+    // autonomous-diagnosis claim.
+    [HttpGet("ai/accuracy")]
+    public async Task<IActionResult> AiAccuracy()
+    {
+        var accessiblePatientIds = await patientAccess.GetAccessiblePatientIdsAsync();
+        return Ok(await service.GetAiAccuracyAsync(accessiblePatientIds));
+    }
+
+    // Read-only connector readiness. Never returns the partner key itself.
+    // WebCeph only releases the full integration contract after a partner
+    // agreement, so transfer execution remains disabled until that contract
+    // and a server-side key are configured.
+    [HttpGet("webceph-migration/status")]
+    public IActionResult WebCephMigrationStatus([FromServices] IConfiguration configuration)
+    {
+        var configured = !string.IsNullOrWhiteSpace(configuration["WEBCEPH_PARTNER_API_KEY"]);
+        return Ok(new
+        {
+            configured,
+            partnerAgreementRequired = true,
+            premiumRequired = true,
+            requestLimitPerMinute = 30,
+            apiTransferable = new[] { "patients", "records", "images" },
+            exportRequired = new[] { "landmarks", "analysis-results", "clinical-diagnostic-data" },
+            notice = configured
+                ? "مفتاح الشريك مضبوط على الخادم. يجب تثبيت عقد نقاط النهاية الرسمي قبل تشغيل نقل بيانات المرضى."
+                : "يلزم اتفاق Partner API ومفتاح خادمي من WebCeph لتفعيل نقل المرضى والسجلات والصور."
+        });
+    }
+
     // GET /api/ceph/compare?baseId=&targetId= — C-B pre/post comparison
     // (declared before {id:guid} so "compare" never binds as an id)
     [HttpGet("compare")]
@@ -130,6 +163,48 @@ public class CephController(
         if (!ok) return NotFound(new { message = "تحليل السيفالومتري غير موجود" });
         var detail = await service.GetByIdAsync(id);
         return Ok(detail);
+    }
+
+    // WebCeph's official API does not expose landmark or analysis data. The
+    // account-owned Landmark Table export is therefore the supported clinical
+    // migration path. The current .xls download is a UTF-8 HTML table fragment.
+    [HttpPost("{id:guid}/imports/webceph-landmarks")]
+    [RequestSizeLimit(WebCephLandmarkImportParser.MaxFileBytes)]
+    public async Task<IActionResult> ImportWebCephLandmarks(
+        Guid id,
+        IFormFile? file,
+        [FromForm] WebCephLandmarkImportOptions options)
+    {
+        var accessError = await GetAnalysisAccessErrorAsync(id);
+        if (accessError is not null) return accessError;
+
+        if (file is null || file.Length <= 0)
+            return BadRequest(new { message = "اختر ملف Landmark Table الذي صدرته من WebCeph." });
+        if (file.Length > WebCephLandmarkImportParser.MaxFileBytes)
+            return BadRequest(new { message = "ملف نقاط WebCeph يتجاوز الحد المسموح (1 ميجابايت)." });
+
+        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (extension is not (".xls" or ".html" or ".htm"))
+            return BadRequest(new { message = "صيغة الملف غير مدعومة. استخدم ملف Landmark Table بصيغة XLS من WebCeph." });
+
+        try
+        {
+            await using var stream = file.OpenReadStream();
+            var summary = await service.ImportWebCephLandmarksAsync(id, stream, options);
+            if (summary is null)
+                return NotFound(new { message = "تحليل السيفالومتري غير موجود." });
+
+            var detail = await service.GetByIdAsync(id);
+            return Ok(new { analysis = detail, summary });
+        }
+        catch (InvalidDataException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -389,6 +464,13 @@ public class CephController(
         if (analysis is null)
             return NotFound(new { message = "تحليل السيفالومتري غير موجود" });
 
+        var unreviewedExternalCount = await CountUnreviewedExternalLandmarksAsync(id);
+        if (unreviewedExternalCount > 0)
+            return BadRequest(new
+            {
+                message = $"لا يمكن اعتماد التحليل قبل مراجعة جميع نقاط الذكاء الاصطناعي أو WebCeph. المتبقي: {unreviewedExternalCount} نقطة."
+            });
+
         if (analysis.IsApproved)
         {
             var detailAlready = await service.GetByIdAsync(id);
@@ -424,6 +506,12 @@ public class CephController(
         var reportDetail = await service.GetByIdAsync(id);
         if (reportDetail?.IsApproved != true)
             return BadRequest(new { message = "لا يمكن إصدار التقرير النهائي قبل اعتماد الطبيب للتحليل" });
+        var unreviewedExternalCount = await CountUnreviewedExternalLandmarksAsync(id);
+        if (unreviewedExternalCount > 0)
+            return BadRequest(new
+            {
+                message = $"لا يمكن إصدار التقرير قبل مراجعة نقاط الذكاء الاصطناعي أو WebCeph المتبقية ({unreviewedExternalCount})."
+            });
         if (!IsPaReadyForApproval(reportDetail))
             return BadRequest(new { message = "لا يمكن إصدار تقرير PA قبل حفظ المعايرة وإكمال النقاط الـ15 وحساب القياسات" });
 
@@ -547,6 +635,13 @@ public class CephController(
             ? null
             : Forbid();
     }
+
+    private Task<int> CountUnreviewedExternalLandmarksAsync(Guid analysisId) =>
+        db.CephLandmarks.CountAsync(item =>
+            item.AnalysisId == analysisId
+            && item.IsActive
+            && !item.IsReviewed
+            && (item.PlacementSource == "ai" || item.PlacementSource == "webceph-import"));
 
     private async Task<IActionResult?> GetAnalysisAccessErrorAsync(Guid analysisId)
     {

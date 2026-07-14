@@ -258,6 +258,24 @@ describe("computeCephQuality", () => {
     expect(w?.message).toContain("N");
   });
 
+  it("blocks quality clearance while AI or WebCeph points remain unreviewed", () => {
+    const q = computeCephQuality({
+      pixelsPerMm: 12.5,
+      landmarks: [
+        ...fullManualSet,
+        { key: "WC_Ba", placementSource: "webceph-import", isReviewed: false },
+        { key: "Xi", placementSource: "webceph-import", isReviewed: true },
+      ],
+      measurementCount: 10,
+      isDirty: false,
+    });
+
+    expect(q.unreviewedExternalKeys).toEqual(["WC_Ba"]);
+    expect(q.warnings.find((warning) => warning.key === "unreviewedExternal")?.message)
+      .toContain("1 نقطة");
+    expect(q.hasWarnings).toBe(true);
+  });
+
   it("warns when fewer than 24 landmarks are placed", () => {
     const q = computeCephQuality({
       pixelsPerMm: 12.5,

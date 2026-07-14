@@ -191,6 +191,7 @@ export interface CephQualityWarning {
   /** Stable identifier for keys/testing. */
   key:
     | "calibration"
+    | "unreviewedExternal"
     | "lowConfidence"
     | "incompleteLandmarks"
     | "unsavedEdits"
@@ -205,6 +206,8 @@ export interface CephQualityLandmark {
   key?: string;
   isAiPlaced?: boolean;
   confidence?: number | null;
+  placementSource?: "manual" | "ai" | "webceph-import";
+  isReviewed?: boolean;
 }
 
 export interface CephQualityInput {
@@ -227,6 +230,8 @@ export interface CephQualityReport {
   warnings: CephQualityWarning[];
   /** Keys of AI landmarks whose confidence is below the threshold. */
   lowConfidenceKeys: string[];
+  /** Keys imported from WebCeph or proposed by AI that still need review. */
+  unreviewedExternalKeys: string[];
   /** Whether the saved calibration is present and a positive, finite number. */
   calibrationValid: boolean;
 }
@@ -274,6 +279,13 @@ export function computeCephQuality(input: CephQualityInput): CephQualityReport {
   const requiredCount = requiredKeys.length;
   const calibrationValid = isCalibrationValid(input.pixelsPerMm);
   const lowConfidenceKeys = lowConfidenceLandmarks(landmarks);
+  const unreviewedExternalKeys = landmarks
+    .filter(
+      (landmark) =>
+        (landmark.placementSource === "ai" || landmark.placementSource === "webceph-import")
+        && landmark.isReviewed !== true,
+    )
+    .map((landmark, index) => landmark.key ?? `#${index}`);
 
   const warnings: CephQualityWarning[] = [];
 
@@ -292,6 +304,14 @@ export function computeCephQuality(input: CephQualityInput): CephQualityReport {
       severity: "warning",
       message:
         "المعايرة (بكسل/مم) غير محفوظة أو غير صالحة — قد تكون القياسات الخطية بالمليمتر غير دقيقة حتى تُعايَر الصورة.",
+    });
+  }
+
+  if (unreviewedExternalKeys.length > 0) {
+    warnings.push({
+      key: "unreviewedExternal",
+      severity: "warning",
+      message: `توجد ${unreviewedExternalKeys.length} نقطة من الذكاء الاصطناعي أو WebCeph لم يؤكد الطبيب مراجعتها بعد. لن يُسمح باعتماد التحليل قبل مراجعتها كلها.`,
     });
   }
 
@@ -327,6 +347,7 @@ export function computeCephQuality(input: CephQualityInput): CephQualityReport {
     hasWarnings: warnings.some((w) => w.severity === "warning"),
     warnings,
     lowConfidenceKeys,
+    unreviewedExternalKeys,
     calibrationValid,
   };
 }

@@ -30,6 +30,10 @@ import { resolveImageUrl } from "@/hooks/useClinicBranding";
 import { downloadPdfFromApi, printPdfFromApi } from "@/lib/pdfDownload";
 import { CephMeasurementExportButton } from "@/components/ceph/CephMeasurementExportButton";
 import { CephAssessmentPanel } from "@/components/ceph/CephAssessmentPanel";
+import {
+  CephWebCephImportDialog,
+  type WebCephImportSummary,
+} from "@/components/ceph/CephWebCephImportDialog";
 import { cn, formatArabicDate } from "@/lib/utils";
 
 const LANDMARK_GROUPS = [
@@ -39,6 +43,9 @@ const LANDMARK_GROUPS = [
   { key: 'dental',   label: 'الأسنان',         keys: ['U1T', 'U1A', 'L1T', 'L1A', 'U6', 'L6'] },
   { key: 'soft',     label: 'الأنسجة الرخوة',  keys: ['LS', 'LI', 'Pn', 'Cm', 'SPog'] },
 ];
+
+const isExternalPlacement = (landmark?: CephLandmark) =>
+  landmark?.placementSource === "ai" || landmark?.placementSource === "webceph-import";
 
 type RightTab = 'report' | 'diagnosis' | 'assessment';
 
@@ -170,6 +177,11 @@ export default function CephAnalysisPage() {
   const landmarkDefs = isPa ? PA_LANDMARK_DEFS : LANDMARK_DEFS;
   const landmarkOrder = isPa ? PA_LANDMARK_ORDER : LANDMARK_ORDER;
   const landmarkGroups = isPa ? PA_LANDMARK_GROUPS : LANDMARK_GROUPS;
+  const selectedLandmark = selectedKey ? lmMap[selectedKey] : undefined;
+  const extraImportedLandmarks = useMemo(
+    () => landmarks.filter((landmark) => landmark.key.startsWith("WC_") || !landmarkDefs[landmark.key]),
+    [landmarks, landmarkDefs],
+  );
 
   const analysisGroups = useMemo(() => {
     if (!analysis) return ['steiner','tweed','mcnamara','ricketts','downs'] as const;
@@ -193,7 +205,7 @@ export default function CephAnalysisPage() {
     ? analysis.measurements
     : computedMeasurements;
 
-  const placedCount = landmarks.length;
+  const placedCount = landmarkOrder.filter((key) => Boolean(lmMap[key])).length;
   const totalCount  = landmarkOrder.length;
   const requiredPointsComplete = !isPa || PA_LANDMARK_ORDER.every((key) => Boolean(lmMap[key]));
 
@@ -228,6 +240,16 @@ export default function CephAnalysisPage() {
     setLandmarks(lm);
     setIsDirty(true);
   }, []);
+
+  const handleReviewSelectedLandmark = useCallback(() => {
+    if (!selectedKey) return;
+    setLandmarks((current) => current.map((landmark) =>
+      landmark.key === selectedKey && isExternalPlacement(landmark)
+        ? { ...landmark, isAiPlaced: false, isReviewed: true }
+        : landmark));
+    setIsDirty(true);
+    setSaveStatus("idle");
+  }, [selectedKey]);
 
   // Calibration edits (ruler apply or manual px/mm input) are unsaved changes
   // too: the report/VTO read the saved record, so dirty them until "حفظ وحساب".
@@ -288,12 +310,17 @@ export default function CephAnalysisPage() {
         nameAr: LANDMARK_DEFS[landmark.key]?.nameAr || landmark.name || landmark.key,
         group: LANDMARK_DEFS[landmark.key]?.group as CephLandmark["group"],
         isAiPlaced: true,
+        placementSource: "ai" as const,
+        sourceModelId: data.modelId,
+        aiProposalX: landmark.x,
+        aiProposalY: landmark.y,
+        isReviewed: false,
       }));
       setLandmarks(drafted);
       setIsDirty(true);
       setSaveStatus("idle");
       setSelectedKey(drafted[0]?.key ?? null);
-      const modeLabel = precision === "high" ? " (تتبع دقيق)" : "";
+      const modeLabel = precision === "high" ? " (تتبع متأنٍ)" : "";
       setAiTraceNotice(`${data.disclaimer}${modeLabel} النموذج: ${data.modelId}`);
     } catch (error) {
       const message = (error as { response?: { data?: { message?: string } } })
@@ -335,6 +362,11 @@ export default function CephAnalysisPage() {
         nameAr: LANDMARK_DEFS[data.landmark.key]?.nameAr || data.landmark.name || data.landmark.key,
         group: LANDMARK_DEFS[data.landmark.key]?.group as CephLandmark["group"],
         isAiPlaced: true,
+        placementSource: "ai" as const,
+        sourceModelId: data.modelId,
+        aiProposalX: data.landmark.x,
+        aiProposalY: data.landmark.y,
+        isReviewed: false,
       };
       setLandmarks(prev => prev.map(l => l.key === key ? refined : l));
       setIsDirty(true);
@@ -363,12 +395,20 @@ export default function CephAnalysisPage() {
           y:          l.y,
           isAiPlaced: l.isAiPlaced,
           confidence: l.confidence,
+          reasoning: l.reasoning,
+          placementSource: l.placementSource,
+          sourceLandmarkKey: l.sourceLandmarkKey,
+          sourceModelId: l.sourceModelId,
+          aiProposalX: l.aiProposalX,
+          aiProposalY: l.aiProposalY,
+          isReviewed: l.isReviewed,
         })),
         pixelsPerMm: pixelsPerMm ?? 0,
         imageWidth:  imageSize.w,
         imageHeight: imageSize.h,
       });
       setAnalysis(res.data);
+      setLandmarks(res.data.landmarks ?? []);
       setDiagnosis(res.data.diagnosis ?? null);
       // Re-sync calibration from the persisted record so the readiness badge
       // and gates reflect exactly what was saved (no false "unsaved" drift).
@@ -383,6 +423,25 @@ export default function CephAnalysisPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleWebCephImported = (
+    importedAnalysis: CephAnalysis,
+    summary: WebCephImportSummary,
+  ) => {
+    setAnalysis(importedAnalysis);
+    setLandmarks(importedAnalysis.landmarks ?? []);
+    setDiagnosis(importedAnalysis.diagnosis ?? null);
+    setPixelsPerMm(
+      importedAnalysis.pixelsPerMm && importedAnalysis.pixelsPerMm > 0
+        ? importedAnalysis.pixelsPerMm
+        : null,
+    );
+    setIsDirty(false);
+    setSaveStatus("saved");
+    setAiTraceNotice(
+      `تم استيراد ${summary.imported} نقطة من WebCeph. راجع النقاط المستوردة يدويًا قبل اعتماد التحليل.`,
+    );
   };
 
   const handleReportPdf = async (mode: 'download' | 'print') => {
@@ -486,7 +545,7 @@ export default function CephAnalysisPage() {
             {aiTracing ? "جارٍ تحليل الصورة..." : "مسودة AI للنقاط"}
           </button>}
 
-          {/* Precise auto-trace: same Gemini endpoint, precision=high. The model
+          {/* Deliberate auto-trace: same Gemini endpoint, precision=high. The model
               takes a slower, deliberate pass and omits any landmark it cannot
               place with confidence > 0.5. The result is STILL an unsaved AI
               draft — the disclaimer banner remains mandatory. */}
@@ -494,11 +553,22 @@ export default function CephAnalysisPage() {
             type="button"
             onClick={() => handleAiTrace("high")}
             disabled={aiTracing || !analysis.xrayFileUrl}
-            title="تتبع آلي دقيق — تمريرة أبطأ وأكثر حرصًا، يتجاهل النقاط التي لا يستطيع وضعها بثقة > 50٪. مسودة AI تتطلب مراجعة أخصائي التقويم."
+            title="تتبع متأنٍ — تمريرة أبطأ وأكثر حرصًا، لكنه يبقى مسودة غير معتمدة وتجب مراجعة كل نقطة."
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-indigo-300 bg-indigo-50 text-indigo-800 hover:bg-indigo-100 disabled:opacity-50 transition">
             {aiTracing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Target className="w-3.5 h-3.5" />}
-            {aiTracing ? "جارٍ التحليل الدقيق..." : "تتبع آلي دقيق"}
+            {aiTracing ? "جارٍ التتبع المتأني..." : "تتبع متأنٍ (مسودة)"}
           </button>}
+
+          {!isPa && (
+            <CephWebCephImportDialog
+              analysisId={id}
+              pixelsPerMm={pixelsPerMm}
+              imageWidth={imageSize.w}
+              imageHeight={imageSize.h}
+              sLandmark={lmMap.S}
+              onImported={handleWebCephImported}
+            />
+          )}
 
           {!isPa && <button onClick={handleTemplateSimulation} disabled={detecting}
             title="محاكاة (تجريبية) — قالب تدريبي لمواضع المعالم وليس ذكاءً اصطناعيًا حقيقيًا"
@@ -623,8 +693,10 @@ export default function CephAnalysisPage() {
             </span>
           ) : (
             <button onClick={handleApprove}
-              disabled={approving || placedCount === 0 || !requiredPointsComplete || isDirty || !analysis?.measurements?.length}
-              title={placedCount === 0 || !requiredPointsComplete || isDirty || !analysis?.measurements?.length
+              disabled={approving || placedCount === 0 || !requiredPointsComplete || isDirty || !analysis?.measurements?.length || quality.unreviewedExternalKeys.length > 0}
+              title={quality.unreviewedExternalKeys.length > 0
+                ? `راجع نقاط الذكاء الاصطناعي أو WebCeph المتبقية (${quality.unreviewedExternalKeys.length}) قبل الاعتماد`
+                : placedCount === 0 || !requiredPointsComplete || isDirty || !analysis?.measurements?.length
                 ? 'ضع المعالم واحسب القياسات واحفظها أولًا ثم اعتمد التحليل'
                 : 'اعتماد التحليل لإتاحة إصدار التقرير النهائي'}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed transition">
@@ -902,6 +974,17 @@ export default function CephAnalysisPage() {
                 style={{ width: `${Math.min(100, (placedCount / totalCount) * 100)}%` }}
               />
             </div>
+            {selectedLandmark && isExternalPlacement(selectedLandmark) && !selectedLandmark.isReviewed && (
+              <button
+                type="button"
+                onClick={handleReviewSelectedLandmark}
+                className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100"
+                title="تأكيد أن الطبيب فحص موضع النقطة المحددة ووافق عليه"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                تأكيد مراجعة {selectedLandmark.key}
+              </button>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto px-2 py-2">
@@ -915,8 +998,9 @@ export default function CephAnalysisPage() {
                   // Audit §12: per-landmark quality. AI-placed points stay a
                   // "مسودة" (draft) until reviewed; a confidence below the
                   // threshold (or unknown) is flagged with a warning style.
-                  const isAi = Boolean(placed?.isAiPlaced);
-                  const isLowConfidence = isAi && lowConfidenceSet.has(key);
+                  const source = placed?.placementSource ?? (placed?.isAiPlaced ? "ai" : "manual");
+                  const isAiDraft = source === "ai" && !placed?.isReviewed;
+                  const isLowConfidence = isAiDraft && lowConfidenceSet.has(key);
                   const confidencePct =
                     typeof placed?.confidence === "number"
                       ? Math.round(placed.confidence * 100)
@@ -950,25 +1034,39 @@ export default function CephAnalysisPage() {
                       />
                       <span className="w-7 flex-shrink-0 font-mono text-[10px] font-bold text-gray-500">{key}</span>
                       <span className="min-w-0 flex-1 truncate">{def?.nameAr}</span>
-                      {isAi ? (
+                      {source === "ai" && placed ? (
                         <span
                           title={
                             isLowConfidence
                               ? `نقطة AI بثقة منخفضة${confidencePct !== null ? ` (${confidencePct}%)` : " (غير معروفة)"} — راجعها يدويًا`
-                              : `نقطة AI (مسودة) — راجعها يدويًا${confidencePct !== null ? ` · الثقة ${confidencePct}%` : ""}`
+                              : placed.isReviewed
+                                ? "نقطة AI راجعها الطبيب"
+                                : `نقطة AI (مسودة) — راجعها يدويًا${confidencePct !== null ? ` · الثقة ${confidencePct}%` : ""}`
                           }
                           className={cn(
                             "inline-flex flex-shrink-0 items-center gap-0.5 rounded px-1 text-[8px] font-bold",
                             isLowConfidence
                               ? "bg-amber-100 text-amber-700"
-                              : "bg-violet-50 text-violet-600",
+                              : placed.isReviewed
+                                ? "bg-emerald-50 text-emerald-700"
+                                : "bg-violet-50 text-violet-600",
                           )}
                         >
                           {isLowConfidence && <AlertTriangle className="h-2.5 w-2.5" />}
-                          AI · مسودة
-                          {confidencePct !== null && (
+                          AI · {placed.isReviewed ? "مراجع" : "مسودة"}
+                          {!placed.isReviewed && confidencePct !== null && (
                             <span className="font-mono">{confidencePct}%</span>
                           )}
+                        </span>
+                      ) : source === "webceph-import" && placed ? (
+                        <span
+                          title={placed.isReviewed ? "نقطة WebCeph راجعها الطبيب" : "نقطة مستوردة من WebCeph وتحتاج مراجعة الطبيب"}
+                          className={cn(
+                            "rounded px-1 text-[8px] font-bold",
+                            placed.isReviewed ? "bg-emerald-50 text-emerald-700" : "bg-cyan-50 text-cyan-700",
+                          )}
+                        >
+                          WebCeph · {placed.isReviewed ? "مراجع" : "راجع"}
                         </span>
                       ) : (
                         placed && (
@@ -993,6 +1091,39 @@ export default function CephAnalysisPage() {
                 })}
               </section>
             ))}
+            {extraImportedLandmarks.length > 0 && (
+              <section className="mb-2 border-t border-gray-100 pt-2">
+                <p className="px-2 py-1 text-[9px] font-bold text-cyan-700">
+                  نقاط WebCeph الإضافية ({extraImportedLandmarks.length})
+                </p>
+                {extraImportedLandmarks.map((landmark) => {
+                  const selected = selectedKey === landmark.key;
+                  return (
+                    <button
+                      key={landmark.key}
+                      type="button"
+                      onClick={() => setSelectedKey(selected ? null : landmark.key)}
+                      className={cn(
+                        "mb-0.5 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-[11px] transition",
+                        selected ? "bg-cyan-50 text-cyan-800 ring-1 ring-cyan-200" : "text-gray-600 hover:bg-gray-50",
+                      )}
+                    >
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full border border-cyan-500 bg-cyan-400" />
+                      <span className="w-16 shrink-0 truncate font-mono text-[9px] font-bold text-gray-500">{landmark.key}</span>
+                      <span className="min-w-0 flex-1 truncate" title={landmark.sourceLandmarkKey ?? landmark.name}>
+                        {landmark.sourceLandmarkKey ?? landmark.name ?? landmark.key}
+                      </span>
+                      <span className={cn(
+                        "rounded px-1 text-[8px] font-bold",
+                        landmark.isReviewed ? "bg-emerald-50 text-emerald-700" : "bg-cyan-50 text-cyan-700",
+                      )}>
+                        {landmark.isReviewed ? "مراجع" : "راجع"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </section>
+            )}
           </div>
         </aside>
 

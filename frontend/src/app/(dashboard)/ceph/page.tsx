@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Activity, AlertCircle, BarChart3, Brain, CheckCircle2, Clock3, FileSearch, FileText, GitCompareArrows, Layers3, Plus, Ruler, ShieldCheck, Smile, Tag, UserSquare2, X } from "lucide-react";
+import { Activity, AlertCircle, BarChart3, Brain, CheckCircle2, Clock3, Database, FileSearch, FileText, Gauge, GitCompareArrows, Layers3, Plus, Ruler, ShieldCheck, Smile, Tag, UserSquare2, X } from "lucide-react";
 import type { CephAnalysisList } from "@/types/ceph";
 import { ANALYSIS_TYPE_AR } from "@/types/ceph";
 import api from "@/lib/api";
@@ -88,6 +88,8 @@ export default function CephPage() {
             تراكب متعدد
           </button>
           <Link href="/ceph/quality" className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 transition"><ShieldCheck className="w-4 h-4" />فحص الجودة</Link>
+          <Link href="/ceph/ai-quality" className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition"><Gauge className="w-4 h-4" />دقة AI المحلية</Link>
+          <Link href="/ceph/webceph-migration" className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-cyan-200 bg-cyan-50 text-cyan-800 hover:bg-cyan-100 transition"><Database className="w-4 h-4" />ترحيل WebCeph</Link>
           <Link href="/ceph/cohort" className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"><BarChart3 className="w-4 h-4" />تحليل المجموعات</Link>
           <Link href="/ceph/photo" className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"><UserSquare2 className="w-4 h-4" />تحليل صورة بروفايل</Link>
           <Link href="/ceph/photo/frontal" className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"><Smile className="w-4 h-4" />تحليل صورة أمامية</Link>

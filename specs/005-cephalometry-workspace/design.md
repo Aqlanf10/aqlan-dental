@@ -25,6 +25,10 @@
 - Cohort owner: `CephService.BuildCohortAsync` and `GET /api/ceph/cohort`; one latest approved record per accessible patient, aggregate-only DTOs, and a five-independent-patient threshold for the cohort and every measurement.
 - Soft-tissue longitudinal owner: `/ceph/photo/compare` composes two existing `PhotoAnalysis` records from the same case/view type; `photoAnalysisComparison.ts` accepts only saved finite values and creates no new clinical record or prediction.
 - Final runtime owner: `playwright-tests/ceph-runtime.spec.ts` uses environment-held staff credentials to verify deployed authenticated routes, responsive behavior, privacy state, and eligible PDF/CSV downloads without source-controlled credentials.
+- Landmark provenance owner: `CephLandmark` stores placement source, source key/model, optional AI proposal, explicit review state, and correction error; `CephService` revokes approval on landmark changes and aggregates correction evidence by model.
+- WebCeph export owner: `WebCephLandmarkImportParser` uses structured HTML parsing for the account-owned Landmark Table; `CephService.ImportWebCephLandmarksAsync` owns S-origin/calibration conversion, bounds checks, canonical mapping, extra-point preservation, and approval revocation.
+- AI quality owner: `GET /api/ceph/ai/accuracy` and `/ceph/ai-quality`; metrics are local quality evidence only and require at least 30 reviewed points from three independent analyses for the same model version before a sufficient-sample state.
+- Migration boundary owner: `GET /api/ceph/webceph-migration/status` and `/ceph/webceph-migration` expose capabilities and configuration state without returning secrets. `WEBCEPH_PARTNER_API_KEY` is server-only; no sync client is implemented until WebCeph supplies the partner agreement and final API contract.
 
 Allowed files: existing ceph/ortho owners named in the parity matrix, their focused tests, and ceph specification/governance/audit files. Each delivery slice must narrow this list before editing.
 

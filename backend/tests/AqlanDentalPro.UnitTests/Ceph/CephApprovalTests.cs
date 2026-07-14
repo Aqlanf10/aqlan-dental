@@ -167,6 +167,34 @@ public class CephApprovalTests : IDisposable
         ok.Value!.ToString().Should().Contain("معتمد مسبقاً");
     }
 
+    [Theory]
+    [InlineData("ai")]
+    [InlineData("webceph-import")]
+    public async Task Approve_WithUnreviewedExternalLandmark_ReturnsBadRequest(string source)
+    {
+        var seeded = await SeedAnalysisAsync(approved: false);
+        _db.CephLandmarks.Add(new CephLandmark
+        {
+            AnalysisId = seeded.AnalysisId,
+            LandmarkKey = "S",
+            LandmarkName = "Sella",
+            XCoord = 100,
+            YCoord = 100,
+            PlacementSource = source,
+            IsReviewed = false,
+            IsActive = true,
+        });
+        await _db.SaveChangesAsync();
+        _patientAccess.Setup(x => x.CanAccessPatientAsync(seeded.PatientId)).ReturnsAsync(true);
+        _currentUser.Setup(x => x.IsAdmin).Returns(true);
+
+        var result = await _controller.Approve(seeded.AnalysisId, null);
+
+        var bad = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        bad.Value!.ToString().Should().Contain("المتبقي: 1");
+        (await _db.CephAnalyses.FindAsync(seeded.AnalysisId))!.IsApproved.Should().BeFalse();
+    }
+
     [Fact]
     public async Task Approve_IncompletePaAnalysis_ReturnsBadRequest()
     {

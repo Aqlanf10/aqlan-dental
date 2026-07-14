@@ -42,6 +42,9 @@ Evidence inspected:
 | Timelapse | `/ceph/timelapse/[caseId]`, canonical ceph analyses and ortho clinical photos, `buildCephTimelapseFrames` | Complete | Preserve real date ordering, explicit record selection, and the prohibition on fabricated/interpolated frames. |
 | Case tags/search | approved `CephDiagnosis` fields projected through `CephClinicalTagCatalog`; `/ceph` approved-tag filter | Complete | Unknown/free-text diagnosis values must never become tags, and both analysis and diagnosis approval remain required. |
 | Cohort analysis | `GET /api/ceph/cohort`, `/ceph/cohort`, latest approved record per accessible patient | Complete | Preserve the five-patient threshold for the whole cohort and each measurement, aggregate-only DTO, allowlisted filters, and patient-access scope. |
+| Account-owned landmark migration | WebCeph Landmark Table importer, S-origin conversion, saved calibration, source provenance, and doctor-review gate | Complete | Preserve every exported row, including stable `WC_*` keys for landmarks outside Aqlan's canonical lateral set. Never place real patient exports in source control or test fixtures. |
+| AI landmark accuracy evidence | Stored proposal/model provenance, doctor correction error in millimetres, approval gate, and `/ceph/ai-quality` | In progress | Each model version requires at least 30 reviewed points from three independent analyses. Equivalence with WebCeph is not established without an orthodontist-labelled reference corpus and a documented benchmark. |
+| Patient/record/image migration | `/ceph/webceph-migration` documents the official integration boundary | External dependency | WebCeph partner agreement, Premium-or-higher account, server-side partner key, and the final official API contract are required. The public API explicitly excludes landmark points, analysis results, and other clinical/diagnostic data. |
 
 ## Delivery Sequence
 
@@ -55,6 +58,8 @@ Evidence inspected:
 8. `SEQ-50`: timelapse plus case/cohort workflows.
 9. `SEQ-51`: final parity audit, authenticated runtime QA, accessibility,
    responsive checks, PDF/export checks, and closure report.
+10. `SEQ-52`: landmark provenance and review gates, account-owned landmark-table
+    import, local AI correction metrics, and a safe official-API migration boundary.
 
 ## Cross-Cutting Acceptance Rules
 
@@ -69,11 +74,10 @@ Evidence inspected:
 
 ## Completion Definition
 
-Parity is complete only when every matrix row is either `Complete` or explicitly
-accepted by the owner as out of scope, all linked requirements and tests pass,
-no open review/CI issue remains, production deployment is healthy, and the final
-authenticated workflow QA is recorded under `SEQ-51`.
-
-The implementation matrix has no remaining `Partial` row. Final runtime,
-accessibility, export, CI, and deployment evidence is recorded in
-`docs/audits/WEBCEPH_CEPH_PARITY_CLOSURE.md`.
+The WebCeph workflow matrix audited by `SEQ-43..51` is closed, with final CI and
+deployment evidence recorded in
+`docs/audits/WEBCEPH_CEPH_PARITY_CLOSURE.md`. The owner's later request for AI
+accuracy evidence and WebCeph account migration expands the matrix under
+`SEQ-52`; those new rows remain open until the stated benchmark and external
+partner-API dependencies are satisfied. No browser-session scraping, password
+reuse, or undocumented API contract is an acceptable substitute.

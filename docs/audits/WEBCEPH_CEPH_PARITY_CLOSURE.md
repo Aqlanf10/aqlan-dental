@@ -39,17 +39,32 @@ support chronological before/after comparison at
   pass; TypeScript and the Next.js production build pass; Playwright discovers
   the authenticated ceph runtime scenario. The full backend run also exposed
   and fixed a pre-existing UTC/local-date test boundary at Aden midnight.
-- Authenticated deployed Playwright, GitHub CI, Arabic encoding guard, and
-  Vercel deployment remain the final pull-request evidence.
+- PR #688 passed Backend, Frontend, E2E, Encoding Guard, and Vercel checks and
+  was merged on 2026-07-14.
 
 ## Runtime Scenario
 
+`frontend/playwright-tests/staging-smoke.spec.ts` always verifies the deployed
+public login surface when `E2E_API_URL` is configured.
 `frontend/playwright-tests/ceph-runtime.spec.ts` logs in with environment-held
-staff credentials and verifies the deployed ceph list, mobile responsiveness,
-cohort privacy surface, case review, Timelapse truthfulness, and eligible
-PDF/CSV downloads. It contains no credential or patient fixture in source and
-fails explicitly when a deployed E2E URL exists without staff credentials; a
-green skipped test cannot be used as closure evidence.
+staff credentials and verifies authenticated ceph routes and eligible exports
+only when dedicated `E2E_STAFF_PHONE` and `E2E_STAFF_PASSWORD` secrets are
+available. CI reports an explicit skip when those credentials are absent; that
+skip is not represented as authenticated clinical-workflow evidence.
+
+## Expanded Scope After Closure
+
+After PR #688 closed the original functional-workflow matrix, the owner added
+AI landmark accuracy and WebCeph account migration requirements under `SEQ-52`.
+The original closure remains valid, while the new rows are tracked separately:
+
+- account-owned Landmark Table import is implemented with calibration,
+  provenance, preservation of extra points, and mandatory doctor review;
+- AI quality is measured from saved doctor corrections, but WebCeph-equivalent
+  accuracy is not claimed without a labelled reference benchmark;
+- patient, record, and image synchronization awaits a WebCeph partner agreement,
+  Premium-or-higher account, server-held partner key, and final official API
+  contract; landmarks and clinical analysis data remain export-only.
 
 ## Residual Clinical Boundary
 

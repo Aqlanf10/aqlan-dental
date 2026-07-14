@@ -445,7 +445,8 @@ export function CephCanvas({
 
     // Landmarks
     landmarks.forEach(lm => {
-      const def = LANDMARK_DEFS[lm.key]; if (!def) return;
+      const def = LANDMARK_DEFS[lm.key];
+      const color = def?.color ?? '#38BDF8';
       const cp = T.tc(lm.x, lm.y);
       const isSel = lm.key === selectedKey;
       const isHov = lm.key === hovered;
@@ -462,11 +463,11 @@ export function CephCanvas({
 
       ctx.save();
       if (lm.isAiPlaced) {
-        ctx.fillStyle = def.color + '55';
-        ctx.strokeStyle = def.color;
+        ctx.fillStyle = color + '55';
+        ctx.strokeStyle = color;
         ctx.lineWidth = 1.5;
       } else {
-        ctx.fillStyle = def.color;
+        ctx.fillStyle = color;
       }
       ctx.beginPath(); ctx.arc(cp.x, cp.y, r, 0, Math.PI * 2);
       ctx.fill();
@@ -702,11 +703,10 @@ export function CephCanvas({
 
   const hitLandmark = (cx: number, cy: number) => {
     const T = getT(); if (!T) return null;
-    return LANDMARK_ORDER.slice().reverse().find(key => {
-      const lm = lmMap[key]; if (!lm) return false;
+    return landmarks.slice().reverse().find(lm => {
       const cp = T.tc(lm.x, lm.y);
       return Math.hypot(cx - cp.x, cy - cp.y) < HIT_RADIUS;
-    }) ?? null;
+    })?.key ?? null;
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -783,12 +783,21 @@ export function CephCanvas({
       if (!def) return;
       const existing = lmMap[selectedKey];
       if (existing) {
-        onLandmarksChange(landmarks.map(l => l.key === selectedKey ? { ...l, x: ip.x, y: ip.y, isAiPlaced: false } : l));
+        onLandmarksChange(landmarks.map(l => l.key === selectedKey ? {
+          ...l,
+          x: ip.x,
+          y: ip.y,
+          isAiPlaced: false,
+          isReviewed: true,
+        } : l));
       } else {
         onLandmarksChange([...landmarks, {
           key: selectedKey, name: selectedKey,
           nameAr: def.nameAr, x: ip.x, y: ip.y,
-          isAiPlaced: false, group: def.group as CephLandmark['group'],
+          isAiPlaced: false,
+          placementSource: 'manual',
+          isReviewed: true,
+          group: def.group as CephLandmark['group'],
         }]);
       }
     }
@@ -832,7 +841,13 @@ export function CephCanvas({
     setHovered(hit);
     if (dragging) {
       const ip = T.ti(cx, cy);
-      onLandmarksChange(landmarks.map(l => l.key === dragging ? { ...l, x: ip.x, y: ip.y, isAiPlaced: false } : l));
+      onLandmarksChange(landmarks.map(l => l.key === dragging ? {
+        ...l,
+        x: ip.x,
+        y: ip.y,
+        isAiPlaced: false,
+        isReviewed: true,
+      } : l));
       // Dragging cancels any pending long-press — the user wants to move, not refine.
       if (longPressTimer.current !== null) {
         window.clearTimeout(longPressTimer.current);
@@ -1088,10 +1103,21 @@ export function CephCanvas({
 
       {hovered && !calMode && !viewerTool && (
         <div className="absolute bottom-3 left-3 bg-black/80 text-white text-xs px-2.5 py-1.5 rounded-lg pointer-events-none flex items-center gap-1.5 max-w-[80%]">
-          <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: LANDMARK_DEFS[hovered]?.color }} />
-          {LANDMARK_DEFS[hovered]?.nameAr ?? hovered}
-          {lmMap[hovered]?.isAiPlaced && (
-            <span className="text-purple-300">· AI {Math.round((lmMap[hovered]?.confidence ?? 0) * 100)}%</span>
+          <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: LANDMARK_DEFS[hovered]?.color ?? "#38BDF8" }} />
+          {LANDMARK_DEFS[hovered]?.nameAr
+            ?? lmMap[hovered]?.sourceLandmarkKey
+            ?? lmMap[hovered]?.nameAr
+            ?? lmMap[hovered]?.name
+            ?? hovered}
+          {lmMap[hovered]?.placementSource === "ai" && (
+            <span className={lmMap[hovered]?.isReviewed ? "text-emerald-300" : "text-purple-300"}>
+              · AI {lmMap[hovered]?.isReviewed ? "مراجع" : `${Math.round((lmMap[hovered]?.confidence ?? 0) * 100)}%`}
+            </span>
+          )}
+          {lmMap[hovered]?.placementSource === "webceph-import" && (
+            <span className={lmMap[hovered]?.isReviewed ? "text-emerald-300" : "text-cyan-300"}>
+              · WebCeph {lmMap[hovered]?.isReviewed ? "مراجع" : "يحتاج مراجعة"}
+            </span>
           )}
           {lmMap[hovered]?.reasoning && (
             <span className="text-slate-300 truncate" title={lmMap[hovered]?.reasoning}>

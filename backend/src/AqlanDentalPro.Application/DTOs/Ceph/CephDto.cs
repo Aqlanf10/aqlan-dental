@@ -129,13 +129,20 @@ public class CephLandmarkDto
     public double X { get; set; }
     public double Y { get; set; }
     public bool IsAiPlaced { get; set; }
-    public double? Confidence { get; set; }
+      public double? Confidence { get; set; }
     /// <summary>
     /// Optional short note (Arabic or English) explaining WHY the AI placed this
     /// landmark at this position. Surfaced in the canvas UI so the orthodontist
     /// can read the model's reasoning before accepting or moving the point.
     /// </summary>
-    public string? Reasoning { get; set; }
+      public string? Reasoning { get; set; }
+      public string PlacementSource { get; set; } = "manual";
+      public string? SourceLandmarkKey { get; set; }
+      public string? SourceModelId { get; set; }
+      public double? AiProposalX { get; set; }
+      public double? AiProposalY { get; set; }
+      public bool IsReviewed { get; set; }
+      public double? ReviewErrorMm { get; set; }
 }
 
 public class CephMeasurementDto
@@ -236,6 +243,59 @@ public class LandmarkInput
     public bool IsAiPlaced { get; set; }
     public double? Confidence { get; set; }
     public string? Reasoning { get; set; }
+    public string? PlacementSource { get; set; }
+    public string? SourceLandmarkKey { get; set; }
+    public string? SourceModelId { get; set; }
+    public double? AiProposalX { get; set; }
+    public double? AiProposalY { get; set; }
+    public bool IsReviewed { get; set; }
+}
+
+public sealed class WebCephLandmarkImportOptions
+{
+    public double PixelsPerMm { get; set; }
+    public double AnchorX { get; set; }
+    public double AnchorY { get; set; }
+    public int ImageWidth { get; set; }
+    public int ImageHeight { get; set; }
+    public bool ReplaceExisting { get; set; } = true;
+}
+
+public sealed class WebCephLandmarkImportResultDto
+{
+    public int Parsed { get; set; }
+    public int Imported { get; set; }
+    public int Replaced { get; set; }
+    public int SkippedExisting { get; set; }
+    public int SkippedOutOfBounds { get; set; }
+    public string? RecordingDate { get; set; }
+    public List<string> SkippedNames { get; set; } = [];
+}
+
+public sealed class CephAiAccuracyModelDto
+{
+    public string ModelId { get; set; } = string.Empty;
+    public int ReviewedPointCount { get; set; }
+    public int AnalysisCount { get; set; }
+    public bool SufficientSample { get; set; }
+    public double MeanErrorMm { get; set; }
+    public double MedianErrorMm { get; set; }
+    public double P95ErrorMm { get; set; }
+    public double WithinOneMmPercent { get; set; }
+    public double WithinTwoMmPercent { get; set; }
+}
+
+public sealed class CephAiAccuracySummaryDto
+{
+    public const int MinimumReviewedPointCount = 30;
+    public const int MinimumReviewedAnalysisCount = 3;
+    public int ReviewedPointCount { get; set; }
+    public int ReviewedAnalysisCount { get; set; }
+    public int MinimumReviewedPoints { get; set; } = MinimumReviewedPointCount;
+    public int MinimumReviewedAnalyses { get; set; } = MinimumReviewedAnalysisCount;
+    public bool SufficientSample { get; set; }
+    public string Notice { get; set; } = string.Empty;
+    public List<CephAiAccuracyModelDto> Models { get; set; } = [];
 }
 
 public class SaveDiagnosisRequest

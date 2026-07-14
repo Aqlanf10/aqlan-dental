@@ -11,7 +11,8 @@ $requiredFiles = @(
     'CEPH_AI_DATA_GOVERNANCE.md',
     'CEPH_AI_IMPLEMENTATION_ROADMAP.md',
     'CEPH_AI_LANDMARK_DEFINITIONS.md',
-    'CEPH_AI_BASELINE_REPORT.md'
+    'CEPH_AI_BASELINE_REPORT.md',
+    'CEPH_AI_GOLD_STANDARD_TOOLING.md'
 )
 
 foreach ($name in $requiredFiles) {
@@ -58,4 +59,28 @@ foreach ($key in $landmarkKeys) {
     }
 }
 
-Write-Output "Ceph-AI documentation contract passed: $($requiredFiles.Count) documents, $($landmarkKeys.Count) landmarks."
+$schemaPath = Join-Path $docsRoot 'schemas/ceph-benchmark-manifest-v1.schema.json'
+if (-not (Test-Path -LiteralPath $schemaPath -PathType Leaf)) {
+    throw 'Missing cephalometric benchmark manifest schema.'
+}
+$schemaText = Get-Content -Raw -Encoding utf8 $schemaPath
+[void]($schemaText | ConvertFrom-Json)
+foreach ($requiredToken in @(
+    '"additionalProperties": false',
+    '"patientGroupId"',
+    '"imageSha256"',
+    '"privateTagsRemoved"',
+    '"burnedInIdentifierDetected"',
+    '"goldStandard"'
+)) {
+    if (-not $schemaText.Contains($requiredToken)) {
+        throw "The cephalometric benchmark schema is missing required token: $requiredToken"
+    }
+}
+foreach ($prohibitedProperty in @('"patientName"', '"patientId"', '"dateOfBirth"', '"filePath"', '"imageUrl"')) {
+    if ($schemaText.IndexOf($prohibitedProperty, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        throw "The cephalometric benchmark schema exposes prohibited property: $prohibitedProperty"
+    }
+}
+
+Write-Output "Ceph-AI documentation contract passed: $($requiredFiles.Count) documents, $($landmarkKeys.Count) landmarks, and 1 manifest schema."

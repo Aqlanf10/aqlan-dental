@@ -30,6 +30,7 @@ Evidence: `frontend/src/app/(dashboard)/ceph/`, `frontend/src/components/ceph/`,
 - `CEPH-REQ-024`: WebCeph SHALL remain a functional and, when lawfully exportable, paired accuracy comparator rather than a gold standard or default training-label source. Aqlan's native tracing workflow SHALL be the primary product path; WebCeph import/sync SHALL remain secondary migration/interoperability functionality.
 - `CEPH-REQ-025`: Lateral landmark semantics SHALL be pinned to a ratified version of `docs/ceph-ai/CEPH_AI_LANDMARK_DEFINITIONS.md`, including core/optional status and bilateral/double-contour rules. A definition change SHALL create a new version and SHALL NOT silently reinterpret historic analyses or benchmark labels.
 - `CEPH-REQ-026`: Model promotion SHALL proceed through offline validation, shadow evaluation, controlled canary, clinical sign-off, monitoring, and tested rollback. Initial numerical targets in the validation protocol are release gates to be measured, not statements of current performance.
+- `CEPH-REQ-027`: Gold-standard benchmark manifests SHALL be de-identified, reject undeclared properties, use salted patient-group hashes for patient-cluster split isolation, require two independent reviews for all 24 core landmarks, and require an explicit third-reviewer or consensus-panel decision for disagreement above 1.5 mm or any visibility/double-contour conflict. Validation SHALL be Admin-only and stateless, SHALL NOT accept image locations or direct clinical identifiers, and SHALL NOT auto-average reviewer coordinates.
 
 ## Target State
 
@@ -65,3 +66,4 @@ Automatic diagnosis acceptance, hidden AI assumptions, unaudited provider change
 - WHEN a patient correction is saved THEN it SHALL remain clinical data only unless a separately approved de-identification, annotation, and dataset-release workflow includes it in an immutable dataset version.
 - WHEN WebCeph and Aqlan are compared THEN both SHALL use the same eligible locked images and adjudicated gold standard, or the result SHALL be labelled functional/observational rather than an accuracy comparison.
 - WHEN a model or landmark definition changes THEN old analyses SHALL retain their original lineage and SHALL NOT be recomputed or relabelled silently.
+- WHEN a benchmark manifest is validated THEN every case SHALL pass the de-identification evidence gate, every patient group SHALL remain in one dataset split, every core point SHALL have two independent reviews and explicit gold truth, and unresolved disagreements SHALL block dataset release.

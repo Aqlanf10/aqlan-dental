@@ -1,6 +1,7 @@
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Data.Migrations;
 using AqlanDentalPro.Infrastructure.Data.Seed;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -164,6 +165,7 @@ public static class StartupDatabaseMaintenance
         await EnsureCephAnalysisVersionsSchemaAsync(app);
         await EnsureCephApprovalColumnsAsync(app);
         await EnsureCephLandmarkProvenanceColumnsAsync(app);
+        await EnsureCephAiModelLineageSchemaAsync(app);
         await EnsurePaymentCurrencyColumnAsync(app);
         await EnsureMultiCurrencyColumnsAsync(app);
         await EnsureFinanceEnumColumnTypesAsync(app);
@@ -2214,6 +2216,31 @@ public static class StartupDatabaseMaintenance
         {
             app.Services.GetRequiredService<ILogger<Program>>()
                 .LogWarning(ex, "CephLandmarks provenance-columns hotfix failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// Reconciles the model/inference lineage objects on existing Railway
+    /// databases where gated EF migrations are intentionally disabled.
+    /// </summary>
+    private static async Task EnsureCephAiModelLineageSchemaAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            // Restore read compatibility first. This commits independently so a
+            // later optional FK/index reconciliation cannot keep analyses offline.
+            await db.Database.ExecuteSqlRawAsync(
+                CephAiModelLineageSchema.LandmarkReadCompatibilitySql);
+            await db.Database.ExecuteSqlRawAsync(CephAiModelLineageSchema.UpSql);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "Ceph AI model-lineage schema hotfix failed (non-fatal)");
         }
     }
 

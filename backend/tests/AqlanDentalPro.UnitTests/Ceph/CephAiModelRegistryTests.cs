@@ -52,21 +52,25 @@ public sealed class CephAiModelRegistryTests
     }
 
     [Fact]
-    public void MigrationUp_IsLimitedToCephLineageObjects()
+    public void MigrationUp_IsAdditiveIdempotentAndLimitedToCephLineageObjects()
     {
         var operations = new TestableLineageMigration().BuildUpOperations();
+        var sql = operations.OfType<SqlOperation>().Should().ContainSingle().Which.Sql;
 
-        operations.OfType<CreateTableOperation>().Select(item => item.Name).Should().BeEquivalentTo(
-            "CephAiModelVersions",
-            "CephAiModelDeployments",
-            "CephAiInferenceRuns");
-        var addedColumn = operations.OfType<AddColumnOperation>().Should().ContainSingle().Which;
-        addedColumn.Table.Should().Be("CephLandmarks");
-        addedColumn.Name.Should().Be("SourceInferenceRunId");
-        operations.OfType<AlterColumnOperation>().Should().BeEmpty();
-        operations.OfType<DropTableOperation>().Should().BeEmpty();
-        operations.OfType<CreateIndexOperation>()
-            .Should().OnlyContain(item => item.Table.StartsWith("Ceph", StringComparison.Ordinal));
+        sql.Should().Be(CephAiModelLineageSchema.UpSql);
+        CephAiModelLineageSchema.LandmarkReadCompatibilitySql.Should().Contain(
+            "ADD COLUMN IF NOT EXISTS \"SourceInferenceRunId\" uuid NULL");
+        sql.Should().StartWith(CephAiModelLineageSchema.LandmarkReadCompatibilitySql);
+        sql.Should().Contain("CREATE TABLE IF NOT EXISTS \"CephAiModelVersions\"");
+        sql.Should().Contain("CREATE TABLE IF NOT EXISTS \"CephAiModelDeployments\"");
+        sql.Should().Contain("CREATE TABLE IF NOT EXISTS \"CephAiInferenceRuns\"");
+        sql.Should().Contain(
+            "ADD COLUMN IF NOT EXISTS \"SourceInferenceRunId\" uuid NULL");
+        sql.Should().Contain("CREATE INDEX IF NOT EXISTS");
+        sql.Should().Contain("SELECT 1 FROM pg_constraint");
+        sql.Should().NotContain("DROP TABLE");
+        sql.Should().NotContain("DROP COLUMN");
+        sql.Should().NotContain("DELETE FROM");
     }
 
     [Fact]

@@ -26,6 +26,7 @@ import {
   computeCephQuality,
 } from "@/lib/cephReadiness";
 import api from "@/lib/api";
+import { extractApiError } from "@/lib/apiClient";
 import { resolveImageUrl } from "@/hooks/useClinicBranding";
 import { downloadPdfFromApi, printPdfFromApi } from "@/lib/pdfDownload";
 import { CephMeasurementExportButton } from "@/components/ceph/CephMeasurementExportButton";
@@ -53,6 +54,8 @@ export default function CephAnalysisPage() {
   const { id } = useParams<{ id: string }>();
   const [analysis, setAnalysis]       = useState<CephAnalysis | null>(null);
   const [loading, setLoading]         = useState(true);
+  const [loadError, setLoadError]     = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [landmarks, setLandmarks]     = useState<CephLandmark[]>([]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [showPlanes, setShowPlanes]   = useState(true);
@@ -109,6 +112,9 @@ export default function CephAnalysisPage() {
   }, []);
 
   useEffect(() => {
+    setLoading(true);
+    setLoadError(null);
+    setAnalysis(null);
     api.get<CephAnalysis>(`/api/ceph/${id}`)
       .then(r => {
         setAnalysis(r.data);
@@ -119,9 +125,14 @@ export default function CephAnalysisPage() {
         if (r.data.imageWidth && r.data.imageHeight)
           setImageSize({ w: r.data.imageWidth, h: r.data.imageHeight });
       })
-      .catch(() => {})
+      .catch((error) => {
+        setLoadError(extractApiError(
+          error,
+          "تعذر تحميل تحليل السيفالومتري. تحقق من الاتصال ثم أعد المحاولة.",
+        ));
+      })
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, loadAttempt]);
 
   // C-B: load the list of saved version snapshots for this analysis.
   // Best-effort — a missing list (e.g. 404 on a fresh DB before migration)
@@ -507,7 +518,30 @@ export default function CephAnalysisPage() {
       <Loader2 className="w-8 h-8 animate-spin text-clinic-blue" />
     </div>
   );
-  if (!analysis) return <div className="text-center py-20 text-gray-400">التحليل غير موجود</div>;
+  if (!analysis) return (
+    <div className="mx-auto flex min-h-72 max-w-lg flex-col items-center justify-center px-6 py-16 text-center">
+      <AlertTriangle className="mb-3 h-8 w-8 text-amber-500" aria-hidden="true" />
+      <h1 className="text-base font-bold text-gray-900">تعذر فتح تحليل السيفالومتري</h1>
+      <p className="mt-2 text-sm text-gray-600">{loadError ?? "التحليل غير موجود"}</p>
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+        <button
+          type="button"
+          onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+          className="inline-flex items-center gap-2 rounded-md bg-clinic-blue px-3 py-2 text-xs font-bold text-white hover:opacity-90"
+        >
+          <RotateCcw className="h-4 w-4" aria-hidden="true" />
+          إعادة المحاولة
+        </button>
+        <Link
+          href="/ceph"
+          className="inline-flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50"
+        >
+          <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          قائمة التحليلات
+        </Link>
+      </div>
+    </div>
+  );
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">

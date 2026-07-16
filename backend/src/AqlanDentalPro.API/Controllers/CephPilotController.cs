@@ -606,7 +606,7 @@ public sealed partial class CephPilotController(
             item.ReviewerAUserId,
             item.ReviewerBUserId,
             item.AdjudicatorUserId,
-            myReviewerSlot = "Admin",
+            myReviewerSlot = item.ReviewerAUserId == userId ? "A" : item.ReviewerBUserId == userId ? "B" : "Admin",
             caseCount = item.Cases.Count,
             readyCaseCount = item.Cases.Count(caseItem => caseItem.Status == CephPilotCaseStatus.Ready),
         };

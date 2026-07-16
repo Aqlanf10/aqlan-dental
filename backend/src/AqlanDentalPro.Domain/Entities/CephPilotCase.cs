@@ -35,4 +35,5 @@ public sealed class CephPilotCase : BaseEntity
 
     public CephPilotProject Project { get; set; } = null!;
     public ICollection<CephPilotExportArtifact> ExportArtifacts { get; set; } = [];
+    public ICollection<CephPilotReviewSession> ReviewSessions { get; set; } = [];
 }

@@ -24,3 +24,4 @@
 - `MS-REQ-018` سلامة الإنتاج: يجب احترام Railway/Vercel/CI وأسرار الإنتاج. الدليل: `Program.cs`, `.github/workflows/ci.yml`, `.github/workflows/encoding-guard.yml`.
 - `MS-REQ-019` كل PR يجب أن يربط Spec ID ويحدث المواصفات عند تغيير السلوك.
 - `MS-REQ-020` إذا لم يمكن التحقق الثابت من سلوك ما، يجب كتابة `Needs runtime verification`.
+- `MS-REQ-021` Core-system stabilization SHALL follow `specs/011-core-system-stabilization/`. New cephalometry work is paused until `CORE-REQ-016` is satisfied and the owner explicitly authorizes resumption. The binding execution order and status are maintained in `docs/governance/MANDATORY_SPRINT_QUEUE.md` and `docs/roadmap/core-system-execution-checklist.md`.

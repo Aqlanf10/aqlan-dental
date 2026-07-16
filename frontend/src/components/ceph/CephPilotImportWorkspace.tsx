@@ -264,6 +264,29 @@ export default function CephPilotImportWorkspace() {
     }
   };
 
+  const openForBlindedReview = async () => {
+    if (!selectedProject || selectedProject.status !== "Draft") return;
+    if (!cases.some(item => item.status === "Ready")) {
+      setError("يلزم وجود حالة واحدة على الأقل منزوعة الهوية ومعايرة وجاهزة قبل فتح المراجعة.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await api.patch<CephPilotProject>(`/api/ceph-pilot/projects/${encodeURIComponent(selectedProject.id)}`, {
+        expectedRevision: selectedProject.revision,
+        status: "ReadyForAnnotation",
+      });
+      setProjects(current => current.map(item => item.id === response.data.id ? response.data : item));
+      setNotice("تم قفل إعدادات المشروع وفتحه للمراجعتين المعمّاتين A وB.");
+    } catch (requestError) {
+      setError(extractErrorMessage(requestError, "تعذر فتح المشروع للمراجعة."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const stageArtifact = async () => {
     if (!artifactCaseId || !artifactFile || !artifactConfirmed) {
       setError("اختر الحالة والملف وأكد فحصه بصريًا قبل الإرفاق.");
@@ -313,6 +336,7 @@ export default function CephPilotImportWorkspace() {
           <p className="mt-1 text-sm text-gray-500">إدخال منزوعة الهوية، معايرة موثقة، ومقارنات منفصلة عن السجل السريري.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button type="button" disabled={busy || selectedProject?.status !== "Draft" || !cases.some(item => item.status === "Ready")} onClick={() => void openForBlindedReview()} className="inline-flex items-center gap-2 rounded-md bg-gray-900 px-3 py-2 text-xs font-bold text-white disabled:opacity-40"><LockKeyhole className="h-4 w-4" />فتح المراجعة المعمّاة</button>
           <a href="https://webceph.com/en/records/" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50"><ExternalLink className="h-4 w-4" />فتح WebCeph</a>
           <Link href="/ceph" className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50"><ArrowRight className="h-4 w-4" />العودة للسيفالو</Link>
         </div>

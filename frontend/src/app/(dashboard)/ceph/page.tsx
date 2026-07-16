@@ -89,6 +89,7 @@ export default function CephPage() {
           </button>
           <Link href="/ceph/quality" className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 transition"><ShieldCheck className="w-4 h-4" />فحص الجودة</Link>
           <Link href="/ceph/ai-quality" className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition"><Gauge className="w-4 h-4" />دقة AI المحلية</Link>
+          <Link href="/ceph/pilot" className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 transition hover:bg-emerald-100"><ShieldCheck className="h-4 w-4" />Pilot السيفالومتري</Link>
           <Link href="/ceph/webceph-migration" className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-cyan-200 bg-cyan-50 text-cyan-800 hover:bg-cyan-100 transition"><Database className="w-4 h-4" />ترحيل WebCeph</Link>
           <Link href="/ceph/cohort" className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"><BarChart3 className="w-4 h-4" />تحليل المجموعات</Link>
           <Link href="/ceph/photo" className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"><UserSquare2 className="w-4 h-4" />تحليل صورة بروفايل</Link>

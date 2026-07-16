@@ -325,6 +325,48 @@ public sealed partial class CephPilotController(
         return PhysicalFile(path, "image/png", enableRangeProcessing: true);
     }
 
+    [HttpPatch("cases/{caseId:guid}/calibration")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> UpdateCalibration(
+        Guid caseId,
+        UpdateCephPilotCalibrationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var entity = await db.CephPilotCases.Include(item => item.Project)
+            .FirstOrDefaultAsync(item => item.Id == caseId, cancellationToken);
+        if (entity is null) return NotFound(Error("case.not-found", "Pilot case not found."));
+        if (entity.Project.Status != CephPilotProjectStatus.Draft ||
+            entity.Status is not (CephPilotCaseStatus.Uploaded or CephPilotCaseStatus.Ready))
+            return Conflict(Error("case.calibration-locked", "Calibration cannot change after reviewer annotation starts."));
+        if (request.ExpectedRevision != entity.Revision)
+            return Conflict(Error("case.revision-conflict", "The Pilot case changed. Reload it before updating calibration."));
+        if (request.MmPerPixel is <= 0 or > 10)
+            return BadRequest(Error("case.invalid-calibration", "MmPerPixel must be greater than 0 and no more than 10."));
+        if (!Enum.IsDefined(request.CalibrationSource))
+            return BadRequest(Error("case.invalid-calibration-source", "CalibrationSource is not supported."));
+
+        var previousMmPerPixel = entity.MmPerPixel;
+        var previousSource = entity.CalibrationSource;
+        entity.MmPerPixel = request.MmPerPixel;
+        entity.CalibrationSource = request.CalibrationSource;
+        entity.Status = CephPilotCaseStatus.Ready;
+        entity.Revision += 1;
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict(Error("case.revision-conflict", "The Pilot case changed. Reload it before updating calibration."));
+        }
+
+        await audit.LogAsync(AuditAction.Update, "CephPilotCaseCalibration", entity.Id,
+            oldData: new { MmPerPixel = previousMmPerPixel, CalibrationSource = previousSource },
+            newData: new { entity.MmPerPixel, entity.CalibrationSource, entity.Status, entity.Revision });
+        return Ok(MapCase(entity, true));
+    }
+
     [HttpPost("cases/{caseId:guid}/artifacts")]
     [Authorize(Policy = "AdminOnly")]
     [RequestSizeLimit(MaxArtifactBytes + 1024 * 1024)]
@@ -456,6 +498,8 @@ public sealed partial class CephPilotController(
             return Error("case.invalid-calibration", "MmPerPixel must be greater than 0 and no more than 10.");
         if (request.MmPerPixel.HasValue != request.CalibrationSource.HasValue)
             return Error("case.calibration-source-required", "MmPerPixel and CalibrationSource must be provided together.");
+        if (request.CalibrationSource.HasValue && !Enum.IsDefined(request.CalibrationSource.Value))
+            return Error("case.invalid-calibration-source", "CalibrationSource is not supported.");
         return null;
     }
 

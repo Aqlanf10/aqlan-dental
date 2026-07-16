@@ -252,6 +252,94 @@ public sealed class CephPilotFoundationTests
         (await db.CephPilotCases.CountAsync()).Should().Be(1);
     }
 
+    [Fact]
+    public async Task UpdateCalibration_MakesUploadedCaseReady_AndIncrementsRevision()
+    {
+        await using var db = CreateDb();
+        var admin = Guid.NewGuid();
+        var reviewerA = Guid.NewGuid();
+        var reviewerB = Guid.NewGuid();
+        var project = Project(reviewerA, reviewerB, admin);
+        var pilotCase = Case(project);
+        pilotCase.MmPerPixel = null;
+        pilotCase.CalibrationSource = null;
+        pilotCase.Status = CephPilotCaseStatus.Uploaded;
+        db.Users.AddRange(User(admin, UserRole.Admin), User(reviewerA), User(reviewerB));
+        db.AddRange(project, pilotCase);
+        await db.SaveChangesAsync();
+        var controller = Controller(db, admin, isAdmin: true);
+
+        var result = await controller.UpdateCalibration(pilotCase.Id, new()
+        {
+            ExpectedRevision = 1,
+            MmPerPixel = 0.22336386m,
+            CalibrationSource = CephPilotCalibrationSource.CalibrationRuler,
+        }, CancellationToken.None);
+
+        result.Should().BeOfType<OkObjectResult>();
+        pilotCase.MmPerPixel.Should().Be(0.22336386m);
+        pilotCase.Status.Should().Be(CephPilotCaseStatus.Ready);
+        pilotCase.Revision.Should().Be(2);
+    }
+
+    [Theory]
+    [InlineData(CephPilotProjectStatus.ReadyForAnnotation, CephPilotCaseStatus.Ready)]
+    [InlineData(CephPilotProjectStatus.Draft, CephPilotCaseStatus.ReviewerAInProgress)]
+    public async Task UpdateCalibration_IsLockedWhenProjectOrReviewHasStarted(
+        CephPilotProjectStatus projectStatus,
+        CephPilotCaseStatus caseStatus)
+    {
+        await using var db = CreateDb();
+        var admin = Guid.NewGuid();
+        var reviewerA = Guid.NewGuid();
+        var reviewerB = Guid.NewGuid();
+        var project = Project(reviewerA, reviewerB, admin);
+        project.Status = projectStatus;
+        var pilotCase = Case(project);
+        pilotCase.Status = caseStatus;
+        db.Users.AddRange(User(admin, UserRole.Admin), User(reviewerA), User(reviewerB));
+        db.AddRange(project, pilotCase);
+        await db.SaveChangesAsync();
+        var controller = Controller(db, admin, isAdmin: true);
+
+        var result = await controller.UpdateCalibration(pilotCase.Id, new()
+        {
+            ExpectedRevision = pilotCase.Revision,
+            MmPerPixel = 0.25m,
+            CalibrationSource = CephPilotCalibrationSource.CalibrationRuler,
+        }, CancellationToken.None);
+
+        result.Should().BeOfType<ConflictObjectResult>();
+        pilotCase.MmPerPixel.Should().Be(0.2m);
+        pilotCase.Revision.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task UpdateCalibration_RejectsUnknownCalibrationSource()
+    {
+        await using var db = CreateDb();
+        var admin = Guid.NewGuid();
+        var reviewerA = Guid.NewGuid();
+        var reviewerB = Guid.NewGuid();
+        var project = Project(reviewerA, reviewerB, admin);
+        var pilotCase = Case(project);
+        db.Users.AddRange(User(admin, UserRole.Admin), User(reviewerA), User(reviewerB));
+        db.AddRange(project, pilotCase);
+        await db.SaveChangesAsync();
+        var controller = Controller(db, admin, isAdmin: true);
+
+        var result = await controller.UpdateCalibration(pilotCase.Id, new()
+        {
+            ExpectedRevision = 1,
+            MmPerPixel = 0.25m,
+            CalibrationSource = (CephPilotCalibrationSource)999,
+        }, CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        pilotCase.MmPerPixel.Should().Be(0.2m);
+        pilotCase.Revision.Should().Be(1);
+    }
+
     private static AppDbContext CreateDb() => new(new DbContextOptionsBuilder<AppDbContext>()
         .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
 

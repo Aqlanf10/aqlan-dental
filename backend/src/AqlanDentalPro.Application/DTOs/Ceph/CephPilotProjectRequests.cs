@@ -28,3 +28,11 @@ public sealed class UpdateCephPilotProjectRequest
     public bool ClearAdjudicator { get; init; }
     public CephPilotProjectStatus? Status { get; init; }
 }
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed class UpdateCephPilotCalibrationRequest
+{
+    public int ExpectedRevision { get; init; }
+    public decimal MmPerPixel { get; init; }
+    public CephPilotCalibrationSource CalibrationSource { get; init; }
+}

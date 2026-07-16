@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { getStaticRouteAlias } from "@/lib/canonicalRoutes";
 
 /**
  * NAV-CEPH-FIX (audit §6 + §8) — Redirect stub.
@@ -20,5 +21,5 @@ import { redirect } from "next/navigation";
  * redirect).
  */
 export default function PatientJourneyRedirectPage() {
-  redirect("/daily-operations");
+  redirect(getStaticRouteAlias("/patient-journey").destination);
 }

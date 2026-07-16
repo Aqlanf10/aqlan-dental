@@ -56,7 +56,7 @@ type NavItem = NavLeaf & { section?: string };
 type NavEntry = (NavItem & { kind?: "leaf" }) | (NavGroup & { section?: string });
 
 /* ─── Navigation definition ─────────────────────────────────────────────────── */
-const NAV: NavEntry[] = [
+export const NAV: NavEntry[] = [
   // ── رئيسي ────────────────────────────────────────────────────────────────
   { href: "/",               label: "لوحة التحكم",     icon: LayoutDashboard, roles: ["Admin"],                                                             section: "رئيسي" },
   { href: "/daily-operations", label: "التشغيل اليومي", icon: ClipboardList, roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.DAILY_OPERATIONS_VIEW, badge: "⭐" },
@@ -67,7 +67,7 @@ const NAV: NavEntry[] = [
   { href: "/patient-segments", label: "مجموعات المرضى", icon: Layers,          roles: ["Admin"] },
 
   // ── العيادة ───────────────────────────────────────────────────────────────
-  { href: "/appointments",   label: "المواعيد",        icon: CalendarDays,    roles: ["Admin", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.APPOINTMENTS_VIEW, section: "العيادة" },
+  { href: "/appointments",   label: "المواعيد",        icon: CalendarDays,    roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.APPOINTMENTS_VIEW, section: "العيادة" },
   { href: "/appointments/recall", label: "قائمة الاستدعاء", icon: BellRing,   roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.APPOINTMENTS_VIEW },
   // NAV-CEPH-FIX (audit §4 — Reception workflow): /clinic-queue and /patient-journey
   // index pages are now thin redirect stubs to /daily-operations — the canonical workspace.

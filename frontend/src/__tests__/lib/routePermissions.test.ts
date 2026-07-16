@@ -31,6 +31,14 @@ describe('route permissions', () => {
     expect(isRouteAllowed('/patient-journey/123', 'Reception')).toBe(true);
   });
 
+  it('CORE-P1-S1: lets Reception use the canonical appointment workflow', () => {
+    expect(isRouteAllowed('/appointments', 'Reception')).toBe(true);
+    expect(isRouteAllowed('/appointments/new', 'Reception')).toBe(true);
+    expect(isRouteAllowed('/appointments/appointment-1', 'Reception')).toBe(true);
+    expect(isRouteAllowed('/appointments/appointment-1/edit', 'Reception')).toBe(true);
+    expect(isRouteAllowed('/appointments/recall', 'Reception')).toBe(true);
+  });
+
   it('keeps Admin override and default deny behavior intact', () => {
     expect(isRouteAllowed('/', 'Admin')).toBe(true);
     expect(isRouteAllowed('/', 'Reception')).toBe(false);

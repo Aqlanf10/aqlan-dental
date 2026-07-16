@@ -12,6 +12,23 @@
 4. كل PR تنفيذي يذكر رقم العنصر في العنوان، ويحدّث حالته عند تحقق معيار الخروج.
 5. البنود المنجزة لا يعاد فتحها إلا بدليل ارتداد أو عطل إنتاجي جديد.
 
+## قرار المالك التنفيذي — 2026-07-17
+
+### 🔵 CORE-00 — تجميد السيفالومتري وتثبيت خط أساس النظام
+- **Spec:** `CORE-REQ-001..018`, `CORE-TASK-000..007` في
+  `specs/011-core-system-stabilization/`.
+- أوقف المالك مؤقتًا كل تطوير سيفالومتري جديد حتى استيفاء بوابة العودة في
+  `CORE-REQ-016`. تبقى الأعمال الحالية محفوظة في Draft PRs #697 و#698 و#699
+  بحالة **Paused — Resume After Core System Stabilization** ولا تُدمج أثناء التجميد.
+- النطاق الحالي تدقيق فقط: مزامنة `main`، جرد الحوكمة والوحدات والمسارات
+  والصلاحيات والإعدادات وCI وmigrations، تثبيت خط أساس الاختبارات، وإنشاء
+  `docs/roadmap/core-system-current-state.md` و
+  `docs/roadmap/core-system-priority-plan.md` وقائمة تنفيذ قابلة للتحديث.
+- **معيار الخروج:** لا عمل سيفالومتري غير محفوظ؛ تقرير حالة مدعوم بأدلة؛ قائمة
+  أخطاء مصنفة؛ خط أساس اختبارات وCI؛ وخطة مراحل تحدد أول شريحة صغيرة من المرحلة 1.
+- هذا القرار الأحدث يعلّق بنود السيفالومتري المفتوحة أدناه، وهو الاستثناء الملزم
+  من ترتيبها السابق إلى أن يقرر المالك استئنافها بعد تحقق بوابة العودة.
+
 ---
 
 ## الطابور بالترتيب
@@ -344,7 +361,7 @@
   يعمل فحص صفحة الدخول المنشورة دائمًا، بينما يُشغّل سيناريو السيفالو المصادق فقط
   عند توفر أسرار موظف E2E المخصصة ويُبلغ بتجاوز صريح عند غيابها دون ادعاء تحقق مصادق.
 
-### 🟡 SEQ-52 — سيفالو: دليل دقة AI وترحيل بيانات WebCeph الآمن
+### ⏸️ SEQ-52 — سيفالو: دليل دقة AI وترحيل بيانات WebCeph الآمن
 - **Spec:** `CEPH-REQ-017..026`, `CEPH-TASK-017..018`.
 - حفظ مصدر كل نقطة وإصدار النموذج والاقتراح الأصلي، وإلزام مراجعة الطبيب قبل
   الاعتماد أو PDF، وحساب خطأ التصحيح بالمليمتر حسب إصدار النموذج.
@@ -376,7 +393,7 @@
 - **Exit:** deterministic golden fixtures, strict endpoint tests, ceph suite, backend build, schema/document contract, encoding guard, PR CI, and deployment checks pass. Derived measurements, repeatability/ICC, paired comparator deltas, and non-inferiority remain explicitly assigned to the next evaluation stage.
 - **Delivered in PR #692:** strict one-split evaluation, 24-core-landmark error/SDR/failure/completeness reports, patient-clustered confidence intervals, Admin-only stateless endpoint, 228 passing ceph tests, and green Backend/Frontend/E2E/Encoding/Vercel checks.
 
-### 🟡 SEQ-55 — Frozen cephalometric geometry, measurement and repeatability evaluation
+### ⏸️ SEQ-55 — Frozen cephalometric geometry, measurement and repeatability evaluation
 - **Spec:** `CEPH-REQ-029`, `CEPH-TASK-021`.
 - Extract one versioned geometry engine shared by clinical analysis and offline evaluation; validate derived-measurement bias/absolute error/Bland-Altman/category disagreement, three-run repeatability and ICC, paired comparator deltas, and confidence/coverage behavior.
 - **Exit:** backend/frontend geometry parity fixtures, repeated and paired request schemas, deterministic statistics review, clinical tolerance registry, focused/full tests, PR CI, and deployment checks pass. No equivalence claim without the preregistered locked study.
@@ -385,7 +402,7 @@
 - **Delivered in PR #694:** strict derived-measurement, paired-comparator, three-run repeatability/ICC, and confidence/coverage calculators; all six CI/deployment checks passed.
 - **Remaining gate:** independent statistics/clinical review, an approved tolerance registry, and the locked study remain required before SEQ-55 exits or any equivalence statement is allowed.
 
-### 🟡 SEQ-56 — Cephalometry immutable model and inference lineage
+### ⏸️ SEQ-56 — Cephalometry immutable model and inference lineage
 - **Spec:** `CEPH-REQ-030`, `CEPH-TASK-022`.
 - Add immutable model/preprocessing/dataset/definition/artifact identity, append-oriented inference runs with original normalized predictions and hashes, correction-to-run linkage, and Admin-only evidence approval plus pin/rollback.
 - Provider-managed models with undisclosed artifacts remain `observed` and cannot be promoted. Existing unsaved-draft and doctor-review gates remain unchanged.
@@ -397,3 +414,5 @@
 
 - عند اكتشاف عمل جديد: أضفه في آخر الطابور بحالة `🟡` أو `🔴`، ولا تنفذه قبل البنود السابقة.
 - عند اكتمال عنصر: غيّر حالته إلى `✅` مع PR ومعيار خروج مختصر.
+- حالة `⏸️` تعني عملاً محفوظًا وموقوفًا بقرار المالك، ولا تدخل في ترتيب التنفيذ
+  حتى يرفع المالك التجميد صراحة.

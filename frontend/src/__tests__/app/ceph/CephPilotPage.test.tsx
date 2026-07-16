@@ -10,6 +10,7 @@ vi.mock("@/lib/api", () => ({
     get: vi.fn(),
     post: vi.fn(),
     patch: vi.fn(),
+    put: vi.fn(),
   },
 }));
 
@@ -30,15 +31,32 @@ describe("CephPilotPage", () => {
             name: "Pilot",
             code: "ADP-CEPH-WEBCEPH-PILOT-001",
             landmarkDefinitionVersion: "ADP-LM-LAT-v1.0",
-            status: "Draft",
+            status: role === "Orthodontist" ? "ReadyForAnnotation" : "Draft",
             revision: 1,
             caseCount: 0,
             readyCaseCount: 0,
+            myReviewerSlot: role === "Orthodontist" ? "A" : "Admin",
           }],
         } as never;
       }
       if (url === "/api/users") return { data: [] } as never;
-      if (url.includes("/cases")) return { data: [] } as never;
+      if (url.endsWith("/review")) throw { response: { status: 404 } };
+      if (url.includes("/cases")) return {
+        data: role === "Orthodontist" ? [{
+          id: "case-1",
+          projectId: "project-1",
+          caseCode: "PILOT-001",
+          imageWidth: 1000,
+          imageHeight: 800,
+          mmPerPixel: 0.2,
+          calibrationSource: "CalibrationRuler",
+          siteCode: "SITE-01",
+          deviceCode: "DEVICE-01",
+          qualityCategory: "Normal",
+          status: "Ready",
+          revision: 1,
+        }] : [],
+      } as never;
       throw new Error(`Unexpected URL: ${url}`);
     });
   });
@@ -54,11 +72,12 @@ describe("CephPilotPage", () => {
     expect(screen.queryByText(/PatientId/)).not.toBeInTheDocument();
   });
 
-  it("does not load Pilot data for a non-admin user", async () => {
+  it("opens the blinded assigned-case workspace for an orthodontist", async () => {
     role = "Orthodontist";
     render(<CephPilotPage />);
 
-    expect(await screen.findByRole("heading", { name: "مساحة الإدخال محصورة بالمدير" })).toBeInTheDocument();
-    expect(api.get).not.toHaveBeenCalled();
+    expect(await screen.findByRole("heading", { name: "المراجعة السيفالومترية المعمّاة" })).toBeInTheDocument();
+    expect(await screen.findByText("PILOT-001")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "بدء المراجعة المعمّاة" })).toBeEnabled();
   });
 });

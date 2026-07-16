@@ -86,3 +86,29 @@ public enum CephPilotMigrationDecision
     BenchmarkOnly,
     Rejected,
 }
+
+public enum CephPilotReviewerSlot
+{
+    A,
+    B,
+}
+
+public enum CephPilotReviewStatus
+{
+    Draft,
+    Submitted,
+}
+
+public enum CephPilotLandmarkVisibility
+{
+    Visible,
+    NotVisible,
+}
+
+public enum CephPilotContourDecision
+{
+    NotApplicable,
+    SingleContour,
+    ReceptorSideContour,
+    Unresolvable,
+}

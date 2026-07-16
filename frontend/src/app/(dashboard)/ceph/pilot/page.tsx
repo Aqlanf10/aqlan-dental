@@ -1,5 +1,5 @@
-import CephPilotImportWorkspace from "@/components/ceph/CephPilotImportWorkspace";
+import CephPilotWorkspace from "@/components/ceph/CephPilotWorkspace";
 
 export default function CephPilotPage() {
-  return <CephPilotImportWorkspace />;
+  return <CephPilotWorkspace />;
 }

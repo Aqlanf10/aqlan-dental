@@ -16,6 +16,9 @@
 - [x] Frontend lint passed with warnings.
 - [x] Frontend tests passed: 383 / 383.
 - [x] Frontend production build passed.
+- [x] PR #700 CI passed: backend, frontend, encoding, and E2E jobs are green.
+- [x] PR #700 backend coverage recorded: 8.28% lines and 37.28% branches.
+- [x] PR #700 E2E evidence recorded: 1 public smoke passed and 4 authenticated tests skipped.
 - [ ] Authenticated end-to-end patient journey is verified.
 - [ ] Fresh and representative legacy database migration parity is verified.
 

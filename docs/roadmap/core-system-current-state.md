@@ -36,13 +36,14 @@ Phase 12 return gate. Phase 0 makes no product or migration changes.
 | Frontend lint | Pass with warnings | Unused symbols, two hook dependency/ref warnings, and image warnings |
 | Frontend tests | Pass | 383 / 383 |
 | Frontend production build | Pass | Next.js build completed on the clean `main` worktree |
-| Authenticated patient-journey E2E | Not proven | `Needs runtime verification` |
+| Authenticated patient-journey E2E | Not proven | PR #700 ran 5 Playwright tests: 1 public smoke passed and 4 authenticated tests skipped |
 
-The GitHub E2E job exits green when `E2E_API_URL` is absent. Therefore a green CI
-workflow does not prove that Playwright authenticated flows ran. Backend coverage
-enforcement is also `continue-on-error: true`; comments in `.github/workflows/ci.yml`
-record an approximate baseline of 6% lines and 28% branches with safety floors of
-4% and 26%.
+The GitHub E2E job can remain green without authenticated credentials. In PR #700,
+`E2E_API_URL` was present, but the staff and portal credentials were absent: 1 public
+login-surface smoke test passed and 4 authenticated tests were skipped. Therefore a
+green E2E job does not prove the patient journey. Backend coverage enforcement is
+also `continue-on-error: true`; PR #700 measured 8.28% lines and 37.28% branches.
+The configured non-blocking safety floors are only 4% and 26%.
 
 ## 4. Canonical Module Ownership
 

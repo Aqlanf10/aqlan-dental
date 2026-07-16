@@ -3,6 +3,7 @@
 - Last updated: 2026-07-17
 - Current phase: 0
 - Current branch: `codex/core-phase0-audit`
+- Current PR: #700 (draft)
 - Rule: update this file after every core-system PR.
 
 ## Current Snapshot
@@ -42,7 +43,7 @@
 - [x] Publish current-state report with severity-ranked evidence.
 - [x] Publish ordered priority plan and select first Phase 1 slice.
 - [x] Review Phase 0 diff and encoding.
-- [ ] Open Phase 0 draft PR to `main`.
+- [x] Open Phase 0 draft PR #700 to `main`.
 - [ ] Obtain review/approval before merging.
 
 ## Phase 1 - Architecture And Navigation

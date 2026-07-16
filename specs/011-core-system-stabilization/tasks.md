@@ -9,7 +9,7 @@
 - [x] `CORE-TASK-004` Classify production-critical defects, permission/data-integrity gaps, risky migrations, hardcoded rules, and duplicate modules/routes.
 - [x] `CORE-TASK-005` Create `docs/roadmap/core-system-current-state.md` with the 18 required audit sections and evidence links.
 - [x] `CORE-TASK-006` Create `docs/roadmap/core-system-priority-plan.md` plus an updateable execution checklist covering phases 0 through 12.
-- [ ] `CORE-TASK-007` Select, but do not implement in the Phase 0 PR, the first small Phase 1 slice; review the diff and open a draft PR.
+- [x] `CORE-TASK-007` Select, but do not implement in the Phase 0 PR, the first small Phase 1 slice; review the diff and open draft PR #700.
 
 ## Later Phases — Blocked By Phase 0
 

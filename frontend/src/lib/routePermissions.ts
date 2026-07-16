@@ -87,7 +87,7 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   // More specific path first: isRouteAllowed matches exact paths or child routes, so
   // '/appointments/recall' must precede '/appointments' (Reception needs access here)
   { path: '/appointments/recall', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
-  { path: '/appointments', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
+  { path: '/appointments', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   { path: '/clinic-queue', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   { path: '/patient-journey', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
 

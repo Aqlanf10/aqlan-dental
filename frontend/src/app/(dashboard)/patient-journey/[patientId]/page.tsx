@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { buildPatientJourneyDestination } from "@/lib/canonicalRoutes";
 
 /**
  * FE-06 — Redirect stub.
@@ -28,16 +29,5 @@ export default async function PatientJourneyRedirectPage({
 }) {
   const { patientId } = await params;
   const sp = await searchParams;
-
-  const query = new URLSearchParams();
-  query.set("focus", "journey");
-  for (const [key, value] of Object.entries(sp)) {
-    if (Array.isArray(value)) {
-      for (const v of value) query.append(key, v);
-    } else if (typeof value === "string") {
-      query.append(key, value);
-    }
-  }
-
-  redirect(`/patients/${patientId}?${query.toString()}`);
+  redirect(buildPatientJourneyDestination(patientId, sp));
 }

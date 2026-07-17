@@ -1,9 +1,9 @@
 # Core System Execution Checklist
 
 - Last updated: 2026-07-17
-- Current phase: 0
-- Current branch: `codex/core-phase0-audit`
-- Current PR: #700 (draft)
+- Current phase: 1
+- Current branch: `codex/core-p1-s2-canonical-routes`
+- Current PR: pending
 - Rule: update this file after every core-system PR.
 
 ## Current Snapshot
@@ -19,6 +19,8 @@
 - [x] PR #700 CI passed: backend, frontend, encoding, and E2E jobs are green.
 - [x] PR #700 backend coverage recorded: 8.28% lines and 37.28% branches.
 - [x] PR #700 E2E evidence recorded: 1 public smoke passed and 4 authenticated tests skipped.
+- [x] PR #700 merged to `main` as `da6e1e54`.
+- [x] PR #701 aligned Reception appointment navigation and merged as `260cc4c1`.
 - [ ] Authenticated end-to-end patient journey is verified.
 - [ ] Fresh and representative legacy database migration parity is verified.
 
@@ -29,7 +31,7 @@
 - [ ] `CORE-F-003` High: align queue reorder frontend/backend request contract.
 - [ ] `CORE-F-004` High: guard and audit queue priority/reorder actions.
 - [ ] `CORE-F-005` High: remove VIP and implement controlled emergency behavior.
-- [ ] `CORE-F-006` High: align Reception appointment route access.
+- [x] `CORE-F-006` High: align Reception appointment route access.
 - [ ] `CORE-F-007` High: prevent invalid mixed-currency aggregates and PDF labels.
 - [ ] `CORE-F-008` High: centralize identity, language, logo, and print contract.
 - [ ] `CORE-F-009` High: make authenticated E2E execution status explicit.
@@ -47,12 +49,12 @@
 - [x] Publish ordered priority plan and select first Phase 1 slice.
 - [x] Review Phase 0 diff and encoding.
 - [x] Open Phase 0 draft PR #700 to `main`.
-- [ ] Obtain review/approval before merging.
+- [x] Owner authorized completed branches to merge; PR #700 passed required checks and merged.
 
 ## Phase 1 - Architecture And Navigation
 
-- [ ] `CORE-P1-S1` Align Reception access to canonical `/appointments` and add tests.
-- [ ] `CORE-P1-S2` Lock canonical route/owner inventory and redirects with tests.
+- [x] `CORE-P1-S1` Align Reception access to canonical `/appointments` and add tests.
+- [x] `CORE-P1-S2` Lock canonical route/owner inventory and redirects with tests.
 - [ ] `CORE-P1-S3` Create one frontend route-role manifest.
 - [ ] `CORE-P1-S4` Map canonical routes to backend policy ownership.
 - [ ] `CORE-P1-S5` Distinguish executed and skipped authenticated E2E in CI.

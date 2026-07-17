@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { getStaticRouteAlias } from "@/lib/canonicalRoutes";
 
 /**
  * NAV-CEPH-FIX (audit §6 + §8) — Redirect stub.
@@ -17,5 +18,5 @@ import { redirect } from "next/navigation";
  * Direct URLs to `/clinic-queue` continue to work (they land here and redirect).
  */
 export default function ClinicQueueRedirectPage() {
-  redirect("/daily-operations?tab=queue");
+  redirect(getStaticRouteAlias("/clinic-queue").destination);
 }

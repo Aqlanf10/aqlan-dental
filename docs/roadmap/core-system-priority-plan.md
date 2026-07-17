@@ -52,6 +52,12 @@ work from a later phase.
 
 ## Phase 1 Slices
 
+### Merged Phase 1 Work
+
+- `CORE-P1-S1` merged in PR #701. Reception now has a tested navigation and
+  route-guard contract for the canonical appointment workflow. Authenticated
+  Reception runtime verification remains part of the Phase 1 exit evidence.
+
 ### CORE-P1-S1 - Reception Appointment Route Alignment
 
 Problem: Reception is included in backend `AppointmentAccess` and the target workflow,

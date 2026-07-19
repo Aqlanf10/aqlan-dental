@@ -1,6 +1,7 @@
 using AqlanDentalPro.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -63,15 +64,17 @@ public partial class FinanceV3Controller
             var accountId = branchId;
             if (accountType is JournalAccountType.Payable or JournalAccountType.AccountsPayable)
             {
-                if (!line.AccountId.HasValue || !await db.Suppliers.AnyAsync(s => s.Id == line.AccountId.Value))
+                var supplierId = line.AccountId;
+                if (!supplierId.HasValue || !await db.Suppliers.AnyAsync(s => s.Id == supplierId.Value))
                     return BadRequest(new { message = "بند الذمم الدائنة يتطلب مورداً صالحاً." });
-                accountId = line.AccountId.Value;
+                accountId = supplierId.Value;
             }
             else if (accountType is JournalAccountType.PatientReceivable or JournalAccountType.PatientAdvance)
             {
-                if (!line.AccountId.HasValue || !await db.Patients.AnyAsync(p => p.Id == line.AccountId.Value && p.BranchId == branchId))
+                var patientId = line.AccountId;
+                if (!patientId.HasValue || !await db.Patients.AnyAsync(p => p.Id == patientId.Value && p.BranchId == branchId))
                     return BadRequest(new { message = "بند ذمم المرضى يتطلب مريضاً من نفس الفرع." });
-                accountId = line.AccountId.Value;
+                accountId = patientId.Value;
             }
 
             lines.Add((accountType, accountId, line.Debit, line.Credit, line.Description?.Trim()));

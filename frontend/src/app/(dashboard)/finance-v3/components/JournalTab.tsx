@@ -9,6 +9,8 @@ import {
   ChevronUp,
   Filter,
   Download,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
@@ -77,6 +79,13 @@ interface JournalEntryDetail {
   performedBy: string;
 }
 
+type ManualJournalLine = {
+  accountType: string;
+  debit: string;
+  credit: string;
+  description: string;
+};
+
 /* ── Arabic labels for document types ── */
 const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   Payment: "دفعة مريض",
@@ -139,6 +148,8 @@ const DISBURSEMENT_DOCUMENT_TYPES = new Set([
 const canDownloadDisbursementVoucher = (entry: JournalEntry) =>
   entry.lines.some((line) => line.accountType === "Treasury" && line.credit > 0)
   || DISBURSEMENT_DOCUMENT_TYPES.has(entry.documentType);
+
+const MANUAL_ACCOUNT_OPTIONS = ["Revenue", "Expense", "OwnerEquity", "OtherReceivable", "ContraRevenue", "ContraExpense", "SalesReturns"];
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 10: Journal Entries — قيود اليومية
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -161,6 +172,16 @@ export function JournalTab() {
 
   // Expanded rows (for inline line display)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [manualDescription, setManualDescription] = useState("");
+  const [manualDate, setManualDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [manualCurrency, setManualCurrency] = useState("YER");
+  const [manualRate, setManualRate] = useState("");
+  const [manualLines, setManualLines] = useState<ManualJournalLine[]>([
+    { accountType: "Expense", debit: "", credit: "", description: "" },
+    { accountType: "OwnerEquity", debit: "", credit: "", description: "" },
+  ]);
+  const [manualSubmitting, setManualSubmitting] = useState(false);
 
   const fetchEntries = useCallback(async () => {
     try {
@@ -208,6 +229,26 @@ export function JournalTab() {
     }
   };
 
+  const manualDebit = manualLines.reduce((sum, line) => sum + (Number(line.debit) || 0), 0);
+  const manualCredit = manualLines.reduce((sum, line) => sum + (Number(line.credit) || 0), 0);
+  const updateManualLine = (index: number, patch: Partial<ManualJournalLine>) =>
+    setManualLines((current) => current.map((line, i) => i === index ? { ...line, ...patch } : line));
+  const resetManualEntry = () => {
+    setManualDescription(""); setManualDate(new Date().toISOString().slice(0, 10)); setManualCurrency("YER"); setManualRate("");
+    setManualLines([{ accountType: "Expense", debit: "", credit: "", description: "" }, { accountType: "OwnerEquity", debit: "", credit: "", description: "" }]);
+  };
+  const submitManualEntry = async () => {
+    if (!manualDescription.trim() || !manualDate) return toast.error("أدخل بيان القيد وتاريخه");
+    if (manualLines.length < 2 || manualDebit <= 0 || manualDebit !== manualCredit) return toast.error("يجب أن يكون القيد متوازناً ومدينه مساوياً لدائنه");
+    if (manualCurrency !== "YER" && (!Number(manualRate) || Number(manualRate) <= 0)) return toast.error("أدخل سعر الصرف إلى الريال اليمني");
+    try {
+      setManualSubmitting(true);
+      await api.post("/api/finance-v3/journal-entries/manual", { description: manualDescription.trim(), entryDate: manualDate, currency: manualCurrency, exchangeRateToYer: manualCurrency === "YER" ? 1 : Number(manualRate), lines: manualLines.map((line) => ({ accountType: line.accountType, debit: Number(line.debit) || 0, credit: Number(line.credit) || 0, description: line.description.trim() || null })) });
+      toast.success("تم ترحيل القيد اليدوي المتوازن"); setShowManualEntry(false); resetManualEntry(); fetchEntries();
+    } catch { toast.error("تعذر ترحيل القيد اليدوي"); }
+    finally { setManualSubmitting(false); }
+  };
+
   const toggleRow = (id: string) => {
     setExpandedRows((prev) => {
       const next = new Set(prev);
@@ -227,6 +268,9 @@ export function JournalTab() {
     <div className="p-6 space-y-4">
       <SectionHeader title="قيود اليومية" action={
         <div className="flex items-center gap-2">
+          <button onClick={() => setShowManualEntry(true)} className="flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium" style={{ color: tokens.textOnBrand, backgroundColor: tokens.brand }}>
+            <Plus className="w-3.5 h-3.5" /> قيد يدوي
+          </button>
           <button onClick={() => setShowFilters(!showFilters)} className="flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium" style={{ color: tokens.brand, border: `1px solid ${tokens.border}` }}>
             <Filter className="w-3.5 h-3.5" /> تصفية
           </button>
@@ -372,6 +416,29 @@ export function JournalTab() {
           )}
         </div>
       )}
+
+      <Modal open={showManualEntry} onClose={() => { setShowManualEntry(false); resetManualEntry(); }} title="قيد يومية يدوي" wide>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="sm:col-span-3"><label style={labelStyle}>بيان القيد</label><input value={manualDescription} onChange={(e) => setManualDescription(e.target.value)} style={inputStyle} /></div>
+            <div><label style={labelStyle}>التاريخ</label><input type="date" value={manualDate} onChange={(e) => setManualDate(e.target.value)} style={inputStyle} /></div>
+            <div><label style={labelStyle}>العملة</label><select value={manualCurrency} onChange={(e) => setManualCurrency(e.target.value)} style={inputStyle}><option value="YER">YER</option><option value="SAR">SAR</option><option value="USD">USD</option></select></div>
+            {manualCurrency !== "YER" && <div><label style={labelStyle}>سعر الصرف إلى YER</label><input type="number" min="0" step="0.000001" value={manualRate} onChange={(e) => setManualRate(e.target.value)} style={inputStyle} /></div>}
+          </div>
+          <div className="rounded-lg border overflow-hidden" style={{ borderColor: tokens.border }}>
+            <div className="grid grid-cols-[1.2fr_1fr_1fr_1.4fr_32px] gap-2 px-3 py-2 text-xs font-medium" style={{ backgroundColor: tokens.cardHover, color: tokens.textSecondary }}><span>الحساب</span><span>مدين</span><span>دائن</span><span>بيان البند</span><span /></div>
+            {manualLines.map((line, index) => <div key={index} className="grid grid-cols-[1.2fr_1fr_1fr_1.4fr_32px] gap-2 px-3 py-2 items-center border-t" style={{ borderColor: tokens.border }}>
+              <select value={line.accountType} onChange={(e) => updateManualLine(index, { accountType: e.target.value })} style={inputStyle}>{MANUAL_ACCOUNT_OPTIONS.map((type) => <option key={type} value={type}>{ACCOUNT_TYPE_LABELS[type]}</option>)}</select>
+              <input type="number" min="0" step="0.01" value={line.debit} onChange={(e) => updateManualLine(index, { debit: e.target.value, credit: e.target.value ? "" : line.credit })} style={inputStyle} />
+              <input type="number" min="0" step="0.01" value={line.credit} onChange={(e) => updateManualLine(index, { credit: e.target.value, debit: e.target.value ? "" : line.debit })} style={inputStyle} />
+              <input value={line.description} onChange={(e) => updateManualLine(index, { description: e.target.value })} style={inputStyle} />
+              <button disabled={manualLines.length <= 2} onClick={() => setManualLines((current) => current.filter((_, i) => i !== index))} className="w-7 h-7 flex items-center justify-center" style={{ color: tokens.dangerBorder, opacity: manualLines.length <= 2 ? .35 : 1 }} title="حذف البند"><Trash2 className="w-3.5 h-3.5" /></button>
+            </div>)}
+          </div>
+          <div className="flex items-center justify-between text-xs"><button onClick={() => setManualLines((current) => [...current, { accountType: "Expense", debit: "", credit: "", description: "" }])} style={btnGhost}><Plus className="w-3.5 h-3.5 inline" /> إضافة بند</button><span style={{ color: manualDebit === manualCredit && manualDebit > 0 ? tokens.successBorder : tokens.dangerBorder }}>مدين {formatMoney(manualDebit, manualCurrency)} | دائن {formatMoney(manualCredit, manualCurrency)}</span></div>
+          <div className="flex justify-end gap-2"><button onClick={() => { setShowManualEntry(false); resetManualEntry(); }} style={btnGhost}>إلغاء</button><button onClick={submitManualEntry} disabled={manualSubmitting} className="px-4 py-2 rounded-md text-sm font-semibold" style={{ backgroundColor: tokens.brand, color: tokens.textOnBrand, opacity: manualSubmitting ? .6 : 1 }}>{manualSubmitting ? "جارٍ الترحيل..." : "ترحيل القيد"}</button></div>
+        </div>
+      </Modal>
 
       {/* ═══ Detail Modal ═══ */}
       <Modal open={!!detail} onClose={() => setDetail(null)} title={`قيد ${detail?.entryNumber ?? ""}`} wide>

@@ -43,12 +43,28 @@ public class PaySupplierBillRequest
     /// <summary>Optional treasury ID to pay from. If null, auto-resolved by payment method and branch.</summary>
     public Guid? TreasuryId { get; set; }
 
+    /// <summary>Immutable YER conversion snapshot for this disbursement.</summary>
+    public decimal? ExchangeRateToYer { get; set; }
+
+    /// <summary>Source of the exchange rate: manual or settings.</summary>
+    public string? ExchangeRateSource { get; set; }
+
     /// <summary>Optional bank reference / receipt number.</summary>
     public string? ReferenceNumber { get; set; }
 
     /// <summary>Optional notes.</summary>
     public string? Notes { get; set; }
 }
+
+/// <summary>
+/// Canonical references created when a supplier payment is posted. They allow
+/// the UI to take the user directly to the journal entry and its disbursement
+/// voucher without guessing from timestamps or descriptions.
+/// </summary>
+public sealed record SupplierPaymentPostingResult(
+    Guid PaymentId,
+    Guid JournalEntryId,
+    string JournalEntryNumber);
 
 /// <summary>
 /// Request to register a new supplier bill (accounts payable entry).

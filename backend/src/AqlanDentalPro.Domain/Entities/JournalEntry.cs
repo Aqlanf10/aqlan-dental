@@ -30,6 +30,12 @@ public class JournalEntry : BaseEntity
     /// <summary>Date the financial event occurred.</summary>
     public DateOnly EntryDate { get; set; }
 
+    /// <summary>Currency of the source document and journal-line amounts.</summary>
+    public string Currency { get; set; } = "YER";
+
+    /// <summary>Immutable YER conversion snapshot at posting time.</summary>
+    public decimal ExchangeRateToYer { get; set; } = 1m;
+
     /// <summary>Branch where this entry was created. REQUIRED — never Guid.Empty.</summary>
     public Guid BranchId { get; set; }
     public Branch? Branch { get; set; }

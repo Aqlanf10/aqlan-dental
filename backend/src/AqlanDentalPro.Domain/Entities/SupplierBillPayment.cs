@@ -12,6 +12,15 @@ public class SupplierBillPayment : BaseEntity
     /// <summary>Amount paid in this installment (YER).</summary>
     public decimal Amount { get; set; }
 
+    /// <summary>ISO 4217 currency of the physical disbursement: YER, SAR, or USD.</summary>
+    public string Currency { get; set; } = "YER";
+
+    /// <summary>Immutable YER conversion snapshot used when this payment was posted.</summary>
+    public decimal ExchangeRateToYer { get; set; } = 1m;
+
+    /// <summary>Rate source: same_currency, manual, or settings.</summary>
+    public string ExchangeRateSource { get; set; } = "same_currency";
+
     /// <summary>Payment method: cash, card, bank_transfer.</summary>
     public string PaymentMethod { get; set; } = "cash";
 

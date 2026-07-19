@@ -22,6 +22,15 @@ public class SupplierBill : BaseEntity
     /// <summary>Total invoice amount in YER as stated by the supplier.</summary>
     public decimal TotalAmount { get; set; }
 
+    /// <summary>ISO 4217 currency of the supplier invoice: YER, SAR, or USD.</summary>
+    public string Currency { get; set; } = "YER";
+
+    /// <summary>Immutable YER value of one unit of <see cref="Currency"/> at entry time.</summary>
+    public decimal ExchangeRateToYer { get; set; } = 1m;
+
+    /// <summary>Rate source: same_currency, manual, or settings.</summary>
+    public string ExchangeRateSource { get; set; } = "same_currency";
+
     /// <summary>Amount already paid towards this bill via installments.</summary>
     public decimal PaidAmount { get; set; } = 0;
 
@@ -36,6 +45,13 @@ public class SupplierBill : BaseEntity
 
     /// <summary>Optional due date for full payment (for credit terms).</summary>
     public DateOnly? DueDate { get; set; }
+
+    /// <summary>
+    /// True when this is an imported payable that existed before the clinic began
+    /// using Aqlan Dental Pro. Opening balances are posted against the opening
+    /// balance clearing account, rather than being treated as a current expense.
+    /// </summary>
+    public bool IsOpeningBalance { get; set; }
 
     /// <summary>Optional link to a purchase order that generated this bill.</summary>
     public Guid? PurchaseOrderId { get; set; }

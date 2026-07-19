@@ -300,9 +300,7 @@ export interface SupplierDto {
   typeLabel?: string;  // Arabic label if provided
   contactPerson: string | null;
   phone: string | null;
-  totalBilled: number;
-  totalPaid: number;
-  balance: number;
+  currencyBalances: Array<{ currency: "YER" | "SAR" | "USD"; totalBilled: number; totalPaid: number; balance: number }>;
   isActive: boolean;
 }
 
@@ -317,13 +315,16 @@ export interface SupplierBillDto {
   status: BillStatus;
   billDate: string;
   dueDate: string | null;
+  isOpeningBalance: boolean;
+  currency: "YER" | "SAR" | "USD";
+  exchangeRateToYer: number;
 }
 
 /** Supplier account statement from GET /{id}/bills */
 export interface SupplierStatement {
   supplierId: string;
   supplierName: string;
-  balance: number;
+  currencyBalances: Array<{ currency: "YER" | "SAR" | "USD"; balance: number }>;
   bills: SupplierBillDto[];
 }
 
@@ -360,6 +361,8 @@ export interface PaySupplierBillRequest {
   amount: number;
   paymentMethod: string;
   treasuryId?: string;
+  exchangeRateToYer?: number;
+  exchangeRateSource?: string;
   referenceNumber?: string;
   notes?: string;
 }

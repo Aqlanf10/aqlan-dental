@@ -14,6 +14,8 @@ public class JournalEntryConfiguration : IEntityTypeConfiguration<JournalEntry>
         // String constraints
         builder.Property(e => e.EntryNumber).HasMaxLength(100).IsRequired();
         builder.Property(e => e.Description).HasMaxLength(500).IsRequired();
+        builder.Property(e => e.Currency).HasMaxLength(3).HasDefaultValue("YER");
+        builder.Property(e => e.ExchangeRateToYer).HasPrecision(18, 6).HasDefaultValue(1m);
 
         // Decimal precision for debit/credit totals (not stored, but consistent)
         builder.Property(e => e.FinancialDocumentType).HasConversion<string>().HasMaxLength(30);

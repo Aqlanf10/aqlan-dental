@@ -33,7 +33,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/finance-v3/suppliers")]
 [Authorize(Policy = "FinanceAccess")] // Admin + Accountant + Receptionist
-public class FinanceV3SuppliersController(
+public partial class FinanceV3SuppliersController(
     AppDbContext db,
     ISupplierRefundService supplierRefundService,
     ICurrentUserService currentUser,
@@ -63,6 +63,7 @@ public class FinanceV3SuppliersController(
 
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 30;
+        var userBranchId = currentUser.BranchId;
 
         var query = db.Suppliers.Where(s => s.IsActive);
 
@@ -73,8 +74,8 @@ public class FinanceV3SuppliersController(
 
         var total = await query.CountAsync();
 
-        var suppliers = await query
-            .OrderByDescending(s => s.Balance) // عرض من لهم ديون أكبر أولاً
+        var supplierPage = await query
+            .OrderBy(s => s.Name)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(s => new
@@ -84,13 +85,40 @@ public class FinanceV3SuppliersController(
                 s.Type,
                 s.ContactPerson,
                 s.Phone,
-                s.IsActive,
-                TotalBilled = db.SupplierBills.Where(b => b.SupplierId == s.Id && b.IsActive).Sum(b => (decimal?)b.TotalAmount) ?? 0,
-                TotalPaid = db.SupplierBills.Where(b => b.SupplierId == s.Id && b.IsActive).Sum(b => (decimal?)b.PaidAmount) ?? 0,
-                Balance = (db.SupplierBills.Where(b => b.SupplierId == s.Id && b.IsActive).Sum(b => (decimal?)b.TotalAmount) ?? 0)
-                         - (db.SupplierBills.Where(b => b.SupplierId == s.Id && b.IsActive).Sum(b => (decimal?)b.PaidAmount) ?? 0)
+                s.IsActive
             })
             .ToListAsync();
+
+        var supplierIds = supplierPage.Select(s => s.Id).ToList();
+        var balances = await db.SupplierBills
+            .Where(b => supplierIds.Contains(b.SupplierId) && b.IsActive
+                && (currentUser.IsAdmin || (userBranchId.HasValue && b.BranchId == userBranchId.Value)))
+            .GroupBy(b => new { b.SupplierId, b.Currency })
+            .Select(group => new
+            {
+                group.Key.SupplierId,
+                Currency = string.IsNullOrWhiteSpace(group.Key.Currency) ? "YER" : group.Key.Currency,
+                TotalBilled = group.Sum(b => b.TotalAmount),
+                TotalPaid = group.Sum(b => b.PaidAmount)
+            })
+            .ToListAsync();
+
+        var suppliers = supplierPage.Select(s => new
+        {
+            s.Id,
+            s.Name,
+            s.Type,
+            s.ContactPerson,
+            s.Phone,
+            s.IsActive,
+            CurrencyBalances = balances.Where(b => b.SupplierId == s.Id).Select(b => new
+            {
+                b.Currency,
+                b.TotalBilled,
+                b.TotalPaid,
+                Balance = b.TotalBilled - b.TotalPaid
+            }).OrderBy(b => b.Currency).ToList()
+        }).ToList();
 
         return Ok(new { data = suppliers, total, page, pageSize });
     }
@@ -127,6 +155,9 @@ public class FinanceV3SuppliersController(
     public async Task<IActionResult> GetSupplierBills(Guid supplierId)
     {
         if (!await CanAsync("view")) return Deny();
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
+        var userBranchId = currentUser.BranchId;
         var supplier = await db.Suppliers.FirstOrDefaultAsync(s => s.Id == supplierId && s.IsActive);
         if (supplier == null)
             return NotFound(new { message = "المورد غير موجود" });
@@ -134,7 +165,7 @@ public class FinanceV3SuppliersController(
         // Load bills in-memory first, then project — avoids EF Core translation issues with DateOnly.ToString
         var rawBills = await db.SupplierBills
             .AsNoTracking()
-            .Where(b => b.SupplierId == supplierId && b.IsActive)
+            .Where(b => b.SupplierId == supplierId && b.IsActive && (currentUser.IsAdmin || (userBranchId.HasValue && b.BranchId == userBranchId.Value)))
             .OrderByDescending(b => b.BillDate)
             .Select(b => new
             {
@@ -145,7 +176,10 @@ public class FinanceV3SuppliersController(
                 b.PaidAmount,
                 b.Status,
                 b.BillDate,
-                b.DueDate
+                b.DueDate,
+                b.IsOpeningBalance,
+                b.Currency,
+                b.ExchangeRateToYer
             })
             .ToListAsync();
 
@@ -159,14 +193,19 @@ public class FinanceV3SuppliersController(
             RemainingAmount = b.TotalAmount - b.PaidAmount,
             Status = b.Status.ToString(),
             BillDate = b.BillDate.ToString("yyyy-MM-dd"),
-            DueDate = b.DueDate.HasValue ? b.DueDate.Value.ToString("yyyy-MM-dd") : null
+            DueDate = b.DueDate.HasValue ? b.DueDate.Value.ToString("yyyy-MM-dd") : null,
+            b.IsOpeningBalance,
+            Currency = string.IsNullOrWhiteSpace(b.Currency) ? "YER" : b.Currency,
+            b.ExchangeRateToYer
         }).ToList();
 
         return Ok(new
         {
             SupplierId = supplierId,
             SupplierName = supplier.Name,
-            Balance = supplier.Balance,
+            CurrencyBalances = rawBills.GroupBy(b => string.IsNullOrWhiteSpace(b.Currency) ? "YER" : b.Currency)
+                .Select(group => new { Currency = group.Key, Balance = group.Sum(b => b.TotalAmount - b.PaidAmount) })
+                .OrderBy(group => group.Currency),
             Bills = bills
         });
     }
@@ -185,6 +224,38 @@ public class FinanceV3SuppliersController(
         if (req.TotalAmount <= 0)
             return BadRequest(new { message = "يجب أن يكون إجمالي الفاتورة أكبر من الصفر" });
 
+        var billDate = ClinicTimeProvider.ClinicToday();
+        if (!string.IsNullOrWhiteSpace(req.BillDate) && !DateOnly.TryParse(req.BillDate, out billDate))
+            return BadRequest(new { message = "تاريخ الفاتورة غير صالح. استخدم صيغة YYYY-MM-DD." });
+
+        DateOnly? dueDate = null;
+        if (!string.IsNullOrWhiteSpace(req.DueDate))
+        {
+            if (!DateOnly.TryParse(req.DueDate, out var parsedDueDate))
+                return BadRequest(new { message = "تاريخ الاستحقاق غير صالح. استخدم صيغة YYYY-MM-DD." });
+            dueDate = parsedDueDate;
+        }
+
+        if (dueDate.HasValue && dueDate.Value < billDate)
+            return BadRequest(new { message = "تاريخ الاستحقاق لا يمكن أن يسبق تاريخ الفاتورة." });
+
+        string currency;
+        try
+        {
+            currency = NormalizeCurrency(req.Currency);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+
+        var exchangeRateToYer = await ResolveExchangeRateToYerAsync(currency, req.ExchangeRateToYer);
+        var exchangeRateSource = currency == "YER"
+            ? "same_currency"
+            : string.IsNullOrWhiteSpace(req.ExchangeRateSource)
+                ? (req.ExchangeRateToYer.HasValue ? "manual" : "settings")
+                : req.ExchangeRateSource.Trim();
+
         var userId = currentUser.UserId ?? Guid.Empty;
         var branchId = currentUser.BranchId ?? Guid.Empty;
         if (branchId == Guid.Empty)
@@ -201,7 +272,7 @@ public class FinanceV3SuppliersController(
 
         // Generate BILL number
         var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
-        var prefix = $"BILL-{datePart}-";
+        var prefix = req.IsOpeningBalance ? $"OB-SUP-{datePart}-" : $"BILL-{datePart}-";
         if (db.Database.IsRelational())
         {
             var lockKey = StableLockKeyHelper.BillNumber;
@@ -230,20 +301,77 @@ public class FinanceV3SuppliersController(
             SupplierId = supplierId,
             Description = req.Description ?? string.Empty,
             TotalAmount = req.TotalAmount,
+            Currency = currency,
+            ExchangeRateToYer = exchangeRateToYer,
+            ExchangeRateSource = exchangeRateSource,
             PaidAmount = 0,
             Status = BillStatus.Unpaid,
-            BillDate = ClinicTimeProvider.ClinicToday(),
-            DueDate = !string.IsNullOrWhiteSpace(req.DueDate) && DateOnly.TryParse(req.DueDate, out var dd) ? dd : (DateOnly?)null,
+            BillDate = billDate,
+            DueDate = dueDate,
+            IsOpeningBalance = req.IsOpeningBalance,
             LabOrderId = req.LabOrderId,
             BranchId = branchId,
             CreatedBy = userId
         };
 
-        // زيادة مديونية العيادة للمعمل
-        supplier.Balance += req.TotalAmount;
+        // Legacy scalar balance remains YER-only. The Finance V3 read model below
+        // derives separate per-currency balances and must be used for all new work.
+        if (currency == "YER")
+            supplier.Balance += req.TotalAmount;
 
-        db.SupplierBills.Add(bill);
-        await db.SaveChangesAsync();
+        var useTx = db.Database.IsRelational();
+        var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            db.SupplierBills.Add(bill);
+
+            if (req.IsOpeningBalance)
+            {
+                var entryNumber = await GenerateOpeningEntryNumberAsync();
+                var openingEntry = new JournalEntry
+                {
+                    EntryNumber = entryNumber,
+                    FinancialDocumentId = bill.Id,
+                    FinancialDocumentType = FinancialDocumentType.Other,
+                    Description = $"رصيد افتتاحي لمورد/معمل: {supplier.Name}",
+                    EntryDate = billDate,
+                    Currency = currency,
+                    ExchangeRateToYer = exchangeRateToYer,
+                    BranchId = branchId,
+                    PerformedBy = userId,
+                    IsPosted = true,
+                    PostedAt = DateTime.UtcNow,
+                };
+                db.JournalEntries.Add(openingEntry);
+                db.JournalLines.AddRange(
+                    new JournalLine
+                    {
+                        JournalEntryId = openingEntry.Id,
+                        AccountType = JournalAccountType.OwnerEquity,
+                        AccountId = branchId,
+                        Debit = req.TotalAmount,
+                        Description = "موازنة رصيد افتتاحي دائن",
+                        BranchId = branchId,
+                    },
+                    new JournalLine
+                    {
+                        JournalEntryId = openingEntry.Id,
+                        AccountType = JournalAccountType.AccountsPayable,
+                        AccountId = supplierId,
+                        Credit = req.TotalAmount,
+                        Description = $"رصيد افتتاحي مستحق لـ {supplier.Name}",
+                        BranchId = branchId,
+                    });
+            }
+
+            await db.SaveChangesAsync();
+            if (useTx) await tx!.CommitAsync();
+        }
+        catch
+        {
+            if (useTx) await tx!.RollbackAsync();
+            throw;
+        }
 
         await audit.LogAsync(AuditAction.Create, "SupplierBill", bill.Id);
 
@@ -254,12 +382,15 @@ public class FinanceV3SuppliersController(
             SupplierName = supplier.Name,
             bill.Description,
             bill.TotalAmount,
+            bill.Currency,
+            bill.ExchangeRateToYer,
             bill.PaidAmount,
             RemainingAmount = bill.TotalAmount,
             Status = bill.Status.ToString(),
             BillDate = bill.BillDate.ToString("yyyy-MM-dd"),
             DueDate = bill.DueDate?.ToString("yyyy-MM-dd"),
-            message = "تم تسجيل فاتورة المورد بنجاح"
+            bill.IsOpeningBalance,
+            message = req.IsOpeningBalance ? "تم تسجيل الرصيد الافتتاحي للمورد وترحيل القيد المحاسبي" : "تم تسجيل فاتورة المورد بنجاح"
         });
     }
 
@@ -277,12 +408,19 @@ public class FinanceV3SuppliersController(
         if (!await CanAsync("approve")) return Deny();
         var userId = currentUser.UserId ?? Guid.Empty;
 
-        await supplierRefundService.PaySupplierBillAsync(billId, request, userId);
+        var posting = await supplierRefundService.PaySupplierBillAsync(billId, request, userId);
 
         await audit.LogAsync(AuditAction.Create, "SupplierBillPayment", billId,
             details: $"Bill {billId} payment of {request.Amount:N0} via FinanceV3SuppliersController");
 
-        return Ok(new { message = "تم سداد القسط بنجاح وترحيل القيد للأستاذ العام" });
+        return Ok(new
+        {
+            message = "تم سداد القسط بنجاح وترحيل القيد للأستاذ العام",
+            posting.PaymentId,
+            posting.JournalEntryId,
+            posting.JournalEntryNumber,
+            disbursementVoucherUrl = $"/api/finance-v3/journal-entries/{posting.JournalEntryId}/disbursement-voucher/pdf"
+        });
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -415,5 +553,60 @@ public sealed class CreateSupplierBillRequestDto
     /// <summary>Due date as ISO string (e.g., "2026-06-15"). Parsed to DateOnly server-side.</summary>
     public string? DueDate { get; init; }
 
+    public string? Currency { get; init; }
+    public decimal? ExchangeRateToYer { get; init; }
+    public string? ExchangeRateSource { get; init; }
+
+    /// <summary>Date of the historical supplier invoice or opening balance, in YYYY-MM-DD format.</summary>
+    public string? BillDate { get; init; }
+
+    /// <summary>Marks a historical payable imported at the start of using the system.</summary>
+    public bool IsOpeningBalance { get; init; }
+
     public Guid? LabOrderId { get; init; }
+}
+
+public partial class FinanceV3SuppliersController
+{
+    private async Task<string> GenerateOpeningEntryNumberAsync()
+    {
+        var prefix = $"JE-{DateOnly.FromDateTime(DateTime.UtcNow):yyyyMMdd}-";
+        var last = await db.JournalEntries
+            .Where(e => e.EntryNumber.StartsWith(prefix))
+            .OrderByDescending(e => e.EntryNumber)
+            .Select(e => e.EntryNumber)
+            .FirstOrDefaultAsync();
+
+        var sequence = 1;
+        if (!string.IsNullOrEmpty(last) && int.TryParse(last[prefix.Length..], out var lastSequence))
+            sequence = lastSequence + 1;
+
+        return $"{prefix}{sequence:D3}";
+    }
+
+    private static string NormalizeCurrency(string? currency)
+    {
+        var normalized = string.IsNullOrWhiteSpace(currency) ? "YER" : currency.Trim().ToUpperInvariant();
+        return normalized switch
+        {
+            "YER" or "SAR" or "USD" => normalized,
+            _ => throw new ArgumentException("العملة غير مدعومة. العملات المتاحة: YER أو SAR أو USD.")
+        };
+    }
+
+    private async Task<decimal> ResolveExchangeRateToYerAsync(string currency, decimal? directRate)
+    {
+        if (currency == "YER") return 1m;
+        if (directRate.HasValue && directRate.Value > 0m) return directRate.Value;
+
+        var configuredRate = await db.Settings
+            .Where(setting => setting.Key == $"finance.exchange_rate.{currency}_YER")
+            .Select(setting => setting.Value)
+            .FirstOrDefaultAsync();
+
+        if (decimal.TryParse(configuredRate, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var parsedRate) && parsedRate > 0m)
+            return parsedRate;
+
+        throw new ArgumentException($"لا يوجد سعر صرف معتمد للعملة {currency}. أدخله يدوياً أو حدده من أسعار الصرف قبل التسجيل.");
+    }
 }

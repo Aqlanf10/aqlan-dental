@@ -14,7 +14,7 @@ public interface ISupplierRefundService
     /// creates SupplierBillPayment, CashFlowTransaction (Outflow), and double-entry journal
     /// (Debit AccountsPayable / Credit Treasury). Commits atomically.
     /// </summary>
-    Task PaySupplierBillAsync(Guid billId, PaySupplierBillRequest request, Guid currentUserId);
+    Task<SupplierPaymentPostingResult> PaySupplierBillAsync(Guid billId, PaySupplierBillRequest request, Guid currentUserId);
 
     /// <summary>
     /// Finance Phase 1: Processes a refund for an approved Credit Note.

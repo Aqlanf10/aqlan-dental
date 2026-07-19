@@ -3016,10 +3016,23 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<DateOnly>("EntryDate")
                         .HasColumnType("date");
 
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("YER");
+
                     b.Property<string>("EntryNumber")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<decimal>("ExchangeRateToYer")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasDefaultValue(1m);
 
                     b.Property<Guid>("FinancialDocumentId")
                         .HasColumnType("uuid");
@@ -6845,6 +6858,13 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<Guid>("CreatedBy")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("YER");
+
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -6859,8 +6879,26 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<DateOnly?>("DueDate")
                         .HasColumnType("date");
 
+                    b.Property<decimal>("ExchangeRateToYer")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasDefaultValue(1m);
+
+                    b.Property<string>("ExchangeRateSource")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("same_currency");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
+
+                    b.Property<bool>("IsOpeningBalance")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<Guid?>("LabOrderId")
                         .HasColumnType("uuid");
@@ -6904,6 +6942,10 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.HasIndex("SupplierId");
 
+                    b.HasIndex("SupplierId", "Currency");
+
+                    b.HasIndex("SupplierId", "IsOpeningBalance");
+
                     b.ToTable("SupplierBills", (string)null);
                 });
 
@@ -6917,11 +6959,31 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasPrecision(12, 2)
                         .HasColumnType("numeric(12,2)");
 
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("YER");
+
                     b.Property<Guid?>("CashFlowTransactionId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("ExchangeRateToYer")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasDefaultValue(1m);
+
+                    b.Property<string>("ExchangeRateSource")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("same_currency");
 
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");

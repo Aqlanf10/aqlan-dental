@@ -15,6 +15,12 @@ export function formatYER(amount: number | null | undefined): string {
   return (amount ?? 0).toLocaleString("ar-YE", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " ر.ي";
 }
 
+export function formatMoney(amount: number | null | undefined, currency = "YER"): string {
+  const suffixes: Record<string, string> = { YER: "ر.ي", SAR: "ر.س", USD: "USD" };
+  const fractionDigits = currency === "YER" ? 0 : 2;
+  return `${(amount ?? 0).toLocaleString("ar-YE", { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits })} ${suffixes[currency] ?? currency}`;
+}
+
 export function formatNumber(amount: number | null | undefined): string {
   return (amount ?? 0).toLocaleString("ar-YE", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }

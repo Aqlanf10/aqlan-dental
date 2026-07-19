@@ -14,7 +14,7 @@ import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import { downloadPdfFromApi } from "@/lib/pdfDownload";
 import { SectionHeader, LoadingSkeleton, EmptyState, Modal, StatusBadge, tokens, inputStyle, labelStyle, btnGhost } from "./FinanceSharedUI";
-import { formatYER, safeFormatDate } from "./FinanceHelpers";
+import { formatMoney, formatYER, safeFormatDate } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Types for Journal Entries
@@ -35,6 +35,8 @@ interface JournalEntry {
   documentType: string;
   description: string;
   entryDate: string;
+  currency?: string;
+  exchangeRateToYer?: number;
   branchId: string;
   treasuryId: string | null;
   performedBy: string;
@@ -56,6 +58,8 @@ interface JournalEntryDetail {
   financialDocumentId: string;
   description: string;
   entryDate: string;
+  currency?: string;
+  exchangeRateToYer?: number;
   branchName: string;
   treasuryName: string;
   performedByName: string;
@@ -213,6 +217,11 @@ export function JournalTab() {
   };
 
   const totalPages = Math.ceil(total / pageSize);
+  const debitByCurrency = entries.reduce<Record<string, number>>((totals, entry) => {
+    const currency = entry.currency ?? "YER";
+    totals[currency] = (totals[currency] ?? 0) + entry.totalDebit;
+    return totals;
+  }, {});
 
   return (
     <div className="p-6 space-y-4">
@@ -266,7 +275,7 @@ export function JournalTab() {
         </div>
         <div className="rounded-lg border p-3" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
           <span className="text-xs" style={{ color: tokens.textTertiary }}>إجمالي المدين</span>
-          <p className="text-lg font-bold" style={{ color: tokens.brand }}>{formatYER(entries.reduce((s, e) => s + e.totalDebit, 0))}</p>
+          <p className="text-sm font-bold" style={{ color: tokens.brand }}>{Object.entries(debitByCurrency).map(([currency, amount]) => formatMoney(amount, currency)).join(" • ") || formatMoney(0, "YER")}</p>
         </div>
       </div>
 
@@ -295,8 +304,8 @@ export function JournalTab() {
                   </div>
                   <div className="flex items-center gap-4 text-xs flex-shrink-0">
                     <span style={{ color: tokens.textTertiary }}>{safeFormatDate(entry.entryDate)}</span>
-                    <span className="font-mono" style={{ color: tokens.successBorder }}>{formatYER(entry.totalDebit)}</span>
-                    <span className="font-mono" style={{ color: tokens.dangerBorder }}>{formatYER(entry.totalCredit)}</span>
+                    <span className="font-mono" style={{ color: tokens.successBorder }}>{formatMoney(entry.totalDebit, entry.currency)}</span>
+                    <span className="font-mono" style={{ color: tokens.dangerBorder }}>{formatMoney(entry.totalCredit, entry.currency)}</span>
                     <span className="text-xs" style={{ color: tokens.textTertiary }}>{entry.lineCount} بنود</span>
                     <button onClick={(e) => { e.stopPropagation(); fetchDetail(entry.id); }} className="w-6 h-6 rounded flex items-center justify-center" style={{ color: tokens.brand }} title="تفاصيل">
                       <BookOpen className="w-3.5 h-3.5" />
@@ -330,10 +339,10 @@ export function JournalTab() {
                             </td>
                             <td className="py-1.5 px-2" style={{ color: tokens.textSecondary }}>{line.description || "—"}</td>
                             <td className="py-1.5 px-2 font-mono" style={{ color: line.debit > 0 ? tokens.successBorder : tokens.textTertiary }}>
-                              {line.debit > 0 ? formatYER(line.debit) : "—"}
+                              {line.debit > 0 ? formatMoney(line.debit, entry.currency) : "—"}
                             </td>
                             <td className="py-1.5 px-2 font-mono" style={{ color: line.credit > 0 ? tokens.dangerBorder : tokens.textTertiary }}>
-                              {line.credit > 0 ? formatYER(line.credit) : "—"}
+                              {line.credit > 0 ? formatMoney(line.credit, entry.currency) : "—"}
                             </td>
                           </tr>
                         ))}
@@ -342,8 +351,8 @@ export function JournalTab() {
                         <tr className="font-bold" style={{ borderTop: `2px solid ${tokens.border}` }}>
                           <td className="py-1.5 px-2" style={{ color: tokens.textPrimary }}>المجموع</td>
                           <td></td>
-                          <td className="py-1.5 px-2 font-mono" style={{ color: tokens.successBorder }}>{formatYER(entry.totalDebit)}</td>
-                          <td className="py-1.5 px-2 font-mono" style={{ color: tokens.dangerBorder }}>{formatYER(entry.totalCredit)}</td>
+                          <td className="py-1.5 px-2 font-mono" style={{ color: tokens.successBorder }}>{formatMoney(entry.totalDebit, entry.currency)}</td>
+                          <td className="py-1.5 px-2 font-mono" style={{ color: tokens.dangerBorder }}>{formatMoney(entry.totalCredit, entry.currency)}</td>
                         </tr>
                       </tfoot>
                     </table>

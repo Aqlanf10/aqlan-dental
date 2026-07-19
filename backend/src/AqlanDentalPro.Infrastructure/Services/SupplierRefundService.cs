@@ -23,7 +23,7 @@ public class SupplierRefundService(AppDbContext db, ICurrentUserService currentU
     /// creates SupplierBillPayment, CashFlowTransaction (Outflow), and double-entry journal
     /// (Debit AccountsPayable / Credit Treasury). Commits atomically.
     /// </summary>
-    public async Task PaySupplierBillAsync(Guid billId, PaySupplierBillRequest request, Guid currentUserId)
+    public async Task<SupplierPaymentPostingResult> PaySupplierBillAsync(Guid billId, PaySupplierBillRequest request, Guid currentUserId)
     {
         // Validate active open cashier session
         var activeSession = await db.CashierSessions
@@ -50,6 +50,17 @@ public class SupplierRefundService(AppDbContext db, ICurrentUserService currentU
         if (bill.Status == BillStatus.Cancelled)
             throw new ArgumentException("لا يمكن السداد لفاتورة ملغاة.");
 
+        if (bill.BranchId != currentUser.BranchId.Value)
+            throw new ArgumentException("لا يمكن سداد فاتورة تابعة لفرع آخر.");
+
+        var paymentCurrency = NormalizeCurrency(bill.Currency);
+        var paymentRate = await ResolveExchangeRateToYerAsync(paymentCurrency, request.ExchangeRateToYer);
+        var paymentRateSource = paymentCurrency == "YER"
+            ? "same_currency"
+            : string.IsNullOrWhiteSpace(request.ExchangeRateSource)
+                ? (request.ExchangeRateToYer.HasValue ? "manual" : "settings")
+                : request.ExchangeRateSource.Trim();
+
         var remaining = bill.TotalAmount - bill.PaidAmount;
         if (request.Amount > remaining)
             throw new ArgumentException($"المبلغ ({request.Amount:N0}) يتجاوز الرصيد المتبقي للفاتورة ({remaining:N0}).");
@@ -59,8 +70,8 @@ public class SupplierRefundService(AppDbContext db, ICurrentUserService currentU
         bill.Status = bill.PaidAmount >= bill.TotalAmount ? BillStatus.FullyPaid : BillStatus.PartiallyPaid;
         bill.UpdatedAt = DateTime.UtcNow;
 
-        // Update supplier Balance (reduce what we owe)
-        if (bill.Supplier != null)
+        // The legacy scalar is YER-only; Finance V3 derives balances per currency.
+        if (bill.Supplier != null && paymentCurrency == "YER")
         {
             bill.Supplier.Balance -= request.Amount;
             bill.Supplier.UpdatedAt = DateTime.UtcNow;
@@ -71,6 +82,9 @@ public class SupplierRefundService(AppDbContext db, ICurrentUserService currentU
         {
             SupplierBillId = bill.Id,
             Amount = request.Amount,
+            Currency = paymentCurrency,
+            ExchangeRateToYer = paymentRate,
+            ExchangeRateSource = paymentRateSource,
             PaymentMethod = request.PaymentMethod,
             PaymentDate = ClinicTimeProvider.ClinicToday(),
             ReferenceNumber = request.ReferenceNumber,
@@ -87,6 +101,7 @@ public class SupplierRefundService(AppDbContext db, ICurrentUserService currentU
             Type = TransactionType.Outflow,
             Category = FinancialCategory.SupplierPayment,
             Amount = request.Amount,
+            Currency = paymentCurrency,
             PaymentMethod = request.PaymentMethod,
             TransactionDate = ClinicTimeProvider.ClinicToday(),
             ReferenceId = billPayment.Id,
@@ -112,13 +127,17 @@ public class SupplierRefundService(AppDbContext db, ICurrentUserService currentU
             {
                 treasury = await db.Treasuries.FirstOrDefaultAsync(t => t.Id == request.TreasuryId.Value && t.IsActive)
                     ?? throw new ArgumentException("الخزينة المحددة غير موجودة.");
+                if (treasury.BranchId != currentUser.BranchId.Value)
+                    throw new ArgumentException("الخزينة المحددة تابعة لفرع آخر.");
+                if (!string.Equals(NormalizeCurrency(treasury.Currency), paymentCurrency, StringComparison.Ordinal))
+                    throw new ArgumentException($"عملة الخزينة ({treasury.Currency}) لا تطابق عملة فاتورة المورد ({paymentCurrency}). سجل مصارفة مستقلة أولاً.");
                 treasury.Balance -= request.Amount;
                 treasury.UpdatedAt = DateTime.UtcNow;
             }
             else
             {
-                await FinanceLedgerWriter.UpdateTreasuryBalanceNoSaveAsync(db, currentUser.BranchId.Value, -request.Amount, request.PaymentMethod);
-                treasury = await FinanceLedgerWriter.ResolveTreasuryNoSaveAsync(db, currentUser.BranchId.Value, request.PaymentMethod);
+                await FinanceLedgerWriter.UpdateTreasuryBalanceNoSaveAsync(db, currentUser.BranchId.Value, -request.Amount, request.PaymentMethod, paymentCurrency);
+                treasury = await FinanceLedgerWriter.ResolveTreasuryNoSaveAsync(db, currentUser.BranchId.Value, request.PaymentMethod, paymentCurrency);
             }
             cashflow.TreasuryId = treasury.Id;
 
@@ -143,9 +162,14 @@ public class SupplierRefundService(AppDbContext db, ICurrentUserService currentU
             // Auto-post
             entry.IsPosted = true;
             entry.PostedAt = DateTime.UtcNow;
+            entry.Currency = paymentCurrency;
+            entry.ExchangeRateToYer = paymentRate;
             await db.SaveChangesAsync();
 
             if (useTx) await tx!.CommitAsync();
+
+            logger.LogInformation("Supplier bill {BillId} paid {Amount:N0} by user {UserId}", billId, request.Amount, currentUserId);
+            return new SupplierPaymentPostingResult(billPayment.Id, entry.Id, entry.EntryNumber);
         }
         catch
         {
@@ -153,7 +177,32 @@ public class SupplierRefundService(AppDbContext db, ICurrentUserService currentU
             throw;
         }
 
-        logger.LogInformation("Supplier bill {BillId} paid {Amount:N0} by user {UserId}", billId, request.Amount, currentUserId);
+    }
+
+    private static string NormalizeCurrency(string? currency)
+    {
+        var normalized = string.IsNullOrWhiteSpace(currency) ? "YER" : currency.Trim().ToUpperInvariant();
+        return normalized switch
+        {
+            "YER" or "SAR" or "USD" => normalized,
+            _ => throw new ArgumentException("العملة غير مدعومة. العملات المتاحة: YER أو SAR أو USD.")
+        };
+    }
+
+    private async Task<decimal> ResolveExchangeRateToYerAsync(string currency, decimal? directRate)
+    {
+        if (currency == "YER") return 1m;
+        if (directRate.HasValue && directRate.Value > 0m) return directRate.Value;
+
+        var configuredRate = await db.Settings
+            .Where(setting => setting.Key == $"finance.exchange_rate.{currency}_YER")
+            .Select(setting => setting.Value)
+            .FirstOrDefaultAsync();
+
+        if (decimal.TryParse(configuredRate, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var parsedRate) && parsedRate > 0m)
+            return parsedRate;
+
+        throw new ArgumentException($"لا يوجد سعر صرف معتمد للعملة {currency}. أدخله يدوياً أو حدده من أسعار الصرف قبل الدفع.");
     }
 
     /// <summary>

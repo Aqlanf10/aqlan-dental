@@ -15,6 +15,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { downloadPdfFromApi } from "@/lib/pdfDownload";
 import { toast } from "@/stores/toastStore";
 import type {
   SupplierDto,
@@ -39,7 +40,7 @@ import {
   btnPrimary,
   btnGhost,
 } from "./FinanceSharedUI";
-import { formatYER, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
+import { formatMoney, formatYER, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 9: Suppliers — الموردون والمعامل
@@ -72,6 +73,10 @@ export function SuppliersTab() {
   const [billDesc, setBillDesc] = useState("");
   const [billAmount, setBillAmount] = useState("");
   const [billDueDate, setBillDueDate] = useState("");
+  const [billDate, setBillDate] = useState("");
+  const [billIsOpeningBalance, setBillIsOpeningBalance] = useState(false);
+  const [billCurrency, setBillCurrency] = useState<"YER" | "SAR" | "USD">("YER");
+  const [billExchangeRate, setBillExchangeRate] = useState("");
 
   // Form: Pay Bill
   const [payAmount, setPayAmount] = useState("");
@@ -79,6 +84,7 @@ export function SuppliersTab() {
   const [payTreasuryId, setPayTreasuryId] = useState<string>("");
   const [payNotes, setPayNotes] = useState("");
   const [payRefNumber, setPayRefNumber] = useState("");
+  const [payExchangeRate, setPayExchangeRate] = useState("");
   const [treasuries, setTreasuries] = useState<Treasury[]>([]);
   const [treasuriesLoading, setTreasuriesLoading] = useState(false);
 
@@ -115,8 +121,21 @@ export function SuppliersTab() {
     );
   });
 
-  const totalDebt = suppliers.reduce((sum, s) => sum + (s.balance ?? 0), 0);
-  const suppliersWithDebt = suppliers.filter((s) => (s.balance ?? 0) > 0).length;
+  const debtByCurrency = suppliers.flatMap((supplier) => supplier.currencyBalances ?? []).reduce<Record<string, number>>((totals, balance) => {
+    totals[balance.currency] = (totals[balance.currency] ?? 0) + balance.balance;
+    return totals;
+  }, {});
+  const hasOutstandingDebt = Object.values(debtByCurrency).some((amount) => amount > 0);
+  const suppliersWithDebt = suppliers.filter((supplier) => (supplier.currencyBalances ?? []).some((balance) => balance.balance > 0)).length;
+  const formatBalances = (balances: Array<{ currency: string; balance: number }> | undefined) =>
+    !balances?.length ? "—" : balances.map((balance) => formatMoney(balance.balance, balance.currency)).join(" • ");
+  const paidByCurrency = suppliers.flatMap((supplier) => supplier.currencyBalances ?? []).reduce<Record<string, number>>((totals, balance) => {
+    totals[balance.currency] = (totals[balance.currency] ?? 0) + balance.totalPaid;
+    return totals;
+  }, {});
+  const compatibleTreasuries = showPayBill
+    ? treasuries.filter((treasury) => treasury.currency === showPayBill.currency)
+    : [];
 
   /* ── Handlers ── */
 
@@ -149,7 +168,7 @@ export function SuppliersTab() {
   // Create Supplier Bill
   const handleCreateBill = async () => {
     if (!showCreateBill) return;
-    if (!billDesc.trim() || !billAmount || Number(billAmount) <= 0 || !billDueDate) {
+    if (!billDesc.trim() || !billAmount || Number(billAmount) <= 0 || !billDate || (!billIsOpeningBalance && !billDueDate)) {
       toast.error("يرجى ملء جميع الحقول المطلوبة");
       return;
     }
@@ -158,9 +177,14 @@ export function SuppliersTab() {
       await api.post(`/api/finance-v3/suppliers/${showCreateBill.id}/bills`, {
         description: billDesc.trim(),
         totalAmount: Number(billAmount),
-        dueDate: billDueDate,
+        billDate,
+        dueDate: billDueDate || undefined,
+        isOpeningBalance: billIsOpeningBalance,
+        currency: billCurrency,
+        exchangeRateToYer: billCurrency === "YER" ? undefined : Number(billExchangeRate),
+        exchangeRateSource: billCurrency === "YER" ? undefined : "manual",
       });
-      toast.success("تم تسجيل فاتورة المورد بنجاح");
+      toast.success(billIsOpeningBalance ? "تم تسجيل الرصيد الافتتاحي وترحيل قيده" : "تم تسجيل فاتورة المورد بنجاح");
       setShowCreateBill(null);
       resetBillForm();
       fetchSuppliers();
@@ -188,11 +212,24 @@ export function SuppliersTab() {
         amount: Number(payAmount),
         paymentMethod: payMethod,
         treasuryId: payTreasuryId || undefined,
+        exchangeRateToYer: showPayBill.currency === "YER" ? undefined : Number(payExchangeRate),
+        exchangeRateSource: showPayBill.currency === "YER" ? undefined : "manual",
         notes: payNotes.trim() || undefined,
         referenceNumber: payRefNumber.trim() || undefined,
       };
-      await api.post(`/api/finance-v3/suppliers/bills/${showPayBill.id}/pay`, payload);
-      toast.success("تم سداد القسط بنجاح وترحيل القيد المحاسبي");
+      const { data } = await api.post<{ journalEntryId?: string; journalEntryNumber?: string }>(`/api/finance-v3/suppliers/bills/${showPayBill.id}/pay`, payload);
+      toast.success("تم سداد القسط وترحيل القيد المحاسبي");
+      if (data.journalEntryId) {
+        try {
+          await downloadPdfFromApi(
+            `/api/finance-v3/journal-entries/${data.journalEntryId}/disbursement-voucher/pdf`,
+            `disbursement-voucher-${data.journalEntryNumber ?? data.journalEntryId}.pdf`
+          );
+          toast.success("تم تجهيز سند الصرف للدفع");
+        } catch (voucherError) {
+          toast.error(extractErrorMessage(voucherError, "تم الدفع، لكن تعذر تجهيز سند الصرف من اليومية"));
+        }
+      }
       setShowPayBill(null);
       resetPayForm();
       fetchSuppliers();
@@ -244,6 +281,10 @@ export function SuppliersTab() {
     setBillDesc("");
     setBillAmount("");
     setBillDueDate("");
+    setBillDate("");
+    setBillIsOpeningBalance(false);
+    setBillCurrency("YER");
+    setBillExchangeRate("");
   };
 
   const resetPayForm = () => {
@@ -252,6 +293,7 @@ export function SuppliersTab() {
     setPayTreasuryId("");
     setPayNotes("");
     setPayRefNumber("");
+    setPayExchangeRate("");
   };
 
   /* ── Fetch treasuries for payment modal ── */
@@ -308,14 +350,14 @@ export function SuppliersTab() {
         />
         <KpiCard
           label="إجمالي الديون المستحقة"
-          value={formatYER(totalDebt)}
-          sublabel="لنا ديون على الموردين"
-          color={totalDebt > 0 ? "#d13438" : "#107c10"}
-          icon={<CircleDollarSign className="w-4 h-4" style={{ color: totalDebt > 0 ? "#d13438" : "#107c10" }} />}
+          value={Object.entries(debtByCurrency).length ? Object.entries(debtByCurrency).map(([currency, amount]) => formatMoney(amount, currency)).join(" • ") : formatMoney(0, "YER")}
+          sublabel="التزامات العيادة للمعامل والموردين"
+          color={hasOutstandingDebt ? "#d13438" : "#107c10"}
+          icon={<CircleDollarSign className="w-4 h-4" style={{ color: hasOutstandingDebt ? "#d13438" : "#107c10" }} />}
         />
         <KpiCard
           label="إجمالي المبالغ المدفوعة"
-          value={formatYER(suppliers.reduce((s, x) => s + (x.totalPaid ?? 0), 0))}
+          value={Object.entries(paidByCurrency).length ? Object.entries(paidByCurrency).map(([currency, amount]) => formatMoney(amount, currency)).join(" • ") : formatMoney(0, "YER")}
           sublabel="للموردين والمعامل"
           color="#107c10"
           icon={<DollarSign className="w-4 h-4" style={{ color: "#107c10" }} />}
@@ -384,20 +426,20 @@ export function SuppliersTab() {
             {
               key: "totalBilled",
               label: "إجمالي الفواتير",
-              render: (r) => formatYER(r.totalBilled ?? 0),
+              render: (r) => (r.currencyBalances ?? []).map((balance) => <div key={balance.currency}>{formatMoney(balance.totalBilled, balance.currency)}</div>),
             },
             {
               key: "totalPaid",
               label: "المدفوع",
-              render: (r) => formatYER(r.totalPaid ?? 0),
+              render: (r) => (r.currencyBalances ?? []).map((balance) => <div key={balance.currency}>{formatMoney(balance.totalPaid, balance.currency)}</div>),
             },
             {
               key: "balance",
               label: "الرصيد المستحق",
               render: (r) => (
-                <span style={{ color: (r.balance ?? 0) > 0 ? "#d13438" : "#107c10", fontWeight: 700 }}>
-                  {formatYER(r.balance ?? 0)}
-                </span>
+                <div style={{ fontWeight: 700 }}>
+                  {(r.currencyBalances ?? []).map((balance) => <div key={balance.currency} style={{ color: balance.balance > 0 ? "#d13438" : "#107c10" }}>{formatMoney(balance.balance, balance.currency)}</div>)}
+                </div>
               ),
             },
             {
@@ -414,17 +456,15 @@ export function SuppliersTab() {
                     <Eye className="w-3 h-3 inline ml-1" />
                     كشف الحساب
                   </button>
-                  {(r.balance ?? 0) > 0 && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setShowCreateBill(r); resetBillForm(); }}
-                      className="text-[11px] font-medium px-2.5 py-1 rounded-md transition-colors"
-                      style={{ color: "#8a6914", backgroundColor: "#fff4ce" }}
-                      title="فاتورة جديدة"
-                    >
-                      <FileText className="w-3 h-3 inline ml-1" />
-                      فاتورة
-                    </button>
-                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowCreateBill(r); resetBillForm(); }}
+                    className="text-[11px] font-medium px-2.5 py-1 rounded-md transition-colors"
+                    style={{ color: "#8a6914", backgroundColor: "#fff4ce" }}
+                    title="إضافة فاتورة أو رصيد افتتاحي"
+                  >
+                    <FileText className="w-3 h-3 inline ml-1" />
+                    إضافة مديونية
+                  </button>
                 </div>
               ),
             },
@@ -506,9 +546,11 @@ export function SuppliersTab() {
               </div>
               <div>
                 <p className="text-[11px]" style={{ color: tokens.textTertiary }}>الرصيد الحالي</p>
-                <p className="text-sm font-bold" style={{ color: statementData.balance > 0 ? "#d13438" : "#107c10" }}>
-                  {formatYER(statementData.balance)}
-                </p>
+                <div className="text-sm font-bold">
+                  {statementData.currencyBalances.map((balance) => (
+                    <p key={balance.currency} style={{ color: balance.balance > 0 ? "#d13438" : "#107c10" }}>{formatMoney(balance.balance, balance.currency)}</p>
+                  ))}
+                </div>
               </div>
               <div>
                 <p className="text-[11px]" style={{ color: tokens.textTertiary }}>عدد الفواتير</p>
@@ -524,16 +566,16 @@ export function SuppliersTab() {
                 keyField="id"
                 data={statementData.bills}
                 columns={[
-                  { key: "billNumber", label: "رقم الفاتورة" },
+                  { key: "billNumber", label: "المرجع", render: (r) => r.isOpeningBalance ? "رصيد افتتاحي" : r.billNumber },
                   { key: "description", label: "الوصف", render: (r) => r.description || "—" },
-                  { key: "totalAmount", label: "الإجمالي", render: (r) => formatYER(r.totalAmount) },
-                  { key: "paidAmount", label: "المدفوع", render: (r) => formatYER(r.paidAmount) },
+                  { key: "totalAmount", label: "الإجمالي", render: (r) => formatMoney(r.totalAmount, r.currency) },
+                  { key: "paidAmount", label: "المدفوع", render: (r) => formatMoney(r.paidAmount, r.currency) },
                   {
                     key: "remainingAmount",
                     label: "المتبقي",
                     render: (r) => (
                       <span style={{ color: r.remainingAmount > 0 ? "#d13438" : "#107c10", fontWeight: 700 }}>
-                        {formatYER(r.remainingAmount)}
+                        {formatMoney(r.remainingAmount, r.currency)}
                       </span>
                     ),
                   },
@@ -558,6 +600,8 @@ export function SuppliersTab() {
                             setShowPayBill(r);
                             setPayAmount("");
                             setPayMethod("cash");
+                            setPayTreasuryId("");
+                            setPayExchangeRate(r.currency === "YER" ? "" : String(r.exchangeRateToYer));
                           }}
                           className="text-[11px] font-medium px-3 py-1 rounded-md transition-colors"
                           style={{ color: "#d13438", backgroundColor: "#fde7e9" }}
@@ -581,15 +625,15 @@ export function SuppliersTab() {
       </Modal>
 
       {/* ── Modal: Create Supplier Bill ── */}
-      <Modal open={!!showCreateBill} onClose={() => setShowCreateBill(null)} title={`فاتورة جديدة — ${showCreateBill?.name ?? ""}`}>
+      <Modal open={!!showCreateBill} onClose={() => setShowCreateBill(null)} title={`إضافة مديونية — ${showCreateBill?.name ?? ""}`}>
         <div className="space-y-4">
           <div className="rounded-md p-3" style={{ backgroundColor: tokens.infoBg, border: `1px solid ${tokens.infoBorder}` }}>
             <p className="text-xs" style={{ color: tokens.infoText }}>
-              المورد: <strong>{showCreateBill?.name}</strong> — الرصيد الحالي: <strong>{formatYER(showCreateBill?.balance ?? 0)}</strong>
+              المورد: <strong>{showCreateBill?.name}</strong> — الرصيد الحالي: <strong>{formatBalances(showCreateBill?.currencyBalances)}</strong>
             </p>
           </div>
           <div>
-            <label style={labelStyle}>وصف الفاتورة <span style={{ color: tokens.dangerBorder }}>*</span></label>
+            <label style={labelStyle}>بيان المديونية <span style={{ color: tokens.dangerBorder }}>*</span></label>
             <input
               value={billDesc}
               onChange={(e) => setBillDesc(e.target.value)}
@@ -597,6 +641,26 @@ export function SuppliersTab() {
               style={inputStyle}
             />
           </div>
+          <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: tokens.textPrimary }}>
+            <input
+              type="checkbox"
+              checked={billIsOpeningBalance}
+              onChange={(e) => { setBillIsOpeningBalance(e.target.checked); if (e.target.checked) setBillDueDate(""); }}
+            />
+            رصيد افتتاحي سابق قبل استخدام النظام
+          </label>
+          <div>
+            <label style={labelStyle}>العملة <span style={{ color: tokens.dangerBorder }}>*</span></label>
+            <select value={billCurrency} onChange={(e) => setBillCurrency(e.target.value as "YER" | "SAR" | "USD")} style={inputStyle}>
+              <option value="YER">ريال يمني (YER)</option>
+              <option value="SAR">ريال سعودي (SAR)</option>
+              <option value="USD">دولار أمريكي (USD)</option>
+            </select>
+          </div>
+          {billCurrency !== "YER" && <div>
+            <label style={labelStyle}>سعر الصرف المثبت: 1 {billCurrency} = كم ر.ي؟ <span style={{ color: tokens.dangerBorder }}>*</span></label>
+            <input type="number" min="0.000001" step="0.000001" value={billExchangeRate} onChange={(e) => setBillExchangeRate(e.target.value)} dir="ltr" style={inputStyle} />
+          </div>}
           <div>
             <label style={labelStyle}>المبلغ الإجمالي <span style={{ color: tokens.dangerBorder }}>*</span></label>
             <input
@@ -610,6 +674,15 @@ export function SuppliersTab() {
             />
           </div>
           <div>
+            <label style={labelStyle}>تاريخ المديونية <span style={{ color: tokens.dangerBorder }}>*</span></label>
+            <input
+              type="date"
+              value={billDate}
+              onChange={(e) => setBillDate(e.target.value)}
+              style={inputStyle}
+            />
+          </div>
+          {!billIsOpeningBalance && <div>
             <label style={labelStyle}>تاريخ الاستحقاق <span style={{ color: tokens.dangerBorder }}>*</span></label>
             <input
               type="date"
@@ -617,15 +690,15 @@ export function SuppliersTab() {
               onChange={(e) => setBillDueDate(e.target.value)}
               style={inputStyle}
             />
-          </div>
+          </div>}
           <div className="flex gap-3 pt-3 border-t" style={{ borderColor: tokens.border }}>
             <button onClick={() => setShowCreateBill(null)} style={btnGhost}>إلغاء</button>
             <button
               onClick={handleCreateBill}
-              disabled={submitting || !billDesc.trim() || !billAmount || !billDueDate}
+              disabled={submitting || !billDesc.trim() || !billAmount || !billDate || (billCurrency !== "YER" && Number(billExchangeRate) <= 0) || (!billIsOpeningBalance && !billDueDate)}
               style={{ ...btnPrimary, opacity: submitting ? 0.6 : 1 }}
             >
-              {submitting ? "جارٍ التسجيل..." : "تسجيل الفاتورة"}
+              {submitting ? "جارٍ التسجيل..." : billIsOpeningBalance ? "ترحيل الرصيد الافتتاحي" : "تسجيل المديونية"}
             </button>
           </div>
         </div>
@@ -638,7 +711,7 @@ export function SuppliersTab() {
             {/* Bill info banner */}
             <div className="rounded-md p-3" style={{ backgroundColor: tokens.warningBg, border: `1px solid ${tokens.warningBorder}` }}>
               <p className="text-xs" style={{ color: tokens.warningText }}>
-                الفاتورة: <strong>{showPayBill.billNumber}</strong> — المتبقي: <strong>{formatYER(showPayBill.remainingAmount)}</strong>
+                الفاتورة: <strong>{showPayBill.billNumber}</strong> — المتبقي: <strong>{formatMoney(showPayBill.remainingAmount, showPayBill.currency)}</strong>
               </p>
             </div>
 
@@ -657,10 +730,14 @@ export function SuppliersTab() {
               />
               {Number(payAmount) > showPayBill.remainingAmount && (
                 <p className="text-xs mt-1" style={{ color: tokens.dangerBorder }}>
-                  المبلغ يتجاوز المتبقي ({formatYER(showPayBill.remainingAmount)})
+                  المبلغ يتجاوز المتبقي ({formatMoney(showPayBill.remainingAmount, showPayBill.currency)})
                 </p>
               )}
             </div>
+            {showPayBill.currency !== "YER" && <div>
+              <label style={labelStyle}>سعر الصرف المثبت للدفع: 1 {showPayBill.currency} = كم ر.ي؟ <span style={{ color: tokens.dangerBorder }}>*</span></label>
+              <input type="number" min="0.000001" step="0.000001" value={payExchangeRate} onChange={(e) => setPayExchangeRate(e.target.value)} dir="ltr" style={inputStyle} />
+            </div>}
 
             {/* Payment method */}
             <div>
@@ -679,12 +756,12 @@ export function SuppliersTab() {
                 <div className="flex items-center gap-2 text-xs" style={{ color: tokens.textTertiary }}>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" /> جاري تحميل الخزائن...
                 </div>
-              ) : treasuries.length === 0 ? (
+              ) : compatibleTreasuries.length === 0 ? (
                 <div
                   className="rounded-md p-3 text-xs"
                   style={{ backgroundColor: tokens.dangerBg, color: tokens.dangerText, border: `1px solid ${tokens.dangerBorder}` }}
                 >
-                  لا توجد خزائن نشطة. يرجى إنشاء خزينة أولاً.
+                  لا توجد خزينة نشطة بعملة {showPayBill.currency}. أنشئ خزينة بنفس العملة أو سجّل مصارفة مستقلة أولاً.
                 </div>
               ) : (
                 <select
@@ -693,9 +770,9 @@ export function SuppliersTab() {
                   style={inputStyle}
                 >
                   <option value="">— اختر الخزينة —</option>
-                  {treasuries.map((t) => (
+                  {compatibleTreasuries.map((t) => (
                     <option key={t.id} value={t.id}>
-                      {t.name} ({formatYER(t.balance)})
+                      {t.name} ({formatMoney(t.balance, t.currency)})
                     </option>
                   ))}
                 </select>
@@ -714,7 +791,7 @@ export function SuppliersTab() {
                 >
                   <Wallet className="w-3.5 h-3.5 flex-shrink-0" style={{ color: tokens.brand }} />
                   <span className="text-xs" style={{ color: tokens.infoText }}>
-                    رصيد {selected.name}: <strong>{formatYER(selected.balance)}</strong>
+                    رصيد {selected.name}: <strong>{formatMoney(selected.balance, selected.currency)}</strong>
                     {payNum > 0 && selected.balance < payNum && (
                       <span style={{ color: tokens.dangerText, marginRight: 8 }}>
                         ⚠ الرصيد غير كافٍ
@@ -755,11 +832,11 @@ export function SuppliersTab() {
               <button onClick={() => setShowPayBill(null)} style={btnGhost}>إلغاء</button>
               <button
                 onClick={handlePayBill}
-                disabled={submitting || !payAmount || Number(payAmount) <= 0 || Number(payAmount) > showPayBill.remainingAmount || (!payTreasuryId && treasuries.length > 0)}
+                disabled={submitting || !payAmount || Number(payAmount) <= 0 || Number(payAmount) > showPayBill.remainingAmount || (showPayBill.currency !== "YER" && Number(payExchangeRate) <= 0) || (!payTreasuryId && compatibleTreasuries.length > 0)}
                 style={{
                   ...btnPrimary,
                   backgroundColor: "#d13438",
-                  opacity: submitting || !payAmount || Number(payAmount) <= 0 || Number(payAmount) > showPayBill.remainingAmount || (!payTreasuryId && treasuries.length > 0) ? 0.6 : 1,
+                  opacity: submitting || !payAmount || Number(payAmount) <= 0 || Number(payAmount) > showPayBill.remainingAmount || (showPayBill.currency !== "YER" && Number(payExchangeRate) <= 0) || (!payTreasuryId && compatibleTreasuries.length > 0) ? 0.6 : 1,
                 }}
               >
                 {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> جارٍ السداد...</> : "سداد القسط"}

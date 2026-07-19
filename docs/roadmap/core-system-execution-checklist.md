@@ -2,7 +2,7 @@
 
 - Last updated: 2026-07-17
 - Current phase: 1
-- Current branch: `codex/core-p1-s2-canonical-routes`
+- Current branch: `codex/core-p1-s3-route-role-manifest`
 - Current PR: pending
 - Rule: update this file after every core-system PR.
 
@@ -21,6 +21,7 @@
 - [x] PR #700 E2E evidence recorded: 1 public smoke passed and 4 authenticated tests skipped.
 - [x] PR #700 merged to `main` as `da6e1e54`.
 - [x] PR #701 aligned Reception appointment navigation and merged as `260cc4c1`.
+- [x] PR #702 locked canonical route ownership and merged as `c3183d40`.
 - [ ] Authenticated end-to-end patient journey is verified.
 - [ ] Fresh and representative legacy database migration parity is verified.
 
@@ -55,7 +56,7 @@
 
 - [x] `CORE-P1-S1` Align Reception access to canonical `/appointments` and add tests.
 - [x] `CORE-P1-S2` Lock canonical route/owner inventory and redirects with tests.
-- [ ] `CORE-P1-S3` Create one frontend route-role manifest.
+- [x] `CORE-P1-S3` Create one frontend route-role manifest.
 - [ ] `CORE-P1-S4` Map canonical routes to backend policy ownership.
 - [ ] `CORE-P1-S5` Distinguish executed and skipped authenticated E2E in CI.
 - [ ] Phase 1 exit gate approved.

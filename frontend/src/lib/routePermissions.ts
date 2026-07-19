@@ -4,12 +4,14 @@
 
 export interface RoutePermission {
   path: string;
-  allowedRoles: string[];  // Roles that can access this route
-  requiredPermissions?: string[];  // Optional specific permissions
+  allowedRoles: readonly string[];  // Roles that can access this route
+  navigationRoles?: readonly string[];  // Optional narrower sidebar visibility
+  requiredPermissions?: readonly string[];  // Optional specific permissions
 }
 
-export const ROUTE_PERMISSIONS: RoutePermission[] = [
+export const ROUTE_MANIFEST: readonly RoutePermission[] = [
   // Main pages
+  { path: '/', allowedRoles: ['Admin'] },
   { path: '/clinic-command-center', allowedRoles: ['Admin'] },
   { path: '/daily-operations', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   { path: '/patients', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
@@ -24,12 +26,17 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   // via /ortho/{orthoCaseId}?tab=surgical (from /surgery's pending-review list, the
   // reciprocal link on /surgery/[id], and the patient file's ortho-surgical sub-tab).
   // Without this, the layout's route guard silently bounces every surgeon back to
-  // /daily-operations before they ever see the shared workspace tab. The ortho case's
+  // /daily-operations before they ever see the shared workspace tab. The general
+  // orthodontics sidebar entry remains hidden through navigationRoles. The ortho case's
   // OTHER tabs remain protected at the API layer (OrthoCasesController requires the
   // OrthoAccess policy = Admin/Orthodontist), so this only widens frontend navigation,
   // not backend authorization.
   { path: '/ortho/new', allowedRoles: ['Admin', 'Orthodontist'] },
-  { path: '/ortho', allowedRoles: ['Admin', 'Orthodontist', 'OralSurgeon'] },
+  {
+    path: '/ortho',
+    allowedRoles: ['Admin', 'Orthodontist', 'OralSurgeon'],
+    navigationRoles: ['Admin', 'Orthodontist'],
+  },
   { path: '/ceph', allowedRoles: ['Admin', 'Orthodontist'] },
   { path: '/general', allowedRoles: ['Admin', 'GeneralDentist'] },
   { path: '/surgery', allowedRoles: ['Admin', 'OralSurgeon'] },
@@ -78,6 +85,11 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { path: '/lab/dashboard', allowedRoles: ['Admin', 'BranchManager', 'Accountant'] },
   { path: '/lab/reports', allowedRoles: ['Admin', 'BranchManager', 'Accountant'] },
   { path: '/lab/payables', allowedRoles: ['Admin', 'BranchManager', 'Accountant'] },
+  {
+    path: '/lab/overdue',
+    allowedRoles: ['Admin', 'Reception', 'Orthodontist', 'GeneralDentist', 'OralSurgeon', 'Assistant', 'BranchManager'],
+    navigationRoles: ['Admin', 'Reception', 'Orthodontist', 'BranchManager'],
+  },
   { path: '/lab', allowedRoles: ['Admin', 'Reception', 'Orthodontist', 'GeneralDentist', 'OralSurgeon', 'Assistant', 'BranchManager'] },
   { path: '/doctors', allowedRoles: ['Admin'] },
   { path: '/hr', allowedRoles: ['Admin'] },
@@ -96,17 +108,32 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { path: '/booking-requests', allowedRoles: ['Admin', 'Reception'] },
 ];
 
+// Compatibility export for existing tests and consumers. New navigation code reads
+// from ROUTE_MANIFEST through getNavigationRoles so route and sidebar roles cannot drift.
+export const ROUTE_PERMISSIONS = ROUTE_MANIFEST;
+
+export function getNavigationRoles(pathname: string): readonly string[] {
+  const route = findRoutePermission(pathname);
+  if (!route) {
+    throw new Error(`Dashboard navigation route is not registered: ${pathname}`);
+  }
+
+  return route.navigationRoles ?? route.allowedRoles;
+}
+
+export function getNavigationGroupRoles(...paths: string[]): readonly string[] {
+  return [...new Set(paths.flatMap((path) => getNavigationRoles(path)))];
+}
+
 export function isRouteAllowed(pathname: string, userRole: string | null): boolean {
   if (!userRole) return false;
-
-  if (pathname === '/') return userRole === 'Admin';
 
   // Admin has access to everything
   if (userRole === 'Admin') return true;
 
   // Find matching permission for this route. Match exact paths and nested child routes only,
   // so `/patients/123` matches `/patients` but `/patients-archive` does not.
-  const matched = ROUTE_PERMISSIONS.find(p => isRouteMatch(pathname, p.path));
+  const matched = findRoutePermission(pathname);
   // FE-02 / SEC-17 FIX: Default DENY if no specific rule matches. Previously this returned
   // true (default-allow), which let any authenticated user reach admin-only screens like
   // /commissions, /booking-requests, /settings/audit, /settings/backup, /surgery/[id]/edit,
@@ -116,6 +143,10 @@ export function isRouteAllowed(pathname: string, userRole: string | null): boole
   if (!matched) return false;
 
   return matched.allowedRoles.includes(userRole);
+}
+
+function findRoutePermission(pathname: string): RoutePermission | undefined {
+  return ROUTE_MANIFEST.find((permission) => isRouteMatch(pathname, permission.path));
 }
 
 function isRouteMatch(pathname: string, routePath: string): boolean {

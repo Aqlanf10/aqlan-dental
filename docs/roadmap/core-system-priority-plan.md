@@ -57,6 +57,8 @@ work from a later phase.
 - `CORE-P1-S1` merged in PR #701. Reception now has a tested navigation and
   route-guard contract for the canonical appointment workflow. Authenticated
   Reception runtime verification remains part of the Phase 1 exit evidence.
+- `CORE-P1-S2` merged in PR #702. Canonical capability owners and legacy aliases
+  now have a checked registry, redirect tests, and role-parity tests.
 
 ### CORE-P1-S1 - Reception Appointment Route Alignment
 

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { isRouteAllowed } from '@/lib/routePermissions';
+import {
+  getNavigationRoles,
+  isRouteAllowed,
+  ROUTE_MANIFEST,
+} from '@/lib/routePermissions';
 
 describe('route permissions', () => {
   it('allows Accountant to reach approved lab subroutes without opening all lab orders', () => {
@@ -65,5 +69,30 @@ describe('route permissions', () => {
     expect(isRouteAllowed('/appointments-recall', 'Reception')).toBe(false);
     expect(isRouteAllowed('/clinic-queue-old', 'Reception')).toBe(false);
     expect(isRouteAllowed('/patients-archive', 'Reception')).toBe(false);
+  });
+
+  it('CORE-P1-S3: keeps manifest paths unique and navigation roles within route access', () => {
+    const paths = ROUTE_MANIFEST.map((route) => route.path);
+    expect(new Set(paths).size).toBe(paths.length);
+
+    for (const route of ROUTE_MANIFEST) {
+      for (const role of route.navigationRoles ?? route.allowedRoles) {
+        expect(route.allowedRoles).toContain(role);
+      }
+    }
+  });
+
+  it('keeps intentional navigation visibility narrower without blocking deep links', () => {
+    expect(isRouteAllowed('/ortho/case-1', 'OralSurgeon')).toBe(true);
+    expect(getNavigationRoles('/ortho')).not.toContain('OralSurgeon');
+
+    expect(isRouteAllowed('/lab/overdue', 'GeneralDentist')).toBe(true);
+    expect(getNavigationRoles('/lab/overdue')).not.toContain('GeneralDentist');
+  });
+
+  it('fails closed when the sidebar references an unregistered dashboard route', () => {
+    expect(() => getNavigationRoles('/unregistered-dashboard-route')).toThrow(
+      'Dashboard navigation route is not registered: /unregistered-dashboard-route',
+    );
   });
 });

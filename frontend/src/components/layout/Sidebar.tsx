@@ -18,6 +18,7 @@ import { useRouter } from "next/navigation";
 import { useState, useCallback, useEffect } from "react";
 import { useUnreadCount } from "@/hooks/useMessaging";
 import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
+import { getNavigationGroupRoles, getNavigationRoles } from "@/lib/routePermissions";
 import type { UserDto } from "@/types/auth";
 
 /* ─── Brand colors ──────────────────────────────────────────────────────────── */
@@ -37,7 +38,7 @@ type NavLeaf = {
   href: string;
   label: string;
   icon: React.ElementType;
-  roles: string[];
+  roles: readonly string[];
   permission?: string;
   badge?: string;
 };
@@ -46,7 +47,7 @@ type NavGroup = {
   kind: "group";
   label: string;
   icon: React.ElementType;
-  roles: string[];
+  roles: readonly string[];
   permission?: string;
   badge?: string;
   children: NavLeaf[];
@@ -58,40 +59,40 @@ type NavEntry = (NavItem & { kind?: "leaf" }) | (NavGroup & { section?: string }
 /* ─── Navigation definition ─────────────────────────────────────────────────── */
 export const NAV: NavEntry[] = [
   // ── رئيسي ────────────────────────────────────────────────────────────────
-  { href: "/",               label: "لوحة التحكم",     icon: LayoutDashboard, roles: ["Admin"],                                                             section: "رئيسي" },
-  { href: "/daily-operations", label: "التشغيل اليومي", icon: ClipboardList, roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.DAILY_OPERATIONS_VIEW, badge: "⭐" },
-  { href: "/patients",       label: "المرضى",           icon: Users,           roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.PATIENTS_VIEW },
+  { href: "/",               label: "لوحة التحكم",     icon: LayoutDashboard, roles: getNavigationRoles("/"),                                                             section: "رئيسي" },
+  { href: "/daily-operations", label: "التشغيل اليومي", icon: ClipboardList, roles: getNavigationRoles("/daily-operations"), permission: PERMISSION_KEYS.DAILY_OPERATIONS_VIEW, badge: "⭐" },
+  { href: "/patients",       label: "المرضى",           icon: Users,           roles: getNavigationRoles("/patients"), permission: PERMISSION_KEYS.PATIENTS_VIEW },
   // YOLO-S5: Patient segments — pre-built dynamic (overdue ortho, outstanding balance,
   // no-show 90d, lab ready) + admin-managed custom segments. Admin-only — backed by
   // PatientSegmentsController [Authorize(Policy = "AdminOnly")] + routePermissions.ts.
-  { href: "/patient-segments", label: "مجموعات المرضى", icon: Layers,          roles: ["Admin"] },
+  { href: "/patient-segments", label: "مجموعات المرضى", icon: Layers,          roles: getNavigationRoles("/patient-segments") },
 
   // ── العيادة ───────────────────────────────────────────────────────────────
-  { href: "/appointments",   label: "المواعيد",        icon: CalendarDays,    roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.APPOINTMENTS_VIEW, section: "العيادة" },
-  { href: "/appointments/recall", label: "قائمة الاستدعاء", icon: BellRing,   roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.APPOINTMENTS_VIEW },
+  { href: "/appointments",   label: "المواعيد",        icon: CalendarDays,    roles: getNavigationRoles("/appointments"), permission: PERMISSION_KEYS.APPOINTMENTS_VIEW, section: "العيادة" },
+  { href: "/appointments/recall", label: "قائمة الاستدعاء", icon: BellRing,   roles: getNavigationRoles("/appointments/recall"), permission: PERMISSION_KEYS.APPOINTMENTS_VIEW },
   // NAV-CEPH-FIX (audit §4 — Reception workflow): /clinic-queue and /patient-journey
   // index pages are now thin redirect stubs to /daily-operations — the canonical workspace.
   // The sidebar entries are removed to avoid three parallel "today's patients" screens.
   // Routes themselves are preserved (redirect stubs) so direct URLs still resolve cleanly.
-  { href: "/booking-requests", label: "طلبات الحجز", icon: CalendarPlus, roles: ["Admin", "Reception"], permission: PERMISSION_KEYS.BOOKING_REQUESTS_VIEW },
-  { href: "/schedule",       label: "جداول الأطباء",   icon: Clock,           roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"] },
-  { href: "/doctor-clinic",  label: "عيادة الطبيب",    icon: Stethoscope,     roles: ["Admin","GeneralDentist","OralSurgeon","Orthodontist"] },
-  { href: "/prescriptions",  label: "الوصفات الطبية",  icon: Pill,            roles: ["Admin","GeneralDentist","OralSurgeon","Orthodontist"] },
+  { href: "/booking-requests", label: "طلبات الحجز", icon: CalendarPlus, roles: getNavigationRoles("/booking-requests"), permission: PERMISSION_KEYS.BOOKING_REQUESTS_VIEW },
+  { href: "/schedule",       label: "جداول الأطباء",   icon: Clock,           roles: getNavigationRoles("/schedule") },
+  { href: "/doctor-clinic",  label: "عيادة الطبيب",    icon: Stethoscope,     roles: getNavigationRoles("/doctor-clinic") },
+  { href: "/prescriptions",  label: "الوصفات الطبية",  icon: Pill,            roles: getNavigationRoles("/prescriptions") },
 
   // ── تخصصات ───────────────────────────────────────────────────────────────
-  { href: "/ortho",          label: "التقويم",          icon: GitBranch,       roles: ["Admin","Orthodontist"],                                       section: "تخصصات", badge: "محدّث" },
-  { href: "/ceph",           label: "السيفالومتري",     icon: Activity,        roles: ["Admin","Orthodontist"] },
-  { href: "/general",        label: "طب الأسنان العام", icon: Stethoscope,     roles: ["Admin","GeneralDentist"] },
-  { href: "/surgery",        label: "الجراحة",          icon: Scissors,        roles: ["Admin","OralSurgeon"] },
+  { href: "/ortho",          label: "التقويم",          icon: GitBranch,       roles: getNavigationRoles("/ortho"),                                       section: "تخصصات", badge: "محدّث" },
+  { href: "/ceph",           label: "السيفالومتري",     icon: Activity,        roles: getNavigationRoles("/ceph") },
+  { href: "/general",        label: "طب الأسنان العام", icon: Stethoscope,     roles: getNavigationRoles("/general") },
+  { href: "/surgery",        label: "الجراحة",          icon: Scissors,        roles: getNavigationRoles("/surgery") },
 
   // ── التواصل ───────────────────────────────────────────────────────────────
   // NAV-CEPH-FIX (audit §4 — Referrals): Reception is not in routePermissions for /referrals
   // (routePermissions.ts:26 is Admin + doctors only) → the link was a click→redirect dead-end.
   // Backend already blocks Reception; only hides a confusing link.
-  { href: "/referrals",      label: "الإحالات",         icon: ArrowLeftRight,  roles: ["Admin", "GeneralDentist", "OralSurgeon", "Orthodontist"],                                         section: "التواصل" },
-  { href: "/messages",       label: "الرسائل",          icon: MessageCircle,   roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"] },
-  { href: "/whatsapp",       label: "واتساب",           icon: MessageSquare,   roles: ["Admin"] },
-  { href: "/sms",            label: "رسائل SMS",        icon: Smartphone,      roles: ["Admin", "Reception"] },
+  { href: "/referrals",      label: "الإحالات",         icon: ArrowLeftRight,  roles: getNavigationRoles("/referrals"),                                         section: "التواصل" },
+  { href: "/messages",       label: "الرسائل",          icon: MessageCircle,   roles: getNavigationRoles("/messages") },
+  { href: "/whatsapp",       label: "واتساب",           icon: MessageSquare,   roles: getNavigationRoles("/whatsapp") },
+  { href: "/sms",            label: "رسائل SMS",        icon: Smartphone,      roles: getNavigationRoles("/sms") },
 
   // ── المالية ───────────────────────────────────────────────────────────────
   // NAV-CEPH-FIX (audit §4 — Finance): Reception is removed from /finance-v3 roles so the
@@ -100,55 +101,70 @@ export const NAV: NavEntry[] = [
   // blocks Reception from finance APIs.
   // /finance-v3?tab=commissions entry deleted — same page, different starting tab; users pick
   // the Commissions tab inside /finance-v3. Direct URL still works.
-  { href: "/finance-v3",  label: "المالية",  icon: Wallet,  roles: ["Admin","Accountant"],  section: "المالية" },
+  { href: "/finance-v3",  label: "المالية",  icon: Wallet,  roles: getNavigationRoles("/finance-v3"),  section: "المالية" },
   {
     kind: "group",
     label: "المخزون", icon: Package,
-    roles: ["Admin"],
+    roles: getNavigationGroupRoles(
+      "/inventory",
+      "/inventory/suppliers",
+      "/inventory/purchases",
+    ),
     children: [
-      { href: "/inventory",           label: "المخزون",      icon: Package,      roles: ["Admin"] },
-      { href: "/inventory/suppliers", label: "الموردون",     icon: Truck,        roles: ["Admin"] },
-      { href: "/inventory/purchases", label: "أوامر الشراء", icon: ShoppingCart, roles: ["Admin"] },
+      { href: "/inventory",           label: "المخزون",      icon: Package,      roles: getNavigationRoles("/inventory") },
+      { href: "/inventory/suppliers", label: "الموردون",     icon: Truck,        roles: getNavigationRoles("/inventory/suppliers") },
+      { href: "/inventory/purchases", label: "أوامر الشراء", icon: ShoppingCart, roles: getNavigationRoles("/inventory/purchases") },
     ],
   },
   {
     kind: "group",
     label: "المعامل",
     icon: FlaskConical,
-    roles: ["Admin", "Reception", "Orthodontist", "GeneralDentist", "OralSurgeon", "Assistant", "BranchManager", "Accountant"],
+    roles: getNavigationGroupRoles(
+      "/lab",
+      "/lab/dashboard",
+      "/lab/overdue",
+      "/lab/reports",
+      "/lab/payables",
+    ),
     children: [
-      { href: "/lab", label: "طلبات المعمل", icon: FlaskConical, roles: ["Admin", "Reception", "Orthodontist", "GeneralDentist", "OralSurgeon", "Assistant", "BranchManager"], permission: PERMISSION_KEYS.LAB_ORDERS_VIEW },
-      { href: "/lab/dashboard", label: "ملخص المعامل", icon: BarChart2, roles: ["Admin", "BranchManager", "Accountant"], permission: PERMISSION_KEYS.LAB_REPORTS_VIEW },
-      { href: "/lab/overdue", label: "طلبات متأخرة", icon: Clock, roles: ["Admin", "Reception", "Orthodontist", "BranchManager"], permission: PERMISSION_KEYS.LAB_ORDERS_VIEW },
-      { href: "/lab/reports", label: "تقارير المعامل", icon: BarChart2, roles: ["Admin", "BranchManager", "Accountant"], permission: PERMISSION_KEYS.LAB_REPORTS_VIEW },
-      { href: "/lab/payables", label: "مستحقات المعامل", icon: DollarSign, roles: ["Admin", "BranchManager", "Accountant"], permission: PERMISSION_KEYS.LAB_PAYABLES_VIEW },
+      { href: "/lab", label: "طلبات المعمل", icon: FlaskConical, roles: getNavigationRoles("/lab"), permission: PERMISSION_KEYS.LAB_ORDERS_VIEW },
+      { href: "/lab/dashboard", label: "ملخص المعامل", icon: BarChart2, roles: getNavigationRoles("/lab/dashboard"), permission: PERMISSION_KEYS.LAB_REPORTS_VIEW },
+      { href: "/lab/overdue", label: "طلبات متأخرة", icon: Clock, roles: getNavigationRoles("/lab/overdue"), permission: PERMISSION_KEYS.LAB_ORDERS_VIEW },
+      { href: "/lab/reports", label: "تقارير المعامل", icon: BarChart2, roles: getNavigationRoles("/lab/reports"), permission: PERMISSION_KEYS.LAB_REPORTS_VIEW },
+      { href: "/lab/payables", label: "مستحقات المعامل", icon: DollarSign, roles: getNavigationRoles("/lab/payables"), permission: PERMISSION_KEYS.LAB_PAYABLES_VIEW },
     ],
   },
 
   // ── تقارير ───────────────────────────────────────────────────────────────
-  { href: "/reports",        label: "التقارير",         icon: BarChart2,       roles: ["Admin","Accountant"],                                         section: "تقارير" },
+  { href: "/reports",        label: "التقارير",         icon: BarChart2,       roles: getNavigationRoles("/reports"),                                         section: "تقارير" },
 
   // ── الإدارة ───────────────────────────────────────────────────────────────
-  { href: "/doctors",        label: "إدارة الأطباء",     icon: UserRound,       roles: ["Admin"],                                                      section: "الإدارة" },
-  { href: "/employees",      label: "الموظفين",         icon: UserCog,         roles: ["Admin"] },
+  { href: "/doctors",        label: "إدارة الأطباء",     icon: UserRound,       roles: getNavigationRoles("/doctors"),                                                      section: "الإدارة" },
+  { href: "/employees",      label: "الموظفين",         icon: UserCog,         roles: getNavigationRoles("/employees") },
   {
     kind: "group",
     label: "الموارد البشرية", icon: UserCog,
-    roles: ["Admin"],
+    roles: getNavigationGroupRoles(
+      "/hr/attendance",
+      "/hr/salaries",
+      "/hr/advances",
+      "/hr/leaves",
+    ),
     children: [
-      { href: "/hr/attendance", label: "الحضور والانصراف", icon: Clock,       roles: ["Admin"] },
-      { href: "/hr/salaries",   label: "الرواتب",         icon: Banknote,    roles: ["Admin"] },
-      { href: "/hr/advances",   label: "السلف",           icon: Wallet,      roles: ["Admin"] },
-      { href: "/hr/leaves",     label: "الإجازات",        icon: CalendarOff, roles: ["Admin"] },
+      { href: "/hr/attendance", label: "الحضور والانصراف", icon: Clock,       roles: getNavigationRoles("/hr/attendance") },
+      { href: "/hr/salaries",   label: "الرواتب",         icon: Banknote,    roles: getNavigationRoles("/hr/salaries") },
+      { href: "/hr/advances",   label: "السلف",           icon: Wallet,      roles: getNavigationRoles("/hr/advances") },
+      { href: "/hr/leaves",     label: "الإجازات",        icon: CalendarOff, roles: getNavigationRoles("/hr/leaves") },
     ],
   },
-  { href: "/branches",       label: "الفروع",           icon: Building2,       roles: ["Admin"] },
+  { href: "/branches",       label: "الفروع",           icon: Building2,       roles: getNavigationRoles("/branches") },
 
   // ── النظام ───────────────────────────────────────────────────────────────
   // NAV-CEPH-FIX (audit §4 — Settings): /settings/services and /settings/backup entries
   // deleted — they are sub-pages of /settings (already reachable via the settings hub).
   // Direct URLs still work; cleaner sidebar (no duplicated shortcuts).
-  { href: "/settings",       label: "الإعدادات",        icon: Settings,        roles: ["Admin"],                                                      section: "النظام" },
+  { href: "/settings",       label: "الإعدادات",        icon: Settings,        roles: getNavigationRoles("/settings"),                                                      section: "النظام" },
 ];
 
 const ROLE_LABELS: Record<string, string> = {
@@ -225,7 +241,7 @@ function NavLink({
 }
 
 /* ─── Visibility check ─────────────────────────────────────────────────────── */
-function isVisible(entry: { roles: string[]; permission?: string }, userRole: string, user: UserDto | null): boolean {
+function isVisible(entry: { roles: readonly string[]; permission?: string }, userRole: string, user: UserDto | null): boolean {
   // 1. If the entry lists specific roles, the user's active role must be included
   if (entry.roles && entry.roles.length > 0 && !entry.roles.includes(userRole)) {
     return false;

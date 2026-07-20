@@ -164,6 +164,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     // Finance V3 — Double-Entry Bookkeeping (JournalEntry + JournalLine)
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
     public DbSet<JournalLine> JournalLines => Set<JournalLine>();
+    public DbSet<AccountingPeriod> AccountingPeriods => Set<AccountingPeriod>();
 
     // YOLO-S5 — Patient Segments (custom manual lists; pre-built dynamic
     // segments are computed in PatientSegmentsController and not stored).

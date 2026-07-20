@@ -78,6 +78,20 @@ public class DailyOperationsRouteGuardTests
     }
 
     [Fact]
+    public void ValidateFinancialClosure_RequiresFinanceAccess()
+    {
+        var method = typeof(PatientJourneyController).GetMethod("ValidateFinancialClosure");
+        method.Should().NotBeNull("the financial-closure endpoint must exist");
+
+        var authorize = method!.GetCustomAttributes(typeof(AuthorizeAttribute), false)
+            .Cast<AuthorizeAttribute>()
+            .SingleOrDefault(a => a.Policy == "FinanceAccess");
+
+        authorize.Should().NotBeNull(
+            "financial closure can expose balances and create manager-override audit records, so doctor-only StaffOnly access is insufficient");
+    }
+
+    [Fact]
     public void DailyOperationsController_HasApiControllerAttribute()
     {
         var attr = typeof(DailyOperationsController)

@@ -159,6 +159,7 @@ public class PatientJourneyController(
     /// Checks outstanding balance and treatment plan status.
     /// </summary>
     [HttpPost("{patientId:guid}/validate-financial-closure")]
+    [Authorize(Policy = "FinanceAccess")]
     public async Task<IActionResult> ValidateFinancialClosure(
         Guid patientId,
         [FromBody] ValidateFinancialClosureRequest req)

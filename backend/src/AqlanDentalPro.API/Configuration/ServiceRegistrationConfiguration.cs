@@ -41,6 +41,7 @@ public static class ServiceRegistrationConfiguration
         // lives in PaymentService, supplier payables/credit-note refunds in
         // SupplierRefundService, and the contract orchestrators in ContractService.
         services.AddScoped<IPaymentService, PaymentService>();
+        services.AddScoped<IAdvancePaymentAllocationService, AdvancePaymentAllocationService>();
         services.AddScoped<ISupplierRefundService, SupplierRefundService>();
         // TD-021 PR A1: invoice-ledger posting extracted from FinanceService. Self-contained
         // (db + journalEntryService + currentUser + logger only) — first slice of the

@@ -708,12 +708,15 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
             // remains Draft (atomic operation, Blocker 1).
             // TD-021 PR A1: invoice-ledger posting extracted from FinanceService → IInvoiceLedgerService.
             var invoiceLedgerService = HttpContext.RequestServices.GetRequiredService<IInvoiceLedgerService>();
+            AdvancePaymentAllocationResult? allocationResult = null;
 
             var useTx = db.Database.IsRelational();
             var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
             try
             {
                 await invoiceLedgerService.PostInvoiceIssuedEntryAsync(invoice.Id);
+                var allocationService = HttpContext.RequestServices.GetRequiredService<IAdvancePaymentAllocationService>();
+                allocationResult = await allocationService.AllocateAvailableAdvancesAsync(invoice.Id);
                 await db.SaveChangesAsync();
                 if (useTx) await tx!.CommitAsync();
             }
@@ -734,6 +737,9 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
                 invoice.InvoiceNumber,
                 Status = invoice.Status.ToString(),
                 StatusArabic = GetStatusArabic(invoice.Status),
+                AdvanceAllocatedAmount = allocationResult?.AllocatedAmount ?? 0m,
+                RemainingAfterAdvanceAllocation = allocationResult?.RemainingInvoiceAmount ?? invoice.TotalAmount,
+                allocationResult?.SkippedDueToUnresolvedRefunds,
                 message = "تم إصدار الفاتورة بنجاح"
             });
         }
@@ -745,7 +751,67 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
     }
 
     // ─── 6. PATCH /api/invoices/{id}/cancel — Cancel invoice ────────
-    /// <summary>Changes invoice status to Cancelled atomically with its reversal JE. Draft→Cancelled: status only. Issued→Cancelled: status + reversal must both succeed. Paid: rejected.</summary>
+    /// <summary>Retries automatic allocation of recorded patient advances to an issued invoice.</summary>
+    [HttpPost("{id:guid}/allocate-advances")]
+    public async Task<IActionResult> AllocateAdvances(Guid id)
+    {
+        if (!await CanAsync("approve")) return Deny();
+
+        var useTx = db.Database.IsRelational();
+        var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            var allocationService = HttpContext.RequestServices.GetRequiredService<IAdvancePaymentAllocationService>();
+            var result = await allocationService.AllocateAvailableAdvancesAsync(id);
+            await db.SaveChangesAsync();
+            if (useTx) await tx!.CommitAsync();
+
+            await audit.LogAsync(AuditAction.Update, "Invoice", id, details: "Patient advances allocated to invoice");
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            if (useTx) await tx!.RollbackAsync();
+            return BadRequest(new { message = ex.Message });
+        }
+        catch
+        {
+            if (useTx) await tx!.RollbackAsync();
+            throw;
+        }
+    }
+
+    /// <summary>Reverses advance allocations through journal reversals before a refund or cancellation.</summary>
+    [HttpPost("{id:guid}/release-advance-allocations")]
+    public async Task<IActionResult> ReleaseAdvanceAllocations(Guid id)
+    {
+        if (!await CanAsync("approve")) return Deny();
+
+        var useTx = db.Database.IsRelational();
+        var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            var allocationService = HttpContext.RequestServices.GetRequiredService<IAdvancePaymentAllocationService>();
+            var result = await allocationService.ReleaseInvoiceAllocationsAsync(id);
+            await db.SaveChangesAsync();
+            if (useTx) await tx!.CommitAsync();
+
+            await audit.LogAsync(AuditAction.Update, "Invoice", id, details: "Patient advance allocations released");
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            if (useTx) await tx!.RollbackAsync();
+            return BadRequest(new { message = ex.Message });
+        }
+        catch
+        {
+            if (useTx) await tx!.RollbackAsync();
+            throw;
+        }
+    }
+
+    /// <summary>Changes invoice status to Cancelled atomically with its reversal JE. Draft to Cancelled is status-only; an Issued invoice is reversed atomically; Paid is rejected.</summary>
     [HttpPatch("{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, [FromBody] CancelInvoiceRequest? req = null)
     {
@@ -777,7 +843,9 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
             if (originalStatus == InvoiceStatus.Issued)
             {
                 var hasActivePayments = invoice.Payments.Any(p => p.IsActive);
-                if (hasActivePayments)
+                var hasActiveAdvanceAllocations = await db.PaymentAllocations
+                    .AnyAsync(a => a.InvoiceId == invoice.Id);
+                if (hasActivePayments || hasActiveAdvanceAllocations)
                     return BadRequest(new { message = "لا يمكن إلغاء فاتورة مصدرة بها مدفوعات نشطة. يجب استرداد أو حذف المدفوعات أولاً." });
             }
 

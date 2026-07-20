@@ -614,7 +614,11 @@ public class CommissionService(
 
         if (invoice.TotalAmount <= 0) return;
 
-        var totalPaid = invoice.Payments.Sum(p => p.Amount);
+        var directPayments = invoice.Payments.Sum(p => p.AppliedAmount == 0m ? p.Amount : p.AppliedAmount);
+        var allocatedAdvances = await db.PaymentAllocations
+            .Where(a => a.InvoiceId == invoiceId && a.IsActive)
+            .SumAsync(a => (decimal?)a.Amount) ?? 0m;
+        var totalPaid = directPayments + allocatedAdvances;
         var paidRatio = Math.Min(1m, totalPaid / invoice.TotalAmount);
 
         var items = await db.InvoiceLineItems

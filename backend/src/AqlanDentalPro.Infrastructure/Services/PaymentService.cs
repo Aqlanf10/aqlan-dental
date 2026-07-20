@@ -126,7 +126,10 @@ public class PaymentService(AppDbContext db, ICurrentUserService currentUser, IN
             var alreadyPaid = await db.Payments
                 .Where(p => p.InvoiceId == invoice.Id && p.IsActive)
                 .SumAsync(p => (decimal?)(p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)) ?? 0m;
-            var remaining = invoice.TotalAmount - alreadyPaid;
+            var advanceAllocated = await db.PaymentAllocations
+                .Where(a => a.InvoiceId == invoice.Id && a.IsActive)
+                .SumAsync(a => (decimal?)a.Amount) ?? 0m;
+            var remaining = invoice.TotalAmount - alreadyPaid - advanceAllocated;
             if (appliedAmount > remaining)
                 throw new ArgumentException($"المبلغ المحتسب ({appliedAmount:N0} {accountCurrency}) يتجاوز الرصيد المتبقي للفاتورة ({remaining:N0} {accountCurrency})");
         }
@@ -294,6 +297,9 @@ public class PaymentService(AppDbContext db, ICurrentUserService currentUser, IN
         var payment = await db.Payments.FindAsync(id);
         if (payment == null) return false;
 
+        if (await db.PaymentAllocations.AnyAsync(a => a.PaymentId == id))
+            throw new ArgumentException("Cannot delete an advance payment while it is allocated to an invoice. Release its allocations first.");
+
         var invoiceId  = payment.InvoiceId;  // H3: capture before deactivation
         var contractId = payment.ContractId; // capture before deactivation
 
@@ -386,6 +392,9 @@ public class PaymentService(AppDbContext db, ICurrentUserService currentUser, IN
     {
         var payment = await db.Payments.FindAsync(id);
         if (payment == null || !payment.IsActive) return null;
+
+        if (await db.PaymentAllocations.AnyAsync(a => a.PaymentId == id))
+            throw new ArgumentException("Cannot refund an advance payment while it is allocated to an invoice. Release its allocations first.");
 
         // H1: Partial refund validation
         var refundAmount = partialAmount.HasValue && partialAmount.Value > 0 && partialAmount.Value < payment.Amount
@@ -735,6 +744,10 @@ public class PaymentService(AppDbContext db, ICurrentUserService currentUser, IN
         var totalPaid = await db.Payments
             .Where(p => p.InvoiceId == invoiceId && p.IsActive)
             .SumAsync(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount);
+        var advanceAllocated = await db.PaymentAllocations
+            .Where(a => a.InvoiceId == invoiceId && a.IsActive)
+            .SumAsync(a => (decimal?)a.Amount) ?? 0m;
+        totalPaid += advanceAllocated;
 
         if (invoice.Status == InvoiceStatus.Issued && totalPaid >= invoice.TotalAmount)
         {

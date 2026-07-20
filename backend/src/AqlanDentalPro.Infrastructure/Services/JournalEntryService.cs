@@ -162,6 +162,11 @@ public class JournalEntryService(
             lines: reversalLines,
             ct: ct);
 
+        // A reversal must retain the original currency snapshot; otherwise a non-YER
+        // entry would be reversed in the JournalEntry default currency.
+        reversal.Currency = original.Currency;
+        reversal.ExchangeRateToYer = original.ExchangeRateToYer;
+
         // Link reversal
         reversal.IsReversal = true;
         reversal.ReversalOfEntryId = originalEntryId;

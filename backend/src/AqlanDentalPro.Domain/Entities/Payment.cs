@@ -40,4 +40,5 @@ public class Payment : BaseEntity
     public Doctor? Doctor { get; set; }
     public Branch? Branch { get; set; }
     public Receipt? Receipt { get; set; }
+    public ICollection<PaymentAllocation> Allocations { get; set; } = [];
 }

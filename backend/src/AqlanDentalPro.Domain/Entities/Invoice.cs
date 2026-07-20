@@ -55,4 +55,7 @@ public class Invoice : BaseEntity
 
     /// <summary>Payments linked to this invoice (via Payment.InvoiceId).</summary>
     public ICollection<Payment> Payments { get; set; } = [];
+
+    /// <summary>Applications of prior patient advances to this invoice.</summary>
+    public ICollection<PaymentAllocation> PaymentAllocations { get; set; } = [];
 }

@@ -104,6 +104,31 @@ public class FinanceV3FinalBlockingTests
         return (service, branchId, cashierId);
     }
 
+    [Fact]
+    public async Task CreatePaymentAsync_RejectsCashierSessionFromAnotherBranch()
+    {
+        await using var db = CreateContext();
+        var (service, branchId, cashierId) = CreateFinanceService(db);
+        var patient = SeedPatient(db, branchId);
+        CreateOpenSession(db, cashierId, branchId);
+
+        var otherBranch = new Branch { Id = Guid.NewGuid(), Name = "فرع آخر" };
+        db.Branches.Add(otherBranch);
+        await db.SaveChangesAsync();
+
+        var act = () => service.CreatePaymentAsync(new CreatePaymentRequest
+        {
+            PatientId = patient.Id,
+            Amount = 1_000m,
+            PaymentMethod = "cash",
+            ResolvedBranchId = otherBranch.Id,
+        });
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*وردية الكاشير المفتوحة لا تتبع الفرع المحدد للدفعة*");
+        (await db.Payments.CountAsync()).Should().Be(0);
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // BLOCKER 1: Invoice Issue/Cancel Atomic Transaction Tests
     // ═══════════════════════════════════════════════════════════════════════════

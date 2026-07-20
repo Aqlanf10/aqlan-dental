@@ -73,6 +73,17 @@ public class PaymentsController(IPaymentService service, IFinanceReadService fin
     public async Task<IActionResult> CreatePayment([FromBody] CreatePaymentRequest req)
     {
         if (!await CanAsync("finance.payments", "create")) return Deny();
+
+        // Branch ownership must come from the authenticated session for staff
+        // users. Never honour a client-provided branch on this operational route.
+        if (!currentUser.IsAdmin)
+        {
+            if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
+                return BadRequest(new { message = "لم يتم تحديد فرع صالح للمستخدم. لا يمكن تسجيل الدفعة." });
+
+            req.ResolvedBranchId = currentUser.BranchId.Value;
+        }
+
         try
         {
             var result = await service.CreatePaymentAsync(req);

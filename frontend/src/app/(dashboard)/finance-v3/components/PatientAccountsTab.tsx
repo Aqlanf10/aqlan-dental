@@ -79,6 +79,7 @@ export function PatientAccountsTab() {
               <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المرتجعات</p><p className="text-sm font-bold" style={{ color: tokens.warningText }}>{formatYER(selected.totalRefunds)}</p></div>
               <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الخصومات</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{formatYER(selected.totalDiscounts)}</p></div>
               <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الرصيد</p><p className="text-sm font-bold" style={{ color: selected.balance > 0 ? tokens.dangerBorder : tokens.successBorder }}>{formatYER(selected.balance)}</p></div>
+              {(selected.availableAdvance ?? 0) > 0 && <div className="col-span-2"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>رصيد دفعات مقدمة متاح</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{formatYER(selected.availableAdvance ?? 0)}</p></div>}
               {selected.contractOutstanding > 0 && <div className="col-span-2"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>مستحقات العقود</p><p className="text-sm font-bold" style={{ color: tokens.warningText }}>{formatYER(selected.contractOutstanding)}</p></div>}
               {/* Fix 5: Reconciliation indicator — warn if JournalLine balance differs from entity balance */}
               {selected.journalReceivable != null && selected.entityBalance != null && Math.abs(selected.journalReceivable - selected.entityBalance) > 0.01 && (

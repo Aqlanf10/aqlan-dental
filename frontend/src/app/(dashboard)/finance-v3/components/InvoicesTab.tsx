@@ -30,7 +30,9 @@ export function InvoicesTab() {
   const [detail, setDetail] = useState<InvoiceDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState<string | null>(null);
+  const [confirmRelease, setConfirmRelease] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [allocationActionPending, setAllocationActionPending] = useState(false);
 
   // Credit Note & Refund states
   const [showCreditNote, setShowCreditNote] = useState<InvoiceListItem | null>(null);
@@ -68,6 +70,48 @@ export function InvoicesTab() {
       setDetail(null);
       fetchData();
     } catch (err) { toast.error(extractErrorMessage(err, "فشل في إلغاء الفاتورة")); } finally { setCancelling(false); }
+  };
+
+  const refreshInvoiceDetail = async (invoiceId: string) => {
+    const { data: refreshed } = await api.get<InvoiceDetail>(`/api/invoices/${invoiceId}`);
+    setDetail(refreshed);
+  };
+
+  const handleAllocateAdvances = async () => {
+    if (!detail) return;
+    try {
+      setAllocationActionPending(true);
+      const { data: result } = await api.post<{ allocatedAmount: number; allocationCount: number; skippedDueToUnresolvedRefunds?: boolean }>(`/api/invoices/${detail.id}/allocate-advances`);
+      await refreshInvoiceDetail(detail.id);
+      await fetchData();
+      if (result.skippedDueToUnresolvedRefunds) {
+        toast.error("لا يمكن التسوية تلقائيا لوجود استرداد مقدم يحتاج مراجعة محاسبية.");
+      } else if (result.allocationCount > 0) {
+        toast.success(`تمت تسوية ${formatYER(result.allocatedAmount)} من الدفعات المقدمة.`);
+      } else {
+        toast.success("لا توجد دفعات مقدمة متاحة بنفس عملة الفاتورة.");
+      }
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "تعذر تسوية الدفعات المقدمة."));
+    } finally {
+      setAllocationActionPending(false);
+    }
+  };
+
+  const handleReleaseAllocations = async () => {
+    if (!confirmRelease) return;
+    try {
+      setAllocationActionPending(true);
+      await api.post(`/api/invoices/${confirmRelease}/release-advance-allocations`);
+      await refreshInvoiceDetail(confirmRelease);
+      await fetchData();
+      setConfirmRelease(null);
+      toast.success("تم فك تسوية الدفعات المقدمة وإنشاء قيود عكسية.");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "تعذر فك تسوية الدفعات المقدمة."));
+    } finally {
+      setAllocationActionPending(false);
+    }
   };
 
   // Create Credit Note handler
@@ -194,6 +238,7 @@ export function InvoicesTab() {
               <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الحالة</p><StatusBadge status={detail.status} /></div>
               <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الإجمالي</p><p className="text-sm font-bold">{formatYER(detail.totalAmount)}</p></div>
               <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المدفوع</p><p className="text-sm font-bold" style={{ color: tokens.successBorder }}>{formatYER(detail.paidAmount)}</p></div>
+              {(detail.advanceAllocatedAmount ?? 0) > 0 && <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>دفعات مقدمة مسواة</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{formatYER(detail.advanceAllocatedAmount ?? 0)}</p></div>}
             </div>
 
             {/* Line items */}
@@ -219,6 +264,34 @@ export function InvoicesTab() {
                           <td className="px-3 py-2">{formatYER(li.unitPrice)}</td>
                           <td className="px-3 py-2">{formatYER(li.discountAmount)}</td>
                           <td className="px-3 py-2 font-bold">{formatYER(li.totalPrice)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {detail.advanceAllocations && detail.advanceAllocations.length > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold mb-2" style={{ color: tokens.textSecondary }}>تسويات الدفعات المقدمة</h4>
+                <div className="overflow-x-auto rounded-md border" style={{ borderColor: tokens.border }}>
+                  <table className="w-full text-xs">
+                    <thead><tr style={{ backgroundColor: tokens.cardHover }}>
+                      <th className="text-right px-3 py-2">الإيصال</th>
+                      <th className="text-right px-3 py-2">تاريخ الدفع</th>
+                      <th className="text-right px-3 py-2">المبلغ</th>
+                      <th className="text-right px-3 py-2">العملة</th>
+                      <th className="text-right px-3 py-2">القيد</th>
+                    </tr></thead>
+                    <tbody>
+                      {detail.advanceAllocations.map((allocation) => (
+                        <tr key={allocation.id} style={{ borderBottom: `1px solid ${tokens.border}` }}>
+                          <td className="px-3 py-2">{allocation.receiptNumber ?? "-"}</td>
+                          <td className="px-3 py-2">{safeFormatDate(allocation.paymentDate)}</td>
+                          <td className="px-3 py-2 font-bold" style={{ color: tokens.brand }}>{formatYER(allocation.amount)}</td>
+                          <td className="px-3 py-2" dir="ltr">{allocation.currency}</td>
+                          <td className="px-3 py-2" dir="ltr">{allocation.journalEntryId ? allocation.journalEntryId.slice(0, 8) : "-"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -272,6 +345,16 @@ export function InvoicesTab() {
             {/* Actions */}
             <div className="flex justify-between pt-2 border-t" style={{ borderColor: tokens.border }}>
               <div className="flex gap-2">
+                {detail.status !== "Draft" && detail.balance > 0 && (
+                  <button onClick={handleAllocateAdvances} disabled={allocationActionPending} style={btnPrimary}>
+                    {allocationActionPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} تسوية الدفعات المقدمة
+                  </button>
+                )}
+                {(detail.advanceAllocations?.length ?? 0) > 0 && (
+                  <button onClick={() => setConfirmRelease(detail.id)} disabled={allocationActionPending} style={{ ...btnPrimary, backgroundColor: tokens.warningBorder }}>
+                    <RotateCcw className="w-4 h-4" /> فك التسوية
+                  </button>
+                )}
                 {/* Refund button */}
                 {detail.paidAmount > 0 && detail.status !== "Cancelled" && (
                   <button
@@ -333,6 +416,7 @@ export function InvoicesTab() {
       </Modal>
 
       <ConfirmDialog open={!!confirmCancel} onClose={() => setConfirmCancel(null)} onConfirm={handleCancel} title="إلغاء الفاتورة" message="هل أنت متأكد من إلغاء هذه الفاتورة؟ لا يمكن التراجع عن هذا الإجراء." confirmLabel="إلغاء الفاتورة" danger />
+      <ConfirmDialog open={!!confirmRelease} onClose={() => setConfirmRelease(null)} onConfirm={handleReleaseAllocations} title="فك تسوية الدفعات المقدمة" message="سيتم إنشاء قيود عكسية وإعادة المبلغ إلى رصيد المريض المقدم. لن يتحرك النقد في الخزينة." confirmLabel="فك التسوية" />
       {cancelling && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20"><Loader2 className="w-6 h-6 animate-spin" style={{ color: tokens.brand }} /></div>}
 
       {/* Create Credit Note Modal */}

@@ -161,7 +161,7 @@ public class AdvancePaymentAllocationService(
             ?? throw new ArgumentException("Invoice was not found.", nameof(invoiceId));
 
         var allocations = await db.PaymentAllocations
-            .Where(a => a.InvoiceId == invoiceId)
+            .Where(a => a.InvoiceId == invoiceId && a.IsActive)
             .OrderBy(a => a.CreatedAt)
             .ToListAsync(ct);
 

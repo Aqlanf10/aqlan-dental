@@ -1,5 +1,6 @@
 "use client";
 import { printScreen } from "@/lib/printUtils";
+import { getDailyOperationsModuleTab, type DailyOperationsModuleTab } from "@/lib/dailyOperationsRoute";
 
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -120,7 +121,7 @@ const animationStyles = `
 /* ═══════════════════════════════════════════════════════════════════════════
    Module tabs (top level navigation within daily operations)
    ═══════════════════════════════════════════════════════════════════════════ */
-type ModuleTab = "appointments" | "journey" | "queue" | "rooms" | "checkout" | "booking" | "lab" | "report";
+type ModuleTab = DailyOperationsModuleTab;
 
 const MODULE_TABS: { key: ModuleTab; label: string; icon: React.ElementType; color: string }[] = [
   { key: "appointments", label: "وصول اليوم",         icon: Calendar,      color: BLUE },
@@ -170,7 +171,9 @@ export default function DailyOperationsPage() {
   const [filterStatus, setFilterStatus] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("appointments");
-  const [activeModule, setActiveModule] = useState<ModuleTab>("appointments");
+  const [activeModule, setActiveModule] = useState<ModuleTab>(
+    () => getDailyOperationsModuleTab(searchParams.get("tab")) ?? "appointments",
+  );
 
   // ── SignalR real-time updates ──
   // The embedded queue tab owns a dedicated queue connection, so the page-level
@@ -617,6 +620,14 @@ export default function DailyOperationsPage() {
     setSidePanelItem(item);
     setSidePanelOpen(true);
   }, []);
+
+  // Legacy routes and cross-module links use ?tab=<module>. Resolve only the
+  // explicit allow-list so `/clinic-queue` and checkout shortcuts land on the
+  // intended workspace without accepting arbitrary query values.
+  useEffect(() => {
+    const requestedModule = getDailyOperationsModuleTab(searchParams.get("tab"));
+    if (requestedModule) setActiveModule(requestedModule);
+  }, [searchParams]);
 
   useEffect(() => {
     const appointmentId = searchParams.get("appointmentId");

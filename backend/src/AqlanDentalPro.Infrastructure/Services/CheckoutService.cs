@@ -1109,6 +1109,19 @@ public class CheckoutService(
         // If completed visit with outstanding and no plan
         if (req.ManagerOverride)
         {
+            // Reception may validate the balance, but cannot approve its own
+            // exception. Overrides are an accounting/management decision.
+            if (!currentUser.IsAdmin && currentUser.Role != UserRole.Accountant)
+            {
+                return new ObjectResult(new
+                {
+                    message = "لا يحق لك اعتماد تجاوز الرصيد المتبقي. يلزم مدير أو محاسب."
+                })
+                {
+                    StatusCode = 403
+                };
+            }
+
             // Log audit for manager override
             var userId = currentUser.UserId;
             db.AuditLogs.Add(new AuditLog

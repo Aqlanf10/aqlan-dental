@@ -375,9 +375,19 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
         if (invoice == null)
             return NotFound(new { message = "الفاتورة غير موجودة" });
 
+        var advanceAllocations = await db.PaymentAllocations
+            .AsNoTracking()
+            .Include(a => a.Payment)
+            .Where(a => a.InvoiceId == invoice.Id && a.IsActive)
+            .OrderBy(a => a.CreatedAt)
+            .ToListAsync();
+
         // MULTI-CURRENCY: invoice is YER-denominated → settle in AppliedAmount (YER-equivalent),
         // falling back to Amount for legacy rows where AppliedAmount==0 (matches FinanceService).
-        var paidAmount = invoice.Payments.Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount);
+        // Advance allocations are a separate reclassification and must be included once here.
+        var directPaidAmount = invoice.Payments.Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount);
+        var advanceAllocatedAmount = advanceAllocations.Sum(a => a.Amount);
+        var paidAmount = directPaidAmount + advanceAllocatedAmount;
         var remainingAmount = Math.Max(0, invoice.TotalAmount - paidAmount);
 
         return Ok(new
@@ -395,7 +405,10 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
             invoice.TaxAmount,
             invoice.TotalAmount,
             PaidAmount = paidAmount,
+            DirectPaidAmount = directPaidAmount,
+            AdvanceAllocatedAmount = advanceAllocatedAmount,
             RemainingAmount = remainingAmount,
+            Balance = remainingAmount,
             invoice.Notes,
             invoice.CreatedAt,
             invoice.UpdatedAt,
@@ -437,7 +450,19 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
                     p.PaymentMethod,
                     p.ReceiptNumber,
                     p.Notes
-                })
+                }),
+            AdvanceAllocations = advanceAllocations.Select(a => new
+            {
+                a.Id,
+                a.PaymentId,
+                ReceiptNumber = a.Payment.ReceiptNumber,
+                PaymentDate = a.Payment.PaymentDate,
+                a.Amount,
+                a.Currency,
+                a.JournalEntryId,
+                a.Notes,
+                a.CreatedAt
+            })
         });
     }
 
@@ -465,8 +490,13 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
                 Status = i.Status.ToString(),
                 StatusArabic = GetStatusArabic(i.Status),
                 i.TotalAmount,
-                PaidAmount = i.Payments.Where(p => p.IsActive && p.Amount > 0).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
-                Balance = i.TotalAmount - i.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
+                DirectPaidAmount = i.Payments.Where(p => p.IsActive && p.Amount > 0).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
+                AdvanceAllocatedAmount = i.PaymentAllocations.Where(a => a.IsActive).Sum(a => a.Amount),
+                PaidAmount = i.Payments.Where(p => p.IsActive && p.Amount > 0).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)
+                    + i.PaymentAllocations.Where(a => a.IsActive).Sum(a => a.Amount),
+                Balance = i.TotalAmount
+                    - i.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)
+                    - i.PaymentAllocations.Where(a => a.IsActive).Sum(a => a.Amount),
                 LineItemCount = i.LineItems.Count,
                 i.CreatedAt,
                 i.UpdatedAt

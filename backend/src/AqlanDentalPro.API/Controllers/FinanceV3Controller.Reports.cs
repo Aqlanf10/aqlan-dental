@@ -98,9 +98,16 @@ public partial class FinanceV3Controller
             FROM ""Invoices"" i
             JOIN ""Patients"" p ON p.""Id"" = i.""PatientId""
             LEFT JOIN (
-                SELECT ""InvoiceId"", SUM(""Amount"") AS ""PaidAmount""
-                FROM ""Payments""
-                WHERE ""IsActive"" = TRUE AND ""InvoiceId"" IS NOT NULL
+                SELECT settlements.""InvoiceId"", SUM(settlements.""Amount"") AS ""PaidAmount""
+                FROM (
+                    SELECT ""InvoiceId"", CASE WHEN ""AppliedAmount"" = 0 THEN ""Amount"" ELSE ""AppliedAmount"" END AS ""Amount""
+                    FROM ""Payments""
+                    WHERE ""IsActive"" = TRUE AND ""InvoiceId"" IS NOT NULL
+                    UNION ALL
+                    SELECT ""InvoiceId"", ""Amount""
+                    FROM ""PaymentAllocations""
+                    WHERE ""IsActive"" = TRUE
+                ) settlements
                 GROUP BY ""InvoiceId""
             ) pay ON pay.""InvoiceId"" = i.""Id""
             WHERE i.""Status""::text IN ('Issued', '1')
@@ -1103,7 +1110,8 @@ public partial class FinanceV3Controller
             ContractOutstanding = contractOutstanding,
             HasOutstanding = journalNetBalance > 0 || unbilledVisitsAmount > 0,
             JournalReceivable = journalReceivable,
-            JournalAdvance = journalAdvance
+            JournalAdvance = journalAdvance,
+            AvailableAdvance = Math.Max(0m, -journalAdvance)
         });
     }
 
@@ -1658,7 +1666,7 @@ public partial class FinanceV3Controller
     /// <summary>
     /// GET /api/finance-v3/invoices — Paginated invoices with status filtering.
     /// Migration B: Already reads from Invoice entity (not CashFlowTransaction).
-    /// Balance is calculated from Invoice.TotalAmount minus active Payments.
+    /// Balance is calculated from Invoice.TotalAmount minus direct payments and active advance allocations.
     /// JournalLine enrichment not yet applied here - deferred to a future phase.
     /// </summary>
     [HttpGet("invoices")]
@@ -1681,7 +1689,6 @@ public partial class FinanceV3Controller
 
         var query = db.Invoices
             .Include(i => i.Patient)
-            .Include(i => i.Payments)
             .Where(i => i.IsActive);
 
         if (branchId.HasValue)
@@ -1711,8 +1718,8 @@ public partial class FinanceV3Controller
                 i.Subtotal,
                 i.DiscountAmount,
                 i.TotalAmount,
-                PaidAmount = i.Payments.Where(p => p.IsActive && p.Amount > 0).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
-                Balance = i.TotalAmount - i.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
+                DirectPaidAmount = i.Payments.Where(p => p.IsActive && p.Amount > 0).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
+                AdvanceAllocatedAmount = i.PaymentAllocations.Where(a => a.IsActive).Sum(a => a.Amount),
                 PatientName = (i.Patient.FirstName + " " + i.Patient.LastName).Trim(),
                 PatientNumber = i.Patient.PatientNumber,
                 IssueDate = i.CreatedAt,
@@ -1729,8 +1736,9 @@ public partial class FinanceV3Controller
             i.Subtotal,
             i.DiscountAmount,
             i.TotalAmount,
-            i.PaidAmount,
-            i.Balance,
+            PaidAmount = i.DirectPaidAmount + i.AdvanceAllocatedAmount,
+            Balance = Math.Max(0m, i.TotalAmount - i.DirectPaidAmount - i.AdvanceAllocatedAmount),
+            i.AdvanceAllocatedAmount,
             i.PatientName,
             i.PatientNumber,
             i.IssueDate,

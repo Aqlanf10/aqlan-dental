@@ -178,4 +178,22 @@ public class AdvancePaymentAllocationServiceTests
         entries.Single(e => e.IsReversal).IsPosted.Should().BeTrue();
         entries.Sum(e => e.Lines.Sum(l => l.Debit - l.Credit)).Should().Be(0m);
     }
+
+    [Fact]
+    public async Task ReleaseInvoiceAllocations_WhenAlreadyReleased_DoesNotCreateAnotherReversal()
+    {
+        await using var db = CreateDb();
+        var (branchId, userId, patient) = SeedContext(db);
+        var invoice = AddInvoice(db, patient, userId, 100m);
+        AddAdvance(db, patient, branchId, 100m);
+        var service = CreateService(db, userId);
+        await service.AllocateAvailableAdvancesAsync(invoice.Id);
+        await service.ReleaseInvoiceAllocationsAsync(invoice.Id);
+
+        var repeatedResult = await service.ReleaseInvoiceAllocationsAsync(invoice.Id);
+
+        repeatedResult.AllocatedAmount.Should().Be(0m);
+        repeatedResult.AllocationCount.Should().Be(0);
+        (await db.JournalEntries.CountAsync(e => e.FinancialDocumentType == FinancialDocumentType.PaymentAllocation)).Should().Be(2);
+    }
 }

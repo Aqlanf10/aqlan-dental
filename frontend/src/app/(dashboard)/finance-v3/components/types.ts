@@ -69,6 +69,7 @@ export interface PatientBalanceDetail {
   hasOutstanding: boolean;
   journalReceivable?: number;
   journalAdvance?: number;
+  availableAdvance?: number;
 }
 
 /* ── Invoices ───────────────────────────────────────────────────────────────────── */
@@ -80,6 +81,8 @@ export interface InvoiceListItem {
   patientNumber: string;
   totalAmount: number;
   paidAmount: number;
+  directPaidAmount?: number;
+  advanceAllocatedAmount?: number;
   balance: number;
   status: string;
   issueDate: string;
@@ -108,12 +111,27 @@ export interface InvoiceDetail {
   totalDiscount: number;
   totalAmount: number;
   paidAmount: number;
+  directPaidAmount?: number;
+  advanceAllocatedAmount?: number;
   balance: number;
   status: string;
   issueDate: string;
   dueDate: string | null;
   contractId: string | null;
   notes: string | null;
+  advanceAllocations?: InvoiceAdvanceAllocation[];
+}
+
+export interface InvoiceAdvanceAllocation {
+  id: string;
+  paymentId: string;
+  receiptNumber: string | null;
+  paymentDate: string;
+  amount: number;
+  currency: string;
+  journalEntryId: string | null;
+  notes: string | null;
+  createdAt: string;
 }
 
 /* ── Collections / Payments ─────────────────────────────────────────────────────── */

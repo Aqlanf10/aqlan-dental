@@ -33,7 +33,7 @@ public class PaymentsPermissionEnforcementTests
         mock.SetupGet(u => u.Role).Returns(role);
         mock.SetupGet(u => u.IsAdmin).Returns(role == UserRole.Admin);
         mock.SetupGet(u => u.IsAuthenticated).Returns(true);
-        mock.SetupGet(u => u.BranchId).Returns((Guid?)null);
+        mock.SetupGet(u => u.BranchId).Returns(Guid.NewGuid());
         return mock.Object;
     }
 
@@ -77,7 +77,8 @@ public class PaymentsPermissionEnforcementTests
     {
         await using var db = CreateDb();
         Grant(db, "Reception", "finance.payments", view: true, create: true); // edit NOT granted
-        var (controller, finance, financeRead, _) = Build(db, User(UserRole.Reception));
+        var user = User(UserRole.Reception);
+        var (controller, finance, financeRead, _) = Build(db, user);
         finance.Setup(f => f.CreatePaymentAsync(It.IsAny<CreatePaymentRequest>()))
             .ReturnsAsync(new PaymentDto { Id = Guid.NewGuid(), Amount = 1000m, PaymentMethod = "cash" });
 
@@ -89,6 +90,9 @@ public class PaymentsPermissionEnforcementTests
         });
 
         result.Should().BeOfType<OkObjectResult>("Reception is granted finance.payments.create");
+        finance.Verify(f => f.CreatePaymentAsync(It.Is<CreatePaymentRequest>(request =>
+            request.ResolvedBranchId == user.BranchId)), Times.Once,
+            "the controller must replace any client branch with the authenticated staff branch");
     }
 
     [Fact]

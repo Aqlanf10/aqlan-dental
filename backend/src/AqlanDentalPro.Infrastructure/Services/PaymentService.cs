@@ -72,19 +72,17 @@ public class PaymentService(AppDbContext db, ICurrentUserService currentUser, IN
         }
         else
         {
-            // Admin fallback: resolve to the first active branch in the system
-            var firstBranch = await db.Branches
-                .Where(b => b.IsActive)
-                .OrderBy(b => b.CreatedAt)
-                .FirstOrDefaultAsync();
-            if (firstBranch == null)
-                throw new ArgumentException("عذراً، يجب تحديد الفرع قبل تسجيل أي مدفوعات. لا توجد فروع نشطة في النظام.");
-            branchId = firstBranch.Id;
+            // An admin without a selected branch can still post only to the
+            // branch of the open cashier drawer they are using.
+            branchId = activeSession.BranchId;
         }
 
         // Safety guard: never write Guid.Empty as BranchId in financial records (Fix 4)
         if (branchId == Guid.Empty)
             throw new ArgumentException("لم يتم تحديد فرع صالح. لا يمكن تسجيل الدفعة بدون فرع.");
+
+        if (activeSession.BranchId != branchId)
+            throw new InvalidOperationException("وردية الكاشير المفتوحة لا تتبع الفرع المحدد للدفعة.");
 
         // Phase 0B: Validate payment amount is positive
         if (req.Amount <= 0)

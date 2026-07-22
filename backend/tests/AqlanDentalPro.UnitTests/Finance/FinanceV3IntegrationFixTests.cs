@@ -534,6 +534,45 @@ public class FinanceV3IntegrationFixTests
         entityBalanceProp.Should().NotBeNull("Fix 5: response must have EntityBalance for reconciliation");
     }
 
+    [Fact]
+    public async Task GetPatientBalance_ReturnsSeparateBalancesForEachJournalCurrency()
+    {
+        await using var db = CreateDb();
+        var (branchId, userId) = SeedBranchAndUser(db);
+        var patient = new Patient
+        {
+            Id = Guid.NewGuid(), FirstName = "Multi", LastName = "Currency",
+            PatientNumber = "P-MULTI-CURRENCY", BranchId = branchId
+        };
+        var yerEntry = new JournalEntry
+        {
+            Id = Guid.NewGuid(), EntryNumber = "JE-YER-001", FinancialDocumentId = Guid.NewGuid(),
+            FinancialDocumentType = FinancialDocumentType.Other, EntryDate = DateOnly.FromDateTime(DateTime.Today),
+            Currency = "YER", BranchId = branchId, PerformedBy = userId, IsPosted = true
+        };
+        var usdEntry = new JournalEntry
+        {
+            Id = Guid.NewGuid(), EntryNumber = "JE-USD-001", FinancialDocumentId = Guid.NewGuid(),
+            FinancialDocumentType = FinancialDocumentType.Other, EntryDate = DateOnly.FromDateTime(DateTime.Today),
+            Currency = "USD", ExchangeRateToYer = 530m, BranchId = branchId, PerformedBy = userId, IsPosted = true
+        };
+        db.Patients.Add(patient);
+        db.JournalEntries.AddRange(yerEntry, usdEntry);
+        db.JournalLines.AddRange(
+            new JournalLine { Id = Guid.NewGuid(), JournalEntryId = yerEntry.Id, AccountType = JournalAccountType.PatientReceivable, AccountId = patient.Id, Debit = 1_000m, BranchId = branchId },
+            new JournalLine { Id = Guid.NewGuid(), JournalEntryId = usdEntry.Id, AccountType = JournalAccountType.PatientReceivable, AccountId = patient.Id, Debit = 20m, BranchId = branchId });
+        await db.SaveChangesAsync();
+
+        var result = await BuildFinanceV3Controller(db, CreateAdminUser(branchId)).GetPatientBalance(patient.Id);
+
+        var response = ((OkObjectResult)result).Value!;
+        var balancesProperty = response.GetType().GetProperty("CurrencyBalances");
+        balancesProperty.Should().NotBeNull();
+        var balances = ((System.Collections.IEnumerable)balancesProperty!.GetValue(response)!).Cast<object>().ToList();
+        balances.Should().HaveCount(2);
+        balances.Select(b => b.GetType().GetProperty("Currency")!.GetValue(b)).Should().BeEquivalentTo(["USD", "YER"]);
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // Fix 1: Contracts endpoint supports patientId filter parameter
     // ═══════════════════════════════════════════════════════════════════════════

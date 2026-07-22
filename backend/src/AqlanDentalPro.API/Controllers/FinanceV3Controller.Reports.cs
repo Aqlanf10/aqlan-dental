@@ -1022,6 +1022,44 @@ public partial class FinanceV3Controller
             })
             .ToListAsync();
 
+        // Never present balances from different currencies as one monetary number.
+        // The legacy aggregate remains for compatibility, while this breakdown is the
+        // authoritative display for patients with foreign-currency transactions.
+        var journalBalanceByCurrency = await db.JournalLines
+            .Where(l => (l.AccountType == JournalAccountType.PatientReceivable || l.AccountType == JournalAccountType.PatientAdvance)
+                && l.AccountId == patientId
+                && l.JournalEntry.IsPosted
+                && l.BranchId == patient.BranchId)
+            .GroupBy(l => new { Currency = l.JournalEntry.Currency, l.AccountType })
+            .Select(g => new
+            {
+                g.Key.Currency,
+                g.Key.AccountType,
+                TotalDebit = (decimal?)g.Sum(l => l.Debit) ?? 0m,
+                TotalCredit = (decimal?)g.Sum(l => l.Credit) ?? 0m
+            })
+            .ToListAsync();
+
+        var currencyBalances = journalBalanceByCurrency
+            .GroupBy(b => string.IsNullOrWhiteSpace(b.Currency) ? "YER" : b.Currency)
+            .Select(g =>
+            {
+                var receivable = g.Where(b => b.AccountType == JournalAccountType.PatientReceivable)
+                    .Sum(b => b.TotalDebit - b.TotalCredit);
+                var advance = g.Where(b => b.AccountType == JournalAccountType.PatientAdvance)
+                    .Sum(b => b.TotalDebit - b.TotalCredit);
+                return new
+                {
+                    Currency = g.Key,
+                    Receivable = receivable,
+                    Advance = advance,
+                    Balance = receivable + advance,
+                    AvailableAdvance = Math.Max(0m, -advance)
+                };
+            })
+            .OrderBy(b => b.Currency)
+            .ToList();
+
         var receivableLine = journalBalance.FirstOrDefault(b => b.AccountType == JournalAccountType.PatientReceivable);
         var advanceLine = journalBalance.FirstOrDefault(b => b.AccountType == JournalAccountType.PatientAdvance);
 
@@ -1111,7 +1149,8 @@ public partial class FinanceV3Controller
             HasOutstanding = journalNetBalance > 0 || unbilledVisitsAmount > 0,
             JournalReceivable = journalReceivable,
             JournalAdvance = journalAdvance,
-            AvailableAdvance = Math.Max(0m, -journalAdvance)
+            AvailableAdvance = Math.Max(0m, -journalAdvance),
+            CurrencyBalances = currencyBalances
         });
     }
 

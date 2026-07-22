@@ -78,7 +78,9 @@ export function PatientAccountsTab() {
               <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>إجمالي المدفوع</p><p className="text-sm font-bold" style={{ color: tokens.successBorder }}>{formatYER(selected.netPaid)}</p></div>
               <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المرتجعات</p><p className="text-sm font-bold" style={{ color: tokens.warningText }}>{formatYER(selected.totalRefunds)}</p></div>
               <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الخصومات</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{formatYER(selected.totalDiscounts)}</p></div>
-              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الرصيد</p><p className="text-sm font-bold" style={{ color: selected.balance > 0 ? tokens.dangerBorder : tokens.successBorder }}>{formatYER(selected.balance)}</p></div>
+              {selected.currencyBalances?.some((currencyBalance) => currencyBalance.currency !== "YER") ? (
+                <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الرصيد</p><p className="text-sm font-bold" style={{ color: tokens.warningText }}>يعرض حسب العملة أدناه</p></div>
+              ) : <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الرصيد</p><p className="text-sm font-bold" style={{ color: selected.balance > 0 ? tokens.dangerBorder : tokens.successBorder }}>{formatYER(selected.balance)}</p></div>}
               {(selected.availableAdvance ?? 0) > 0 && <div className="col-span-2"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>رصيد دفعات مقدمة متاح</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{formatYER(selected.availableAdvance ?? 0)}</p></div>}
               {selected.contractOutstanding > 0 && <div className="col-span-2"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>مستحقات العقود</p><p className="text-sm font-bold" style={{ color: tokens.warningText }}>{formatYER(selected.contractOutstanding)}</p></div>}
               {/* Fix 5: Reconciliation indicator — warn if JournalLine balance differs from entity balance */}
@@ -91,6 +93,37 @@ export function PatientAccountsTab() {
                 </div>
               )}
             </div>
+            {selected.currencyBalances?.some((currencyBalance) => currencyBalance.currency !== "YER") && (
+              <div className="flex items-center gap-2 text-[11px] font-medium" style={{ color: tokens.warningText }}>
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" style={{ color: tokens.warningBorder }} />
+                لا يتم جمع العملات المختلفة في رقم واحد؛ استخدم كشف العملات أدناه للمراجعة والسداد.
+              </div>
+            )}
+            {(selected.currencyBalances?.length ?? 0) > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold mb-2" style={{ color: tokens.textSecondary }}>أرصدة القيود حسب العملة</h4>
+                <div className="overflow-x-auto rounded-md border" style={{ borderColor: tokens.border }}>
+                  <table className="w-full text-xs">
+                    <thead><tr style={{ backgroundColor: tokens.cardHover }}>
+                      <th className="text-right px-3 py-2">العملة</th>
+                      <th className="text-right px-3 py-2">ذمم مدينة</th>
+                      <th className="text-right px-3 py-2">دفعات مقدمة</th>
+                      <th className="text-right px-3 py-2">الصافي</th>
+                    </tr></thead>
+                    <tbody>
+                      {selected.currencyBalances?.map((currencyBalance) => (
+                        <tr key={currencyBalance.currency} style={{ borderBottom: `1px solid ${tokens.border}` }}>
+                          <td className="px-3 py-2 font-semibold" dir="ltr">{currencyBalance.currency}</td>
+                          <td className="px-3 py-2" dir="ltr">{currencyBalance.receivable.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td className="px-3 py-2" dir="ltr">{currencyBalance.advance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td className="px-3 py-2 font-bold" dir="ltr" style={{ color: currencyBalance.balance > 0 ? tokens.dangerBorder : tokens.successBorder }}>{currencyBalance.balance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-2 border-t" style={{ borderColor: tokens.border }}>
               <button onClick={() => setShowPayment(true)} style={btnPrimary}>
                 <DollarSign className="w-4 h-4" /> تسجيل دفعة

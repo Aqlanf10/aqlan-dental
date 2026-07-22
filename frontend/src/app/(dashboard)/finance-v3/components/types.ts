@@ -70,6 +70,15 @@ export interface PatientBalanceDetail {
   journalReceivable?: number;
   journalAdvance?: number;
   availableAdvance?: number;
+  currencyBalances?: PatientCurrencyBalance[];
+}
+
+export interface PatientCurrencyBalance {
+  currency: string;
+  receivable: number;
+  advance: number;
+  balance: number;
+  availableAdvance: number;
 }
 
 /* ── Invoices ───────────────────────────────────────────────────────────────────── */

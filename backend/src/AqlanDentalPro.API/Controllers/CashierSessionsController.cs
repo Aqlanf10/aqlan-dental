@@ -214,16 +214,10 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 .Where(t => t.CashierSessionId == session.Id && t.IsActive)
                 .ToListAsync();
 
-            var cashInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount);
-            var cashOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount);
-            var cardInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && IsCardMethod(t.PaymentMethod)).Sum(t => t.Amount);
-            var cardOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && IsCardMethod(t.PaymentMethod)).Sum(t => t.Amount);
-            var bankInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && IsBankMethod(t.PaymentMethod)).Sum(t => t.Amount);
-            var bankOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && IsBankMethod(t.PaymentMethod)).Sum(t => t.Amount);
-
-            session.ExpectedClosingCash = session.OpeningBalance + cashInflows - cashOutflows;
-            session.ExpectedClosingCard = cardInflows - cardOutflows;
-            session.ExpectedClosingBank = bankInflows - bankOutflows;
+            var expected = CalculateExpectedAmounts(session.OpeningBalance, sessionTransactions);
+            session.ExpectedClosingCash = expected.Cash;
+            session.ExpectedClosingCard = expected.Card;
+            session.ExpectedClosingBank = expected.Bank;
 
             session.ActualClosingCash = req.ActualClosingCash;
             session.ActualClosingCard = req.ActualClosingCard;
@@ -266,7 +260,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                     .Where(t => t.CashierSessionId == session.Id && t.IsActive)
                     .ToListAsync();
 
-                var expected = CalculateExpectedAmounts(session.OpeningBalance, sessionTransactions);
+                expected = CalculateExpectedAmounts(session.OpeningBalance, sessionTransactions);
                 session.ExpectedClosingCash = expected.Cash;
                 session.ExpectedClosingCard = expected.Card;
                 session.ExpectedClosingBank = expected.Bank;
@@ -275,6 +269,8 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 actualTotal = req.ActualClosingCash + req.ActualClosingCard + req.ActualClosingBank;
                 session.ShortageOrSurplus = actualTotal - expectedTotal;
             }
+
+            var foreignCurrencyActivity = CalculateForeignCurrencyActivity(sessionTransactions);
 
             // FIN-03: Manager co-sign requirement for large shortages/surpluses.
             // If |ShortageOrSurplus| exceeds the threshold, the close is rejected UNLESS:
@@ -333,6 +329,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 session.ExpectedClosingBank,
                 session.ActualClosingBank,
                 session.ShortageOrSurplus,
+                ForeignCurrencyActivity = foreignCurrencyActivity,
                 Status = session.Status.ToString(),
                 message = "تم إقفال صندوق الاستقبال وترحيل المبالغ وتأمين القيود بنجاح"
             });
@@ -351,16 +348,30 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         }
     }
 
+    private sealed record ForeignCurrencyActivity(
+        string Currency,
+        decimal CashInflows,
+        decimal CashOutflows,
+        decimal BankInflows,
+        decimal BankOutflows)
+    {
+        public decimal NetCash => CashInflows - CashOutflows;
+        public decimal NetBank => BankInflows - BankOutflows;
+    }
+
     private static (decimal Cash, decimal Card, decimal Bank) CalculateExpectedAmounts(
         decimal openingBalance,
         IReadOnlyCollection<CashFlowTransaction> transactions)
     {
-        var cashInflows = transactions.Where(t => t.Type == TransactionType.Inflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount);
-        var cashOutflows = transactions.Where(t => t.Type == TransactionType.Outflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount);
-        var cardInflows = transactions.Where(t => t.Type == TransactionType.Inflow && IsCardMethod(t.PaymentMethod)).Sum(t => t.Amount);
-        var cardOutflows = transactions.Where(t => t.Type == TransactionType.Outflow && IsCardMethod(t.PaymentMethod)).Sum(t => t.Amount);
-        var bankInflows = transactions.Where(t => t.Type == TransactionType.Inflow && IsBankMethod(t.PaymentMethod)).Sum(t => t.Amount);
-        var bankOutflows = transactions.Where(t => t.Type == TransactionType.Outflow && IsBankMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        // CashierSession scalar reconciliation is a YER drawer only. Foreign-currency
+        // movement is reported separately and must never be summed into this variance.
+        var yerTransactions = transactions.Where(t => IsYemeniCurrency(t.Currency)).ToList();
+        var cashInflows = yerTransactions.Where(t => t.Type == TransactionType.Inflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var cashOutflows = yerTransactions.Where(t => t.Type == TransactionType.Outflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var cardInflows = yerTransactions.Where(t => t.Type == TransactionType.Inflow && IsCardMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var cardOutflows = yerTransactions.Where(t => t.Type == TransactionType.Outflow && IsCardMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var bankInflows = yerTransactions.Where(t => t.Type == TransactionType.Inflow && IsBankMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var bankOutflows = yerTransactions.Where(t => t.Type == TransactionType.Outflow && IsBankMethod(t.PaymentMethod)).Sum(t => t.Amount);
 
         return (
             openingBalance + cashInflows - cashOutflows,
@@ -368,6 +379,25 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
             bankInflows - bankOutflows
         );
     }
+
+    private static IReadOnlyList<ForeignCurrencyActivity> CalculateForeignCurrencyActivity(
+        IEnumerable<CashFlowTransaction> transactions) =>
+        transactions
+            .Where(t => !IsYemeniCurrency(t.Currency))
+            .GroupBy(t => NormalizeCurrency(t.Currency))
+            .OrderBy(group => group.Key)
+            .Select(group => new ForeignCurrencyActivity(
+                group.Key,
+                group.Where(t => t.Type == TransactionType.Inflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount),
+                group.Where(t => t.Type == TransactionType.Outflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount),
+                group.Where(t => t.Type == TransactionType.Inflow && (IsCardMethod(t.PaymentMethod) || IsBankMethod(t.PaymentMethod))).Sum(t => t.Amount),
+                group.Where(t => t.Type == TransactionType.Outflow && (IsCardMethod(t.PaymentMethod) || IsBankMethod(t.PaymentMethod))).Sum(t => t.Amount)))
+            .ToList();
+
+    private static bool IsYemeniCurrency(string? currency) => NormalizeCurrency(currency) == "YER";
+
+    private static string NormalizeCurrency(string? currency) =>
+        string.IsNullOrWhiteSpace(currency) ? "YER" : currency.Trim().ToUpperInvariant();
 
     private static string NormalizePaymentMethod(string? method)
     {
@@ -555,8 +585,9 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
             .ToListAsync();
         var cashflowExpected = CalculateExpectedAmounts(session.OpeningBalance, cashflowTransactions);
         var cashflowCollections = cashflowTransactions
-            .Where(t => t.Type == TransactionType.Inflow)
+            .Where(t => t.Type == TransactionType.Inflow && IsYemeniCurrency(t.Currency))
             .Sum(t => t.Amount);
+        var foreignCurrencyActivity = CalculateForeignCurrencyActivity(cashflowTransactions);
 
         return Ok(new
         {
@@ -579,6 +610,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
             Status = session.Status.ToString(),
             session.Notes,
             session.TreasuryId,
+            ForeignCurrencyActivity = foreignCurrencyActivity,
             TotalCollections = cashflowCollections
         });
     }
@@ -694,6 +726,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
             session.ActualClosingBank,
             session.ShortageOrSurplus,
             CashierName = session.Cashier?.Username,
+            ForeignCurrencyActivity = CalculateForeignCurrencyActivity(session.Transactions.Where(t => t.IsActive)),
             Transactions = transactions
         });
     }

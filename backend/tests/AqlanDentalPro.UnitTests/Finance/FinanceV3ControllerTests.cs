@@ -35,6 +35,7 @@ public class FinanceV3ControllerTests
     private static AppDbContext CreateDb() =>
         new(new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options);
 
     private static ICurrentUserService CreateAdminUser(Guid? branchId = null)
@@ -763,6 +764,78 @@ public class FinanceV3ControllerTests
     // ═══════════════════════════════════════════════════════════════════════════
     // AdvancePaymentController — rejection path (no transaction needed)
     // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task CashierSession_Close_DoesNotMixSarCashIntoYerDrawerVariance()
+    {
+        await using var db = CreateDb();
+        var (branchId, cashierId) = SeedBranchAndUser(db);
+        var session = new CashierSession
+        {
+            SessionNumber = "CS-FX-001",
+            CashierId = cashierId,
+            BranchId = branchId,
+            OpeningTime = DateTime.UtcNow.AddHours(-1),
+            OpeningBalance = 50_000m,
+            Status = SessionStatus.Open
+        };
+        db.CashierSessions.Add(session);
+        db.CashFlowTransactions.AddRange(
+            new CashFlowTransaction
+            {
+                TransactionNumber = "TX-YER-001",
+                Type = TransactionType.Inflow,
+                Category = FinancialCategory.PatientPayment,
+                Amount = 10_000m,
+                Currency = "YER",
+                PaymentMethod = "cash",
+                TransactionDate = DateOnly.FromDateTime(DateTime.UtcNow),
+                CashierSessionId = session.Id,
+                PerformedBy = cashierId,
+                BranchId = branchId
+            },
+            new CashFlowTransaction
+            {
+                TransactionNumber = "TX-SAR-001",
+                Type = TransactionType.Inflow,
+                Category = FinancialCategory.PatientPayment,
+                Amount = 100m,
+                Currency = "SAR",
+                PaymentMethod = "cash",
+                TransactionDate = DateOnly.FromDateTime(DateTime.UtcNow),
+                CashierSessionId = session.Id,
+                PerformedBy = cashierId,
+                BranchId = branchId
+            });
+        await db.SaveChangesAsync();
+
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.SetupGet(user => user.UserId).Returns(cashierId);
+        currentUser.SetupGet(user => user.BranchId).Returns(branchId);
+        currentUser.SetupGet(user => user.IsAdmin).Returns(true);
+        currentUser.SetupGet(user => user.IsAuthenticated).Returns(true);
+        currentUser.SetupGet(user => user.Role).Returns(UserRole.Admin);
+        var controller = BuildCashierSessionsController(db, currentUser.Object);
+
+        var result = await controller.CloseSession(new CloseSessionRequest
+        {
+            ActualClosingCash = 60_000m,
+            ActualClosingCard = 0,
+            ActualClosingBank = 0
+        });
+
+        result.Should().BeOfType<OkObjectResult>();
+        var saved = await db.CashierSessions.FindAsync(session.Id);
+        saved!.ExpectedClosingCash.Should().Be(60_000m);
+        saved.ShortageOrSurplus.Should().Be(0m, "SAR cash belongs to its own treasury and cannot alter the YER drawer variance");
+
+        var response = ((OkObjectResult)result).Value!;
+        var foreignActivity = ((System.Collections.IEnumerable)response.GetType()
+            .GetProperty("ForeignCurrencyActivity")!
+            .GetValue(response)!).Cast<object>().ToList();
+        foreignActivity.Should().ContainSingle();
+        foreignActivity[0].GetType().GetProperty("Currency")!.GetValue(foreignActivity[0]).Should().Be("SAR");
+    }
 
     [Fact]
     public async Task Advance_Approve_RejectsNonPendingAdvance()

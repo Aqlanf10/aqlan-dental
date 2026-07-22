@@ -224,6 +224,17 @@ export interface CashierSession {
   status: string;
   notes: string | null;
   treasuryId: string | null;
+  foreignCurrencyActivity?: CashierForeignCurrencyActivity[];
+}
+
+export interface CashierForeignCurrencyActivity {
+  currency: string;
+  cashInflows: number;
+  cashOutflows: number;
+  bankInflows: number;
+  bankOutflows: number;
+  netCash: number;
+  netBank: number;
 }
 
 export interface CloseSessionRequest {

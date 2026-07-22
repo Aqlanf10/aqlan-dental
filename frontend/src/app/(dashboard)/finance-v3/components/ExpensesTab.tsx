@@ -8,8 +8,10 @@ import {
   ThumbsUp,
   ThumbsDown,
   Trash2,
+  Download,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { downloadPdfFromApi } from "@/lib/pdfDownload";
 import { localDateString } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import type { ExpenseListItem, CreateExpenseRequest } from "./types";
@@ -81,6 +83,19 @@ export function ExpensesTab() {
     } catch (err) { toast.error(extractErrorMessage(err, "فشل في تنفيذ الإجراء")); } finally { setSubmitting(false); }
   };
 
+  const downloadDisbursementVoucher = async (expense: ExpenseListItem) => {
+    if (!expense.journalEntryId) return;
+    try {
+      await downloadPdfFromApi(
+        `/api/finance-v3/expenses/${expense.id}/disbursement-voucher/pdf`,
+        `disbursement-voucher-${expense.journalEntryId}.pdf`
+      );
+      toast.success("تم تحميل سند الصرف");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "تعذر تحميل سند الصرف لهذا المصروف"));
+    }
+  };
+
   return (
     <div className="p-6 space-y-4">
       <SectionHeader title="المصروفات" action={
@@ -108,6 +123,11 @@ export function ExpensesTab() {
                     <button onClick={(e) => { e.stopPropagation(); setConfirmAction({ id: r.id, action: "approve" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.successBorder }} title="اعتماد"><ThumbsUp className="w-3.5 h-3.5" /></button>
                     <button onClick={(e) => { e.stopPropagation(); setConfirmAction({ id: r.id, action: "reject" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.dangerBorder }} title="رفض"><ThumbsDown className="w-3.5 h-3.5" /></button>
                   </>
+                )}
+                {r.journalEntryId && !r.isReversal && (
+                  <button onClick={(e) => { e.stopPropagation(); downloadDisbursementVoucher(r); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.brand }} title="سند صرف">
+                    <Download className="w-3.5 h-3.5" />
+                  </button>
                 )}
                 {!r.isReversal && <button onClick={(e) => { e.stopPropagation(); setConfirmAction({ id: r.id, action: "delete" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.dangerBorder }} title="حذف/عكس"><Trash2 className="w-3.5 h-3.5" /></button>}
               </div>

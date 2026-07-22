@@ -282,6 +282,7 @@ export interface ExpenseListItem {
   rejectedAt: string | null;
   rejectionReason: string | null;
   isReversal: boolean;
+  journalEntryId: string | null;
   treasuryId: string | null;
   treasuryName: string | null;
 }

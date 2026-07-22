@@ -2149,6 +2149,7 @@ public partial class FinanceV3Controller
                 e.RejectedAt,
                 e.RejectionReason,
                 e.IsReversal,
+                e.JournalEntryId,
                 TreasuryId = (Guid?)tId,
                 TreasuryName = tId.HasValue && treasuryNames.ContainsKey(tId.Value)
                     ? treasuryNames[tId.Value] : (string?)null

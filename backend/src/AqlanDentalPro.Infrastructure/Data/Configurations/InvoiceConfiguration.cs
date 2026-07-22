@@ -43,6 +43,7 @@ public class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
         builder.HasIndex(i => i.VisitId);
         builder.HasIndex(i => i.AppointmentId);
         builder.HasIndex(i => i.Status);
+        builder.HasIndex(i => new { i.IsOpeningBalance, i.PatientId });
         builder.HasIndex(i => i.InvoiceNumber).IsUnique();
 
         // Relationships

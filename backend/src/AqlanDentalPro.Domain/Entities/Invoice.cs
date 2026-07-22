@@ -38,6 +38,13 @@ public class Invoice : BaseEntity
     /// <summary>Final total = Subtotal - DiscountAmount + TaxAmount.</summary>
     public decimal TotalAmount { get; set; }
 
+    /// <summary>
+    /// True when the invoice represents a patient receivable that existed before
+    /// the clinic started using the system. Its ledger counterpart is owner equity,
+    /// not current-period revenue.
+    /// </summary>
+    public bool IsOpeningBalance { get; set; }
+
     /// <summary>Additional notes (optional).</summary>
     public string? Notes { get; set; }
 

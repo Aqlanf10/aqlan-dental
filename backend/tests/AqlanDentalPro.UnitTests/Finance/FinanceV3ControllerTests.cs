@@ -1107,6 +1107,101 @@ public class FinanceV3ControllerTests
     }
 
     [Fact]
+    public async Task OpeningBalance_PatientReceivable_CreatesCollectibleInvoiceAndBalancedForeignCurrencyEntry()
+    {
+        await using var db = CreateDb();
+        var (branchId, _) = SeedBranchAndUser(db);
+        var patient = new Patient
+        {
+            PatientNumber = "P-OB-001",
+            FirstName = "أحمد",
+            LastName = "علي",
+            BranchId = branchId
+        };
+        db.Patients.Add(patient);
+        await db.SaveChangesAsync();
+
+        var controller = BuildFinanceV3Controller(db, CreateAdminUser(branchId));
+        var result = await controller.CreatePatientOpeningReceivable(
+            new FinanceV3Controller.CreatePatientOpeningReceivableRequest
+            {
+                PatientId = patient.Id,
+                Amount = 1_200m,
+                Currency = "SAR",
+                ExchangeRateToYer = 66m,
+                BalanceDate = new DateOnly(2025, 12, 31),
+                Reference = "دفتر 2025 / 17"
+            });
+
+        result.Should().BeOfType<OkObjectResult>();
+        var invoice = await db.Invoices
+            .Include(item => item.LineItems)
+            .SingleAsync(item => item.IsOpeningBalance);
+        invoice.PatientId.Should().Be(patient.Id);
+        invoice.Currency.Should().Be("SAR");
+        invoice.Status.Should().Be(InvoiceStatus.Issued);
+        invoice.TotalAmount.Should().Be(1_200m);
+        invoice.LineItems.Should().ContainSingle(item => item.TotalPrice == 1_200m);
+
+        var journal = await db.JournalEntries
+            .Include(entry => entry.Lines)
+            .SingleAsync(entry => entry.FinancialDocumentType == FinancialDocumentType.OpeningBalance);
+        journal.FinancialDocumentId.Should().Be(invoice.Id);
+        journal.Currency.Should().Be("SAR");
+        journal.ExchangeRateToYer.Should().Be(66m);
+        journal.IsPosted.Should().BeTrue();
+        journal.IsBalanced().Should().BeTrue();
+        journal.Lines.Should().ContainSingle(line =>
+            line.AccountType == JournalAccountType.PatientReceivable
+            && line.AccountId == patient.Id
+            && line.Debit == 1_200m);
+        journal.Lines.Should().ContainSingle(line =>
+            line.AccountType == JournalAccountType.OwnerEquity
+            && line.AccountId == branchId
+            && line.Credit == 1_200m);
+
+        var listResult = await controller.GetOpeningBalances();
+        listResult.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task OpeningBalance_PatientReceivable_RejectsDateInClosedPeriodWithoutWrites()
+    {
+        await using var db = CreateDb();
+        var (branchId, _) = SeedBranchAndUser(db);
+        var patient = new Patient
+        {
+            PatientNumber = "P-OB-002",
+            FirstName = "سارة",
+            LastName = "محمد",
+            BranchId = branchId
+        };
+        db.Patients.Add(patient);
+        db.AccountingPeriods.Add(new AccountingPeriod
+        {
+            BranchId = branchId,
+            Name = "FY 2024",
+            StartDate = new DateOnly(2024, 1, 1),
+            EndDate = new DateOnly(2024, 12, 31),
+            Status = "Closed"
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildFinanceV3Controller(db, CreateAdminUser(branchId));
+        var result = await controller.CreatePatientOpeningReceivable(
+            new FinanceV3Controller.CreatePatientOpeningReceivableRequest
+            {
+                PatientId = patient.Id,
+                Amount = 500m,
+                BalanceDate = new DateOnly(2024, 12, 31)
+            });
+
+        result.Should().BeOfType<ConflictObjectResult>();
+        (await db.Invoices.CountAsync()).Should().Be(0);
+        (await db.JournalEntries.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
     public async Task Advance_Approve_RejectsNonPendingAdvance()
     {
         await using var db = CreateDb();

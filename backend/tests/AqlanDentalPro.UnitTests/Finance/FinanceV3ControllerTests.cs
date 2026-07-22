@@ -766,6 +766,40 @@ public class FinanceV3ControllerTests
     // ═══════════════════════════════════════════════════════════════════════════
 
     [Fact]
+    public async Task CashierSession_Open_PersistsEachCurrencyOpeningBalance()
+    {
+        await using var db = CreateDb();
+        var (branchId, cashierId) = SeedBranchAndUser(db);
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.SetupGet(user => user.UserId).Returns(cashierId);
+        currentUser.SetupGet(user => user.BranchId).Returns(branchId);
+        currentUser.SetupGet(user => user.IsAdmin).Returns(true);
+        currentUser.SetupGet(user => user.IsAuthenticated).Returns(true);
+        currentUser.SetupGet(user => user.Role).Returns(UserRole.Admin);
+        var controller = BuildCashierSessionsController(db, currentUser.Object);
+
+        var result = await controller.OpenSession(new OpenSessionRequest
+        {
+            OpeningBalance = 50_000m,
+            CurrencyOpeningBalances =
+            [
+                new CurrencyOpeningBalanceRequest { Currency = "SAR", OpeningCash = 250m },
+                new CurrencyOpeningBalanceRequest { Currency = "USD", OpeningCash = 30m }
+            ]
+        });
+
+        result.Should().BeOfType<OkObjectResult>();
+        var session = await db.CashierSessions.SingleAsync(item => item.CashierId == cashierId);
+        var openingBalances = await db.CashierSessionCurrencyOpeningBalances
+            .Where(item => item.CashierSessionId == session.Id)
+            .OrderBy(item => item.Currency)
+            .ToListAsync();
+        openingBalances.Should().HaveCount(2);
+        openingBalances.Single(item => item.Currency == "SAR").OpeningCash.Should().Be(250m);
+        openingBalances.Single(item => item.Currency == "USD").OpeningCash.Should().Be(30m);
+    }
+
+    [Fact]
     public async Task CashierSession_Close_DoesNotMixSarCashIntoYerDrawerVariance()
     {
         await using var db = CreateDb();
@@ -777,7 +811,15 @@ public class FinanceV3ControllerTests
             BranchId = branchId,
             OpeningTime = DateTime.UtcNow.AddHours(-1),
             OpeningBalance = 50_000m,
-            Status = SessionStatus.Open
+            Status = SessionStatus.Open,
+            CurrencyOpeningBalances =
+            [
+                new CashierSessionCurrencyOpeningBalance
+                {
+                    Currency = "SAR",
+                    OpeningCash = 25m
+                }
+            ]
         };
         db.CashierSessions.Add(session);
         db.CashFlowTransactions.AddRange(
@@ -821,7 +863,16 @@ public class FinanceV3ControllerTests
         {
             ActualClosingCash = 60_000m,
             ActualClosingCard = 0,
-            ActualClosingBank = 0
+            ActualClosingBank = 0,
+            CurrencyClosings =
+            [
+                new CurrencyClosingRequest
+                {
+                    Currency = "SAR",
+                    ActualCash = 120m,
+                    ActualBank = 0m
+                }
+            ]
         });
 
         result.Should().BeOfType<OkObjectResult>();
@@ -829,12 +880,82 @@ public class FinanceV3ControllerTests
         saved!.ExpectedClosingCash.Should().Be(60_000m);
         saved.ShortageOrSurplus.Should().Be(0m, "SAR cash belongs to its own treasury and cannot alter the YER drawer variance");
 
+        var reconciliations = await db.CashierSessionCurrencyReconciliations
+            .Where(item => item.CashierSessionId == session.Id)
+            .OrderBy(item => item.Currency)
+            .ToListAsync();
+        reconciliations.Should().HaveCount(2);
+        var sarReconciliation = reconciliations.Single(item => item.Currency == "SAR");
+        sarReconciliation.ExpectedCash.Should().Be(125m);
+        sarReconciliation.ActualCash.Should().Be(120m);
+        sarReconciliation.CashVariance.Should().Be(-5m);
+
         var response = ((OkObjectResult)result).Value!;
         var foreignActivity = ((System.Collections.IEnumerable)response.GetType()
             .GetProperty("ForeignCurrencyActivity")!
             .GetValue(response)!).Cast<object>().ToList();
         foreignActivity.Should().ContainSingle();
         foreignActivity[0].GetType().GetProperty("Currency")!.GetValue(foreignActivity[0]).Should().Be("SAR");
+    }
+
+    [Fact]
+    public async Task CashierSession_Close_RejectsMissingForeignCurrencyCount()
+    {
+        await using var db = CreateDb();
+        var (branchId, cashierId) = SeedBranchAndUser(db);
+        var session = new CashierSession
+        {
+            SessionNumber = "CS-FX-002",
+            CashierId = cashierId,
+            BranchId = branchId,
+            OpeningTime = DateTime.UtcNow.AddHours(-1),
+            OpeningBalance = 50_000m,
+            Status = SessionStatus.Open,
+            CurrencyOpeningBalances =
+            [
+                new CashierSessionCurrencyOpeningBalance
+                {
+                    Currency = "SAR",
+                    OpeningCash = 25m
+                }
+            ]
+        };
+        db.CashierSessions.Add(session);
+        db.CashFlowTransactions.Add(new CashFlowTransaction
+        {
+            TransactionNumber = "TX-SAR-002",
+            Type = TransactionType.Inflow,
+            Category = FinancialCategory.PatientPayment,
+            Amount = 100m,
+            Currency = "SAR",
+            PaymentMethod = "cash",
+            TransactionDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            CashierSessionId = session.Id,
+            PerformedBy = cashierId,
+            BranchId = branchId
+        });
+        await db.SaveChangesAsync();
+
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.SetupGet(user => user.UserId).Returns(cashierId);
+        currentUser.SetupGet(user => user.BranchId).Returns(branchId);
+        currentUser.SetupGet(user => user.IsAdmin).Returns(true);
+        currentUser.SetupGet(user => user.IsAuthenticated).Returns(true);
+        currentUser.SetupGet(user => user.Role).Returns(UserRole.Admin);
+        var controller = BuildCashierSessionsController(db, currentUser.Object);
+
+        var result = await controller.CloseSession(new CloseSessionRequest
+        {
+            ActualClosingCash = 50_000m,
+            ActualClosingCard = 0m,
+            ActualClosingBank = 0m
+        });
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        db.ChangeTracker.Clear();
+        (await db.CashierSessions.FindAsync(session.Id))!.Status.Should().Be(SessionStatus.Open);
+        (await db.CashierSessionCurrencyReconciliations
+            .CountAsync(item => item.CashierSessionId == session.Id)).Should().Be(0);
     }
 
     [Fact]

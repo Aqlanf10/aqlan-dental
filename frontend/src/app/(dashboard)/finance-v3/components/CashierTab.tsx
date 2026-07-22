@@ -17,6 +17,8 @@ import type { CashierForeignCurrencyActivity, CashierSession, CloseSessionReques
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, StatusBadge, tokens, inputStyle, labelStyle, btnPrimary, btnDanger, btnGhost } from "./FinanceSharedUI";
 import { formatYER, extractErrorMessage, safeFormatDateTime } from "./FinanceHelpers";
 
+const FOREIGN_DRAWER_CURRENCIES = ["SAR", "USD"] as const;
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 6: Cashier — الورديات اليومية (التشغيل اليومي)
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -29,12 +31,14 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
   const [actualCard, setActualCard] = useState("");
   const [actualBank, setActualBank] = useState("");
   const [foreignCurrencyActivity, setForeignCurrencyActivity] = useState<CashierForeignCurrencyActivity[]>([]);
+  const [foreignActuals, setForeignActuals] = useState<Record<string, { cash: string; bank: string }>>({});
   const [submitting, setSubmitting] = useState(false);
   const [confirmReconcile, setConfirmReconcile] = useState<string | null>(null);
 
   // Open session modal state
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [openingBalance, setOpeningBalance] = useState("");
+  const [foreignOpeningCash, setForeignOpeningCash] = useState<Record<string, string>>({ SAR: "", USD: "" });
   const [openNotes, setOpenNotes] = useState("");
 
   const fetchSessions = useCallback(async () => {
@@ -64,11 +68,18 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
       setSubmitting(true);
       await api.post("/api/cashier-sessions/open", {
         openingBalance: Number(openingBalance) || 0,
+        currencyOpeningBalances: FOREIGN_DRAWER_CURRENCIES
+          .filter((currency) => Number(foreignOpeningCash[currency]) > 0)
+          .map((currency) => ({
+            currency,
+            openingCash: Number(foreignOpeningCash[currency]),
+          })),
         notes: openNotes?.trim() || null,
       });
       toast.success("تم فتح صندوق الكاشير والوردية اليومية بنجاح");
       setShowOpenModal(false);
       setOpeningBalance("");
+      setForeignOpeningCash({ SAR: "", USD: "" });
       setOpenNotes("");
       fetchSessions();
     } catch (err) {
@@ -81,6 +92,13 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
   // ── Close session ──
   const openCloseSessionModal = async (s: CashierSession) => {
     setCloseSession(s);
+    const setForeignClosingValues = (activities: CashierForeignCurrencyActivity[]) => {
+      setForeignCurrencyActivity(activities);
+      setForeignActuals(Object.fromEntries(activities.map((activity) => [
+        activity.currency,
+        { cash: String(activity.netCash), bank: String(activity.netBank) },
+      ])));
+    };
     // Fetch session detail to get accurate per-bucket expected values
     try {
       const { data: detail } = await api.get<{
@@ -92,13 +110,13 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
       setActualCash(String(detail.expectedClosingCash ?? 0));
       setActualCard(String(detail.expectedClosingCard ?? 0));
       setActualBank(String(detail.expectedClosingBank ?? 0));
-      setForeignCurrencyActivity(detail.foreignCurrencyActivity ?? []);
+      setForeignClosingValues(detail.foreignCurrencyActivity ?? []);
     } catch {
       // Fallback: use list values if available
       setActualCash(String(s.expectedClosingCash ?? 0));
       setActualCard(String(s.expectedClosingCard ?? 0));
       setActualBank(String(s.expectedClosingBank ?? 0));
-      setForeignCurrencyActivity(s.foreignCurrencyActivity ?? []);
+      setForeignClosingValues(s.foreignCurrencyActivity ?? []);
     }
   };
 
@@ -110,11 +128,17 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
         actualClosingCash: Number(actualCash) || 0,
         actualClosingCard: Number(actualCard) || 0,
         actualClosingBank: Number(actualBank) || 0,
+        currencyClosings: foreignCurrencyActivity.map((activity) => ({
+          currency: activity.currency,
+          actualCash: Number(foreignActuals[activity.currency]?.cash) || 0,
+          actualBank: Number(foreignActuals[activity.currency]?.bank) || 0,
+        })),
       };
       await api.post(`/api/cashier-sessions/close`, payload);
       toast.success("تم إقفال الوردية بنجاح");
       setCloseSession(null);
       setForeignCurrencyActivity([]);
+      setForeignActuals({});
       fetchSessions();
     } catch (err) {
       toast.error(extractErrorMessage(err, "فشل في إقفال الوردية"));
@@ -170,11 +194,20 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
             <CircleDot className="w-4 h-4" style={{ color: tokens.successBorder }} />
             <h4 className="text-sm font-bold" style={{ color: tokens.successBorder }}>وردية مفتوحة</h4>
           </div>
-          <div className="grid grid-cols-3 gap-4 text-sm">
+            <div className="grid grid-cols-3 gap-4 text-sm">
             <div><span style={{ color: tokens.textTertiary }}>الكاشر:</span> <span className="font-bold">{openSession.cashierName ?? "—"}</span></div>
             <div><span style={{ color: tokens.textTertiary }}>الافتتاح:</span> <span className="font-bold">{safeFormatDateTime(openSession.openedAt)}</span></div>
-            <div><span style={{ color: tokens.textTertiary }}>رصيد الافتتاح:</span> <span className="font-bold">{formatYER(openSession.openingBalance ?? 0)}</span></div>
-          </div>
+              <div><span style={{ color: tokens.textTertiary }}>رصيد الافتتاح:</span> <span className="font-bold">{formatYER(openSession.openingBalance ?? 0)}</span></div>
+            </div>
+            {!!openSession.currencyOpeningBalances?.length && (
+              <div className="flex flex-wrap gap-3 mt-3 text-xs">
+                {openSession.currencyOpeningBalances.map((balance) => (
+                  <span key={balance.currency} className="font-semibold" dir="ltr">
+                    {balance.currency} {balance.openingCash.toLocaleString()}
+                  </span>
+                ))}
+              </div>
+            )}
         </div>
       )}
 
@@ -243,6 +276,27 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
             </p>
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            {FOREIGN_DRAWER_CURRENCIES.map((currency) => (
+              <div key={currency}>
+                <label style={labelStyle}>رصيد افتتاح {currency}</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={foreignOpeningCash[currency] ?? ""}
+                  onChange={(event) => setForeignOpeningCash((current) => ({
+                    ...current,
+                    [currency]: event.target.value,
+                  }))}
+                  dir="ltr"
+                  placeholder="0"
+                  style={inputStyle}
+                />
+              </div>
+            ))}
+          </div>
+
           <div>
             <label style={labelStyle}>ملاحظات (اختياري)</label>
             <input
@@ -265,7 +319,7 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
       </Modal>
 
       {/* ═══ Close Session Modal ═══ */}
-      <Modal open={!!closeSession} onClose={() => { setCloseSession(null); setForeignCurrencyActivity([]); }} title="إقفال الوردية">
+      <Modal open={!!closeSession} onClose={() => { setCloseSession(null); setForeignCurrencyActivity([]); setForeignActuals({}); }} title="إقفال الوردية">
         {closeSession && (
           <div className="space-y-4">
             <div className="rounded-md p-3" style={{ backgroundColor: tokens.infoBg, border: `1px solid ${tokens.infoBorder}` }}>
@@ -279,9 +333,43 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
                 <p className="text-xs font-bold" style={{ color: tokens.warningText }}>حركات العملات الأجنبية في الخزائن</p>
                 <p className="text-[11px]" style={{ color: tokens.warningText }}>هذه الحركات لا تدخل في عجز أو فائض الدرج اليمني، وتبقى مسجلة في خزائن عملتها.</p>
                 {foreignCurrencyActivity.map((activity) => (
-                  <div key={activity.currency} className="flex items-center justify-between text-xs">
-                    <span className="font-semibold">{activity.currency}</span>
-                    <span dir="ltr">Cash {activity.netCash.toLocaleString()} | Bank {activity.netBank.toLocaleString()}</span>
+                  <div key={activity.currency} className="border-t pt-2" style={{ borderColor: tokens.warningBorder }}>
+                    <div className="flex items-center justify-between text-xs mb-2">
+                      <span className="font-semibold">{activity.currency}</span>
+                      <span dir="ltr">Cash {activity.netCash.toLocaleString()} | Bank {activity.netBank.toLocaleString()}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label style={labelStyle}>النقد الفعلي</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={foreignActuals[activity.currency]?.cash ?? ""}
+                          onChange={(event) => setForeignActuals((current) => ({
+                            ...current,
+                            [activity.currency]: { ...current[activity.currency], cash: event.target.value, bank: current[activity.currency]?.bank ?? "" },
+                          }))}
+                          dir="ltr"
+                          style={inputStyle}
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>البنك الفعلي</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={foreignActuals[activity.currency]?.bank ?? ""}
+                          onChange={(event) => setForeignActuals((current) => ({
+                            ...current,
+                            [activity.currency]: { ...current[activity.currency], cash: current[activity.currency]?.cash ?? "", bank: event.target.value },
+                          }))}
+                          dir="ltr"
+                          style={inputStyle}
+                        />
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>

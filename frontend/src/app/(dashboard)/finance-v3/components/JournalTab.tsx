@@ -100,6 +100,9 @@ const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   VaultTransfer: "ترحيل سيولة",
   ContractCancellation: "إلغاء عقد",
   PaymentDeletion: "حذف دفعة",
+  PaymentAllocation: "تسوية دفعة مقدمة",
+  YearEndClosing: "إقفال سنة مالية",
+  OpeningBalance: "رصيد افتتاحي",
   Other: "أخرى",
 };
 
@@ -131,6 +134,8 @@ const DOCUMENT_TYPE_OPTIONS = [
   { value: "VaultTransfer", label: "ترحيل سيولة" },
   { value: "ContractCancellation", label: "إلغاء عقد" },
   { value: "PaymentDeletion", label: "حذف دفعة" },
+  { value: "OpeningBalance", label: "رصيد افتتاحي" },
+  { value: "YearEndClosing", label: "إقفال سنة مالية" },
 ];
 
 

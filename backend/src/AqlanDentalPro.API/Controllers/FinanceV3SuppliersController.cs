@@ -332,7 +332,7 @@ public partial class FinanceV3SuppliersController(
                 {
                     EntryNumber = entryNumber,
                     FinancialDocumentId = bill.Id,
-                    FinancialDocumentType = FinancialDocumentType.Other,
+                    FinancialDocumentType = FinancialDocumentType.OpeningBalance,
                     Description = $"رصيد افتتاحي لمورد/معمل: {supplier.Name}",
                     EntryDate = billDate,
                     Currency = currency,

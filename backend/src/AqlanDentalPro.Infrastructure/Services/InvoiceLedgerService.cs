@@ -80,7 +80,8 @@ public class InvoiceLedgerService(
     {
         var originalEntry = await db.JournalEntries
             .FirstOrDefaultAsync(e => e.FinancialDocumentId == invoiceId
-                && e.FinancialDocumentType == FinancialDocumentType.Invoice
+                && (e.FinancialDocumentType == FinancialDocumentType.Invoice
+                    || e.FinancialDocumentType == FinancialDocumentType.OpeningBalance)
                 && !e.IsReversal);
 
         if (originalEntry == null)

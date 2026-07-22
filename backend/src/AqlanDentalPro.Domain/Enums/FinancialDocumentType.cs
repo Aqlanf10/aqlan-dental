@@ -19,5 +19,6 @@ public enum FinancialDocumentType
     PaymentDeletion,
     PaymentAllocation,
     Other,
-    YearEndClosing
+    YearEndClosing,
+    OpeningBalance
 }

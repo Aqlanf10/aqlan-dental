@@ -19,6 +19,7 @@ import {
   Banknote,
   Repeat,
   CalendarRange,
+  History,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { api } from "@/lib/api";
@@ -38,6 +39,7 @@ import { JournalTab } from "./components/JournalTab";
 import { CommissionsTab } from "./components/CommissionsTab";
 import { ExchangeRatesTab } from "./components/ExchangeRatesTab";
 import { AccountingPeriodsTab } from "./components/AccountingPeriodsTab";
+import { OpeningBalancesTab } from "./components/OpeningBalancesTab";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab definition
@@ -59,6 +61,7 @@ const TABS: TabDef[] = [
   { key: "exchange-rates", label: "أسعار الصرف",      icon: Repeat },
   { key: "expenses",       label: "المصروفات",         icon: TrendingDown },
   { key: "suppliers",      label: "الموردون",          icon: Truck },
+  { key: "opening-balances", label: "الأرصدة السابقة", icon: History },
   { key: "periods",        label: "الفترات المالية",    icon: CalendarRange },
   { key: "journal",        label: "قيود اليومية",      icon: BookOpen },
   { key: "commissions",    label: "عمولات الأطباء",     icon: Banknote },
@@ -178,6 +181,7 @@ function FinanceV3PageInner() {
         {activeTab === "exchange-rates" && <ExchangeRatesTab />}
         {activeTab === "expenses" && <ExpensesTab />}
         {activeTab === "suppliers" && <SuppliersTab />}
+        {activeTab === "opening-balances" && <OpeningBalancesTab />}
         {activeTab === "periods" && <AccountingPeriodsTab />}
         {activeTab === "journal" && <JournalTab />}
         {activeTab === "commissions" && <CommissionsTab />}

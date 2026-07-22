@@ -29,6 +29,7 @@ interface PaymentForm {
   currency: string;
   accountCurrency: string;
   exchangeRateToAccountCurrency: string;
+  exchangeRateToYer: string;
   paymentDate: string;
   paymentMethod: string;
   serviceDescription: string;
@@ -43,6 +44,7 @@ const EMPTY_FORM: PaymentForm = {
   currency: "YER",
   accountCurrency: "YER",
   exchangeRateToAccountCurrency: "",
+  exchangeRateToYer: "",
   paymentDate: localDateString(),
   paymentMethod: "Cash",
   serviceDescription: "",
@@ -125,6 +127,7 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
       currency: payment.currency ?? "YER",
       accountCurrency: payment.accountCurrency ?? "YER",
       exchangeRateToAccountCurrency: payment.exchangeRateToAccountCurrency && payment.exchangeRateToAccountCurrency !== 1 ? String(payment.exchangeRateToAccountCurrency) : "",
+      exchangeRateToYer: payment.exchangeRateToYer ? String(payment.exchangeRateToYer) : "",
       paymentDate: payment.paymentDate,
       paymentMethod: payment.paymentMethod ?? "cash",
       serviceDescription: payment.serviceDescription ?? "",
@@ -149,7 +152,8 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
           currency: form.currency,
           accountCurrency: form.accountCurrency,
           exchangeRateToAccountCurrency: form.exchangeRateToAccountCurrency ? parseFloat(form.exchangeRateToAccountCurrency) : undefined,
-          exchangeRateSource: form.exchangeRateToAccountCurrency ? "manual" : undefined,
+          exchangeRateToYer: form.exchangeRateToYer ? parseFloat(form.exchangeRateToYer) : undefined,
+          exchangeRateSource: form.exchangeRateToAccountCurrency || form.exchangeRateToYer ? "manual" : undefined,
           paymentDate: form.paymentDate || undefined,
           paymentMethod: form.paymentMethod || undefined,
           serviceDescription: form.serviceDescription || undefined,
@@ -167,7 +171,8 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
           currency: form.currency,
           accountCurrency: form.accountCurrency,
           exchangeRateToAccountCurrency: form.exchangeRateToAccountCurrency ? parseFloat(form.exchangeRateToAccountCurrency) : undefined,
-          exchangeRateSource: form.exchangeRateToAccountCurrency ? "manual" : undefined,
+          exchangeRateToYer: form.exchangeRateToYer ? parseFloat(form.exchangeRateToYer) : undefined,
+          exchangeRateSource: form.exchangeRateToAccountCurrency || form.exchangeRateToYer ? "manual" : undefined,
           paymentMethod: form.paymentMethod || "cash",
           serviceDescription: form.serviceDescription || undefined,
           specialty: form.specialty || undefined,
@@ -401,12 +406,12 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs text-[#64748b] block mb-1">سعر الصرف</label>
+                    <label className="text-xs text-[#64748b] block mb-1">سعر التحويل إلى عملة الحساب</label>
                     <input
                       type="number"
                       value={form.exchangeRateToAccountCurrency}
                       onChange={(e) => setForm({ ...form, exchangeRateToAccountCurrency: e.target.value })}
-                      placeholder="تلقائي"
+                      placeholder="من أسعار الصرف أو يدوي"
                       min="0"
                       step="0.000001"
                       dir="ltr"
@@ -414,6 +419,22 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
                     />
                   </div>
                 </div>
+
+                {form.currency !== "YER" && (
+                  <div>
+                    <label className="text-xs text-[#64748b] block mb-1">سعر عملة الدفع مقابل الريال اليمني</label>
+                    <input
+                      type="number"
+                      value={form.exchangeRateToYer}
+                      onChange={(e) => setForm({ ...form, exchangeRateToYer: e.target.value })}
+                      placeholder="سعر اليوم من الإعدادات"
+                      min="0"
+                      step="0.000001"
+                      dir="ltr"
+                      className="w-full text-sm border border-[#e8f0f9] rounded-lg px-3 py-2 focus:outline-none focus:border-[#3d7ab5]"
+                    />
+                  </div>
+                )}
 
                 {/* Method and Contract */}
                 <div className="grid grid-cols-2 gap-3">

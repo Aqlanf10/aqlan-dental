@@ -209,6 +209,7 @@ public static class FinanceLedgerWriter
         // Journal lines are expressed in the invoice/contract account currency
         // (AppliedAmount), not necessarily the physical payment currency.
         entry.Currency = FinanceMappers.NormalizeCurrency(payment.AccountCurrency);
+        entry.ExchangeRateToYer = GetAccountCurrencyRateToYer(payment);
 
         // Auto-post since this is an operational posting
         entry.IsPosted = true;
@@ -291,11 +292,29 @@ public static class FinanceLedgerWriter
 
         // Keep the refund in the same account currency as the original settlement.
         entry.Currency = FinanceMappers.NormalizeCurrency(originalPayment.AccountCurrency);
+        entry.ExchangeRateToYer = GetAccountCurrencyRateToYer(originalPayment);
 
         // Auto-post
         entry.IsPosted = true;
         entry.PostedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
+    }
+
+    private static decimal GetAccountCurrencyRateToYer(Payment payment)
+    {
+        var paymentRateToYer = payment.ExchangeRateToYer;
+        var paymentToAccountRate = payment.ExchangeRateToAccountCurrency == 0m
+            ? 1m
+            : payment.ExchangeRateToAccountCurrency;
+
+        // Legacy rows had no FX snapshot. Keep their existing neutral treatment;
+        // all new payments are validated and persist a non-zero snapshot.
+        if (paymentRateToYer <= 0m) return 1m;
+
+        return Math.Round(
+            paymentRateToYer / paymentToAccountRate,
+            6,
+            MidpointRounding.AwayFromZero);
     }
 
     /// <summary>

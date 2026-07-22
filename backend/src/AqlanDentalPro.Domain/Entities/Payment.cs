@@ -19,6 +19,13 @@ public class Payment : BaseEntity
     /// <summary>Exchange rate from Currency to AccountCurrency captured at payment time.</summary>
     public decimal ExchangeRateToAccountCurrency { get; set; } = 1m;
 
+    /// <summary>
+    /// Immutable value of one unit of the physical payment currency in YER at the
+    /// time of collection. A zero value identifies legacy payments that predate
+    /// the FX snapshot and must never be treated as a real conversion rate.
+    /// </summary>
+    public decimal ExchangeRateToYer { get; set; }
+
     /// <summary>Amount applied to the patient balance in AccountCurrency.</summary>
     public decimal AppliedAmount { get; set; }
 

@@ -164,10 +164,10 @@ public partial class FinanceV3Controller(
                 newData: new { result.Amount, result.PatientId, result.PaymentMethod });
             return Ok(result);
         }
-        catch (ArgumentException)
+        catch (ArgumentException ex)
         {
-            logger.LogWarning("Payment creation validation failed");
-            return BadRequest(new { message = "بيانات الدفعة غير صالحة" });
+            logger.LogWarning("Payment creation validation failed: {Message}", ex.Message);
+            return BadRequest(new { message = ex.Message });
         }
         catch (InvalidOperationException)
         {

@@ -571,6 +571,15 @@ public class FinanceV3IntegrationFixTests
         var balances = ((System.Collections.IEnumerable)balancesProperty!.GetValue(response)!).Cast<object>().ToList();
         balances.Should().HaveCount(2);
         balances.Select(b => b.GetType().GetProperty("Currency")!.GetValue(b)).Should().BeEquivalentTo(["USD", "YER"]);
+
+        var accountsResult = await BuildFinanceV3Controller(db, CreateAdminUser(branchId)).GetPatientAccounts();
+        var accountsResponse = ((OkObjectResult)accountsResult).Value!;
+        var accountRows = ((System.Collections.IEnumerable)accountsResponse.GetType().GetProperty("data")!.GetValue(accountsResponse)!).Cast<object>().ToList();
+        accountRows.Should().ContainSingle();
+        var account = accountRows.Single();
+        account.GetType().GetProperty("HasForeignCurrencyBalance")!.GetValue(account).Should().Be(true);
+        var accountCurrencyBalances = ((System.Collections.IEnumerable)account.GetType().GetProperty("CurrencyBalances")!.GetValue(account)!).Cast<object>().ToList();
+        accountCurrencyBalances.Should().HaveCount(2, "the patient-account list must preserve every currency instead of adding them together");
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

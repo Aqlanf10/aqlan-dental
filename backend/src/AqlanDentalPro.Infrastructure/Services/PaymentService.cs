@@ -115,9 +115,14 @@ public class PaymentService(AppDbContext db, ICurrentUserService currentUser, IN
 
         var paymentCurrency = FinanceMappers.NormalizeCurrency(req.Currency);
         var accountCurrency = ResolveAccountCurrency(req.AccountCurrency, invoice, contract);
-        var exchange = await ResolveExchangeRateAsync(paymentCurrency, accountCurrency, req.ExchangeRateToAccountCurrency);
+        var fx = await ResolveFxSnapshotAsync(
+            paymentCurrency,
+            accountCurrency,
+            req.ExchangeRateToAccountCurrency,
+            req.ExchangeRateToYer);
+        var exchange = fx.PaymentToAccountCurrency;
         var exchangeRateSource = string.IsNullOrWhiteSpace(req.ExchangeRateSource)
-            ? (paymentCurrency == accountCurrency ? "same_currency" : (req.ExchangeRateToAccountCurrency.HasValue ? "manual" : "settings"))
+            ? (req.ExchangeRateToAccountCurrency.HasValue || req.ExchangeRateToYer.HasValue ? "manual" : "settings")
             : req.ExchangeRateSource.Trim();
         var appliedAmount = Math.Round(req.Amount * exchange, 2, MidpointRounding.AwayFromZero);
 
@@ -160,6 +165,7 @@ public class PaymentService(AppDbContext db, ICurrentUserService currentUser, IN
                 Currency = paymentCurrency,
                 AccountCurrency = accountCurrency,
                 ExchangeRateToAccountCurrency = exchange,
+                ExchangeRateToYer = fx.PaymentCurrencyToYer,
                 AppliedAmount = appliedAmount,
                 ExchangeRateSource = exchangeRateSource,
                 PaymentDate = ClinicTimeProvider.ClinicToday(),
@@ -457,6 +463,7 @@ public class PaymentService(AppDbContext db, ICurrentUserService currentUser, IN
             Currency           = FinanceMappers.NormalizeCurrency(payment.Currency),
             AccountCurrency    = FinanceMappers.NormalizeCurrency(payment.AccountCurrency),
             ExchangeRateToAccountCurrency = payment.ExchangeRateToAccountCurrency == 0 ? 1m : payment.ExchangeRateToAccountCurrency,
+            ExchangeRateToYer  = payment.ExchangeRateToYer,
             AppliedAmount      = -Math.Round(refundAmount * (payment.ExchangeRateToAccountCurrency == 0 ? 1m : payment.ExchangeRateToAccountCurrency), 2, MidpointRounding.AwayFromZero),
             ExchangeRateSource = payment.ExchangeRateSource,
             PaymentDate        = ClinicTimeProvider.ClinicToday(),
@@ -661,6 +668,55 @@ public class PaymentService(AppDbContext db, ICurrentUserService currentUser, IN
         return FinanceMappers.NormalizeCurrency(requestedCurrency);
     }
 
+    private async Task<FxSnapshot> ResolveFxSnapshotAsync(
+        string paymentCurrency,
+        string accountCurrency,
+        decimal? directPaymentToAccountRate,
+        decimal? directPaymentToYerRate)
+    {
+        paymentCurrency = FinanceMappers.NormalizeCurrency(paymentCurrency);
+        accountCurrency = FinanceMappers.NormalizeCurrency(accountCurrency);
+
+        if (directPaymentToYerRate.HasValue && directPaymentToYerRate.Value <= 0m)
+            throw new ArgumentException("Payment currency rate to YER must be greater than zero.");
+        if (directPaymentToAccountRate.HasValue && directPaymentToAccountRate.Value <= 0m)
+            throw new ArgumentException("Payment-to-account exchange rate must be greater than zero.");
+
+        if (paymentCurrency == accountCurrency)
+        {
+            var sameCurrencyRate = directPaymentToYerRate ?? await GetCurrencyToYerRateAsync(paymentCurrency);
+            return new FxSnapshot(1m, sameCurrencyRate, sameCurrencyRate);
+        }
+
+        if (directPaymentToAccountRate.HasValue)
+        {
+            var paymentToYer = directPaymentToYerRate
+                ?? (paymentCurrency == FinanceMappers.BaseCurrency
+                    ? 1m
+                    : accountCurrency == FinanceMappers.BaseCurrency
+                        ? directPaymentToAccountRate.Value
+                        : await GetCurrencyToYerRateAsync(paymentCurrency));
+            var accountToYer = Math.Round(
+                paymentToYer / directPaymentToAccountRate.Value,
+                6,
+                MidpointRounding.AwayFromZero);
+            if (accountToYer <= 0m)
+                throw new ArgumentException("Account currency rate to YER is invalid.");
+
+            return new FxSnapshot(directPaymentToAccountRate.Value, paymentToYer, accountToYer);
+        }
+
+        var configuredPaymentToYer = directPaymentToYerRate ?? await GetCurrencyToYerRateAsync(paymentCurrency);
+        var configuredAccountToYer = await GetCurrencyToYerRateAsync(accountCurrency);
+        if (configuredAccountToYer <= 0m)
+            throw new ArgumentException("Account currency rate to YER is invalid.");
+
+        return new FxSnapshot(
+            Math.Round(configuredPaymentToYer / configuredAccountToYer, 6, MidpointRounding.AwayFromZero),
+            configuredPaymentToYer,
+            configuredAccountToYer);
+    }
+
     private async Task<decimal> ResolveExchangeRateAsync(string paymentCurrency, string accountCurrency, decimal? directRate)
     {
         paymentCurrency = FinanceMappers.NormalizeCurrency(paymentCurrency);
@@ -690,6 +746,11 @@ public class PaymentService(AppDbContext db, ICurrentUserService currentUser, IN
 
         throw new ArgumentException($"لا يوجد سعر صرف معتمد للعملة {currency}. حدده من إعدادات المالية قبل تسجيل الدفعة.");
     }
+
+    private sealed record FxSnapshot(
+        decimal PaymentToAccountCurrency,
+        decimal PaymentCurrencyToYer,
+        decimal AccountCurrencyToYer);
 
     /// <summary>
     /// Checks if total active payments for a contract cover its effective amount (TotalAmount - DiscountAmount).

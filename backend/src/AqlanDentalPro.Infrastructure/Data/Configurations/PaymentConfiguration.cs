@@ -40,6 +40,7 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.Property(p => p.Amount).HasPrecision(12, 2);
         builder.Property(p => p.AppliedAmount).HasPrecision(12, 2);
         builder.Property(p => p.ExchangeRateToAccountCurrency).HasPrecision(18, 6);
+        builder.Property(p => p.ExchangeRateToYer).HasPrecision(18, 6);
 
         // String constraints
         builder.Property(p => p.PaymentMethod).HasMaxLength(30);

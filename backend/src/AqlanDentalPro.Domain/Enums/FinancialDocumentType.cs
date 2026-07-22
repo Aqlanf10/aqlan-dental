@@ -18,5 +18,6 @@ public enum FinancialDocumentType
     ContractCancellation,
     PaymentDeletion,
     PaymentAllocation,
-    Other
+    Other,
+    YearEndClosing
 }

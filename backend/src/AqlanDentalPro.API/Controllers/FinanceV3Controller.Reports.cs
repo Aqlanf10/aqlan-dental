@@ -304,16 +304,22 @@ public partial class FinanceV3Controller
 
         // ── Accrued revenue from posted JournalLines ──
         var todayAccruedRevenue = await db.JournalLines
-            .Where(l => l.AccountType == JournalAccountType.Revenue
+            .Where(l => (l.AccountType == JournalAccountType.Revenue
+                    || l.AccountType == JournalAccountType.ContraRevenue
+                    || l.AccountType == JournalAccountType.SalesReturns)
                 && l.JournalEntry.EntryDate == today
                 && l.JournalEntry.IsPosted
+                && l.JournalEntry.FinancialDocumentType != FinancialDocumentType.YearEndClosing
                 && (!branchId.HasValue || l.BranchId == branchId.Value))
             .SumAsync(l => (decimal?)(l.Credit - l.Debit)) ?? 0;
 
         var monthAccruedRevenue = await db.JournalLines
-            .Where(l => l.AccountType == JournalAccountType.Revenue
+            .Where(l => (l.AccountType == JournalAccountType.Revenue
+                    || l.AccountType == JournalAccountType.ContraRevenue
+                    || l.AccountType == JournalAccountType.SalesReturns)
                 && l.JournalEntry.EntryDate >= monthStart
                 && l.JournalEntry.IsPosted
+                && l.JournalEntry.FinancialDocumentType != FinancialDocumentType.YearEndClosing
                 && (!branchId.HasValue || l.BranchId == branchId.Value))
             .SumAsync(l => (decimal?)(l.Credit - l.Debit)) ?? 0;
 
@@ -848,16 +854,21 @@ public partial class FinanceV3Controller
 
         // ── Accrued P&L from posted JournalLines (canonical, accrual basis) ──
         var accruedRevenueQuery = db.JournalLines
-            .Where(l => l.AccountType == JournalAccountType.Revenue
+            .Where(l => (l.AccountType == JournalAccountType.Revenue
+                    || l.AccountType == JournalAccountType.ContraRevenue
+                    || l.AccountType == JournalAccountType.SalesReturns)
                 && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
                 && l.JournalEntry.IsPosted
+                && l.JournalEntry.FinancialDocumentType != FinancialDocumentType.YearEndClosing
                 && (!branchId.HasValue || l.BranchId == branchId.Value));
         var accruedRevenue = await accruedRevenueQuery.SumAsync(l => (decimal?)(l.Credit - l.Debit)) ?? 0;
 
         var accruedExpensesQuery = db.JournalLines
-            .Where(l => l.AccountType == JournalAccountType.Expense
+            .Where(l => (l.AccountType == JournalAccountType.Expense
+                    || l.AccountType == JournalAccountType.ContraExpense)
                 && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
                 && l.JournalEntry.IsPosted
+                && l.JournalEntry.FinancialDocumentType != FinancialDocumentType.YearEndClosing
                 && (!branchId.HasValue || l.BranchId == branchId.Value));
         var accruedExpenses = await accruedExpensesQuery.SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0;
 

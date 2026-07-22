@@ -206,6 +206,10 @@ public static class FinanceLedgerWriter
             lines: lines,
             autoSave: false);
 
+        // Journal lines are expressed in the invoice/contract account currency
+        // (AppliedAmount), not necessarily the physical payment currency.
+        entry.Currency = FinanceMappers.NormalizeCurrency(payment.AccountCurrency);
+
         // Auto-post since this is an operational posting
         entry.IsPosted = true;
         entry.PostedAt = DateTime.UtcNow;
@@ -284,6 +288,9 @@ public static class FinanceLedgerWriter
             treasuryId: treasury.Id,
             lines: lines,
             autoSave: false);
+
+        // Keep the refund in the same account currency as the original settlement.
+        entry.Currency = FinanceMappers.NormalizeCurrency(originalPayment.AccountCurrency);
 
         // Auto-post
         entry.IsPosted = true;

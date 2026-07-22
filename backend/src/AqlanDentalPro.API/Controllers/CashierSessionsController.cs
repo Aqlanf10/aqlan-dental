@@ -13,7 +13,14 @@ namespace AqlanDentalPro.API.Controllers;
 public sealed class OpenSessionRequest
 {
     public decimal OpeningBalance { get; init; } // مبلغ العهدة الافتتاحية
+    public List<CurrencyOpeningBalanceRequest> CurrencyOpeningBalances { get; init; } = [];
     public string? Notes { get; init; }
+}
+
+public sealed class CurrencyOpeningBalanceRequest
+{
+    public string Currency { get; init; } = string.Empty;
+    public decimal OpeningCash { get; init; }
 }
 
 public sealed class CloseSessionRequest
@@ -26,6 +33,14 @@ public sealed class CloseSessionRequest
     // FIN-03: When |ShortageOrSurplus| exceeds the threshold, a manager (Admin/Accountant)
     // must set this to true to approve the close. The controller verifies the caller's role.
     public bool ManagerOverrideApproved { get; init; }
+    public List<CurrencyClosingRequest> CurrencyClosings { get; init; } = [];
+}
+
+public sealed class CurrencyClosingRequest
+{
+    public string Currency { get; init; } = string.Empty;
+    public decimal ActualCash { get; init; }
+    public decimal ActualBank { get; init; }
 }
 
 // FIN-03: Threshold above which a manager must explicitly approve the closing balance.
@@ -75,6 +90,30 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
 
         if (req.OpeningBalance < 0)
             return BadRequest(new { message = "لا يمكن أن يكون رصيد العهدة الافتتاحية سالباً" });
+
+        if (req.CurrencyOpeningBalances.Any(item => item.OpeningCash < 0))
+            return BadRequest(new { message = "لا يمكن أن يكون رصيد افتتاح أي عملة سالباً" });
+
+        var invalidOpeningCurrency = req.CurrencyOpeningBalances
+            .Select(item => NormalizeCurrency(item.Currency))
+            .FirstOrDefault(currency => currency == "YER" || currency.Length != 3 || !currency.All(char.IsLetter));
+        if (invalidOpeningCurrency != null)
+            return BadRequest(new { message = "يجب إدخال عملة أجنبية صحيحة من ثلاثة أحرف، ويُدخل رصيد YER في حقل الريال اليمني" });
+
+        var duplicateOpeningCurrency = req.CurrencyOpeningBalances
+            .GroupBy(item => NormalizeCurrency(item.Currency))
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicateOpeningCurrency != null)
+            return BadRequest(new { message = $"تم إدخال رصيد افتتاح {duplicateOpeningCurrency.Key} أكثر من مرة" });
+
+        var currencyOpeningBalances = req.CurrencyOpeningBalances
+            .Where(item => item.OpeningCash > 0)
+            .Select(item => new CashierSessionCurrencyOpeningBalance
+            {
+                Currency = NormalizeCurrency(item.Currency),
+                OpeningCash = item.OpeningCash
+            })
+            .ToList();
 
         // CONCURRENCY SAFETY: Begin the transaction BEFORE the authoritative open-session
         // eligibility check, then acquire a deterministic lock scoped to the cashier identity
@@ -141,6 +180,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 ExpectedClosingBank = 0,
                 Status = SessionStatus.Open,
                 Notes = req.Notes?.Trim(),
+                CurrencyOpeningBalances = currencyOpeningBalances,
                 // Explicitly resolve and set the cash vault TreasuryId when opening
                 // the session so all subsequent cash movements tied to this session are routed
                 // to the same treasury. OpeningBalance is a drawer-reconciliation seed only — it
@@ -166,6 +206,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 session.SessionNumber,
                 session.OpeningTime,
                 session.OpeningBalance,
+                CurrencyOpeningBalances = currencyOpeningBalances,
                 session.TreasuryId,
                 Status = session.Status.ToString(),
                 message = "تم فتح صندوق الكاشير والوردية اليومية بنجاح"
@@ -202,6 +243,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
             // AUTHORITATIVE RE-CHECK inside the lock: reload the open session for this cashier.
             // A concurrent close that won the race will have set Status=Closed, so this returns null.
             var session = await db.CashierSessions
+                .Include(s => s.CurrencyOpeningBalances)
                 .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
 
             if (session == null)
@@ -270,7 +312,15 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 session.ShortageOrSurplus = actualTotal - expectedTotal;
             }
 
-            var foreignCurrencyActivity = CalculateForeignCurrencyActivity(sessionTransactions);
+            var foreignCurrencyActivity = CalculateForeignCurrencyActivity(
+                sessionTransactions,
+                session.CurrencyOpeningBalances);
+            var (currencyReconciliations, reconciliationError) = BuildCurrencyReconciliations(
+                session,
+                req,
+                foreignCurrencyActivity);
+            if (reconciliationError != null)
+                return BadRequest(new { message = reconciliationError });
 
             // FIN-03: Manager co-sign requirement for large shortages/surpluses.
             // If |ShortageOrSurplus| exceeds the threshold, the close is rejected UNLESS:
@@ -308,6 +358,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                     session.Id, variance, threshold, currentUser.UserId, currentUser.Role);
             }
 
+            db.CashierSessionCurrencyReconciliations.AddRange(currencyReconciliations);
             await db.SaveChangesAsync();
             await tx.CommitAsync();
 
@@ -330,6 +381,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 session.ActualClosingBank,
                 session.ShortageOrSurplus,
                 ForeignCurrencyActivity = foreignCurrencyActivity,
+                CurrencyReconciliations = currencyReconciliations,
                 Status = session.Status.ToString(),
                 message = "تم إقفال صندوق الاستقبال وترحيل المبالغ وتأمين القيود بنجاح"
             });
@@ -350,12 +402,13 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
 
     private sealed record ForeignCurrencyActivity(
         string Currency,
+        decimal OpeningCash,
         decimal CashInflows,
         decimal CashOutflows,
         decimal BankInflows,
         decimal BankOutflows)
     {
-        public decimal NetCash => CashInflows - CashOutflows;
+        public decimal NetCash => OpeningCash + CashInflows - CashOutflows;
         public decimal NetBank => BankInflows - BankOutflows;
     }
 
@@ -381,18 +434,89 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     }
 
     private static IReadOnlyList<ForeignCurrencyActivity> CalculateForeignCurrencyActivity(
-        IEnumerable<CashFlowTransaction> transactions) =>
-        transactions
+        IEnumerable<CashFlowTransaction> transactions,
+        IEnumerable<CashierSessionCurrencyOpeningBalance> openingBalances)
+    {
+        var foreignTransactions = transactions
             .Where(t => !IsYemeniCurrency(t.Currency))
-            .GroupBy(t => NormalizeCurrency(t.Currency))
-            .OrderBy(group => group.Key)
-            .Select(group => new ForeignCurrencyActivity(
-                group.Key,
-                group.Where(t => t.Type == TransactionType.Inflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount),
-                group.Where(t => t.Type == TransactionType.Outflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount),
-                group.Where(t => t.Type == TransactionType.Inflow && (IsCardMethod(t.PaymentMethod) || IsBankMethod(t.PaymentMethod))).Sum(t => t.Amount),
-                group.Where(t => t.Type == TransactionType.Outflow && (IsCardMethod(t.PaymentMethod) || IsBankMethod(t.PaymentMethod))).Sum(t => t.Amount)))
             .ToList();
+        var openingByCurrency = openingBalances
+            .ToDictionary(item => NormalizeCurrency(item.Currency), item => item.OpeningCash, StringComparer.OrdinalIgnoreCase);
+
+        return foreignTransactions
+            .Select(t => NormalizeCurrency(t.Currency))
+            .Concat(openingByCurrency.Keys)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(currency => currency)
+            .Select(currency =>
+            {
+                var currencyTransactions = foreignTransactions
+                    .Where(t => NormalizeCurrency(t.Currency) == currency)
+                    .ToList();
+                return new ForeignCurrencyActivity(
+                    currency,
+                    openingByCurrency.GetValueOrDefault(currency),
+                    currencyTransactions.Where(t => t.Type == TransactionType.Inflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount),
+                    currencyTransactions.Where(t => t.Type == TransactionType.Outflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount),
+                    currencyTransactions.Where(t => t.Type == TransactionType.Inflow && (IsCardMethod(t.PaymentMethod) || IsBankMethod(t.PaymentMethod))).Sum(t => t.Amount),
+                    currencyTransactions.Where(t => t.Type == TransactionType.Outflow && (IsCardMethod(t.PaymentMethod) || IsBankMethod(t.PaymentMethod))).Sum(t => t.Amount));
+            })
+            .ToList();
+    }
+
+    private static (IReadOnlyList<CashierSessionCurrencyReconciliation> Items, string? Error)
+        BuildCurrencyReconciliations(
+            CashierSession session,
+            CloseSessionRequest request,
+            IReadOnlyList<ForeignCurrencyActivity> foreignActivity)
+    {
+        if (request.CurrencyClosings.Any(item => item.ActualCash < 0 || item.ActualBank < 0))
+            return ([], "لا يمكن أن يكون العد الفعلي لأي عملة سالباً.");
+
+        var duplicateCurrency = request.CurrencyClosings
+            .GroupBy(item => NormalizeCurrency(item.Currency))
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicateCurrency != null)
+            return ([], $"تم إرسال العملة {duplicateCurrency.Key} أكثر من مرة في تسوية الوردية.");
+
+        var requested = request.CurrencyClosings
+            .ToDictionary(item => NormalizeCurrency(item.Currency), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var activity in foreignActivity)
+        {
+            if (!requested.ContainsKey(activity.Currency))
+                return ([], $"يجب إدخال العد الفعلي لعملة {activity.Currency} قبل إقفال الوردية.");
+        }
+
+        var items = new List<CashierSessionCurrencyReconciliation>
+        {
+            new()
+            {
+                CashierSessionId = session.Id,
+                Currency = "YER",
+                ExpectedCash = session.ExpectedClosingCash,
+                ActualCash = request.ActualClosingCash,
+                ExpectedBank = session.ExpectedClosingCard + session.ExpectedClosingBank,
+                ActualBank = request.ActualClosingCard + request.ActualClosingBank
+            }
+        };
+
+        foreach (var activity in foreignActivity)
+        {
+            var actual = requested[activity.Currency];
+            items.Add(new CashierSessionCurrencyReconciliation
+            {
+                CashierSessionId = session.Id,
+                Currency = activity.Currency,
+                ExpectedCash = activity.NetCash,
+                ActualCash = actual.ActualCash,
+                ExpectedBank = activity.NetBank,
+                ActualBank = actual.ActualBank
+            });
+        }
+
+        return (items, null);
+    }
 
     private static bool IsYemeniCurrency(string? currency) => NormalizeCurrency(currency) == "YER";
 
@@ -522,6 +646,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
 
         var session = await db.CashierSessions
             .Include(s => s.Cashier)
+            .Include(s => s.CurrencyOpeningBalances)
             .Include(s => s.Treasury)
             .FirstOrDefaultAsync(s => s.CashierId == cashierId && s.Status == SessionStatus.Open && s.IsActive);
 
@@ -587,7 +712,9 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         var cashflowCollections = cashflowTransactions
             .Where(t => t.Type == TransactionType.Inflow && IsYemeniCurrency(t.Currency))
             .Sum(t => t.Amount);
-        var foreignCurrencyActivity = CalculateForeignCurrencyActivity(cashflowTransactions);
+        var foreignCurrencyActivity = CalculateForeignCurrencyActivity(
+            cashflowTransactions,
+            session.CurrencyOpeningBalances);
 
         return Ok(new
         {
@@ -659,6 +786,9 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 OpenedAt = s.OpeningTime,
                 s.ClosingTime,
                 s.OpeningBalance,
+                CurrencyOpeningBalances = s.CurrencyOpeningBalances
+                    .OrderBy(item => item.Currency)
+                    .Select(item => new { item.Currency, item.OpeningCash }),
                 s.ExpectedClosingCash,
                 s.ExpectedClosingCard,
                 s.ExpectedClosingBank,
@@ -683,6 +813,8 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         var session = await db.CashierSessions
             .Include(s => s.Cashier)
             .Include(s => s.Transactions)
+            .Include(s => s.CurrencyOpeningBalances)
+            .Include(s => s.CurrencyReconciliations)
             .FirstOrDefaultAsync(s => s.Id == id && s.IsActive);
 
         if (session == null)
@@ -726,7 +858,22 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
             session.ActualClosingBank,
             session.ShortageOrSurplus,
             CashierName = session.Cashier?.Username,
-            ForeignCurrencyActivity = CalculateForeignCurrencyActivity(session.Transactions.Where(t => t.IsActive)),
+            ForeignCurrencyActivity = CalculateForeignCurrencyActivity(
+                session.Transactions.Where(t => t.IsActive),
+                session.CurrencyOpeningBalances),
+            CurrencyReconciliations = session.CurrencyReconciliations
+                .OrderBy(item => item.Currency)
+                .Select(item => new
+                {
+                    item.Currency,
+                    item.ExpectedCash,
+                    item.ActualCash,
+                    item.CashVariance,
+                    item.ExpectedBank,
+                    item.ActualBank,
+                    item.BankVariance,
+                    item.TotalVariance
+                }),
             Transactions = transactions
         });
     }

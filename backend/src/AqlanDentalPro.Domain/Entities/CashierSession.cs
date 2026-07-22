@@ -60,4 +60,6 @@ public class CashierSession : BaseEntity
 
     // Navigation properties for bidirectional relationships
     public ICollection<CashFlowTransaction> Transactions { get; set; } = [];
+    public ICollection<CashierSessionCurrencyOpeningBalance> CurrencyOpeningBalances { get; set; } = [];
+    public ICollection<CashierSessionCurrencyReconciliation> CurrencyReconciliations { get; set; } = [];
 }

@@ -148,6 +148,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     // Sprint 20 — Finance V2 Comprehensive Hub
     public DbSet<CashierSession> CashierSessions => Set<CashierSession>();
+    public DbSet<CashierSessionCurrencyOpeningBalance> CashierSessionCurrencyOpeningBalances => Set<CashierSessionCurrencyOpeningBalance>();
+    public DbSet<CashierSessionCurrencyReconciliation> CashierSessionCurrencyReconciliations => Set<CashierSessionCurrencyReconciliation>();
     public DbSet<OperationalExpense> OperationalExpenses => Set<OperationalExpense>();
     public DbSet<CashFlowTransaction> CashFlowTransactions => Set<CashFlowTransaction>();
 

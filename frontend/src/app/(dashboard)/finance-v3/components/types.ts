@@ -224,11 +224,18 @@ export interface CashierSession {
   status: string;
   notes: string | null;
   treasuryId: string | null;
+  currencyOpeningBalances?: CashierCurrencyOpeningBalance[];
   foreignCurrencyActivity?: CashierForeignCurrencyActivity[];
+}
+
+export interface CashierCurrencyOpeningBalance {
+  currency: string;
+  openingCash: number;
 }
 
 export interface CashierForeignCurrencyActivity {
   currency: string;
+  openingCash: number;
   cashInflows: number;
   cashOutflows: number;
   bankInflows: number;
@@ -241,7 +248,14 @@ export interface CloseSessionRequest {
   actualClosingCash: number;
   actualClosingCard: number;
   actualClosingBank: number;
+  currencyClosings: CurrencyClosingRequest[];
   notes?: string;
+}
+
+export interface CurrencyClosingRequest {
+  currency: string;
+  actualCash: number;
+  actualBank: number;
 }
 
 /* ── Treasuries ─────────────────────────────────────────────────────────────────── */

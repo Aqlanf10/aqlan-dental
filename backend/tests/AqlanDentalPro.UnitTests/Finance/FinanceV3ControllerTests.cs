@@ -959,6 +959,154 @@ public class FinanceV3ControllerTests
     }
 
     [Fact]
+    public async Task AccountingPeriod_YearEndClose_PostsPerCurrencyAndOpensNextYear()
+    {
+        await using var db = CreateDb();
+        var (branchId, _) = SeedBranchAndUser(db);
+        var period = new AccountingPeriod
+        {
+            BranchId = branchId,
+            Name = "FY 2025",
+            StartDate = new DateOnly(2025, 1, 1),
+            EndDate = new DateOnly(2025, 12, 31)
+        };
+        db.AccountingPeriods.Add(period);
+
+        var yerRevenue = new JournalEntry
+        {
+            EntryNumber = "JE-20250101-001",
+            FinancialDocumentId = Guid.NewGuid(),
+            FinancialDocumentType = FinancialDocumentType.Invoice,
+            Description = "YER revenue",
+            EntryDate = new DateOnly(2025, 6, 1),
+            Currency = "YER",
+            ExchangeRateToYer = 1m,
+            BranchId = branchId,
+            PerformedBy = Guid.NewGuid(),
+            IsPosted = true,
+            PostedAt = DateTime.UtcNow,
+            Lines =
+            [
+                new JournalLine { AccountType = JournalAccountType.PatientReceivable, AccountId = Guid.NewGuid(), Debit = 1_000m, BranchId = branchId },
+                new JournalLine { AccountType = JournalAccountType.Revenue, AccountId = Guid.NewGuid(), Credit = 1_000m, BranchId = branchId }
+            ]
+        };
+        var yerExpense = new JournalEntry
+        {
+            EntryNumber = "JE-20250102-001",
+            FinancialDocumentId = Guid.NewGuid(),
+            FinancialDocumentType = FinancialDocumentType.Expense,
+            Description = "YER expense",
+            EntryDate = new DateOnly(2025, 7, 1),
+            Currency = "YER",
+            ExchangeRateToYer = 1m,
+            BranchId = branchId,
+            PerformedBy = Guid.NewGuid(),
+            IsPosted = true,
+            PostedAt = DateTime.UtcNow,
+            Lines =
+            [
+                new JournalLine { AccountType = JournalAccountType.Expense, AccountId = Guid.NewGuid(), Debit = 400m, BranchId = branchId },
+                new JournalLine { AccountType = JournalAccountType.Treasury, AccountId = Guid.NewGuid(), Credit = 400m, BranchId = branchId }
+            ]
+        };
+        var sarActivity = new JournalEntry
+        {
+            EntryNumber = "JE-20250103-001",
+            FinancialDocumentId = Guid.NewGuid(),
+            FinancialDocumentType = FinancialDocumentType.Invoice,
+            Description = "SAR activity",
+            EntryDate = new DateOnly(2025, 8, 1),
+            Currency = "SAR",
+            ExchangeRateToYer = 66m,
+            BranchId = branchId,
+            PerformedBy = Guid.NewGuid(),
+            IsPosted = true,
+            PostedAt = DateTime.UtcNow,
+            Lines =
+            [
+                new JournalLine { AccountType = JournalAccountType.PatientReceivable, AccountId = Guid.NewGuid(), Debit = 100m, BranchId = branchId },
+                new JournalLine { AccountType = JournalAccountType.Revenue, AccountId = Guid.NewGuid(), Credit = 100m, BranchId = branchId },
+                new JournalLine { AccountType = JournalAccountType.Expense, AccountId = Guid.NewGuid(), Debit = 30m, BranchId = branchId },
+                new JournalLine { AccountType = JournalAccountType.Payable, AccountId = Guid.NewGuid(), Credit = 30m, BranchId = branchId }
+            ]
+        };
+        db.JournalEntries.AddRange(yerRevenue, yerExpense, sarActivity);
+        await db.SaveChangesAsync();
+
+        var controller = BuildFinanceV3Controller(db, CreateAdminUser(branchId));
+        var result = await controller.CloseFiscalYear(
+            period.Id,
+            new FinanceV3Controller.YearEndCloseRequest(null));
+
+        result.Should().BeOfType<OkObjectResult>();
+        db.ChangeTracker.Clear();
+        (await db.AccountingPeriods.FindAsync(period.Id))!.Status.Should().Be("Closed");
+        var nextPeriod = await db.AccountingPeriods.SingleAsync(item => item.StartDate == new DateOnly(2026, 1, 1));
+        nextPeriod.EndDate.Should().Be(new DateOnly(2026, 12, 31));
+        nextPeriod.Status.Should().Be("Open");
+
+        var closingEntries = await db.JournalEntries
+            .Include(entry => entry.Lines)
+            .Where(entry => entry.FinancialDocumentType == FinancialDocumentType.YearEndClosing)
+            .OrderBy(entry => entry.Currency)
+            .ToListAsync();
+        closingEntries.Should().HaveCount(2);
+        closingEntries.Should().OnlyContain(entry => entry.IsPosted && entry.IsBalanced());
+
+        var sarClosing = closingEntries.Single(entry => entry.Currency == "SAR");
+        sarClosing.ExchangeRateToYer.Should().Be(66m);
+        var sarEquity = sarClosing.Lines.Single(line => line.AccountType == JournalAccountType.OwnerEquity);
+        sarEquity.Credit.Should().Be(70m);
+        sarEquity.Debit.Should().Be(0m);
+
+        var yerClosing = closingEntries.Single(entry => entry.Currency == "YER");
+        var yerEquity = yerClosing.Lines.Single(line => line.AccountType == JournalAccountType.OwnerEquity);
+        yerEquity.Credit.Should().Be(600m);
+        yerEquity.Debit.Should().Be(0m);
+    }
+
+    [Fact]
+    public async Task AccountingPeriod_YearEndClose_RejectsUnpostedEntriesWithoutWrites()
+    {
+        await using var db = CreateDb();
+        var (branchId, _) = SeedBranchAndUser(db);
+        var period = new AccountingPeriod
+        {
+            BranchId = branchId,
+            Name = "FY 2025",
+            StartDate = new DateOnly(2025, 1, 1),
+            EndDate = new DateOnly(2025, 12, 31)
+        };
+        db.AccountingPeriods.Add(period);
+        db.JournalEntries.Add(new JournalEntry
+        {
+            EntryNumber = "JE-DRAFT-001",
+            FinancialDocumentId = Guid.NewGuid(),
+            FinancialDocumentType = FinancialDocumentType.Other,
+            Description = "Draft",
+            EntryDate = new DateOnly(2025, 12, 31),
+            Currency = "YER",
+            ExchangeRateToYer = 1m,
+            BranchId = branchId,
+            PerformedBy = Guid.NewGuid(),
+            IsPosted = false
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildFinanceV3Controller(db, CreateAdminUser(branchId));
+        var result = await controller.CloseFiscalYear(
+            period.Id,
+            new FinanceV3Controller.YearEndCloseRequest(null));
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        db.ChangeTracker.Clear();
+        (await db.AccountingPeriods.FindAsync(period.Id))!.Status.Should().Be("Open");
+        (await db.AccountingPeriods.CountAsync()).Should().Be(1);
+        (await db.JournalEntries.CountAsync(entry => entry.FinancialDocumentType == FinancialDocumentType.YearEndClosing)).Should().Be(0);
+    }
+
+    [Fact]
     public async Task Advance_Approve_RejectsNonPendingAdvance()
     {
         await using var db = CreateDb();

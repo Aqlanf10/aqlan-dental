@@ -41,6 +41,7 @@ export interface Payment {
   currency?: string | null;
   accountCurrency?: string | null;
   exchangeRateToAccountCurrency?: number;
+  exchangeRateToYer?: number;
   appliedAmount?: number;
   exchangeRateSource?: string | null;
   paymentDate: string;
@@ -75,6 +76,7 @@ export interface CreatePaymentRequest {
   currency?: string;
   accountCurrency?: string;
   exchangeRateToAccountCurrency?: number;
+  exchangeRateToYer?: number;
   exchangeRateSource?: string;
   paymentMethod?: string;
   serviceDescription?: string;
@@ -88,6 +90,7 @@ export interface UpdatePaymentRequest {
   currency?: string;
   accountCurrency?: string;
   exchangeRateToAccountCurrency?: number;
+  exchangeRateToYer?: number;
   exchangeRateSource?: string;
   paymentDate?: string;
   paymentMethod?: string;

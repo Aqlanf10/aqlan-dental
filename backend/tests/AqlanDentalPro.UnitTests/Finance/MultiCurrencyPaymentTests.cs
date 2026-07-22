@@ -186,7 +186,8 @@ public class MultiCurrencyPaymentTests
             Amount = 300m,
             PaymentMethod = "cash",
             Currency = "SAR",
-            AccountCurrency = "SAR"
+            AccountCurrency = "SAR",
+            ExchangeRateToYer = 140m
         });
 
         dto.Should().NotBeNull();
@@ -198,6 +199,7 @@ public class MultiCurrencyPaymentTests
         var payment = await db.Payments.FindAsync(dto.Id);
         payment.Should().NotBeNull();
         payment!.Currency.Should().Be("SAR");
+        payment.ExchangeRateToYer.Should().Be(140m, "the physical SAR-to-YER rate must be frozen with the payment");
 
         // MULTI-CURRENCY: foreign payments create a CashFlowTransaction in their
         // physical currency, but never mix with the YER drawer.
@@ -206,6 +208,30 @@ public class MultiCurrencyPaymentTests
         cashflow.Should().NotBeNull("foreign-currency payments must be tracked in the matching currency treasury");
         cashflow!.Currency.Should().Be("SAR");
         cashflow.Amount.Should().Be(300m);
+    }
+
+    [Fact]
+    public async Task CreatePayment_YerToSar_UsesTransactionRateForAppliedAmount()
+    {
+        await using var db = CreateContext();
+        var (service, _, branchId, cashierId) = CreateService(db);
+        var patient = SeedPatient(db, branchId);
+        CreateOpenSession(db, cashierId, branchId);
+
+        var dto = await service.CreatePaymentAsync(new CreatePaymentRequest
+        {
+            PatientId = patient.Id,
+            Amount = 14_000m,
+            PaymentMethod = "cash",
+            Currency = "YER",
+            AccountCurrency = "SAR",
+            ExchangeRateToAccountCurrency = 1m / 140m
+        });
+
+        dto.Currency.Should().Be("YER");
+        dto.AccountCurrency.Should().Be("SAR");
+        dto.AppliedAmount.Should().Be(100m, "14,000 YER at 140 YER per SAR settles 100 SAR");
+        dto.ExchangeRateToYer.Should().Be(1m);
     }
 
     // ─── Test 2: null Currency defaults to "YER" ──────────────────────────────
@@ -295,7 +321,8 @@ public class MultiCurrencyPaymentTests
             Amount = 3_000m,
             PaymentMethod = "cash",
             Currency = "SAR",
-            AccountCurrency = "SAR"
+            AccountCurrency = "SAR",
+            ExchangeRateToYer = 140m
         });
 
         // The YER treasury for this branch should hold 5,000 — NOT 8,000.
@@ -342,7 +369,8 @@ public class MultiCurrencyPaymentTests
             Amount = 3_000m,
             PaymentMethod = "cash",
             Currency = "SAR",
-            AccountCurrency = "SAR"
+            AccountCurrency = "SAR",
+            ExchangeRateToYer = 140m
         });
 
         // Today's USD payment — must NOT count toward todayCollected.
@@ -352,7 +380,8 @@ public class MultiCurrencyPaymentTests
             Amount = 100m,
             PaymentMethod = "cash",
             Currency = "USD",
-            AccountCurrency = "USD"
+            AccountCurrency = "USD",
+            ExchangeRateToYer = 530m
         });
 
         var summary = await readService.GetSummaryAsync();

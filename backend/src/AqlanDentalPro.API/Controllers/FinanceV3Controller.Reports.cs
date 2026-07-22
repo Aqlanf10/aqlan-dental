@@ -12,6 +12,13 @@ namespace AqlanDentalPro.API.Controllers;
 
 public partial class FinanceV3Controller
 {
+    private sealed record PatientCurrencyLedgerBalance(
+        string Currency,
+        decimal Receivable,
+        decimal Advance,
+        decimal Balance,
+        decimal AvailableAdvance);
+
     // ─── Dashboard KPIs ─────────────────────────────────────────────────────
 
     private async Task<IActionResult> GetDashboardSchemaTolerantAsync(string? period)
@@ -1446,19 +1453,46 @@ public partial class FinanceV3Controller
 
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
 
-        // ── Pre-compute JournalLine balances per patient ──
-        // Group by AccountId (= PatientId) for PatientReceivable + PatientAdvance
-        var journalBalances = await db.JournalLines
+        // ── Pre-compute JournalLine balances per patient and currency ──
+        // A patient can have YER, SAR, and USD activity. Never add those units
+        // together for an operational balance or collection decision.
+        var journalBalanceRows = await db.JournalLines
             .Where(l => (l.AccountType == JournalAccountType.PatientReceivable || l.AccountType == JournalAccountType.PatientAdvance)
                 && l.JournalEntry.IsPosted
                 && (!branchId.HasValue || l.BranchId == branchId.Value))
-            .GroupBy(l => l.AccountId)
+            .GroupBy(l => new { l.AccountId, Currency = l.JournalEntry.Currency, l.AccountType })
             .Select(g => new
             {
-                PatientId = g.Key,
+                PatientId = g.Key.AccountId,
+                g.Key.Currency,
+                g.Key.AccountType,
                 Balance = ((decimal?)g.Sum(l => l.Debit) ?? 0m) - ((decimal?)g.Sum(l => l.Credit) ?? 0m)
             })
-            .ToDictionaryAsync(b => b.PatientId, b => b.Balance);
+            .ToListAsync();
+
+        var journalBalances = journalBalanceRows
+            .GroupBy(row => row.PatientId)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .GroupBy(row => string.IsNullOrWhiteSpace(row.Currency) ? "YER" : row.Currency)
+                    .Select(currencyGroup =>
+                    {
+                        var receivable = currencyGroup
+                            .Where(row => row.AccountType == JournalAccountType.PatientReceivable)
+                            .Sum(row => row.Balance);
+                        var advance = currencyGroup
+                            .Where(row => row.AccountType == JournalAccountType.PatientAdvance)
+                            .Sum(row => row.Balance);
+                        return new PatientCurrencyLedgerBalance(
+                            currencyGroup.Key,
+                            receivable,
+                            advance,
+                            receivable + advance,
+                            Math.Max(0m, -advance));
+                    })
+                    .OrderBy(balance => balance.Currency)
+                    .ToList());
 
         var query = db.Patients
             .Where(p => p.IsActive)
@@ -1490,7 +1524,11 @@ public partial class FinanceV3Controller
         // Apply JournalLine balance in memory (can't translate dictionary lookup to SQL)
         var patients = patientsRaw.Select(p =>
         {
-            var journalBal = journalBalances.GetValueOrDefault(p.PatientId);
+            var currencyBalances = journalBalances.GetValueOrDefault(p.PatientId) ?? [];
+            var hasForeignCurrencyBalance = currencyBalances.Any(balance => balance.Currency != "YER");
+            var displayBalance = hasForeignCurrencyBalance
+                ? currencyBalances.FirstOrDefault(balance => balance.Currency == "YER")?.Balance ?? 0m
+                : currencyBalances.Sum(balance => balance.Balance);
             return new
             {
                 p.PatientId,
@@ -1500,10 +1538,12 @@ public partial class FinanceV3Controller
                 p.TotalInvoiced,
                 p.TotalPaid,
                 p.TotalRefunds,
-                Balance = journalBal, // JournalLine canonical balance
+                Balance = displayBalance,
                 p.OutstandingInvoices,
                 p.ActiveContracts,
-                HasOutstanding = journalBal > 0
+                HasOutstanding = currencyBalances.Any(balance => balance.Balance > 0),
+                HasForeignCurrencyBalance = hasForeignCurrencyBalance,
+                CurrencyBalances = currencyBalances
             };
         }).ToList();
 

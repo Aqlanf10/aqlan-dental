@@ -60,9 +60,9 @@ export function PatientAccountsTab() {
           columns={[
             { key: "patientNumber", label: "رقم المريض" },
             { key: "patientName", label: "الاسم" },
-            { key: "totalInvoiced", label: "إجمالي الفواتير", render: (r) => formatYER(r.totalInvoiced) },
-            { key: "totalPaid", label: "إجمالي المدفوع", render: (r) => formatYER(r.totalPaid) },
-            { key: "balance", label: "الرصيد", render: (r) => <span style={{ color: r.balance > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.balance)}</span> },
+            { key: "totalInvoiced", label: "إجمالي الفواتير", render: (r) => r.hasForeignCurrencyBalance ? <span style={{ color: tokens.warningText }}>حسب العملة</span> : formatYER(r.totalInvoiced) },
+            { key: "totalPaid", label: "إجمالي المدفوع", render: (r) => r.hasForeignCurrencyBalance ? <span style={{ color: tokens.warningText }}>حسب العملة</span> : formatYER(r.totalPaid) },
+            { key: "balance", label: "الرصيد", render: (r) => r.hasForeignCurrencyBalance ? <span style={{ color: tokens.warningText, fontWeight: 700 }}>كشف العملات</span> : <span style={{ color: r.balance > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.balance)}</span> },
             { key: "hasOutstanding", label: "معلّق", render: (r) => r.hasOutstanding ? <AlertTriangle className="w-4 h-4" style={{ color: tokens.warningBorder }} /> : <CheckCircle2 className="w-4 h-4" style={{ color: tokens.successBorder }} /> },
           ]}
         />

@@ -47,6 +47,7 @@ internal static class FinanceMappers
         Currency = p.Currency,
         AccountCurrency = NormalizeCurrency(p.AccountCurrency),
         ExchangeRateToAccountCurrency = p.ExchangeRateToAccountCurrency == 0 ? 1m : p.ExchangeRateToAccountCurrency,
+        ExchangeRateToYer = p.ExchangeRateToYer,
         AppliedAmount = p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount,
         ExchangeRateSource = p.ExchangeRateSource,
         PaymentDate = p.PaymentDate.ToString("yyyy-MM-dd"),

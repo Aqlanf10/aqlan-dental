@@ -112,6 +112,10 @@ const schema = z.object({
       message: "المبلغ يجب أن يكون أكبر من صفر",
     }),
   paymentMethod: z.string().min(1, { message: "طريقة الدفع مطلوبة" }),
+  currency: z.enum(["YER", "SAR", "USD"]),
+  accountCurrency: z.enum(["YER", "SAR", "USD"]),
+  exchangeRateToAccountCurrency: z.string().optional(),
+  exchangeRateToYer: z.string().optional(),
   serviceDescription: z.string().optional(),
   notes: z.string().optional(),
   contractId: z.string().optional(),
@@ -179,6 +183,10 @@ export function PaymentModal({
     resolver: zodResolver(schema),
     defaultValues: {
       amount: amount ? String(amount) : "",
+      currency: "YER",
+      accountCurrency: "YER",
+      exchangeRateToAccountCurrency: "",
+      exchangeRateToYer: "",
       paymentMethod: "cash",
       serviceDescription: "",
       notes: "",
@@ -200,6 +208,10 @@ export function PaymentModal({
     if (open) {
       reset({
         amount: amount ? String(amount) : "",
+        currency: "YER",
+        accountCurrency: "YER",
+        exchangeRateToAccountCurrency: "",
+        exchangeRateToYer: "",
         paymentMethod: "cash",
         serviceDescription: "",
         notes: "",
@@ -250,6 +262,17 @@ export function PaymentModal({
     const payload = {
       patientId,
       amount: numAmount,
+      currency: formData.currency,
+      accountCurrency: formData.accountCurrency,
+      exchangeRateToAccountCurrency: formData.exchangeRateToAccountCurrency
+        ? parseFloat(formData.exchangeRateToAccountCurrency)
+        : undefined,
+      exchangeRateToYer: formData.exchangeRateToYer
+        ? parseFloat(formData.exchangeRateToYer)
+        : undefined,
+      exchangeRateSource: formData.exchangeRateToAccountCurrency || formData.exchangeRateToYer
+        ? "manual"
+        : undefined,
       paymentMethod: formData.paymentMethod,
       serviceDescription: serviceDescription || undefined,
       notes: formData.notes?.trim() || undefined,
@@ -399,6 +422,60 @@ export function PaymentModal({
                 {errors.amount.message}
               </p>
             )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>
+                عملة الدفع
+              </label>
+              <select className={inputCls()} {...register("currency")}>
+                <option value="YER">ريال يمني</option>
+                <option value="SAR">ريال سعودي</option>
+                <option value="USD">دولار أمريكي</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>
+                عملة الحساب
+              </label>
+              <select className={inputCls()} {...register("accountCurrency")}>
+                <option value="YER">ريال يمني</option>
+                <option value="SAR">ريال سعودي</option>
+                <option value="USD">دولار أمريكي</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>
+                سعر التحويل للحساب
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.000001"
+                dir="ltr"
+                placeholder="من إعدادات اليوم"
+                className={inputCls()}
+                {...register("exchangeRateToAccountCurrency")}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>
+                سعر عملة الدفع مقابل اليمني
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.000001"
+                dir="ltr"
+                placeholder="من إعدادات اليوم"
+                className={inputCls()}
+                {...register("exchangeRateToYer")}
+              />
+            </div>
           </div>
 
           {/* Payment method */}

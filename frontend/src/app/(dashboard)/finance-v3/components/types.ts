@@ -52,6 +52,8 @@ export interface PatientBalance {
   outstandingInvoices: number;
   activeContracts: number;
   hasOutstanding: boolean;
+  hasForeignCurrencyBalance?: boolean;
+  currencyBalances?: PatientCurrencyBalance[];
 }
 
 export interface PatientBalanceDetail {

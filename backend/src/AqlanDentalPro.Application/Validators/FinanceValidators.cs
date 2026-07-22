@@ -67,6 +67,10 @@ public sealed class CreatePaymentRequestValidator : AbstractValidator<CreatePaym
             .GreaterThan(0).WithMessage("سعر الصرف يجب أن يكون أكبر من صفر")
             .When(x => x.ExchangeRateToAccountCurrency.HasValue);
 
+        RuleFor(x => x.ExchangeRateToYer)
+            .GreaterThan(0).WithMessage("سعر العملة مقابل الريال يجب أن يكون أكبر من صفر")
+            .When(x => x.ExchangeRateToYer.HasValue);
+
 
         RuleFor(x => x.ServiceDescription)
             .MaximumLength(500).WithMessage("وصف الخدمة يجب ألا يتجاوز 500 حرف")

@@ -10,6 +10,14 @@ namespace AqlanDentalPro.API.Controllers;
 
 public partial class FinanceV3Controller
 {
+    private sealed record TreasurySessionMetadata(TreasuryType Type, string Currency);
+
+    private static bool IsYemeniCurrency(string? currency) =>
+        string.IsNullOrWhiteSpace(currency) || string.Equals(currency.Trim(), "YER", StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeCurrency(string? currency) =>
+        string.IsNullOrWhiteSpace(currency) ? "YER" : currency.Trim().ToUpperInvariant();
+
     // ─── Cashier Sessions Active (Finance V3) ──────────────────────────────
 
     /// <summary>
@@ -56,9 +64,9 @@ public partial class FinanceV3Controller
 
         // Load treasury types for payment method mapping
         var treasuryIds = sessionJournalLines.Select(l => l.AccountId).Distinct().ToList();
-        var treasuryTypes = await db.Treasuries
+        var treasuryMetadata = await db.Treasuries
             .Where(t => treasuryIds.Contains(t.Id))
-            .ToDictionaryAsync(t => t.Id, t => (TreasuryType?)t.Type);
+            .ToDictionaryAsync(t => t.Id, t => new TreasurySessionMetadata(t.Type, t.Currency));
 
         // Classify each line by payment method (Treasury.Type) and direction (Debit/Credit)
         // Vault-type treasury → cash, Bank-type treasury → bank/card
@@ -67,9 +75,12 @@ public partial class FinanceV3Controller
 
         foreach (var line in sessionJournalLines)
         {
-            var tType = treasuryTypes.GetValueOrDefault(line.AccountId);
-            var isCash = tType == TreasuryType.Vault || tType == null; // Vault or unknown → cash
-            var isBank = tType == TreasuryType.Bank;                       // bank account
+            var treasury = treasuryMetadata.GetValueOrDefault(line.AccountId);
+            if (treasury != null && !IsYemeniCurrency(treasury.Currency))
+                continue;
+
+            var isCash = treasury?.Type == TreasuryType.Vault || treasury == null;
+            var isBank = treasury?.Type == TreasuryType.Bank;
 
             if (line.Debit > 0) // Inflow (money received into treasury)
             {
@@ -85,7 +96,32 @@ public partial class FinanceV3Controller
 
         var cardInflows = bankInflows;
         var cardOutflows = bankOutflows;
-        var totalCollections = sessionJournalLines.Where(l => l.Debit > 0).Sum(l => l.Debit);
+        var totalCollections = cashInflows + bankInflows;
+        var foreignCurrencyActivity = sessionJournalLines
+            .Select(line => new
+            {
+                Currency = treasuryMetadata.TryGetValue(line.AccountId, out var treasury)
+                    ? NormalizeCurrency(treasury.Currency)
+                    : "YER",
+                IsCash = !treasuryMetadata.TryGetValue(line.AccountId, out var treasuryType)
+                    || treasuryType.Type == TreasuryType.Vault,
+                line.Debit,
+                line.Credit
+            })
+            .Where(line => !IsYemeniCurrency(line.Currency))
+            .GroupBy(line => line.Currency)
+            .OrderBy(group => group.Key)
+            .Select(group => new
+            {
+                Currency = group.Key,
+                CashInflows = group.Where(line => line.IsCash).Sum(line => line.Debit),
+                CashOutflows = group.Where(line => line.IsCash).Sum(line => line.Credit),
+                BankInflows = group.Where(line => !line.IsCash).Sum(line => line.Debit),
+                BankOutflows = group.Where(line => !line.IsCash).Sum(line => line.Credit),
+                NetCash = group.Where(line => line.IsCash).Sum(line => line.Debit - line.Credit),
+                NetBank = group.Where(line => !line.IsCash).Sum(line => line.Debit - line.Credit)
+            })
+            .ToList();
 
         return Ok(new
         {
@@ -107,6 +143,7 @@ public partial class FinanceV3Controller
             Status = session.Status.ToString(),
             session.Notes,
             session.TreasuryId,
+            ForeignCurrencyActivity = foreignCurrencyActivity,
             TotalCollections = totalCollections
         });
     }
@@ -182,9 +219,9 @@ public partial class FinanceV3Controller
 
             // Load treasury types for payment method mapping
             var treasuryIds = sessionJournalLines.Select(l => l.AccountId).Distinct().ToList();
-            var treasuryTypes = await db.Treasuries
+            var treasuryMetadata = await db.Treasuries
                 .Where(t => treasuryIds.Contains(t.Id))
-                .ToDictionaryAsync(t => t.Id, t => (TreasuryType?)t.Type);
+                .ToDictionaryAsync(t => t.Id, t => new TreasurySessionMetadata(t.Type, t.Currency));
 
             // Classify each line by payment method (Treasury.Type) and direction (Debit/Credit)
             decimal cashInflows = 0, cashOutflows = 0;
@@ -192,9 +229,12 @@ public partial class FinanceV3Controller
 
             foreach (var line in sessionJournalLines)
             {
-                var tType = treasuryTypes.GetValueOrDefault(line.AccountId);
-                var isCash = tType == TreasuryType.Vault || tType == null;
-                var isBank = tType == TreasuryType.Bank;
+                var treasury = treasuryMetadata.GetValueOrDefault(line.AccountId);
+                if (treasury != null && !IsYemeniCurrency(treasury.Currency))
+                    continue;
+
+                var isCash = treasury?.Type == TreasuryType.Vault || treasury == null;
+                var isBank = treasury?.Type == TreasuryType.Bank;
 
                 if (line.Debit > 0) // Inflow
                 {
@@ -210,6 +250,31 @@ public partial class FinanceV3Controller
 
             var cardInflows = bankInflows;
             var cardOutflows = bankOutflows;
+            var foreignCurrencyActivity = sessionJournalLines
+                .Select(line => new
+                {
+                    Currency = treasuryMetadata.TryGetValue(line.AccountId, out var treasury)
+                        ? NormalizeCurrency(treasury.Currency)
+                        : "YER",
+                    IsCash = !treasuryMetadata.TryGetValue(line.AccountId, out var treasuryType)
+                        || treasuryType.Type == TreasuryType.Vault,
+                    line.Debit,
+                    line.Credit
+                })
+                .Where(line => !IsYemeniCurrency(line.Currency))
+                .GroupBy(line => line.Currency)
+                .OrderBy(group => group.Key)
+                .Select(group => new
+                {
+                    Currency = group.Key,
+                    CashInflows = group.Where(line => line.IsCash).Sum(line => line.Debit),
+                    CashOutflows = group.Where(line => line.IsCash).Sum(line => line.Credit),
+                    BankInflows = group.Where(line => !line.IsCash).Sum(line => line.Debit),
+                    BankOutflows = group.Where(line => !line.IsCash).Sum(line => line.Credit),
+                    NetCash = group.Where(line => line.IsCash).Sum(line => line.Debit - line.Credit),
+                    NetBank = group.Where(line => !line.IsCash).Sum(line => line.Debit - line.Credit)
+                })
+                .ToList();
             session.ExpectedClosingCash = session.OpeningBalance + cashInflows - cashOutflows;
             session.ExpectedClosingCard = cardInflows - cardOutflows;
             session.ExpectedClosingBank = bankInflows - bankOutflows;
@@ -300,6 +365,7 @@ public partial class FinanceV3Controller
                 session.ExpectedClosingBank,
                 session.ActualClosingBank,
                 session.ShortageOrSurplus,
+                ForeignCurrencyActivity = foreignCurrencyActivity,
                 Status = session.Status.ToString(),
                 message = "تم إقفال صندوق الاستقبال وترحيل المبالغ وتأمين القيود بنجاح"
             });

@@ -13,7 +13,7 @@ import {
 import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
-import type { CashierSession, CloseSessionRequest } from "./types";
+import type { CashierForeignCurrencyActivity, CashierSession, CloseSessionRequest } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, StatusBadge, tokens, inputStyle, labelStyle, btnPrimary, btnDanger, btnGhost } from "./FinanceSharedUI";
 import { formatYER, extractErrorMessage, safeFormatDateTime } from "./FinanceHelpers";
 
@@ -28,6 +28,7 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
   const [actualCash, setActualCash] = useState("");
   const [actualCard, setActualCard] = useState("");
   const [actualBank, setActualBank] = useState("");
+  const [foreignCurrencyActivity, setForeignCurrencyActivity] = useState<CashierForeignCurrencyActivity[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [confirmReconcile, setConfirmReconcile] = useState<string | null>(null);
 
@@ -86,15 +87,18 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
         expectedClosingCash: number;
         expectedClosingCard: number;
         expectedClosingBank: number;
+        foreignCurrencyActivity?: CashierForeignCurrencyActivity[];
       }>(`/api/cashier-sessions/${s.id}`);
       setActualCash(String(detail.expectedClosingCash ?? 0));
       setActualCard(String(detail.expectedClosingCard ?? 0));
       setActualBank(String(detail.expectedClosingBank ?? 0));
+      setForeignCurrencyActivity(detail.foreignCurrencyActivity ?? []);
     } catch {
       // Fallback: use list values if available
       setActualCash(String(s.expectedClosingCash ?? 0));
       setActualCard(String(s.expectedClosingCard ?? 0));
       setActualBank(String(s.expectedClosingBank ?? 0));
+      setForeignCurrencyActivity(s.foreignCurrencyActivity ?? []);
     }
   };
 
@@ -110,6 +114,7 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
       await api.post(`/api/cashier-sessions/close`, payload);
       toast.success("تم إقفال الوردية بنجاح");
       setCloseSession(null);
+      setForeignCurrencyActivity([]);
       fetchSessions();
     } catch (err) {
       toast.error(extractErrorMessage(err, "فشل في إقفال الوردية"));
@@ -260,7 +265,7 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
       </Modal>
 
       {/* ═══ Close Session Modal ═══ */}
-      <Modal open={!!closeSession} onClose={() => setCloseSession(null)} title="إقفال الوردية">
+      <Modal open={!!closeSession} onClose={() => { setCloseSession(null); setForeignCurrencyActivity([]); }} title="إقفال الوردية">
         {closeSession && (
           <div className="space-y-4">
             <div className="rounded-md p-3" style={{ backgroundColor: tokens.infoBg, border: `1px solid ${tokens.infoBorder}` }}>
@@ -268,6 +273,19 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
                 أدخل العد الفعلي لكل وسيلة دفع. سيتم حساب العجز/الفائض تلقائياً بناءً على القيم المتوقعة.
               </p>
             </div>
+
+            {foreignCurrencyActivity.length > 0 && (
+              <div className="rounded-md p-3 space-y-2" style={{ backgroundColor: tokens.warningBg, border: `1px solid ${tokens.warningBorder}` }}>
+                <p className="text-xs font-bold" style={{ color: tokens.warningText }}>حركات العملات الأجنبية في الخزائن</p>
+                <p className="text-[11px]" style={{ color: tokens.warningText }}>هذه الحركات لا تدخل في عجز أو فائض الدرج اليمني، وتبقى مسجلة في خزائن عملتها.</p>
+                {foreignCurrencyActivity.map((activity) => (
+                  <div key={activity.currency} className="flex items-center justify-between text-xs">
+                    <span className="font-semibold">{activity.currency}</span>
+                    <span dir="ltr">Cash {activity.netCash.toLocaleString()} | Bank {activity.netBank.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">

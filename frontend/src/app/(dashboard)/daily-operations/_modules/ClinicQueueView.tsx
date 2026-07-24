@@ -17,6 +17,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { HubConnectionBuilder, type HubConnection, LogLevel } from "@microsoft/signalr";
 import { useAuthStore } from "@/stores/authStore";
 import { buildAnnouncementText } from "@/lib/clinic-display-announcement";
+import { buildQueueReorderPayload } from "@/lib/clinicQueueReorder";
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface ClinicQueueItem {
@@ -403,12 +404,13 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
     }
 
     try {
-      await api.post("/api/clinic-queue/reorder", {
-        orders: [
+      await api.post(
+        "/api/clinic-queue/reorder",
+        buildQueueReorderPayload(
           { id: item.id, sortOrder: swapItem.sortOrder },
           { id: swapItem.id, sortOrder: item.sortOrder },
-        ],
-      });
+        ),
+      );
       fetchQueue(); // sync with backend
     } catch {
       fetchQueue(); // revert on error

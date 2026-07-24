@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 
 namespace AqlanDentalPro.API.Middleware;
@@ -16,18 +17,27 @@ public sealed class QueueDisplayAuthenticationMiddleware(RequestDelegate next)
         "/api/public/queue",
     ];
 
-    public async Task InvokeAsync(HttpContext context)
+    public async Task InvokeAsync(HttpContext context, IAuthorizationService authorization)
     {
         var requestPath = context.Request.Path.Value;
         var protectsPatientQueue = ProtectedPaths.Any(path =>
             string.Equals(requestPath, path, StringComparison.OrdinalIgnoreCase));
 
-        if (protectsPatientQueue && context.User.Identity?.IsAuthenticated != true)
+        if (!protectsPatientQueue)
         {
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await next(context);
+            return;
+        }
+
+        var result = await authorization.AuthorizeAsync(context.User, resource: null, "StaffOnly");
+        if (!result.Succeeded)
+        {
+            context.Response.StatusCode = context.User.Identity?.IsAuthenticated == true
+                ? StatusCodes.Status403Forbidden
+                : StatusCodes.Status401Unauthorized;
             await context.Response.WriteAsJsonAsync(new
             {
-                message = "يلزم تسجيل الدخول لعرض شاشة الانتظار",
+                message = "يلزم تسجيل دخول أحد موظفي المركز لعرض شاشة الانتظار",
             });
             return;
         }

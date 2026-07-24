@@ -1,27 +1,30 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Pill } from "lucide-react";
 import api from "@/lib/api";
 import { EmptyState } from "./EmptyState";
-import { cn, formatArabicDate } from "@/lib/utils";
+import { formatArabicDate } from "@/lib/utils";
 
+// CORE-PAT-005: the real list payload from GET /api/prescriptions. The old
+// shape (date/status/items[]) matched nothing the API sends — every field was
+// undefined, and because the response is an envelope the component also called
+// .map on a non-array and crashed the patient file. Drug details live only on
+// GET /api/prescriptions/{id}, so the list links out instead of faking them.
 interface PrescriptionDto {
   id: string;
-  date: string;
+  createdAt: string;
   doctorName?: string;
-  status?: string;
+  diagnosis?: string;
+  drugCount: number;
   notes?: string;
-  visitId?: string;
-  items?: { medicationName: string; dosage: string; frequency: string; duration: string }[];
 }
 
-const PRESCRIPTION_STATUS_LABELS: Record<string, string> = {
-  active: "نشطة",
-  completed: "مكتملة",
-  cancelled: "ملغاة",
-  draft: "مسودة",
-};
+interface PrescriptionListResponse {
+  data: PrescriptionDto[];
+  total: number;
+}
 
 interface PrescriptionsTabProps {
   patientId: string;
@@ -35,8 +38,9 @@ export function PrescriptionsTab({ patientId }: PrescriptionsTabProps) {
 
   useEffect(() => {
     setFetchError(false);
-    api.get<PrescriptionDto[]>(`/api/prescriptions?patientId=${patientId}`)
-      .then((r) => setPrescriptions(r.data))
+    setLoading(true);
+    api.get<PrescriptionListResponse>(`/api/prescriptions?patientId=${patientId}`)
+      .then((r) => setPrescriptions(r.data?.data ?? []))
       .catch(() => { setFetchError(true); })
       .finally(() => setLoading(false));
   }, [patientId, retryKey]);
@@ -60,7 +64,7 @@ export function PrescriptionsTab({ patientId }: PrescriptionsTabProps) {
     );
   }
 
-  if (prescriptions.length === 0) {
+  if (!Array.isArray(prescriptions) || prescriptions.length === 0) {
     return (
       <EmptyState
         icon={Pill}
@@ -80,37 +84,17 @@ export function PrescriptionsTab({ patientId }: PrescriptionsTabProps) {
           <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
             <div className="flex items-center gap-2">
               <Pill className="w-4 h-4 text-rose-500 flex-shrink-0" />
-              <span className="text-sm font-medium text-[#0d2137]">{formatArabicDate(rx.date)}</span>
+              <span className="text-sm font-medium text-[#0d2137]">{formatArabicDate(rx.createdAt)}</span>
               {rx.doctorName && <span className="text-xs text-[#64748b]">{rx.doctorName}</span>}
-              {rx.visitId && (
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-medium">
-                  مرتبط بزيارة
-                </span>
-              )}
             </div>
-            {rx.status && (
-              <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium",
-                rx.status === "active" ? "bg-green-50 text-green-700" :
-                rx.status === "draft" ? "bg-yellow-50 text-yellow-700" :
-                "bg-[#f1f5f9] text-[#64748b]"
-              )}>
-                {PRESCRIPTION_STATUS_LABELS[rx.status] ?? rx.status}
-              </span>
-            )}
+            <Link
+              href={`/prescriptions/${rx.id}`}
+              className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-rose-50 text-rose-700 hover:bg-rose-100 transition"
+            >
+              {rx.drugCount} دواء — عرض وطباعة
+            </Link>
           </div>
-          {rx.items && rx.items.length > 0 && (
-            <div className="space-y-1.5 mt-2">
-              {rx.items.map((item, idx) => (
-                <div key={idx} className="text-xs bg-[#f7fafd] rounded p-2">
-                  <span className="font-semibold text-[#0d2137]">{item.medicationName}</span>
-                  <span className="text-[#64748b] mx-1">—</span>
-                  <span className="text-[#64748b]">{item.dosage}</span>
-                  {item.frequency && <span className="text-[#94a3b8] mx-1">· {item.frequency}</span>}
-                  {item.duration && <span className="text-[#94a3b8] mx-1">· {item.duration}</span>}
-                </div>
-              ))}
-            </div>
-          )}
+          {rx.diagnosis && <p className="text-xs text-[#64748b] mt-1">التشخيص: {rx.diagnosis}</p>}
           {rx.notes && <p className="text-xs text-[#64748b] mt-2">{rx.notes}</p>}
         </div>
       ))}

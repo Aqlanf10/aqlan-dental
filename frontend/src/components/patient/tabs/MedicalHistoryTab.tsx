@@ -11,6 +11,25 @@ interface MedicalHistoryTabProps {
   initialData?: MedicalHistory;
 }
 
+// CORE-PAT-007: the patient form writes the backend-validated values
+// "Yes" | "No" | "N/A" (MedicalHistoryDtoValidator). This tab used to write
+// "yes"/"no"/"na" — "na" fails validation outright — and read them
+// case-sensitively, so a patient registered as PREGNANT displayed
+// "لا ينطبق" here. Pregnancy gates radiographs, so this must not drift again.
+const PREGNANCY_OPTIONS: { value: string; label: string }[] = [
+  { value: "N/A", label: "لا ينطبق" },
+  { value: "No", label: "لا يوجد حمل" },
+  { value: "Yes", label: "يوجد حمل" },
+];
+
+function pregnancyLabel(raw: string | null | undefined): string {
+  switch ((raw ?? "").trim().toLowerCase()) {
+    case "yes": return "نعم";
+    case "no": return "لا";
+    default: return "لا ينطبق";
+  }
+}
+
 export function MedicalHistoryTab({ patientId, initialData }: MedicalHistoryTabProps) {
   const [data, setData] = useState<MedicalHistory | null>(initialData ?? null);
   const [loading, setLoading] = useState(!initialData);
@@ -41,7 +60,7 @@ export function MedicalHistoryTab({ patientId, initialData }: MedicalHistoryTabP
         currentMedications: "",
         drugAllergies: "",
         bleedingDisorders: false,
-        isPregnant: "na",
+        isPregnant: "N/A",
         tmjProblems: false,
         previousSurgeries: "",
         notes: "",
@@ -122,10 +141,14 @@ export function MedicalHistoryTab({ patientId, initialData }: MedicalHistoryTabP
           </div>
           <div>
             <label className="text-xs text-[#64748b] block mb-1">الحمل</label>
-            <select value={form.isPregnant ?? "na"} onChange={(e) => setForm({ ...form, isPregnant: e.target.value })} className="w-full text-sm border border-[#e8f0f9] rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue bg-white">
-              <option value="na">لا ينطبق</option>
-              <option value="yes">نعم</option>
-              <option value="no">لا</option>
+            <select
+              value={PREGNANCY_OPTIONS.find(o => o.value.toLowerCase() === (form.isPregnant ?? "").trim().toLowerCase())?.value ?? "N/A"}
+              onChange={(e) => setForm({ ...form, isPregnant: e.target.value })}
+              className="w-full text-sm border border-[#e8f0f9] rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue bg-white"
+            >
+              {PREGNANCY_OPTIONS.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
             </select>
           </div>
           <div className="flex items-center gap-3">
@@ -177,7 +200,7 @@ export function MedicalHistoryTab({ patientId, initialData }: MedicalHistoryTabP
           ["الأدوية الحالية", data.currentMedications],
           ["حساسية الأدوية", data.drugAllergies],
           ["اضطرابات النزيف", data.bleedingDisorders ? "نعم" : "لا"],
-          ["الحمل", data.isPregnant === "yes" ? "نعم" : data.isPregnant === "no" ? "لا" : "لا ينطبق"],
+          ["الحمل", pregnancyLabel(data.isPregnant)],
           ["مشاكل TMJ", data.tmjProblems ? "نعم" : "لا"],
           ["العمليات السابقة", data.previousSurgeries],
           ["ملاحظات", data.notes],

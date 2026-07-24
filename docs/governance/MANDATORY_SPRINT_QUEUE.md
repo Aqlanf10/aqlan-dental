@@ -408,6 +408,21 @@
 - Provider-managed models with undisclosed artifacts remain `observed` and cannot be promoted. Existing unsaved-draft and doctor-review gates remain unchanged.
 - **Exit:** focused model/lineage/migration tests, old-analysis compatibility, ceph/frontend regression suites, full builds, documentation/schema contract, PR CI, and deployment checks pass. This exit proves traceability, not clinical accuracy.
 
+### 🔵 CORE-PAT — تدقيق وإصلاح وحدة المرضى (توجيه مالك مباشر 2026-07-24)
+- **التقرير:** `docs/audits/PATIENTS_MODULE_AUDIT_2026-07-24.md` (خلفية + واجهة +
+  ترابط وازدواجية، على خط الأساس `9909b16`).
+- **الشريحة الأولى (هذا الـPR):** إصلاح عطلين يُسقطان صفحة المريض
+  (`AppointmentsTab` و`PrescriptionsTab`)، ورصيد مالي كاذب بصفر عند فشل الملخّص،
+  وثغرة قراءة بيانات مريض عبر `/api/appointments/patient/{id}`، وتوحيد حساب العمر،
+  ومواءمة حالة الحمل مع عقد الخادم، وخطأ أسبقية في الجدول الزمني.
+- **الشرائح التالية (موثّقة بالتقرير، بالترتيب):** (1) الأمن: تصفية
+  `SearchController` وحد `/api/public/queue` وتوحيد صلاحية رصيد المريض؛
+  (2) تكرار سجلات المرضى: توحيد تطبيع الهاتف وتمرير تحويل الحجز عبر
+  `PatientService.CreateAsync`؛ (3) اتساق الرصيد بين البوابة والطاقم؛
+  (4) الإخفاقات الصامتة المتبقية وترقيم صفحات جدول المرضى.
+- **معيار الخروج للشريحة الأولى:** لا عطل عند فتح أي تبويب لمريض لديه مواعيد أو
+  وصفات؛ الرصيد لا يُعرض رقمًا عند فشل التحميل؛ الفحوصات الخمسة خضراء.
+
 ---
 
 ## آلية التحديث

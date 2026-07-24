@@ -18,6 +18,7 @@ import type { LucideIcon } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
 import api from "@/lib/api";
 import { extractErrorMessage } from "@/lib/errors";
+import { patientBalanceView } from "@/lib/patientSummary";
 import { cn, GENDER_LABELS, formatArabicDate, formatPhoneForWhatsApp } from "@/lib/utils";
 import { isClinicalRole, isAccountantRole, canViewPatientFinance } from "@/lib/roles";
 import { financeV3ContractsUrl } from "@/lib/financeRoutes";
@@ -116,6 +117,11 @@ export default function PatientProfilePage() {
 
   const [patient,      setPatient]      = useState<PatientProfile | null>(null);
   const [summary,      setSummary]      = useState<PatientSummary | null>(null);
+  // CORE-PAT-001: a failed summary must never render as real data — the balance
+  // card used to fall back to 0, so a patient WITH debt looked fully paid.
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [relatedCasesError, setRelatedCasesError] = useState<string | null>(null);
+  const retrySummary = () => setFinanceRefreshKey(k => k + 1);
   const [orthoCases,   setOrthoCases]   = useState<OrthoCase[]>([]);
   const [surgeryCases, setSurgeryCases] = useState<SurgeryCase[]>([]);
   // Sprint Patient-Finance-Ledger: financeRefreshKey triggers re-fetch of summary & finance tab
@@ -318,12 +324,21 @@ export default function PatientProfilePage() {
       })
       .finally(() => setLoading(false));
 
+    setSummaryError(null);
     api.get<PatientSummary>(`/api/patients/${id}/summary`)
-      .then(r => setSummary(r.data)).catch(() => {});
+      .then(r => { setSummary(r.data); setSummaryError(null); })
+      .catch(err => {
+        setSummary(null);
+        setSummaryError(extractErrorMessage(err, "تعذر تحميل ملخص المريض"));
+      });
+
+    setRelatedCasesError(null);
     api.get<OrthoCase[]>(`/api/ortho-cases?patientId=${id}&pageSize=10`)
-      .then(r => setOrthoCases(r.data)).catch(() => {});
+      .then(r => setOrthoCases(r.data))
+      .catch(err => setRelatedCasesError(extractErrorMessage(err, "تعذر تحميل الحالات المرتبطة")));
     api.get<{ data: SurgeryCase[] }>(`/api/surgery-cases?patientId=${id}&pageSize=10`)
-      .then(r => setSurgeryCases(r.data.data ?? [])).catch(() => {});
+      .then(r => setSurgeryCases(r.data.data ?? []))
+      .catch(err => setRelatedCasesError(extractErrorMessage(err, "تعذر تحميل الحالات المرتبطة")));
   }, [id, financeRefreshKey]);
 
   useEffect(() => {
@@ -381,11 +396,19 @@ export default function PatientProfilePage() {
 
       case "info":
         return (
-          <BasicInfoTab
-            patient={patient}
-            orthoCases={orthoCases}
-            surgeryCases={surgeryCases}
-          />
+          <>
+            {relatedCasesError && (
+              <div role="alert" className="mb-3 flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+                <span>{relatedCasesError}</span>
+                <button type="button" onClick={retrySummary} className="underline decoration-dotted">إعادة المحاولة</button>
+              </div>
+            )}
+            <BasicInfoTab
+              patient={patient}
+              orthoCases={orthoCases}
+              surgeryCases={surgeryCases}
+            />
+          </>
         );
 
       case "medical-history":
@@ -568,8 +591,11 @@ export default function PatientProfilePage() {
   );
 
   const initials    = (patient.firstName[0] ?? "") + (patient.lastName[0] ?? "");
-  const outstanding = summary?.totalOutstanding ?? 0;
-  const hasDebt     = outstanding > 0;
+  // CORE-PAT-001: unknown balance is NOT a zero balance (see lib/patientSummary).
+  const balance     = patientBalanceView(summary, summaryError);
+  const summaryLoaded = balance.state === "loaded";
+  const outstanding = balance.outstanding ?? 0;
+  const hasDebt     = balance.hasDebt;
 
   // ─── Render ──────────────────────────────────────────────────────────────
 
@@ -599,9 +625,22 @@ export default function PatientProfilePage() {
                 <span className="block text-[10px] text-orange-600 font-bold uppercase mb-1 tracking-wider">
                   <Coins className="inline w-3 h-3 ml-1" /> الرصيد المالي
                 </span>
-                <span className="text-lg font-black text-orange-700" dir="ltr">
-                  {outstanding.toLocaleString()} ر.ي
-                </span>
+                {summaryLoaded ? (
+                  <span className="text-lg font-black text-orange-700" dir="ltr">
+                    {outstanding.toLocaleString()} ر.ي
+                  </span>
+                ) : summaryError ? (
+                  <button
+                    type="button"
+                    title={summaryError}
+                    onClick={(e) => { e.stopPropagation(); retrySummary(); }}
+                    className="block w-full text-[11px] font-bold text-orange-700 underline decoration-dotted"
+                  >
+                    تعذر تحميل الرصيد — إعادة المحاولة
+                  </button>
+                ) : (
+                  <span className="text-lg font-black text-orange-300" dir="ltr">…</span>
+                )}
                 <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-3 h-3 bg-orange-200 rotate-45 border-b border-r border-orange-300" />
               </div>
             )}
@@ -756,7 +795,13 @@ export default function PatientProfilePage() {
         </div>
 
         {/* Quick Stats Grid */}
-        <div className={`overflow-hidden transition-all duration-500 ${isBannerHovered ? 'max-h-16 opacity-100' : 'max-h-0 opacity-0'}`}>
+        <div className={`overflow-hidden transition-all duration-500 ${isBannerHovered ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0'}`}>
+          {summaryError && (
+            <div role="alert" className="mx-6 mb-2 flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-bold text-amber-800">
+              <span>{summaryError}</span>
+              <button type="button" onClick={retrySummary} className="underline decoration-dotted">إعادة المحاولة</button>
+            </div>
+          )}
           <div className="px-6 pb-3 grid grid-cols-6 gap-2">
             {[
               { label: 'المواعيد', value: summary?.totalAppointments ?? '—', bgClass: 'bg-sky-50 border-sky-100', textClass: 'text-sky-700' },

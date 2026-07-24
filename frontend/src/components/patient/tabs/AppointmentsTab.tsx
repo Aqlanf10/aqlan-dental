@@ -13,11 +13,15 @@ interface AppointmentDto {
   id: string;
   patientName?: string;
   doctorName?: string;
-  date: string;
+  // CORE-PAT-004: the API (AppointmentService.ToDto) sends `appointmentDate`
+  // and `appointmentType`. This DTO declared `date`/`treatmentType`, so the
+  // values were undefined — formatArabicDate(undefined) threw RangeError and
+  // the whole patient file fell into the error boundary.
+  appointmentDate: string;
   startTime: string;
   endTime: string;
   status: string;
-  treatmentType?: string;
+  appointmentType?: string;
   notes?: string;
 }
 
@@ -52,8 +56,8 @@ export function AppointmentsTab({ patientId, patientName }: AppointmentsTabProps
   }, [patientId, retryKey]);
 
   const filtered = appointments.filter((a) => {
-    if (fromDate && a.date < fromDate) return false;
-    if (toDate && a.date > toDate) return false;
+    if (fromDate && a.appointmentDate < fromDate) return false;
+    if (toDate && a.appointmentDate > toDate) return false;
     return true;
   });
 
@@ -121,7 +125,7 @@ export function AppointmentsTab({ patientId, patientName }: AppointmentsTabProps
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-medium text-[#0d2137]">
-                      {formatArabicDate(apt.date)}
+                      {formatArabicDate(apt.appointmentDate)}
                     </span>
                     <span className="text-xs text-[#64748b]" dir="ltr">
                       {formatTime(apt.startTime)} – {formatTime(apt.endTime)}
@@ -130,8 +134,8 @@ export function AppointmentsTab({ patientId, patientName }: AppointmentsTabProps
                   {apt.doctorName && (
                     <p className="text-xs text-[#64748b]">{apt.doctorName}</p>
                   )}
-                  {apt.treatmentType && (
-                    <p className="text-xs text-[#94a3b8]">{apt.treatmentType}</p>
+                  {apt.appointmentType && (
+                    <p className="text-xs text-[#94a3b8]">{apt.appointmentType}</p>
                   )}
                 </div>
               </div>

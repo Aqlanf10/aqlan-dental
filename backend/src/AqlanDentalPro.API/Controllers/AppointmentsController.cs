@@ -1,5 +1,6 @@
 using AqlanDentalPro.Application.DTOs.Appointments;
 using AqlanDentalPro.Application.DTOs.WhatsApp;
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
@@ -16,6 +17,13 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/appointments")]
 [Authorize(Policy = "StaffOnly")]
+// CORE-PAT-006 (security): this controller returns PatientName, PatientNumber,
+// CompanionPhone and appointment notes. Without the per-patient access filter a
+// doctor denied by /api/patients/{id} could still read the same patient's
+// identity and history through /api/appointments/patient/{id}. Every other
+// patient-data controller (Visits, Prescriptions, LabOrders, Documents…)
+// already applies it.
+[ServiceFilter(typeof(PatientAccessFilter))]
 public class AppointmentsController(AppointmentService service, AppDbContext db, ICurrentUserService currentUser, IWhatsAppService whatsapp, IEmailService emailService, IRealTimePushService pushService, ILogger<AppointmentsController> logger) : ControllerBase
 {
     /// <summary>

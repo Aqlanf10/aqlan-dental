@@ -2,6 +2,7 @@ using AqlanDentalPro.Application.Common;
 using AqlanDentalPro.Application.DTOs.PatientPortal;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.Domain.Common;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -1135,11 +1136,8 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         return linkedUser?.Email;
     }
 
-    private static int CalculateAge(DateOnly dob)
-    {
-        var today = DateOnly.FromDateTime(DateTime.Today);
-        var age = today.Year - dob.Year;
-        if (dob > today.AddYears(-age)) age--;
-        return age;
-    }
+    // CORE-PAT-003: one shared implementation (Domain/Common/PatientAge), on the
+    // clinic day rather than the server's local day.
+    private static int CalculateAge(DateOnly dob) =>
+        PatientAge.Calculate(dob, ClinicTimeProvider.ClinicToday()) ?? 0;
 }

@@ -602,7 +602,7 @@ export function OverviewTab({ patientId, summary, patient, canViewFinance = fals
                           </div>
                           {ev.status && (
                             <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium", STATUS_COLORS[ev.status] ?? "bg-[#f1f5f9] text-[#64748b]")}>
-                              {APPOINTMENT_STATUS_LABELS[ev.status] ?? ev.status === "signed" ? "موقع" : ev.status}
+                              {ev.status === "signed" ? "موقع" : (APPOINTMENT_STATUS_LABELS[ev.status] ?? ev.status)}
                             </span>
                           )}
                         </div>

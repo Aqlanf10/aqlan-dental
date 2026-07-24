@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { extractErrorMessage } from "@/lib/errors";
 import { toast } from "@/stores/toastStore";
 import { useDoctors } from "@/hooks/useDoctors";
 import { EmptyState } from "./EmptyState";
@@ -140,6 +141,9 @@ interface TreatmentPlanTabProps {
 export function TreatmentPlanTab({ patientId }: TreatmentPlanTabProps) {
   const [steps, setSteps] = useState<TreatmentStep[]>([]);
   const [services, setServices] = useState<ServiceOption[]>([]);
+  // CORE-PAT-002: the catalog failing must not look like "the clinic has no
+  // services" — an empty dropdown with no explanation blocked adding a step.
+  const [servicesError, setServicesError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -177,8 +181,8 @@ export function TreatmentPlanTab({ patientId }: TreatmentPlanTabProps) {
   useEffect(() => {
     api
       .get<ServiceOption[]>("/api/settings/services/active")
-      .then((r) => setServices(r.data))
-      .catch(() => {});
+      .then((r) => { setServices(r.data); setServicesError(null); })
+      .catch((err) => setServicesError(extractErrorMessage(err, "تعذر تحميل كتالوج الخدمات")));
   }, []);
 
   // ─── Summary Cards ───────────────────────────────────────────────────
@@ -555,6 +559,11 @@ export function TreatmentPlanTab({ patientId }: TreatmentPlanTabProps) {
                       <option key={s.id} value={s.id}>{s.arabicName}</option>
                     ))}
                   </select>
+                  {servicesError && (
+                    <p role="alert" className="mt-1 text-[11px] font-bold text-amber-700">
+                      {servicesError} — يمكنك إدخال العنوان يدويًا.
+                    </p>
+                  )}
                 </div>
 
                 {/* Title */}

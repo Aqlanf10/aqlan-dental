@@ -71,12 +71,21 @@ export function formatYemeniRiyal(amount: number): string {
   }).format(amount);
 }
 
-export function formatArabicDate(dateStr: string): string {
+/**
+ * CORE-PAT-004: never throw on bad input. `Intl.DateTimeFormat.format(new
+ * Date(undefined))` raises `RangeError: Invalid time value`, and because these
+ * calls happen during render a single stale DTO field took the entire patient
+ * file down into the error boundary. A missing date now renders as a dash.
+ */
+export function formatArabicDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "—";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "—";
   return new Intl.DateTimeFormat("ar-YE", {
     year: "numeric",
     month: "long",
     day: "numeric",
-  }).format(new Date(dateStr));
+  }).format(d);
 }
 
 export function formatTime(timeStr: string): string {

@@ -2,6 +2,7 @@ using AqlanDentalPro.Application.DTOs.Common;
 using AqlanDentalPro.Application.DTOs.Patients;
 using AqlanDentalPro.Application.Interfaces.Repositories;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Domain.Common;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using Microsoft.Extensions.Configuration;
@@ -522,9 +523,7 @@ public class PatientService(
         FullName = $"{p.FirstName} {p.MiddleName} {p.LastName}".Replace("  ", " ").Trim(),
         Phone = p.Phone,
         Gender = p.Gender?.ToString(),
-        Age = p.DateOfBirth.HasValue
-            ? DateTime.Today.Year - p.DateOfBirth.Value.Year
-            : null,
+        Age = PatientAge.Calculate(p.DateOfBirth, DateOnly.FromDateTime(DateTime.UtcNow)),
         PrimaryDoctorName = p.PrimaryDoctor?.Name,
         BranchName = p.Branch?.Name,
         CreatedAt = p.CreatedAt,
@@ -540,7 +539,7 @@ public class PatientService(
         LastName = p.LastName,
         DateOfBirth = p.DateOfBirth?.ToString("yyyy-MM-dd"),
         Gender = p.Gender?.ToString(),
-        Age = p.DateOfBirth.HasValue ? DateTime.Today.Year - p.DateOfBirth.Value.Year : null,
+        Age = PatientAge.Calculate(p.DateOfBirth, DateOnly.FromDateTime(DateTime.UtcNow)),
         Phone = p.Phone,
         WhatsApp = p.WhatsApp,
         Address = p.Address,

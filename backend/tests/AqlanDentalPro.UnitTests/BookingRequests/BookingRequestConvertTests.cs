@@ -1,3 +1,7 @@
+using Microsoft.Extensions.Configuration;
+using AqlanDentalPro.Infrastructure.Repositories;
+using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.DTOs.BookingRequests;
 using AqlanDentalPro.Application.Validators;
 using AqlanDentalPro.Domain.Entities;
@@ -34,7 +38,19 @@ public class BookingRequestConvertTests
     private static BookingRequestService CreateService(AppDbContext db)
     {
         var logger = new Mock<ILogger<BookingRequestService>>();
-        return new BookingRequestService(db, logger.Object);
+        // CORE-PAT-010: conversion now routes through the real
+        // PatientService.CreateAsync (patient number, normalized phones, portal
+        // account) instead of hand-rolling a Patient row.
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(u => u.IsAdmin).Returns(true);
+        var config = new Mock<IConfiguration>();
+        var portal = new Mock<IPatientPortalService>();
+        portal.Setup(x => x.EnsurePatientAccountAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>()))
+              .ReturnsAsync(("user", "pass"));
+        var patientService = new PatientService(
+            new PatientRepository(db), currentUser.Object, config.Object,
+            portal.Object, new Mock<ILogger<PatientService>>().Object);
+        return new BookingRequestService(db, patientService, logger.Object);
     }
 
     private static Doctor CreateActiveDoctor(AppDbContext db)

@@ -144,8 +144,11 @@ public class FinanceReadService(
                      && i.Status != InvoiceStatus.Draft
                      && i.IsActive));
 
+        // CORE-PAT-012: same cancelled-contract exclusion as
+        // GetPatientFinanceSummaryAsync — the statement and the summary must agree.
         var totalContractedFromContracts = await db.Contracts
-            .Where(c => c.PatientId == patientId)
+            .Where(c => c.PatientId == patientId
+                     && c.Status != ContractStatus.Cancelled)
             .SumAsync(c => (decimal?)c.TotalAmount) ?? 0m;
 
         var totalContractedFromInvoices = await invoicesPredicate(db.Invoices)
@@ -154,7 +157,8 @@ public class FinanceReadService(
         var totalContracted = totalContractedFromContracts + totalContractedFromInvoices;
 
         var totalDiscountsFromContracts = await db.Contracts
-            .Where(c => c.PatientId == patientId)
+            .Where(c => c.PatientId == patientId
+                     && c.Status != ContractStatus.Cancelled)
             .SumAsync(c => (decimal?)c.DiscountAmount) ?? 0m;
 
         var totalDiscountsFromInvoices = await invoicesPredicate(db.Invoices)
@@ -341,8 +345,14 @@ public class FinanceReadService(
         //             `contracts.Sum(c => c.TotalAmount - c.DiscountAmount)`.
         // Now:        single SQL `SELECT SUM(TotalAmount - DiscountAmount) FROM Contracts
         //             WHERE PatientId = @patientId` (returns 0 for empty set).
+        // CORE-PAT-012: exclude CANCELLED contracts from cost — a cancelled
+        // treatment plan is not an obligation (invoices already exclude
+        // Cancelled below; contracts inconsistently did not, so a patient with
+        // an abandoned plan showed phantom debt). Payments stay counted in
+        // totalPaid regardless — received money is received money.
         var contractCost = await db.Contracts
-            .Where(c => c.PatientId == patientId)
+            .Where(c => c.PatientId == patientId
+                     && c.Status != ContractStatus.Cancelled)
             .SumAsync(c => (decimal?)(c.TotalAmount - c.DiscountAmount)) ?? 0m;
 
         // ── Invoice-based financials (new invoice system) ───────────────────

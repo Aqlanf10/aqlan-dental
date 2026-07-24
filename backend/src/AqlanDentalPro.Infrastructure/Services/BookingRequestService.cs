@@ -485,7 +485,10 @@ public class BookingRequestService(AppDbContext db, PatientService patientServic
         await db.SaveChangesAsync();
 
         // 8. If appointment is today, also add patient to the clinic queue
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        // CORE-PAT-017: compare against the CLINIC day, not the UTC day —
+        // Yemen is UTC+3, so between 00:00 and 03:00 clinic time a same-day
+        // booking conversion silently skipped the queue insert.
+        var today = ClinicTimeProvider.ClinicToday();
         if (dto.AppointmentDate == today)
         {
             var activeStatuses = new HashSet<ClinicQueueStatus>

@@ -410,7 +410,11 @@ public class PatientsController(
         var denied = await DenyIfDoctorCannotAccess(id);
         if (denied != null) return denied;
 
-        var exists = await db.Patients.AnyAsync(p => p.Id == id);
+        // CORE-PAT-015: GET /api/patients/{id} deliberately serves archived
+        // patients (GetWithHistoriesIgnoreFiltersAsync), but this existence check
+        // used the soft-delete filter — so an archived patient's file rendered
+        // its header while every stat card 404'd. Match the profile's behavior.
+        var exists = await db.Patients.IgnoreQueryFilters().AnyAsync(p => p.Id == id);
         if (!exists) return NotFound(new { message = "المريض غير موجود" });
 
         var totalAppointments = await db.Appointments.CountAsync(a => a.PatientId == id);

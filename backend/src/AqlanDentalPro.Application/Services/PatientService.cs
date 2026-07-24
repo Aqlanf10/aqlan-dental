@@ -204,7 +204,14 @@ public class PatientService(
             }
             catch (Exception ex) when (IsPatientNumberConflict(ex))
             {
-                // Another request grabbed the same number — detach and retry
+                // CORE-PAT-014: another request grabbed the same number. Detach
+                // the WHOLE graph — detaching only the root left the cascade-
+                // tracked MedicalHistory/DentalHistory rows in Added state
+                // pointing at the never-inserted patient, so the retry's
+                // SaveChanges hit an unhandled FK violation (a 500) and the
+                // receptionist lost the entire registration.
+                if (patient.MedicalHistory != null) repo.DetachChild(patient.MedicalHistory);
+                if (patient.DentalHistory != null) repo.DetachChild(patient.DentalHistory);
                 repo.Detach(patient);
             }
         }

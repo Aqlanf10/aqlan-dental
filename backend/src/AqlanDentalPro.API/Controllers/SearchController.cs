@@ -1,3 +1,4 @@
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -8,7 +9,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/search")]
 [Authorize(Policy = "StaffOnly")]
-public class SearchController(AppDbContext db) : ControllerBase
+public class SearchController(AppDbContext db, IPatientAccessService patientAccess) : ControllerBase
 {
     // GET /api/search?q=ahmed&limit=5
     [HttpGet]
@@ -20,8 +21,30 @@ public class SearchController(AppDbContext db) : ControllerBase
 
         q = q.Trim();
 
-        var patientsRaw = await db.Patients
-            .Where(p => p.FirstName.Contains(q) || p.LastName.Contains(q) || p.PatientNumber.Contains(q) || (p.Phone != null && p.Phone.Contains(q)))
+        // CORE-PAT-011 (security): this was a second, unguarded patient search.
+        // Doctors could find ANY patient here — with phone number — while
+        // /api/patients deliberately scopes doctors to their linked patients and
+        // strips the phone from clinical DTOs. Apply the same access set to all
+        // three result groups, fail-closed (an error must not widen access).
+        HashSet<Guid>? accessible = null;
+        var isDoctor = patientAccess.IsDoctor;
+        if (isDoctor)
+        {
+            try
+            {
+                accessible = await patientAccess.GetAccessiblePatientIdsAsync() ?? [];
+            }
+            catch
+            {
+                return StatusCode(500, new { message = "تعذر تنفيذ البحث حالياً" });
+            }
+        }
+
+        var patientsQuery = db.Patients
+            .Where(p => p.FirstName.Contains(q) || p.LastName.Contains(q) || p.PatientNumber.Contains(q) || (p.Phone != null && p.Phone.Contains(q)));
+        if (accessible != null)
+            patientsQuery = patientsQuery.Where(p => accessible.Contains(p.Id));
+        var patientsRaw = await patientsQuery
             .OrderByDescending(p => p.CreatedAt)
             .Take(limit)
             .Select(p => new
@@ -39,15 +62,19 @@ public class SearchController(AppDbContext db) : ControllerBase
             p.Id,
             FullName = $"{p.FirstName} {p.LastName}".Trim(),
             p.PatientNumber,
-            PhoneNumber = p.Phone,
+            // Doctors never receive the phone — mirrors PatientClinicalDto.
+            PhoneNumber = isDoctor ? null : p.Phone,
             Type = "patient",
             Url = $"/patients/{p.Id}"
         }).ToList();
 
-        var apptsRaw = await db.Appointments
+        var apptsQuery = db.Appointments
             .Include(a => a.Patient)
             .Include(a => a.Doctor)
-            .Where(a => a.Patient.FirstName.Contains(q) || a.Patient.LastName.Contains(q) || (a.AppointmentType != null && a.AppointmentType.Contains(q)))
+            .Where(a => a.Patient.FirstName.Contains(q) || a.Patient.LastName.Contains(q) || (a.AppointmentType != null && a.AppointmentType.Contains(q)));
+        if (accessible != null)
+            apptsQuery = apptsQuery.Where(a => accessible.Contains(a.PatientId));
+        var apptsRaw = await apptsQuery
             .OrderByDescending(a => a.AppointmentDate)
             .Take(limit)
             .Select(a => new
@@ -74,9 +101,12 @@ public class SearchController(AppDbContext db) : ControllerBase
             Url = "/appointments"
         }).ToList();
 
-        var orthoRaw = await db.OrthoCases
+        var orthoQuery = db.OrthoCases
             .Include(c => c.Patient)
-            .Where(c => c.Patient.FirstName.Contains(q) || c.Patient.LastName.Contains(q) || c.CaseNumber.Contains(q))
+            .Where(c => c.Patient.FirstName.Contains(q) || c.Patient.LastName.Contains(q) || c.CaseNumber.Contains(q));
+        if (accessible != null)
+            orthoQuery = orthoQuery.Where(c => accessible.Contains(c.PatientId));
+        var orthoRaw = await orthoQuery
             .OrderByDescending(c => c.CreatedAt)
             .Take(limit)
             .Select(c => new

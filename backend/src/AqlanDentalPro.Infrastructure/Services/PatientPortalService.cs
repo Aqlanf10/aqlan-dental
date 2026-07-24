@@ -19,7 +19,7 @@ using System.Net.Http.Json;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
-public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpClientFactory httpClientFactory, IPatientAccountLinkingService linkingService, ILogger<PatientPortalService> logger) : IPatientPortalService
+public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpClientFactory httpClientFactory, IPatientAccountLinkingService linkingService, IFinanceReadService financeReadService, ILogger<PatientPortalService> logger) : IPatientPortalService
 {
     public async Task<(PatientAuthResponse? response, string? error)> LoginAsync(string username, string password)
     {
@@ -193,11 +193,15 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         };
 
         db.PatientAccounts.Add(account);
+        // CORE-PAT-013: save FIRST. EnsureLinkedUserAsync queries the database
+        // for the PatientAccount; called before SaveChanges it could not see the
+        // just-added row, silently bailed, and LinkedUserId stayed null — so the
+        // email typed at registration was thrown away (SetPatientEmailAsync
+        // no-ops without a linked user) and email reminders never fired.
+        await db.SaveChangesAsync();
 
         // Ensure LinkedUserId for messaging — use the unified linking service
         await linkingService.EnsureLinkedUserAsync(account.PatientId);
-
-        await db.SaveChangesAsync();
 
         logger.LogInformation("Created PatientAccount for patient {PatientId} with username {Username}", patientId, patientNumber);
 
@@ -388,40 +392,15 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
         var activeContractsList = contracts.Where(c => c.Status == ContractStatus.Active).ToList();
 
-        // totalPaid includes: (1) payments linked to ACTIVE contracts, plus
-        // (2) unlinked/orphan payments that reduce the patient's outstanding
-        // balance. Payments linked to COMPLETED/CANCELLED contracts are
-        // excluded because they are already settled and would make totalPaid
-        // larger than totalContracted (causing negative outstanding).
-        var activeContractIds = activeContractsList.Select(c => c.Id).ToHashSet();
-        var totalPaid = await db.Payments
-            .Where(p => p.PatientId == patientId && p.IsActive
-                && (p.ContractId == null || activeContractIds.Contains(p.ContractId.Value)))
-            .SumAsync(p => (decimal?)p.Amount) ?? 0;
-
-        var totalContracted = activeContractsList.Sum(c => c.TotalAmount);
-        var totalDiscounts = activeContractsList.Sum(c => c.DiscountAmount);
-        // QA-596: include unbilled visits (sessions with AmountDueReference, no invoice)
-        // so the patient portal matches FinanceService.GetPatientFinanceSummaryAsync.
-        var billedVisitIds = await db.Invoices
-            .Where(i => i.PatientId == patientId && i.VisitId.HasValue && i.IsActive)
-            .Select(i => i.VisitId!.Value)
-            .ToListAsync();
-        var billedVisitSet = billedVisitIds.ToHashSet();
-        var unbilledVisitRows = await db.Visits
-            .Where(v => v.PatientId == patientId && v.IsActive
-                     && v.AmountDueReference.HasValue && v.AmountDueReference > 0)
-            .Select(v => new { v.Id, Amount = v.AmountDueReference ?? 0m })
-            .ToListAsync();
-        var unbilledVisitsAmount = unbilledVisitRows
-            .Where(v => !billedVisitSet.Contains(v.Id))
-            .Sum(v => v.Amount);
-        // QA-594: Clamp to 0 — a standalone payment (no contract) previously
-        // produced a negative outstanding that made it look like the clinic
-        // owed the patient money. Negative balances are advances, surfaced
-        // separately, not as negative debt.
-        var totalOutstanding = Math.Max(0m, totalContracted + unbilledVisitsAmount - totalDiscounts - totalPaid);
-        var totalAmount = totalContracted - totalDiscounts;
+        // CORE-PAT-012: the portal used to run its OWN balance math — active
+        // contracts only, invoices completely ignored, p.Amount instead of the
+        // multi-currency-safe AppliedAmount. A patient billed by invoice saw
+        // "المتبقي: 0" while reception saw the real debt, and stopped paying.
+        // The canonical clinic-side calculation is the single source of truth.
+        var finance = await financeReadService.GetPatientFinanceSummaryAsync(patientId);
+        var totalPaid = finance.TotalPaid;
+        var totalOutstanding = finance.OutstandingBalance;
+        var totalAmount = finance.TotalTreatmentCost;
         var activeContracts = activeContractsList.Count;
 
         // FIX: Only show active payments in portal (includes payments from
@@ -486,16 +465,39 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         var patient = await db.Patients.FindAsync(patientId);
         if (patient == null) return (null, "المريض غير موجود");
 
-        // Only allow updating safe fields
+        // CORE-PAT-009: the portal used to write NormalizedPhone as "+967…" while
+        // every staff path writes PhoneNormalizer's "967…". The unique index,
+        // check-duplicate and phone search all compare with equality, so a
+        // portal-edited number silently escaped duplicate detection and a second
+        // patient file got created for the same person. The portal now uses the
+        // same canonical normalizer and the same duplicate guard as staff edits.
         if (req.Phone != null)
         {
-            patient.Phone = NormalizePhone(req.Phone);
-            patient.NormalizedPhone = patient.Phone;
+            var normalizedPhone = PhoneNormalizer.Normalize(req.Phone);
+            if (normalizedPhone != null)
+            {
+                var existingPhone = await db.Patients.FirstOrDefaultAsync(p =>
+                    p.Id != patientId &&
+                    (p.NormalizedPhone == normalizedPhone || p.NormalizedWhatsApp == normalizedPhone));
+                if (existingPhone != null)
+                    return (null, "رقم الهاتف مستخدم مسبقاً لملف آخر — يرجى مراجعة الاستقبال");
+            }
+            patient.Phone = req.Phone.Trim();
+            patient.NormalizedPhone = normalizedPhone;
         }
         if (req.WhatsApp != null)
         {
-            patient.WhatsApp = NormalizePhone(req.WhatsApp);
-            patient.NormalizedWhatsApp = patient.WhatsApp;
+            var normalizedWhatsApp = PhoneNormalizer.Normalize(req.WhatsApp);
+            if (normalizedWhatsApp != null)
+            {
+                var existingWA = await db.Patients.FirstOrDefaultAsync(p =>
+                    p.Id != patientId &&
+                    (p.NormalizedWhatsApp == normalizedWhatsApp || p.NormalizedPhone == normalizedWhatsApp));
+                if (existingWA != null)
+                    return (null, "رقم الواتساب مستخدم مسبقاً لملف آخر — يرجى مراجعة الاستقبال");
+            }
+            patient.WhatsApp = req.WhatsApp.Trim();
+            patient.NormalizedWhatsApp = normalizedWhatsApp;
         }
         if (req.Address != null)
         {
@@ -680,36 +682,15 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
         var activeContracts = contracts.Where(c => c.Status == ContractStatus.Active).ToList();
 
-        // totalPaid includes: (1) payments linked to ACTIVE contracts, plus
-        // (2) unlinked/orphan payments that reduce the patient's outstanding
-        // balance. Payments linked to COMPLETED/CANCELLED contracts are
-        // excluded because they are already settled and would make totalPaid
-        // larger than totalContracted (causing negative outstanding).
-        var activeContractIds = activeContracts.Select(c => c.Id).ToHashSet();
-        var totalPaid = await db.Payments
-            .Where(p => p.PatientId == patientId && p.IsActive
-                && (p.ContractId == null || activeContractIds.Contains(p.ContractId.Value)))
-            .SumAsync(p => (decimal?)p.Amount) ?? 0;
-
-        var totalContracted = activeContracts.Sum(c => c.TotalAmount);
-        var totalDiscounts = activeContracts.Sum(c => c.DiscountAmount);
-        // QA-596: include unbilled visits — see GetPatientOverviewAsync above for rationale.
-        var billedVisitIds2 = await db.Invoices
-            .Where(i => i.PatientId == patientId && i.VisitId.HasValue && i.IsActive)
-            .Select(i => i.VisitId!.Value)
-            .ToListAsync();
-        var billedVisitSet2 = billedVisitIds2.ToHashSet();
-        var unbilledVisitRows2 = await db.Visits
-            .Where(v => v.PatientId == patientId && v.IsActive
-                     && v.AmountDueReference.HasValue && v.AmountDueReference > 0)
-            .Select(v => new { v.Id, Amount = v.AmountDueReference ?? 0m })
-            .ToListAsync();
-        var unbilledVisitsAmount2 = unbilledVisitRows2
-            .Where(v => !billedVisitSet2.Contains(v.Id))
-            .Sum(v => v.Amount);
-        // QA-594: Clamp to 0 — see GetPatientOverviewAsync above for rationale.
-        var totalOutstanding = Math.Max(0m, totalContracted + unbilledVisitsAmount2 - totalDiscounts - totalPaid);
-        var totalAmount = totalContracted - totalDiscounts;
+        // CORE-PAT-012: the portal used to run its OWN balance math — active
+        // contracts only, invoices completely ignored, p.Amount instead of the
+        // multi-currency-safe AppliedAmount. A patient billed by invoice saw
+        // "المتبقي: 0" while reception saw the real debt, and stopped paying.
+        // The canonical clinic-side calculation is the single source of truth.
+        var finance = await financeReadService.GetPatientFinanceSummaryAsync(patientId);
+        var totalPaid = finance.TotalPaid;
+        var totalOutstanding = finance.OutstandingBalance;
+        var totalAmount = finance.TotalTreatmentCost;
 
         var contractDtos = activeContracts.Select(c => new PatientContractDto
         {
@@ -792,7 +773,16 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
     public async Task SetPatientEmailAsync(Guid patientId, string? email)
     {
         var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
-        if (account?.LinkedUserId == null) return;
+        if (account == null) return;
+        if (account.LinkedUserId == null)
+        {
+            // CORE-PAT-013: repair accounts created before the ordering fix
+            // above instead of silently discarding the doctor's input. The
+            // linking service shares this scoped DbContext, so the account
+            // entity reflects the new link immediately.
+            account.LinkedUserId = await linkingService.EnsureLinkedUserAsync(patientId);
+        }
+        if (account.LinkedUserId == null) return;
         var linkedUser = await db.Users.FindAsync(account.LinkedUserId.Value);
         if (linkedUser != null)
         {
@@ -902,14 +892,13 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         };
     }
 
+    // CORE-PAT-009: gateway-dialing format ONLY (E.164 with "+"). Never store
+    // this — stored numbers use PhoneNormalizer.Normalize ("967…"), the same
+    // canonical form every staff path writes.
     private static string NormalizePhone(string phone)
     {
-        var cleaned = new string(phone.Where(c => char.IsDigit(c) || c == '+').ToArray());
-        if (cleaned.StartsWith("7") && cleaned.Length == 9)
-            cleaned = "+967" + cleaned;
-        else if (cleaned.StartsWith("0") && cleaned.Length == 10)
-            cleaned = "+967" + cleaned[1..];
-        return cleaned;
+        var canonical = PhoneNormalizer.Normalize(phone);
+        return canonical is null ? phone : "+" + canonical;
     }
 
     /// <summary>

@@ -47,7 +47,11 @@ public class Sec11PortalChangePasswordPolicyTests
         var httpClientFactory = new Mock<IHttpClientFactory>();
         var linkingService = new Mock<IPatientAccountLinkingService>();
         var logger = new Mock<ILogger<PatientPortalService>>();
-        return new PatientPortalService(db, config.Object, httpClientFactory.Object, linkingService.Object, logger.Object);
+        // CORE-PAT-012: the portal now delegates balance math to the canonical
+        // FinanceReadService instead of computing its own.
+        var financeCurrentUser = new Mock<ICurrentUserService>();
+        var financeReadService = new FinanceReadService(db, financeCurrentUser.Object);
+        return new PatientPortalService(db, config.Object, httpClientFactory.Object, linkingService.Object, financeReadService, logger.Object);
     }
 
     private static async Task<(Guid patientId, PatientAccount account)> SeedPatientWithAccountAsync(

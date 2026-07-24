@@ -44,7 +44,11 @@ public class PortalFinanceTests
         var linkingService = new Mock<IPatientAccountLinkingService>();
         var logger = new Mock<ILogger<PatientPortalService>>();
 
-        return new PatientPortalService(db, config.Object, httpClientFactory.Object, linkingService.Object, logger.Object);
+        // CORE-PAT-012: the portal now delegates balance math to the canonical
+        // FinanceReadService instead of computing its own.
+        var financeCurrentUser = new Mock<ICurrentUserService>();
+        var financeReadService = new FinanceReadService(db, financeCurrentUser.Object);
+        return new PatientPortalService(db, config.Object, httpClientFactory.Object, linkingService.Object, financeReadService, logger.Object);
     }
 
     /// <summary>
@@ -158,11 +162,17 @@ public class PortalFinanceTests
     }
 
     [Fact]
-    public async Task GetFinancialSummary_CompletedContractPayments_NotCountedInTotalPaid()
+    public async Task GetFinancialSummary_CompletedContract_UsesCanonicalClinicMath()
     {
-        // Arrange: 1 completed contract (100,000 paid) + 1 active contract (0 paid)
-        // The portal should NOT count the completed contract's payments in TotalPaid,
-        // because TotalContracted only includes active contracts.
+        // Arrange: 1 completed contract (100,000 paid) + 1 active contract (0 paid).
+        // CORE-PAT-012: the portal now delegates to the canonical
+        // FinanceReadService.GetPatientFinanceSummaryAsync — the SAME math the
+        // clinic staff see. Canonically the completed contract's cost AND its
+        // payments are both included (they net to zero), so the outstanding
+        // figure is identical while the totals no longer hide settled history.
+        // The old portal-only math (active contracts only, invoices ignored)
+        // showed a patient billed by invoice as owing 0 — that is the bug this
+        // delegation removes.
         await using var db = CreateContext();
         var patientId = Guid.NewGuid();
 
@@ -213,9 +223,9 @@ public class PortalFinanceTests
 
         // Assert
         result.Should().NotBeNull();
-        result.TotalPaid.Should().Be(0m, "completed contract payments must NOT be counted in TotalPaid");
-        result.TotalAmount.Should().Be(50_000m, "only active contract total");
-        result.TotalOutstanding.Should().Be(50_000m, "50,000 - 0 - 0 = 50,000");
+        result.TotalPaid.Should().Be(100_000m, "canonical math counts all active payments (settled history included)");
+        result.TotalAmount.Should().Be(150_000m, "canonical treatment cost spans all contracts: 100,000 + 50,000");
+        result.TotalOutstanding.Should().Be(50_000m, "150,000 - 100,000 — identical outstanding, honest totals");
         result.ActiveContracts.Should().Be(1, "only the active contract");
         result.Contracts.Should().ContainSingle(c => c.Id == activeContractId);
     }
@@ -357,9 +367,11 @@ public class PortalFinanceTests
     }
 
     [Fact]
-    public async Task GetFinancialSummary_MixedActiveAndCompleted_OnlyCountsActive()
+    public async Task GetFinancialSummary_MixedActiveAndCompleted_CanonicalTotals()
     {
-        // Arrange: 1 completed + 1 active contract, each with payments
+        // Arrange: 1 completed + 1 active contract, each with payments.
+        // CORE-PAT-012: canonical clinic math — completed history is included on
+        // BOTH sides (cost and paid), netting to zero; outstanding is unchanged.
         await using var db = CreateContext();
         var patientId = Guid.NewGuid();
 
@@ -417,19 +429,24 @@ public class PortalFinanceTests
         // Act
         var result = await service.GetFinancialSummaryAsync(patientId);
 
-        // Assert: Only active contract's payments and totals
+        // Assert: canonical totals — settled history visible, same outstanding
         result.Should().NotBeNull();
-        result.TotalPaid.Should().Be(100_000m, "only active contract's linked payment (NOT the 500,000 from completed)");
-        result.TotalAmount.Should().Be(280_000m, "300,000 - 20,000 discount");
-        result.TotalOutstanding.Should().Be(180_000m, "280,000 - 100,000");
+        result.TotalPaid.Should().Be(600_000m, "all received money: 500,000 (completed) + 100,000 (active)");
+        result.TotalAmount.Should().Be(780_000m, "500,000 + (300,000 - 20,000 discount)");
+        result.TotalOutstanding.Should().Be(180_000m, "780,000 - 600,000 — identical outstanding");
         result.ActiveContracts.Should().Be(1);
         result.Contracts.Should().ContainSingle(c => c.Id == activeId);
     }
 
     [Fact]
-    public async Task GetFinancialSummary_CancelledContract_NotCounted()
+    public async Task GetFinancialSummary_CancelledContract_CostExcludedPaymentsKept()
     {
-        // Arrange: 1 cancelled + 1 active contract
+        // Arrange: 1 cancelled + 1 active contract.
+        // CORE-PAT-012: a cancelled plan is not an obligation, so its cost is
+        // excluded — but received money stays received. The 200,000 paid on the
+        // cancelled plan covers the active contract's 140,000 and the remainder
+        // is a patient credit (handled by the advances/refund flows), so the
+        // outstanding clamps to zero instead of showing 90,000 phantom debt.
         await using var db = CreateContext();
         var patientId = Guid.NewGuid();
 
@@ -489,9 +506,9 @@ public class PortalFinanceTests
 
         // Assert
         result.Should().NotBeNull();
-        result.TotalPaid.Should().Be(50_000m, "only active contract's linked payment");
-        result.TotalAmount.Should().Be(140_000m, "150,000 - 10,000");
-        result.TotalOutstanding.Should().Be(90_000m, "140,000 - 50,000");
+        result.TotalPaid.Should().Be(250_000m, "all received money: 200,000 (cancelled plan) + 50,000 (active)");
+        result.TotalAmount.Should().Be(140_000m, "cancelled plan excluded from cost: 150,000 - 10,000");
+        result.TotalOutstanding.Should().Be(0m, "max(0, 140,000 - 250,000) — the surplus is a credit, not debt");
         result.ActiveContracts.Should().Be(1);
     }
 
@@ -527,10 +544,11 @@ public class PortalFinanceTests
     }
 
     [Fact]
-    public async Task GetFinancialSummary_CompletedContractPlusUnlinkedPayment_OnlyCountsUnlinked()
+    public async Task GetFinancialSummary_CompletedContractPlusUnlinkedPayment_CanonicalTotals()
     {
-        // Arrange: 1 completed contract (fully paid) + 1 active contract + 1 unlinked payment
-        // The completed contract's payment should NOT be counted, but the unlinked one should.
+        // Arrange: 1 completed contract (fully paid) + 1 active contract + 1 unlinked payment.
+        // CORE-PAT-012: canonical math includes the completed contract on both
+        // sides (nets to zero) and the unlinked payment against the active plan.
         await using var db = CreateContext();
         var patientId = Guid.NewGuid();
 
@@ -590,9 +608,9 @@ public class PortalFinanceTests
 
         // Assert
         result.Should().NotBeNull();
-        result.TotalPaid.Should().Be(50_000m, "unlinked counted, completed contract payment excluded");
-        result.TotalAmount.Should().Be(290_000m, "300,000 - 10,000 (only active contract)");
-        result.TotalOutstanding.Should().Be(240_000m, "290,000 - 50,000");
+        result.TotalPaid.Should().Be(250_000m, "200,000 (completed, nets against its own cost) + 50,000 unlinked");
+        result.TotalAmount.Should().Be(490_000m, "200,000 + (300,000 - 10,000)");
+        result.TotalOutstanding.Should().Be(240_000m, "490,000 - 250,000 — identical outstanding");
     }
 
     [Fact]

@@ -3,6 +3,7 @@ using AqlanDentalPro.Application.DTOs.Common;
 using AqlanDentalPro.Application.Exceptions;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.Application.DTOs.Patients;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -11,7 +12,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
-public class BookingRequestService(AppDbContext db, ILogger<BookingRequestService> logger) : IBookingRequestService
+public class BookingRequestService(AppDbContext db, PatientService patientService, ILogger<BookingRequestService> logger) : IBookingRequestService
 {
     // Clinic working hours: Saturday-Thursday 08:00-20:00, Friday closed
     private static readonly TimeOnly ClinicOpen = new(8, 0);
@@ -412,9 +413,15 @@ public class BookingRequestService(AppDbContext db, ILogger<BookingRequestServic
             }
             else
             {
-                // Create a new patient from booking request data
+                // CORE-PAT-010: this used to hand-roll `new Patient { … }` +
+                // SaveChanges, skipping PatientService.CreateAsync entirely. The
+                // resulting record had NO PatientNumber (so the SECOND conversion
+                // ever made hit the unique index and 500'd), no NormalizedPhone
+                // (so the dedupe lookup above could never find it again — every
+                // return visit created another duplicate file), no branch and no
+                // portal account. Route through the one real creation path.
                 var nameParts = bookingRequest.PatientName.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                var newPatient = new Patient
+                var createReq = new CreatePatientRequest
                 {
                     FirstName = nameParts.Length > 0 ? nameParts[0] : "مريض",
                     MiddleName = nameParts.Length > 2 ? string.Join(" ", nameParts[1..^1]) : null,
@@ -424,17 +431,16 @@ public class BookingRequestService(AppDbContext db, ILogger<BookingRequestServic
                     ReferralSource = "طلب حجز من الموقع",
                     PrimaryDoctorId = bookingRequest.DoctorId,
                     DentalHistory = !string.IsNullOrWhiteSpace(bookingRequest.Notes)
-                        ? new DentalHistory { Notes = $"ملاحظات طلب الحجز: {bookingRequest.Notes}" }
+                        ? new DentalHistoryDto { Notes = $"ملاحظات طلب الحجز: {bookingRequest.Notes}" }
                         : null
                 };
 
-                db.Patients.Add(newPatient);
-                await db.SaveChangesAsync(); // Save to get the ID
-                patientId = newPatient.Id;
+                var created = await patientService.CreateAsync(createReq);
+                patientId = created.Id;
 
                 logger.LogInformation(
-                    "F4: Auto-created patient {PatientId} from booking request {BookingRequestId}",
-                    patientId, bookingRequestId);
+                    "F4: Auto-created patient {PatientId} ({PatientNumber}) from booking request {BookingRequestId}",
+                    patientId, created.PatientNumber, bookingRequestId);
             }
         }
 

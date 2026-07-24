@@ -96,6 +96,54 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  backend-integration:
+    name: Backend — Integration Tests (Testcontainers)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run integration tests (TEST-18, Testcontainers PostgreSQL)
+        # TEST-18 / C-08 safety net: these tests spin up a throwaway postgres:16-alpine
+        # container via Testcontainers (Docker is preinstalled on GitHub-hosted ubuntu
+        # runners, no extra service config needed) and exercise cross-request race
+        # conditions (appointment double-booking, treasury concurrency, surgery status
+        # transitions, patient access control) plus schema-drift detection between the
+        # EF model and the live database. This job has NEVER run before in CI (the
+        # project existed but was not wired in — see docs/agent-audit/c-08-startup-maintenance-audit.md
+        # section 6). continue-on-error is set so a first-run failure surfaces as a
+        # warning without blocking merges; once this job is observed green for a few
+        # consecutive runs, remove continue-on-error to make it a blocking gate.
+        continue-on-error: true
+        run: >
+          dotnet test tests/AqlanDentalPro.IntegrationTests/AqlanDentalPro.IntegrationTests.csproj
+          --no-restore --no-build --configuration Release
+          --verbosity normal
+          --logger "trx;LogFileName=integration-test-results.trx"
+          --results-directory ./TestResults
+
+      - name: Upload integration test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-integration-test-results
+          path: backend/tests/AqlanDentalPro.IntegrationTests/TestResults/**/*.trx
+          retention-days: 7
+          if-no-files-found: ignore
+
   frontend:
     name: Frontend — Lint, Type-check & Build
     runs-on: ubuntu-latest

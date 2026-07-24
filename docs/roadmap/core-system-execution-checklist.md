@@ -283,3 +283,34 @@ follow-up look when inventory work is scheduled, but out of scope for this triag
 This directly answers the open question from the earlier "Atoms.dev triage" note: the owner did
 not know the Railway status either and opened Railway for me to check first-hand rather than
 guess or skip the safety gate.
+
+### CORE-F-001 (Critical) — cross-route visit advisory-lock mismatch — 2026-07-24 (session 3)
+Root cause confirmed by reading the code directly: `ClinicQueueController.StartVisit`
+(`POST /api/clinic-queue/{id}/start`) took its PostgreSQL advisory lock keyed on the
+**ClinicQueueItem's own Id**, while both `AppointmentsController.StartVisit`
+(`POST /api/appointments/{id}/start-visit`) and `CheckoutService.StartVisitAsync`
+(used by `PatientJourneyController`, delegating for the daily-operations UI) lock on the
+**Appointment's Id** — a different GUID for the same logical patient encounter. Two
+concurrent requests hitting the queue route and the appointment route for the same
+appointment could each acquire a different advisory lock, both pass the
+"does a Visit already exist for this AppointmentId" check, and both insert — producing
+two Visit rows (duplicate clinical/financial records) for one appointment.
+
+**Fix** (branch `fix/core-f-001-queue-startvisit-advisory-lock`): after loading the queue
+item inside the existing transaction, additionally acquire a second
+`pg_advisory_xact_lock` keyed on `item.AppointmentId.Value` (when present) so all three
+routes serialize against each other for a given appointment. The pre-existing queue-item
+lock is kept (still useful on its own). No migration needed — pure C# code change.
+
+Added `CrossRouteVisitIdempotencyTests.cs` (Testcontainers integration test, wired into the
+CI job added in PR #723): seeds an Appointment + linked ClinicQueueItem, fires
+`POST /api/appointments/{id}/start-visit` and `POST /api/clinic-queue/{queueItemId}/start`
+concurrently via `Task.WhenAll`, and asserts exactly one active `Visit` row exists
+afterward for that AppointmentId.
+
+**Not done in this fix** (still needs `dotnet ef` tooling this sandbox doesn't have): the
+audit's other F-001 recommendation — a unique filtered index on active
+`Visits.AppointmentId` as a DB-level backstop even if the advisory locks were ever
+bypassed. The advisory-lock fix is the primary defense; the index is defense-in-depth,
+deferred with the same reasoning already recorded for CLIN-05 and the VIP-priority-enum
+removal.

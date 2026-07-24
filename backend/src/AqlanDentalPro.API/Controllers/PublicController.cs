@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Cors;
 using Microsoft.EntityFrameworkCore;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 
@@ -67,11 +68,12 @@ public class PublicController : ControllerBase
     }
 
     [HttpGet("public/queue")]
-    [AllowAnonymous]
+    [Authorize(Policy = "StaffOnly")]
     public async Task<IActionResult> GetQueue()
     {
-        // H6 FIX: Use UTC for consistent timezone handling
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        // CORE-PAT-020: this legacy endpoint contains patient identity and appointment
+        // details. It must never be internet-public; staff authentication is required.
+        var today = ClinicTimeProvider.ClinicToday();
         var items = await _db.Appointments
             .AsNoTracking()
             .Include(a => a.Patient)
@@ -81,11 +83,9 @@ public class PublicController : ControllerBase
             .Select(a => new
             {
                 a.Id,
-                // H6 FIX: Safe substring — prevents crash if LastName is null or empty
                 PatientDisplayName = a.Patient.FirstName + " " + (string.IsNullOrEmpty(a.Patient.LastName) ? "" : a.Patient.LastName.Substring(0, 1)) + ".",
                 AppointmentType = a.AppointmentType ?? "—",
                 StartTime = a.StartTime.ToString(@"hh\:mm"),
-                // H6 FIX: Safe EndTime — prevents crash if EndTime is null
                 EndTime = a.EndTime.ToString(@"hh\:mm"),
                 DoctorName = (string?)(a.Doctor != null ? a.Doctor.Name : null),
                 DoctorColor = (string?)(a.Doctor != null ? a.Doctor.Color : null),

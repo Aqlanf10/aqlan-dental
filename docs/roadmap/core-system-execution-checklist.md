@@ -217,3 +217,42 @@ staging for ≥2 weeks" — the CI-wiring half of that pre-condition is what thi
 Railway-staging-for-2-weeks half cannot be verified from this sandbox (no Railway access) and
 must be confirmed by the owner before any Phase 1 deletion PR is opened. Deferred pending that
 confirmation — this is a real production-schema risk, not a formality to skip.
+
+### Atoms.dev recommendations — session 3 continued: tasks 1/3/4 already done, task 2 blocked
+Checked each remaining Atoms task against the actual repo state before writing any code
+(the lesson from Task 6 was that Atoms' report is not fully in sync with `main`). Result:
+**three more of the six tasks are already implemented**, discovered by reading the code
+directly rather than trusting the task list:
+
+- **Task 1 (CLIN-22, extract PatientJourneyService)** — already done.
+  `PatientJourneyController.cs` is 167 lines, documented in its own header comment:
+  "CLIN-22: All business logic now lives in `PatientJourneyService` ... and `CheckoutService`
+  ... This controller is a thin HTTP adapter." No further action needed.
+- **Task 3 (FE-20, split ortho/[id] page)** — already done. `ortho/[id]/page.tsx` is 330
+  lines; the other ~3,100 lines Atoms measured are now split across 13 components under
+  `ortho/[id]/_components/` (OrthoOverviewTab, OrthoDiagnosisTab, OrthoClinicalExamTab,
+  OrthoTreatmentPlansTab, OrthoPhotosTab, OrthoFinanceTab, OrthoSurgicalPlanningTab,
+  OrthoExtractionTab, OrthoRetentionTab, OrthoProblemListTab, OrthoRecordsChecklistTab,
+  OrthoAiDraftPanel, OrthoModelAnalysisTab). No further action needed.
+- **Task 4 (FE-06, consolidate 3 patient-detail screens)** — already done.
+  `patient-journey/[patientId]/page.tsx` is a 33-line redirect stub with its own header
+  comment: "FE-06 — Redirect stub. The old 1734-line `/patient-journey/[patientId]` page
+  duplicated patient detail UI that already exists on `/patients/[id]` ... merging the three
+  parallel patient-detail screens into one canonical profile," and forwards to
+  `/patients/[id]?focus=journey` via `buildPatientJourneyDestination`. No further action
+  needed.
+- **Task 2 (CLIN-05, unify OrthoVisit with Visit)** — genuinely **not done**.
+  `OrthoVisit.cs` has no `VisitId` field and no migration references one. This is the one
+  Atoms task that still requires real work, and it requires an EF Core migration (nullable
+  `VisitId` FK). Per the same reasoning already recorded for the deferred VIP-priority-enum
+  removal (`CORE-F-005` other half): I cannot run `dotnet ef migrations add` in this sandbox
+  (no .NET SDK, blocked NuGet/dotnet hosts, no root). Hand-authoring an EF migration class +
+  Designer.cs + `AppDbContextModelSnapshot.cs` edit by hand, without the tooling to verify it
+  reproduces exactly what `dotnet ef` would generate, risks worsening the same
+  already-fragile migration-chain problem `CLAUDE.md` explicitly warns about. Deferred
+  pending a session with working `dotnet ef` tooling, not attempted blind.
+
+**Net result of the Atoms.dev triage across all 6 tasks:** 4 already done (1, 3, 4, 6 — the
+last one needed only CI wiring, delivered in PR #723), 1 blocked on EF tooling this sandbox
+doesn't have (2), 1 blocked on a Railway-staging observation window only the owner can
+confirm (5, C-08/DB-01 — see the audit doc's own Phase-1 pre-condition).

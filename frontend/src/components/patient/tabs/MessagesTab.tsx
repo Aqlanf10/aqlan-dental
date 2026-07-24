@@ -6,6 +6,7 @@ import { useConversation, useInternalPatientConversation, useMarkAsRead, useSend
 import { useAuthStore } from "@/stores/authStore";
 import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate } from "@/lib/utils";
+import { extractErrorMessage } from "@/lib/errors";
 import { toast } from "@/stores/toastStore";
 import { useRouter } from "next/navigation";
 import type { Message } from "@/types/messaging";
@@ -19,6 +20,8 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
   const currentUserId = useAuthStore((s) => s.user?.id);
   const [newMessage, setNewMessage] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [initializationError, setInitializationError] = useState("");
+  const [retryNonce, setRetryNonce] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = useCallback(() => {
@@ -33,19 +36,31 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
   const sendMessage = useSendMessage(conversationId ?? "");
   const markAsRead = useMarkAsRead(conversationId ?? "");
 
-  // محاولة إنشاء/جلب المحادثة عند التحميل
+  // إنشاء/جلب المحادثة عند التحميل. فشل هذا الطلب ليس مرادفاً لعدم وجود
+  // محادثة؛ يجب أن يظهر كعطل قابل لإعادة المحاولة، وإلا يبدو التبويب فارغاً
+  // ويسمح بمحاولة إرسال إلى conversationId فارغ.
   useEffect(() => {
     if (!conversationId) {
+      setInitializationError("");
       createConversation.mutate(patientId, {
         onSuccess: (data) => {
+          setInitializationError("");
           setConversationId(data.id);
         },
-        onError: () => {
-          // لا نعرض خطأ — قد لا تكون هناك محادثة بعد
+        onError: (error: unknown) => {
+          setInitializationError(
+            extractErrorMessage(error, "تعذر فتح محادثة المريض — تحقق من الاتصال وحاول مجدداً")
+          );
         },
       });
     }
-  }, [patientId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [patientId, retryNonce]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const retryConversationLoad = () => {
+    setInitializationError("");
+    setConversationId(null);
+    setRetryNonce((value) => value + 1);
+  };
 
   // تمرير لأسفل عند وصول رسائل جديدة
   useEffect(() => {
@@ -62,7 +77,7 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     const content = newMessage.trim();
-    if (!content || sendMessage.isPending) return;
+    if (!conversation || !content || sendMessage.isPending) return;
     if (content.length > 2000) {
       toast.error("الرسالة طويلة جداً — الحد الأقصى 2000 حرف");
       return;
@@ -105,6 +120,28 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
     );
   }
 
+  const loadErrorMessage = initializationError ||
+    (fetchError ? extractErrorMessage(fetchError, "فشل تحميل محادثة المريض") : "");
+
+  if (loadErrorMessage && !conversation) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center">
+        <AlertTriangle className="w-10 h-10 mx-auto mb-3 text-red-400" />
+        <p className="text-sm font-semibold text-red-700">{loadErrorMessage}</p>
+        <p className="text-xs text-red-500 mt-1">
+          لم نعتبر فشل الطلب «لا توجد محادثة»، ولم يتم إرسال أي رسالة دون معرّف صحيح.
+        </p>
+        <button
+          type="button"
+          onClick={retryConversationLoad}
+          className="mt-4 px-4 py-2 text-sm font-semibold rounded-lg bg-white border border-red-200 text-red-700 hover:bg-red-100 transition"
+        >
+          إعادة المحاولة
+        </button>
+      </div>
+    );
+  }
+
   const messages = conversation?.messages ?? [];
   return (
     <div className="flex flex-col h-full">
@@ -136,12 +173,13 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
         </div>
       )}
 
-      {fetchError && (
+      {loadErrorMessage && conversation && (
         <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-xs flex items-center gap-2">
           <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-          فشل تحميل المحادثة
+          {loadErrorMessage}
           <button
-            onClick={() => setConversationId(null)}
+            type="button"
+            onClick={retryConversationLoad}
             className="text-amber-600 hover:text-amber-800 underline ms-auto"
           >
             إعادة المحاولة
@@ -154,7 +192,7 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
           <EmptyState
             icon={MessageCircle}
             title="لا توجد رسائل"
-            description="ابدأ محادثة مع المريض"
+            description="ابدأ محادثة داخلية حول المريض"
           />
         ) : (
           messages.map((msg) => (
@@ -185,29 +223,31 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
         </div>
       )}
 
-      <form onSubmit={handleSend} className="flex gap-2 pt-3 border-t border-gray-100">
-        <input
-          type="text"
-          value={newMessage}
-          onChange={(e) => setNewMessage(e.target.value)}
-          placeholder="اكتب رسالة..."
-          maxLength={2000}
-          className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue focus:ring-1 focus:ring-clinic-blue"
-          disabled={sendMessage.isPending}
-        />
-        <button
-          type="submit"
-          disabled={sendMessage.isPending || !newMessage.trim()}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition"
-        >
-          {sendMessage.isPending ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <Send className="w-3.5 h-3.5" />
-          )}
-          إرسال
-        </button>
-      </form>
+      {conversation && (
+        <form onSubmit={handleSend} className="flex gap-2 pt-3 border-t border-gray-100">
+          <input
+            type="text"
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            placeholder="اكتب رسالة..."
+            maxLength={2000}
+            className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue focus:ring-1 focus:ring-clinic-blue"
+            disabled={sendMessage.isPending}
+          />
+          <button
+            type="submit"
+            disabled={sendMessage.isPending || !newMessage.trim()}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          >
+            {sendMessage.isPending ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Send className="w-3.5 h-3.5" />
+            )}
+            إرسال
+          </button>
+        </form>
+      )}
     </div>
   );
 }

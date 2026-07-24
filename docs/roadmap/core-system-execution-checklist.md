@@ -162,6 +162,23 @@ See `docs/audits/CLOUD_WORK_CONTINUATION_AUDIT_2026-07-24.md` and
   Phase 9 checklist items are therefore substantially addressed and need a
   reconciliation/re-verification pass (Track E2), not fresh implementation.
 - `CORE-F-003` fixed this session (queue reorder wire contract), pending CI + merge.
+
+### Continuation progress — 2026-07-24 (session 2)
+- `CORE-F-003` merged in PR #719 (queue reorder wire contract); CI green.
+- `CORE-F-005` (emergency-reason half) merged in PR #721: the queue UI now collects and
+  sends the audited reason before setting Emergency priority. VIP removal (the other half)
+  remains open — it needs an EF data migration (Priority int VIP=2 -> Urgent) and must be
+  done with `dotnet ef` tooling and startup-maintenance review; deferred, not done here.
+- Track C1 (`recovery/audit-002-patient-journey`) RESOLVED as **superseded**: every change in
+  its unique commit already exists on `main` via other merged recovery PRs — the FinanceAccess
+  guard on `validate-financial-closure`, the Admin/Accountant `ManagerOverride` restriction in
+  `CheckoutService`, the `dailyOperationsRoute.ts` `?tab=` allow-list, the route-guard test, and
+  `docs/AUDIT-002-PATIENT-JOURNEY.md`. The branch is 26 commits behind `main`; merging it as-is
+  would revert the #711-#718 finance series, so it must NOT be merged. Branch left intact
+  (not deleted) for history.
+- Remaining open findings are backend/migration-bound (F-001, F-002, F-004, F-005 VIP, F-007
+  residual PDF/notification currency, F-008 identity/print) and require a .NET build/EF
+  environment; they are validated via GitHub Actions CI, which is the repo's required gate.
 - `recovery/audit-002-patient-journey` remains **unmerged** (1 commit ahead, 20 behind)
   and is tracked for review/rebase (Track C1).
 - Local build/test could not run in the continuation sandbox (proxy blocks .NET SDK +

@@ -425,6 +425,22 @@ public class ClinicQueueController(
             if (validationError != null)
                 return BadRequest(new { message = validationError });
 
+            // CORE-F-001 FIX: this route was only taking a lock keyed on the queue item's
+            // own Id, while AppointmentsController.StartVisit and CheckoutService.StartVisitAsync
+            // (used by PatientJourneyController) both lock on the Appointment's Id. Two
+            // concurrent requests hitting different routes for the same appointment could
+            // therefore acquire two different advisory locks, both pass the "existing visit"
+            // check below, and create two Visit rows for the same AppointmentId. Take the
+            // same appointment-scoped lock here too so all three routes serialize against
+            // each other for a given appointment. Locks are additive (pg_advisory_xact_lock
+            // does not release until the transaction ends), so holding both the queue-item
+            // lock and the appointment lock in the same transaction is safe.
+            if (item.AppointmentId.HasValue)
+            {
+                var appointmentLockKey = (int)(item.AppointmentId.Value.GetHashCode() % 100000);
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", appointmentLockKey);
+            }
+
             // Create a Visit if not already linked
             if (item.VisitId == null)
             {

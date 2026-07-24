@@ -35,6 +35,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<CephAiModelVersion> CephAiModelVersions => Set<CephAiModelVersion>();
     public DbSet<CephAiModelDeployment> CephAiModelDeployments => Set<CephAiModelDeployment>();
     public DbSet<CephAiInferenceRun> CephAiInferenceRuns => Set<CephAiInferenceRun>();
+    public DbSet<CephPilotProject> CephPilotProjects => Set<CephPilotProject>();
+    public DbSet<CephPilotCase> CephPilotCases => Set<CephPilotCase>();
+    public DbSet<CephPilotExportArtifact> CephPilotExportArtifacts => Set<CephPilotExportArtifact>();
     // CEPH-EPIC batch C-B — named snapshots of an analysis (landmarks +
     // measurements + diagnosis as JSON) for longitudinal progress tracking.
     public DbSet<CephAnalysisVersion> CephAnalysisVersions => Set<CephAnalysisVersion>();

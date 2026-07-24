@@ -408,6 +408,13 @@
 - Provider-managed models with undisclosed artifacts remain `observed` and cannot be promoted. Existing unsaved-draft and doctor-review gates remain unchanged.
 - **Exit:** focused model/lineage/migration tests, old-analysis compatibility, ceph/frontend regression suites, full builds, documentation/schema contract, PR CI, and deployment checks pass. This exit proves traceability, not clinical accuracy.
 
+### 🟡 SEQ-57 — Ratified blinded Pilot and WebCeph export staging foundation
+- **Spec:** `CEPH-REQ-031`, `CEPH-TASK-023`.
+- Register the independently approved `ADP-LM-LAT-v1.0` definition without changing historic `ADP-LM-LAT-v1` analyses.
+- Add only the project, case, reviewer-assignment, private image, and account-owned official-export staging needed for the first de-identified Pilot case.
+- WebCeph remains a hidden, unreviewed comparator. No browser scraping, automatic patient creation, annotation UI, Gold Standard, training, or accuracy claim belongs to this PR.
+- **Exit:** additive migration, authorization/privacy/state/upload tests, full ceph/build/encoding gates, one approved live staging case only after owner preview/login consent, and a review PR that is not auto-merged.
+
 ---
 
 ## آلية التحديث

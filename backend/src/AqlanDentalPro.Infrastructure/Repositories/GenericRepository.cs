@@ -34,6 +34,11 @@ public class GenericRepository<T>(AppDbContext context) : IGenericRepository<T> 
     public void Detach(T entity) =>
         Context.Entry(entity).State = EntityState.Detached;
 
+    // CORE-PAT-014: counterpart of AddChild — used when a retry loop must
+    // untrack a cascade-tracked child (e.g. MedicalHistory) along with its root.
+    public void DetachChild<TChild>(TChild entity) where TChild : class =>
+        Context.Entry(entity).State = EntityState.Detached;
+
     public void AddChild<TChild>(TChild entity) where TChild : class
     {
         // Add the child entity to the DbContext so EF Core tracks it as Added.

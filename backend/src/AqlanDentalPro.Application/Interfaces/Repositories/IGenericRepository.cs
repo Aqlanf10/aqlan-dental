@@ -12,6 +12,7 @@ public interface IGenericRepository<T> where T : class
     void Update(T entity);
     void Remove(T entity);
     void Detach(T entity);
+    void DetachChild<TChild>(TChild entity) where TChild : class;
     Task<int> SaveChangesAsync();
     void AddChild<TChild>(TChild entity) where TChild : class;
     Task AddChildAsync<TChild>(TChild entity) where TChild : class;

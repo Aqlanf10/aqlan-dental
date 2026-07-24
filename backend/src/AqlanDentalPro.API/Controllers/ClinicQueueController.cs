@@ -930,7 +930,12 @@ public class ClinicQueueController(
 
         if (channel == "whatsapp" || channel == "both")
         {
-            if (!string.IsNullOrWhiteSpace(patient.Phone))
+            // CORE-PAT-016: WhatsAppService actually dials patient.WhatsApp ??
+            // patient.Phone — gating on Phone alone skipped patients who have
+            // only a WhatsApp number, and reported the wrong number back to
+            // reception whenever the two differ.
+            var whatsAppNumber = !string.IsNullOrWhiteSpace(patient.WhatsApp) ? patient.WhatsApp : patient.Phone;
+            if (!string.IsNullOrWhiteSpace(whatsAppNumber))
             {
                 try
                 {
@@ -940,7 +945,7 @@ public class ClinicQueueController(
                         TemplateType = "custom",
                         CustomMessage = message
                     });
-                    results.Add(new { channel = "whatsapp", status = "sent", phone = patient.Phone });
+                    results.Add(new { channel = "whatsapp", status = "sent", phone = whatsAppNumber });
                 }
                 catch (Exception ex)
                 {

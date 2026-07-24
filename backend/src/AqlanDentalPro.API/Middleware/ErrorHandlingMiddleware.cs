@@ -44,9 +44,11 @@ public class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandling
             KeyNotFoundException => ex.Message,         // Safe to expose not-found errors
             ArgumentException => SanitizeArgumentMessage(ex.Message),            // Validation messages are safe to expose (sanitized)
             DbUpdateConcurrencyException => "تم تعديل البيانات بواسطة مستخدم آخر. يرجى تحديث الصفحة والمحاولة مرة أخرى.",
-            _ => context.RequestServices?.GetService<IWebHostEnvironment>()?.IsProduction() == true
-                ? "حدث خطأ غير متوقع. يرجى المحاولة لاحقاً."
-                : ex.Message // Only expose details in development
+            // CORE-PAT-018: gate on IsDevelopment, not !IsProduction — a
+            // Staging deployment was leaking raw exception text to clients.
+            _ => context.RequestServices?.GetService<IWebHostEnvironment>()?.IsDevelopment() == true
+                ? ex.Message // Only expose details in development
+                : "حدث خطأ غير متوقع. يرجى المحاولة لاحقاً."
         };
 
         var problem = new ProblemDetails
@@ -56,6 +58,10 @@ public class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandling
             Detail = detail,
             Instance = context.Request.Path
         };
+        // CORE-PAT-018: the frontend contract reads `message` (extractErrorMessage
+        // checks it FIRST); ProblemDetails alone forced every uncaught error down
+        // to the generic fallback even though `detail` carried a real Arabic text.
+        problem.Extensions["message"] = detail;
 
         // Diagnostic: Include exception type in Development environment only
         var isDevelopment = context.RequestServices?.GetService<IWebHostEnvironment>()?.IsDevelopment() == true;

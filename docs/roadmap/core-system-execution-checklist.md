@@ -1,6 +1,6 @@
 # Core System Execution Checklist
 
-- Last updated: 2026-07-17
+- Last updated: 2026-07-24 (continuation audit)
 - Current phase: 1
 - Current branch: `codex/core-p1-s3-route-role-manifest`
 - Current PR: pending
@@ -29,7 +29,7 @@
 
 - [ ] `CORE-F-001` Critical: prove and repair cross-route visit idempotency.
 - [ ] `CORE-F-002` Critical: establish safe EF/startup schema ownership transition.
-- [ ] `CORE-F-003` High: align queue reorder frontend/backend request contract.
+- [~] `CORE-F-003` High: align queue reorder frontend/backend request contract. (FIXED 2026-07-24, branch `fix/core-f-003-queue-reorder-contract`, pending CI/merge.)
 - [ ] `CORE-F-004` High: guard and audit queue priority/reorder actions.
 - [ ] `CORE-F-005` High: remove VIP and implement controlled emergency behavior.
 - [x] `CORE-F-006` High: align Reception appointment route access.
@@ -148,3 +148,21 @@
 - [ ] `main` CI is green and authenticated E2E was actually executed.
 - [ ] Paused cephalometry PRs are rebased/revalidated against current `main`.
 - [ ] Owner explicitly authorizes cephalometry resumption.
+
+## Continuation Update — 2026-07-24
+
+See `docs/audits/CLOUD_WORK_CONTINUATION_AUDIT_2026-07-24.md` and
+`docs/roadmap/CLOUD_WORK_MAINTENANCE_CONTINUATION_PLAN.md`.
+
+- `main` advanced to `93c2985` (last PR #718). This checklist (dated 2026-07-17) was
+  stale relative to merged work; reconciled here.
+- Phase 9 multi-currency finance work merged out of documented order: PRs #711–#718
+  (advance visibility, expense vouchers, per-currency ledger, payment FX snapshots,
+  cashier multi-currency + reconciliation, year-end close, opening balances). The
+  Phase 9 checklist items are therefore substantially addressed and need a
+  reconciliation/re-verification pass (Track E2), not fresh implementation.
+- `CORE-F-003` fixed this session (queue reorder wire contract), pending CI + merge.
+- `recovery/audit-002-patient-journey` remains **unmerged** (1 commit ahead, 20 behind)
+  and is tracked for review/rebase (Track C1).
+- Local build/test could not run in the continuation sandbox (proxy blocks .NET SDK +
+  api.github.com; process time cap). Verification for new work is via GitHub Actions CI.

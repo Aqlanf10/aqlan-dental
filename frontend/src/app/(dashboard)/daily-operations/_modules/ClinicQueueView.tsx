@@ -18,6 +18,13 @@ import { HubConnectionBuilder, type HubConnection, LogLevel } from "@microsoft/s
 import { useAuthStore } from "@/stores/authStore";
 import { buildAnnouncementText } from "@/lib/clinic-display-announcement";
 import { buildQueueReorderPayload } from "@/lib/clinicQueueReorder";
+import {
+  EMERGENCY_PRIORITY,
+  buildPriorityChangeBody,
+  isEmergencyReasonValid,
+  priorityRequiresReason,
+} from "@/lib/clinicQueuePriority";
+import { Input } from "@/components/ui";
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface ClinicQueueItem {
@@ -157,6 +164,9 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
 
   // Priority dropdown open state (keyed by item id)
   const [priorityDropdownOpen, setPriorityDropdownOpen] = useState<string | null>(null);
+  // CORE-F-005: Emergency priority needs an audited reason before the server call.
+  const [emergencyItem, setEmergencyItem] = useState<ClinicQueueItem | null>(null);
+  const [emergencyReason, setEmergencyReason] = useState("");
 
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
@@ -421,7 +431,29 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
   const handlePriorityChange = async (item: ClinicQueueItem, newPriority: string) => {
     setPriorityDropdownOpen(null);
     if (newPriority === item.priority) return;
-    await queueAction(`/api/clinic-queue/${item.id}/priority`, { priority: newPriority }, "patch");
+    if (priorityRequiresReason(newPriority)) {
+      // Emergency requires an audited reason; collect it before calling the server.
+      setEmergencyReason("");
+      setEmergencyItem(item);
+      return;
+    }
+    await queueAction(
+      `/api/clinic-queue/${item.id}/priority`,
+      buildPriorityChangeBody(newPriority),
+      "patch",
+    );
+  };
+
+  const submitEmergencyPriority = async () => {
+    const item = emergencyItem;
+    if (!item || !isEmergencyReasonValid(emergencyReason)) return;
+    setEmergencyItem(null);
+    await queueAction(
+      `/api/clinic-queue/${item.id}/priority`,
+      buildPriorityChangeBody(EMERGENCY_PRIORITY, emergencyReason),
+      "patch",
+    );
+    setEmergencyReason("");
   };
 
   // ── Send SMS notification ──
@@ -460,6 +492,45 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
 
   return (
     <div className="flex flex-col h-full">
+      {emergencyItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => { setEmergencyItem(null); setEmergencyReason(""); }} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center bg-red-100">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-gray-900">تحويل إلى حالة إسعافية</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  الرجاء إدخال سبب الحالة الإسعافية للمريض {emergencyItem.patientName} لتوثيق السجل.
+                </p>
+              </div>
+            </div>
+            <Input
+              label="سبب الحالة الإسعافية"
+              value={emergencyReason}
+              onChange={(e) => setEmergencyReason(e.target.value)}
+              placeholder="مثال: ألم حاد يحتاج تدخلاً فورياً"
+            />
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                onClick={() => { setEmergencyItem(null); setEmergencyReason(""); }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={submitEmergencyPriority}
+                disabled={!isEmergencyReasonValid(emergencyReason)}
+                className="px-4 py-2 text-sm font-medium text-white rounded-lg transition bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                تأكيد
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Stats + Filter bar */}
       <div className="flex-shrink-0 flex items-center gap-3 px-3 py-2 border-b" style={{ borderColor: "#f1f5f9", background: "#fff" }}>
         {/* Counter chips */}

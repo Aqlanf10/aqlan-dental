@@ -45,6 +45,10 @@ vi.mock("@/hooks/useMessaging", () => ({
 describe("MessagesTab honest conversation loading", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(),
+    });
     mocks.useConversation.mockReturnValue({
       data: null,
       isLoading: false,

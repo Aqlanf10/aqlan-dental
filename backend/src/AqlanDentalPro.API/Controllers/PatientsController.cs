@@ -1,3 +1,4 @@
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.DTOs.Common;
 using AqlanDentalPro.Application.DTOs.Patients;
 using AqlanDentalPro.Application.Interfaces.Services;
@@ -25,6 +26,12 @@ public class PatientsController(
     ILogger<PatientsController> logger) : ControllerBase
 {
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private Task<bool> CanViewFinanceAsync(string resource) =>
+        PermissionGuard.HasAsync(db, currentUser, resource, "view");
+
+    private IActionResult DenyFinance() =>
+        StatusCode(403, new { message = "غير مصرح لك بعرض البيانات المالية للمريض" });
 
     /// <summary>
     /// Returns 403 if the current doctor cannot access the patient, writing an AuditLog entry
@@ -402,7 +409,7 @@ public class PatientsController(
         }
     }
 
-    // ── Summary (financial data hidden from doctors) ──────────────────────────
+    // ── Summary (financial data hidden without granular permission) ───────────
 
     [HttpGet("{id:guid}/summary")]
     public async Task<IActionResult> GetSummary(Guid id)
@@ -422,13 +429,13 @@ public class PatientsController(
         var activeOrthoCases = await db.OrthoCases.CountAsync(o => o.PatientId == id && o.Status == OrthoCaseStatus.Active);
         var prescriptionsCount = await db.Prescriptions.CountAsync(p => p.PatientId == id);
 
-        // Financial totals: Admin, Accountant, and Reception (matches patient file UI).
-        var role = currentUser.Role?.ToString() ?? "";
-        var canViewFinanceTotals = role.Equals(nameof(UserRole.Admin), StringComparison.OrdinalIgnoreCase)
-            || role.Equals(nameof(UserRole.Accountant), StringComparison.OrdinalIgnoreCase)
-            || role.Equals(nameof(UserRole.Reception), StringComparison.OrdinalIgnoreCase);
+        // CORE-PAT-019: finance visibility must follow the owner-configurable
+        // RolePermissions row, not a hard-coded list of role names. This matches
+        // PaymentsController and makes revocation in Settings effective everywhere.
+        var canViewFinanceTotals = !patientAccess.IsDoctor
+            && await CanViewFinanceAsync("finance.patient_balance");
 
-        if (patientAccess.IsDoctor || !canViewFinanceTotals)
+        if (!canViewFinanceTotals)
         {
             return Ok(new
             {
@@ -553,12 +560,18 @@ public class PatientsController(
         return Ok(creds);
     }
 
-    // ── Account statement (finance only) ──────────────────────────────────────
+    // ── Account statement (granular finance permission) ───────────────────────
 
     [HttpGet("{id:guid}/account-statement")]
     [Authorize(Policy = "FinanceAccess")]
     public async Task<IActionResult> GetAccountStatement(Guid id)
     {
+        // CORE-PAT-019: FinanceAccess is only the coarse role gate. The exact,
+        // owner-configurable permission is required before returning contracts,
+        // payments and balances from the detailed statement.
+        if (!await CanViewFinanceAsync("finance.account_statement"))
+            return DenyFinance();
+
         var result = await financeReadService.GetAccountStatementAsync(id);
         return result == null ? NotFound(new { message = "المريض غير موجود" }) : Ok(result);
     }

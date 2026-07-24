@@ -256,3 +256,30 @@ directly rather than trusting the task list:
 last one needed only CI wiring, delivered in PR #723), 1 blocked on EF tooling this sandbox
 doesn't have (2), 1 blocked on a Railway-staging observation window only the owner can
 confirm (5, C-08/DB-01 — see the audit doc's own Phase-1 pre-condition).
+
+### C-08/DB-01 Railway pre-condition check — 2026-07-24 (session 3)
+Owner gave me browser access to Railway (`aqlan-dental-pro` / production service `aqlan-dental`)
+to check the C-08 Phase-1 pre-condition directly instead of guessing. Checked the live Deploy
+Logs on the current active deployment (`db25b729`, Jul 24 2026 22:16 GMT+3) for the exact error
+codes the audit doc's pre-condition names (`42P01` undefined-relation, `42703` undefined-column).
+
+**Finding: the pre-condition is NOT met.** Found one live occurrence right in this deployment's
+startup boot sequence:
+
+```
+Npgsql.PostgresException (0x80004005): 42P01: relation "InventoryItems" does not exist
+```
+
+It fired during the `-- Inventory: YOLO-S4 enhancement columns --` block of
+`StartupDatabaseMaintenance.cs` and is caught/swallowed (the boot log continues normally
+straight after, moving on to `PatientAccounts`/`Appointments` DDL blocks; the deployment is
+`Active`/`Online`, not crash-looping) — consistent with the audit's note that many of these
+blocks are wrapped in try/catch. Non-fatal, but it is exactly the class of error the Phase-1
+gate exists to catch, so **Task 5 (C-08/DB-01) stays deferred — no DDL block should be deleted
+from `StartupDatabaseMaintenance.cs` yet.** Inventory is Phase 10 in the priority plan (not yet
+prioritized), so this specific relation may simply not exist on this DB yet by design; worth a
+follow-up look when inventory work is scheduled, but out of scope for this triage.
+
+This directly answers the open question from the earlier "Atoms.dev triage" note: the owner did
+not know the Railway status either and opened Railway for me to check first-hand rather than
+guess or skip the safety gate.

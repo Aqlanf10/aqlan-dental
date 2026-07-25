@@ -103,6 +103,8 @@ export default function PatientProfilePage() {
   const { id }  = useParams<{ id: string }>();
   const router   = useRouter();
   const { user } = useAuthStore();
+  const patientIdentifier = typeof id === "string" ? id : "";
+  const hasGuidPatientId = isGuid(patientIdentifier);
   // isClinicalRole covers: Doctor, Orthodontist, GeneralDentist, OralSurgeon
   const isDoctor       = isClinicalRole(user?.role);
   const isAccountant   = isAccountantRole(user?.role);
@@ -121,6 +123,9 @@ export default function PatientProfilePage() {
   const [financeRefreshKey, setFinanceRefreshKey] = useState(0);
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState<string | null>(null);
+  const [resolutionRetryable, setResolutionRetryable] = useState(false);
+  const [resolutionRetryKey, setResolutionRetryKey] = useState(0);
+  const [profileRetryKey, setProfileRetryKey] = useState(0);
   const [activeTab,    setActiveTab]    = useState<Tab>("overview");
   const [phoneCopied,  setPhoneCopied]  = useState(false);
   const [openAddVisitModal, setOpenAddVisitModal] = useState(false);
@@ -260,23 +265,45 @@ export default function PatientProfilePage() {
   // If the URL param is a patient number (e.g., GM-2026-025) instead of a GUID,
   // resolve it to the patient's GUID and redirect.
   useEffect(() => {
-    const patientId = id as string;
-    if (patientId && !isGuid(patientId)) {
-      api.get(`/api/patients/by-number/${encodeURIComponent(patientId)}`)
-        .then(({ data }) => {
-          if (data?.id) {
-            router.replace(`/patients/${data.id}`);
-          } else {
-            setError(`لا يوجد مريض برقم الملف ${patientId}`);
-            setLoading(false);
-          }
-        })
-        .catch(() => {
-          setError(`لا يوجد مريض برقم الملف ${patientId}`);
-          setLoading(false);
-        });
+    const patientId = patientIdentifier;
+    if (!patientId || hasGuidPatientId) {
+      setResolutionRetryable(false);
+      return;
     }
-  }, [id, router]);
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setResolutionRetryable(false);
+
+    api.get(`/api/patients/by-number/${encodeURIComponent(patientId)}`)
+      .then(({ data }) => {
+        if (cancelled) return;
+        if (data?.id) {
+          router.replace(`/patients/${data.id}`);
+          return;
+        }
+        setError(`لا يوجد مريض برقم الملف ${patientId}`);
+        setLoading(false);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        if (status === 404) {
+          setError(`لا يوجد مريض برقم الملف ${patientId}`);
+          setResolutionRetryable(false);
+        } else {
+          setError(extractErrorMessage(
+            err,
+            "تعذر البحث عن المريض برقم الملف — تحقق من الاتصال وحاول مجدداً"
+          ));
+          setResolutionRetryable(true);
+        }
+        setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [patientIdentifier, hasGuidPatientId, router, resolutionRetryKey]);
 
   // ─── FE-06: ?focus=journey deep-link ──────────────────────────────────
   // When the URL carries ?focus=journey (e.g., redirected from the old
@@ -309,30 +336,54 @@ export default function PatientProfilePage() {
   // ─── Data Fetching ──────────────────────────────────────────────────────
 
   useEffect(() => {
+    // CORE-PAT-032: GUID-only endpoints must never receive a patient number.
+    // Resolve the number first, then let the redirected GUID route load the file.
+    if (!patientIdentifier || !hasGuidPatientId) return;
+
+    let cancelled = false;
+    setLoading(true);
     setError(null);
-    api.get<PatientProfile>(`/api/patients/${id}`)
-      .then(r  => setPatient(r.data))
+    setResolutionRetryable(false);
+
+    api.get<PatientProfile>(`/api/patients/${patientIdentifier}`)
+      .then(r => { if (!cancelled) setPatient(r.data); })
       .catch(err => {
-        setError(extractErrorMessage(err, "فشل تحميل بيانات المريض"));
+        if (!cancelled) {
+          setPatient(null);
+          setError(extractErrorMessage(err, "فشل تحميل بيانات المريض"));
+        }
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (!cancelled) setLoading(false); });
 
     setSummaryError(null);
-    api.get<PatientSummary>(`/api/patients/${id}/summary`)
-      .then(r => { setSummary(r.data); setSummaryError(null); })
+    api.get<PatientSummary>(`/api/patients/${patientIdentifier}/summary`)
+      .then(r => {
+        if (!cancelled) {
+          setSummary(r.data);
+          setSummaryError(null);
+        }
+      })
       .catch(err => {
-        setSummary(null);
-        setSummaryError(extractErrorMessage(err, "تعذر تحميل ملخص المريض"));
+        if (!cancelled) {
+          setSummary(null);
+          setSummaryError(extractErrorMessage(err, "تعذر تحميل ملخص المريض"));
+        }
       });
 
     setRelatedCasesError(null);
-    api.get<OrthoCase[]>(`/api/ortho-cases?patientId=${id}&pageSize=10`)
-      .then(r => setOrthoCases(r.data))
-      .catch(err => setRelatedCasesError(extractErrorMessage(err, "تعذر تحميل الحالات المرتبطة")));
-    api.get<{ data: SurgeryCase[] }>(`/api/surgery-cases?patientId=${id}&pageSize=10`)
-      .then(r => setSurgeryCases(r.data.data ?? []))
-      .catch(err => setRelatedCasesError(extractErrorMessage(err, "تعذر تحميل الحالات المرتبطة")));
-  }, [id, financeRefreshKey]);
+    api.get<OrthoCase[]>(`/api/ortho-cases?patientId=${patientIdentifier}&pageSize=10`)
+      .then(r => { if (!cancelled) setOrthoCases(r.data); })
+      .catch(err => {
+        if (!cancelled) setRelatedCasesError(extractErrorMessage(err, "تعذر تحميل الحالات المرتبطة"));
+      });
+    api.get<{ data: SurgeryCase[] }>(`/api/surgery-cases?patientId=${patientIdentifier}&pageSize=10`)
+      .then(r => { if (!cancelled) setSurgeryCases(r.data.data ?? []); })
+      .catch(err => {
+        if (!cancelled) setRelatedCasesError(extractErrorMessage(err, "تعذر تحميل الحالات المرتبطة"));
+      });
+
+    return () => { cancelled = true; };
+  }, [patientIdentifier, hasGuidPatientId, financeRefreshKey, profileRetryKey]);
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
@@ -569,16 +620,30 @@ export default function PatientProfilePage() {
 
   if (error || !patient) return (
     <div className="h-full flex items-center justify-center">
-      <div className="text-center space-y-3">
+      <div role="alert" className="text-center space-y-3">
         <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto">
           <AlertTriangle className="w-8 h-8 text-red-400" />
         </div>
         <p className="text-slate-600 font-medium">{error ?? "المريض غير موجود"}</p>
-        {/* Sprint 17 — RTL icon: back arrow points RIGHT in Arabic RTL. The old
-            `←` Unicode glyph pointed left (LTR convention) — wrong direction. */}
-        <Link href="/patients" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline">
-          <RtlArrowBack className="w-4 h-4" /> العودة للمرضى
-        </Link>
+        <div className="flex items-center justify-center gap-3 flex-wrap">
+          {(hasGuidPatientId || resolutionRetryable) && (
+            <button
+              type="button"
+              onClick={() => {
+                if (hasGuidPatientId) setProfileRetryKey(k => k + 1);
+                else setResolutionRetryKey(k => k + 1);
+              }}
+              className="text-sm font-semibold text-blue-600 underline decoration-dotted"
+            >
+              إعادة المحاولة
+            </button>
+          )}
+          {/* Sprint 17 — RTL icon: back arrow points RIGHT in Arabic RTL. The old
+              `←` Unicode glyph pointed left (LTR convention) — wrong direction. */}
+          <Link href="/patients" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline">
+            <RtlArrowBack className="w-4 h-4" /> العودة للمرضى
+          </Link>
+        </div>
       </div>
     </div>
   );

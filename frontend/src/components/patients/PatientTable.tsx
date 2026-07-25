@@ -553,7 +553,15 @@ export function PatientTable() {
                                 )}
                                 {p.phone && p.isActive && (
                                   <button
-                                    onClick={() => { navigator.clipboard.writeText(p.phone ?? "").catch(() => {}); setRowMenuId(null); toast.success("تم نسخ رقم الهاتف"); }}
+                                    onClick={() => {
+                                      setRowMenuId(null);
+                                      // CORE-PAT-045: toast.success() ran unconditionally after a
+                                      // fire-and-forget clipboard write, so a rejected write (denied
+                                      // permission, insecure context) still told the user it copied.
+                                      navigator.clipboard.writeText(p.phone ?? "")
+                                        .then(() => toast.success("تم نسخ رقم الهاتف"))
+                                        .catch(() => toast.error("تعذر نسخ رقم الهاتف"));
+                                    }}
                                     className="w-full flex items-center gap-2 px-3 py-2 transition text-start"
                                     style={{ color: "#0d2137" }}
                                     onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}

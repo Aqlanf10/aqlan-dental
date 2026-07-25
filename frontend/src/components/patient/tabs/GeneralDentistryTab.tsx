@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Calendar, DollarSign, FileText, Grid3x3, User } from "lucide-react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { EmptyState } from "./EmptyState";
 import { cn } from "@/lib/utils";
 import { DentalChart } from "@/components/dental/DentalChart";
@@ -36,16 +37,27 @@ function statusLabel(status?: string) {
 export function GeneralDentistryTab({ patientId }: GeneralDentistryTabProps) {
   const [treatments, setTreatments] = useState<GeneralTreatmentDto[]>([]);
   const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+  const requestRef = useRef(0);
 
   useEffect(() => {
+    const requestId = ++requestRef.current;
     setLoading(true);
-    setFetchError(false);
+    setFetchError(null);
     api.get<GeneralTreatmentDto[]>(`/api/general-treatments/${patientId}`)
-      .then((r) => setTreatments(r.data))
-      .catch(() => { setFetchError(true); })
-      .finally(() => setLoading(false));
+      .then((r) => {
+        if (requestRef.current === requestId) setTreatments(r.data);
+      })
+      .catch((error: unknown) => {
+        if (requestRef.current === requestId) {
+          setTreatments([]);
+          setFetchError(extractErrorMessage(error, "فشل تحميل بيانات طب الأسنان العام"));
+        }
+      })
+      .finally(() => {
+        if (requestRef.current === requestId) setLoading(false);
+      });
   }, [patientId, retryKey]);
 
   return (
@@ -65,8 +77,8 @@ export function GeneralDentistryTab({ patientId }: GeneralDentistryTabProps) {
             ))}
           </div>
         ) : fetchError ? (
-          <div className="p-4 text-center">
-            <p className="text-sm text-red-600 mb-2">فشل في تحميل بيانات طب الأسنان العام</p>
+          <div role="alert" className="p-4 text-center">
+            <p className="text-sm text-red-600 mb-2">{fetchError}</p>
             <button onClick={() => setRetryKey((k) => k + 1)} className="text-xs text-blue-600 underline">
               إعادة المحاولة
             </button>

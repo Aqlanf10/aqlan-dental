@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { FileSignature, AlertCircle, Plus, ChevronLeft } from "lucide-react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { EmptyState } from "./EmptyState";
 import { financeV3ContractsUrl } from "@/lib/financeRoutes";
@@ -41,14 +42,25 @@ export function ContractsTab({ patientId }: ContractsTabProps) {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const requestRef = useRef(0);
 
   const fetchContracts = useCallback(() => {
+    const requestId = ++requestRef.current;
     setLoading(true);
     setError("");
     api.get<Contract[]>(`/api/contracts?patientId=${patientId}`)
-      .then((r) => setContracts(r.data))
-      .catch(() => setError("فشل تحميل العقود"))
-      .finally(() => setLoading(false));
+      .then((r) => {
+        if (requestRef.current === requestId) setContracts(r.data);
+      })
+      .catch((loadError: unknown) => {
+        if (requestRef.current === requestId) {
+          setContracts([]);
+          setError(extractErrorMessage(loadError, "فشل تحميل العقود"));
+        }
+      })
+      .finally(() => {
+        if (requestRef.current === requestId) setLoading(false);
+      });
   }, [patientId]);
 
   useEffect(() => {
@@ -71,7 +83,7 @@ export function ContractsTab({ patientId }: ContractsTabProps) {
 
   if (error) {
     return (
-      <div className="text-center py-12">
+      <div role="alert" className="text-center py-12">
         <AlertCircle className="w-10 h-10 mx-auto mb-2 text-red-300" />
         <p className="text-sm text-red-500">{error}</p>
         <button onClick={fetchContracts} className="mt-2 text-xs text-[#3d7ab5] hover:underline">إعادة المحاولة</button>

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FlaskConical } from "lucide-react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate } from "@/lib/utils";
 
@@ -93,16 +94,27 @@ function extractOrders(raw: unknown): LabOrderDto[] {
 export function LabOrdersTab({ patientId }: LabOrdersTabProps) {
   const [orders, setOrders] = useState<LabOrderDto[]>([]);
   const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+  const requestRef = useRef(0);
 
   useEffect(() => {
-    setFetchError(false);
+    const requestId = ++requestRef.current;
+    setFetchError(null);
     setLoading(true);
     api.get(`/api/lab-orders?patientId=${patientId}`)
-      .then((r) => setOrders(extractOrders(r.data)))
-      .catch(() => { setFetchError(true); })
-      .finally(() => setLoading(false));
+      .then((r) => {
+        if (requestRef.current === requestId) setOrders(extractOrders(r.data));
+      })
+      .catch((error: unknown) => {
+        if (requestRef.current === requestId) {
+          setOrders([]);
+          setFetchError(extractErrorMessage(error, "فشل تحميل طلبات المختبر"));
+        }
+      })
+      .finally(() => {
+        if (requestRef.current === requestId) setLoading(false);
+      });
   }, [patientId, retryKey]);
 
   if (loading) {
@@ -117,8 +129,8 @@ export function LabOrdersTab({ patientId }: LabOrdersTabProps) {
 
   if (fetchError) {
     return (
-      <div className="p-4 text-center">
-        <p className="text-sm text-red-600 mb-2">فشل في تحميل البيانات</p>
+      <div role="alert" className="p-4 text-center">
+        <p className="text-sm text-red-600 mb-2">{fetchError}</p>
         <button onClick={() => setRetryKey((k) => k + 1)} className="text-xs text-blue-600 underline">إعادة المحاولة</button>
       </div>
     );

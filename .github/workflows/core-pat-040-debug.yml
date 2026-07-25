@@ -1,16 +1,16 @@
 name: CORE-PAT-040 Unit Test Diagnostics
 
 on:
-  push:
-    branches:
-      - agent/core-pat-040-active-patient-write-guard
+  pull_request:
+    types: [synchronize]
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
   diagnose:
-    if: ${{ !contains(github.event.head_commit.message, 'CORE-PAT-040 unit test diagnostics') }}
+    if: github.head_ref == 'agent/core-pat-040-active-patient-write-guard'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ github.head_ref }}
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'

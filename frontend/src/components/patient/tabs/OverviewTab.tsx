@@ -13,6 +13,7 @@ import api from "@/lib/api";
 import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate, APPOINTMENT_STATUS_LABELS } from "@/lib/utils";
 import type { PatientProfile } from "@/types/patient";
+import type { PatientSummary } from "@/types/patientSummary";
 import type { OrthoOverview } from "@/types/ortho";
 import { financeV3CollectionsUrl } from "@/lib/financeRoutes";
 import { SURGERY_STATUS_LABELS } from "@/types/surgery";
@@ -21,30 +22,6 @@ import { APPOINTMENT_STATUS_COLORS as STATUS_COLORS } from "@/lib/statusStyles";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
-interface PatientSummary {
-  totalAppointments: number;
-  completedAppointments: number;
-  activeOrthoCases: number;
-  totalPaid: number | null;
-  totalOutstanding: number | null;
-  /** QA-596: performed sessions with AmountDueReference but no linked invoice. Included in totalOutstanding. */
-  unbilledVisitsAmount?: number | null;
-  prescriptionsCount: number;
-  // Extended fields
-  lastVisitDate?: string;
-  lastVisitDoctor?: string;
-  lastVisitDiagnosis?: string;
-  nextAppointmentDate?: string;
-  nextAppointmentTime?: string;
-  nextAppointmentType?: string;
-  nextAppointmentDoctor?: string;
-  chiefComplaint?: string;
-  currentDiagnosis?: string;
-  nextPlannedStep?: string;
-  activeOrthoSummary?: { caseNumber: string; applianceType?: string; stagePercentage: number }[];
-  activeSurgerySummary?: { caseNumber: string; surgeryType: string; status: string }[];
-  medicalAlerts?: string[];
-}
 
 interface TimelineEvent {
   type: string;

@@ -6,29 +6,11 @@ import { PrintLayout } from "@/components/print/PrintLayout";
 import api from "@/lib/api";
 import { formatArabicDate, GENDER_LABELS } from "@/lib/utils";
 import type { PatientProfile } from "@/types/patient";
+import type { PatientSummary } from "@/types/patientSummary";
 import type { PatientFinanceSummary } from "@/types/finance";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface PatientSummary {
-  totalAppointments: number;
-  completedAppointments: number;
-  activeOrthoCases: number;
-  totalPaid: number;
-  totalOutstanding: number;
-  prescriptionsCount: number;
-  lastVisitDate?: string;
-  lastVisitDoctor?: string;
-  lastVisitDiagnosis?: string;
-  nextAppointmentDate?: string;
-  nextAppointmentTime?: string;
-  nextAppointmentType?: string;
-  nextAppointmentDoctor?: string;
-  chiefComplaint?: string;
-  currentDiagnosis?: string;
-  nextPlannedStep?: string;
-  medicalAlerts?: string[];
-}
 
 interface TimelineEvent {
   type: string;

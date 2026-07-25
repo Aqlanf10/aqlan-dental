@@ -86,7 +86,9 @@ public class PatientFinancePermissionEnforcementTests
     private static object? PropertyValue(IActionResult result, string propertyName)
     {
         var ok = result.Should().BeOfType<OkObjectResult>().Subject;
-        return ok.Value!.GetType().GetProperty(propertyName)!.GetValue(ok.Value);
+        var property = ok.Value!.GetType().GetProperties()
+            .Single(p => string.Equals(p.Name, propertyName, StringComparison.OrdinalIgnoreCase));
+        return property.GetValue(ok.Value);
     }
 
     [Fact]

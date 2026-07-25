@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import api from "@/lib/api";
 import { OverviewTab } from "@/components/patient/tabs/OverviewTab";
@@ -10,7 +11,7 @@ vi.mock("@/lib/api", () => ({
 }));
 
 vi.mock("next/link", () => ({
-  default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => (
+  default: ({ href, children, ...props }: { href: string; children: ReactNode }) => (
     <a href={href} {...props}>{children}</a>
   ),
 }));
@@ -78,14 +79,14 @@ describe("OverviewTab honest section loading", () => {
 
     expect(await screen.findByText("تم تحميل جزء من نظرة المريض فقط")).toBeInTheDocument();
     expect(screen.getAllByText("تعذر تحميل السجل السريري").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("هذه ليست حالة «لا يوجد نشاط».")).toBeInTheDocument();
+    expect(screen.getByText("هذه ليست حالة «لا يوجد نشاط»." )).toBeInTheDocument();
     expect(screen.queryByText("لا يوجد نشاط بعد")).not.toBeInTheDocument();
   });
 
   it("retries all sections without reloading the browser", async () => {
     let attempt = 0;
     vi.mocked(api.get).mockImplementation((url: string) => {
-      if (attempt == 0) {
+      if (attempt === 0) {
         return Promise.reject({
           isAxiosError: true,
           response: { status: 503, data: { message: "انقطاع مؤقت" } },

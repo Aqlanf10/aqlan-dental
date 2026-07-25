@@ -47,7 +47,13 @@ export default function FinancialStatementPrintPage() {
       api.get<PatientProfile>(`/api/patients/${id}`).then((r) => r.data).catch(() => null),
       api.get<PatientFinanceSummary>(`/api/patients/${id}/finance-summary`).then((r) => r.data).catch(() => null),
       api.get<Contract[]>(`/api/contracts?patientId=${id}`).then((r) => r.data).catch(() => []),
-      api.get<Payment[]>(`/api/payments?patientId=${id}`).then((r) => r.data).catch(() => []),
+      // CORE-PAT-044: the generic /api/payments list is paginated (default
+      // pageSize=20) — the printed statement silently omitted every payment
+      // past the 20th while its own totals (from finance-summary) stayed
+      // correct, handing the patient a receipt list that didn't match the
+      // total. Use the dedicated non-paginated full-history endpoint instead
+      // (the same one PaymentsTab now uses).
+      api.get<Payment[]>(`/api/patients/${id}/payments`).then((r) => r.data).catch(() => []),
     ]).then(([p, f, c, pm]) => {
       setPatient(p);
       setFinance(f);

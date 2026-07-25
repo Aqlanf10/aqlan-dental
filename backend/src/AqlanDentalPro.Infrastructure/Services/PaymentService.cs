@@ -71,6 +71,8 @@ public class PaymentService(AppDbContext db, ICurrentUserService currentUser, IN
 
     public async Task<PaymentDto> CreatePaymentAsync(CreatePaymentRequest req)
     {
+        await ActivePatientWriteGuard.EnsureAsync(db, req.PatientId);
+
         // Require active open cashier session
         var userId = currentUser.UserId ?? Guid.Empty;
         var activeSession = await db.CashierSessions

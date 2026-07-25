@@ -145,6 +145,8 @@ public class ContractService(
 
     public async Task<ContractDetailDto> CreateContractAsync(CreateContractRequest req)
     {
+        await ActivePatientWriteGuard.EnsureAsync(db, req.PatientId);
+
         // YOLO-S2: validate the optional package link if provided. Resolves Guid.Empty to null
         // so the caller can send an empty Guid to mean "no package" without a separate flag.
         Guid? packageId = req.PackageId;

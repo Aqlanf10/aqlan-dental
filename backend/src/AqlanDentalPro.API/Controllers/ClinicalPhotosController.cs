@@ -93,6 +93,9 @@ public class ClinicalPhotosController(
         var denied = await DenyIfDoctorCannotAccess(req.PatientId);
         if (denied is not null) return denied;
 
+        if (!await ActivePatientWriteGuard.ExistsAsync(db, req.PatientId))
+            return BadRequest(new { message = ActivePatientWriteGuard.ErrorMessage });
+
         // CLIN-25: If OrthoCaseId is provided, verify it belongs to the same patient
         // (mirrors RadiographsController.AddRadiograph validation).
         if (req.OrthoCaseId.HasValue &&
@@ -196,6 +199,9 @@ public class RadiographsController(
         // CLIN-01: per-patient check before creating.
         var denied = await DenyIfDoctorCannotAccess(req.PatientId);
         if (denied is not null) return denied;
+
+        if (!await ActivePatientWriteGuard.ExistsAsync(db, req.PatientId))
+            return BadRequest(new { message = ActivePatientWriteGuard.ErrorMessage });
 
         // Codex review (PR #357): the case must belong to the SAME patient —
         // existence alone would allow cross-patient links.

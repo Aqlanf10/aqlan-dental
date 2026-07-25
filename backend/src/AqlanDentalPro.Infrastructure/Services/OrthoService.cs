@@ -113,6 +113,8 @@ public class OrthoService(AppDbContext db, ICurrentUserService currentUser)
 
     public async Task<OrthoCaseDetailDto> CreateAsync(CreateOrthoCaseRequest req)
     {
+        await ActivePatientWriteGuard.EnsureAsync(db, req.PatientId);
+
         const int maxRetries = 3;
         for (var attempt = 0; attempt < maxRetries; attempt++)
         {

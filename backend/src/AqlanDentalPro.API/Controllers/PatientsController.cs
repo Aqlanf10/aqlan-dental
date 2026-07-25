@@ -539,7 +539,7 @@ public class PatientsController(
     private static string? FirstNonBlank(params string?[] values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
 
-    private static List<string> BuildMedicalAlerts(MedicalHistory? history)
+    internal static List<string> BuildMedicalAlerts(MedicalHistory? history)
     {
         if (history == null) return [];
 
@@ -556,13 +556,19 @@ public class PatientsController(
         if (history.BleedingDisorders) alerts.Add("اضطرابات نزف");
         if (history.TmjProblems) alerts.Add("مشكلات مفصل الفك");
 
+        // CORE-PAT-031: IsPregnant is a tri-state value (Yes / No / N/A).
+        // Treat only explicit affirmative values as a clinical alert. The old
+        // negative-list logic classified N/A (لا ينطبق) and unknown legacy values
+        // as pregnancy, creating a false safety warning in the patient summary.
         var pregnancy = history.IsPregnant?.Trim();
-        if (!string.IsNullOrWhiteSpace(pregnancy)
-            && !pregnancy.Equals("لا", StringComparison.OrdinalIgnoreCase)
-            && !pregnancy.Equals("no", StringComparison.OrdinalIgnoreCase)
-            && !pregnancy.Equals("false", StringComparison.OrdinalIgnoreCase))
+        if (pregnancy != null && (
+            pregnancy.Equals("yes", StringComparison.OrdinalIgnoreCase)
+            || pregnancy.Equals("true", StringComparison.OrdinalIgnoreCase)
+            || pregnancy.Equals("نعم", StringComparison.OrdinalIgnoreCase)
+            || pregnancy.Equals("حامل", StringComparison.OrdinalIgnoreCase)
+            || pregnancy.Equals("يوجد حمل", StringComparison.OrdinalIgnoreCase)))
         {
-            alerts.Add($"حمل: {pregnancy}");
+            alerts.Add("حمل");
         }
 
         return alerts.Distinct(StringComparer.OrdinalIgnoreCase).ToList();

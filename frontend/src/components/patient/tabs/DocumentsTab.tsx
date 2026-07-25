@@ -5,6 +5,7 @@ import Link from "next/link";
 import { FolderOpen, Plus, Pencil, Trash2, X, FileText, Upload, Eye, Filter, Download, CheckCircle, Printer, Pill, FileSignature, ArrowRightLeft, FlaskConical } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
@@ -110,6 +111,7 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
   const [filterType, setFilterType] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const loadRequestRef = useRef(0);
 
   // Preview state
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -118,14 +120,24 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
   const [previewMimeType, setPreviewMimeType] = useState<string | undefined>();
 
   const fetchDocuments = useCallback(() => {
+    const requestId = ++loadRequestRef.current;
     setLoading(true);
     setError("");
     const params = new URLSearchParams({ patientId });
     if (filterType) params.set("documentType", filterType);
     api.get<{ data: DocumentDto[] }>(`/api/documents?${params}`)
-      .then((r) => setDocuments(r.data.data ?? []))
-      .catch(() => setError("فشل تحميل المستندات"))
-      .finally(() => setLoading(false));
+      .then((r) => {
+        if (loadRequestRef.current === requestId) setDocuments(r.data.data ?? []);
+      })
+      .catch((error: unknown) => {
+        if (loadRequestRef.current === requestId) {
+          setDocuments([]);
+          setError(extractErrorMessage(error, "فشل تحميل المستندات"));
+        }
+      })
+      .finally(() => {
+        if (loadRequestRef.current === requestId) setLoading(false);
+      });
   }, [patientId, filterType]);
 
   useEffect(() => {
@@ -261,6 +273,8 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
 
   return (
     <div className="space-y-4">
+      {!loading && !error && (
+        <>
       {/* Stats row */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <div className="rounded-xl px-3 py-2.5 flex items-center gap-2.5 bg-[#3d7ab510]">
@@ -285,6 +299,9 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
           </div>
         </div>
       </div>
+
+        </>
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -331,7 +348,10 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
           ))}
         </div>
       ) : error ? (
-        <div className="text-center py-8 text-red-500 text-sm">{error}</div>
+        <div role="alert" className="text-center py-8">
+          <p className="text-sm text-red-600 mb-2">{error}</p>
+          <button type="button" onClick={fetchDocuments} className="text-xs font-semibold text-blue-600 underline decoration-dotted">إعادة المحاولة</button>
+        </div>
       ) : activeDocs.length === 0 ? (
         <EmptyState
           icon={FolderOpen}

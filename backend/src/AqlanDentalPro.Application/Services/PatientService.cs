@@ -13,12 +13,10 @@ namespace AqlanDentalPro.Application.Services;
 public class PatientService(
     IPatientRepository repo,
     ICurrentUserService currentUser,
-    IConfiguration config,
+    IPatientSettingsReader patientSettings,
     IPatientPortalService portalService,
     ILogger<PatientService> logger)
 {
-    private string NumberPrefix => config["Settings:PatientNumberPrefix"] ?? "GM";
-
     public async Task<PaginatedResponse<PatientListDto>> GetListAsync(
         string? search, int page, int pageSize, string? gender = null, Guid? doctorId = null,
         string? status = "active", IReadOnlySet<Guid>? allowedPatientIds = null)
@@ -105,7 +103,8 @@ public class PatientService(
         // Retry up to 5 times to handle the rare concurrent-insert race on PatientNumber
         for (int attempt = 0; attempt < 5; attempt++)
         {
-            var number = await repo.GeneratePatientNumberAsync(NumberPrefix);
+            var numberPrefix = await patientSettings.GetNumberPrefixAsync();
+        var number = await repo.GeneratePatientNumberAsync(numberPrefix);
 
             var patient = new Patient
             {

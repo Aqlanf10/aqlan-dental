@@ -22,7 +22,11 @@ const clinicSettingsSchema = z.object({
   "clinic.lead_doctor": z.string().optional(),
   "clinic.lead_doctor_title": z.string().optional(),
   "clinic.lead_doctor_credentials": z.string().optional(),
-  "patient.number_prefix": z.string().optional(),
+  "patient.number_prefix": z.string()
+    .trim()
+    .min(1, "بادئة رقم المريض مطلوبة")
+    .max(8, "الحد الأقصى 8 أحرف")
+    .regex(/^[\p{L}\p{N}]+$/u, "استخدم أحرفًا وأرقامًا فقط"),
 });
 type ClinicSettingsFormData = z.infer<typeof clinicSettingsSchema>;
 
@@ -71,15 +75,20 @@ export function ClinicTab() {
     setSaving(true);
     setSaved(false);
     try {
-      const clinicFields = [
-        "clinic.name", "clinic.location", "clinic.phones",
-        "clinic.lead_doctor", "clinic.lead_doctor_title", "clinic.lead_doctor_credentials",
+      const settingsFields = [
+        { key: "clinic.name", category: "clinic" },
+        { key: "clinic.location", category: "clinic" },
+        { key: "clinic.phones", category: "clinic" },
+        { key: "clinic.lead_doctor", category: "clinic" },
+        { key: "clinic.lead_doctor_title", category: "clinic" },
+        { key: "clinic.lead_doctor_credentials", category: "clinic" },
+        { key: "patient.number_prefix", category: "patients" },
       ] as const;
       await Promise.all(
-        clinicFields.map((key) =>
+        settingsFields.map(({ key, category }) =>
           api.put(`/api/settings/${encodeURIComponent(key)}`, {
             value: formData[key] ?? "",
-            category: "clinic",
+            category,
           })
         )
       );
@@ -160,7 +169,12 @@ export function ClinicTab() {
           className={inputCls}
           placeholder="GM"
           dir="ltr"
+          maxLength={8}
         />
+        {errors["patient.number_prefix"] && (
+          <p className="text-xs text-red-600 mt-1">{errors["patient.number_prefix"].message}</p>
+        )}
+        <p className="text-xs text-gray-500 mt-1">تُستخدم في أرقام المرضى الجدد فقط، مثل GM-2026-001.</p>
       </div>
 
       <div className="rounded-xl border border-cyan-100 bg-cyan-50/50 p-4">

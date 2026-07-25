@@ -115,10 +115,18 @@ export default function PatientProfilePage() {
   // CORE-PAT-001: a failed summary must never render as real data — the balance
   // card used to fall back to 0, so a patient WITH debt looked fully paid.
   const [summaryError, setSummaryError] = useState<string | null>(null);
-  const [relatedCasesError, setRelatedCasesError] = useState<string | null>(null);
   const retrySummary = () => setFinanceRefreshKey(k => k + 1);
   const [orthoCases,   setOrthoCases]   = useState<OrthoCase[]>([]);
   const [surgeryCases, setSurgeryCases] = useState<SurgeryCase[]>([]);
+  const [orthoCasesError, setOrthoCasesError] = useState<string | null>(null);
+  const [surgeryCasesError, setSurgeryCasesError] = useState<string | null>(null);
+  const [relatedCasesLoading, setRelatedCasesLoading] = useState(true);
+  const [relatedCasesRetryKey, setRelatedCasesRetryKey] = useState(0);
+  const retryRelatedCases = () => setRelatedCasesRetryKey(key => key + 1);
+  const relatedCasesError = [
+    orthoCasesError ? `حالات التقويم: ${orthoCasesError}` : null,
+    surgeryCasesError ? `الحالات الجراحية: ${surgeryCasesError}` : null,
+  ].filter(Boolean).join(" — ");
   // Sprint Patient-Finance-Ledger: financeRefreshKey triggers re-fetch of summary & finance tab
   const [financeRefreshKey, setFinanceRefreshKey] = useState(0);
   const [loading,      setLoading]      = useState(true);
@@ -370,20 +378,42 @@ export default function PatientProfilePage() {
         }
       });
 
-    setRelatedCasesError(null);
-    api.get<OrthoCase[]>(`/api/ortho-cases?patientId=${patientIdentifier}&pageSize=10`)
-      .then(r => { if (!cancelled) setOrthoCases(r.data); })
-      .catch(err => {
-        if (!cancelled) setRelatedCasesError(extractErrorMessage(err, "تعذر تحميل الحالات المرتبطة"));
-      });
-    api.get<{ data: SurgeryCase[] }>(`/api/surgery-cases?patientId=${patientIdentifier}&pageSize=10`)
-      .then(r => { if (!cancelled) setSurgeryCases(r.data.data ?? []); })
-      .catch(err => {
-        if (!cancelled) setRelatedCasesError(extractErrorMessage(err, "تعذر تحميل الحالات المرتبطة"));
-      });
-
     return () => { cancelled = true; };
   }, [patientIdentifier, hasGuidPatientId, financeRefreshKey, profileRetryKey]);
+
+  useEffect(() => {
+    if (!patientIdentifier || !hasGuidPatientId) return;
+
+    let cancelled = false;
+    setRelatedCasesLoading(true);
+
+    Promise.allSettled([
+      api.get<OrthoCase[]>(`/api/ortho-cases?patientId=${patientIdentifier}&pageSize=10`),
+      api.get<{ data: SurgeryCase[] }>(`/api/surgery-cases?patientId=${patientIdentifier}&pageSize=10`),
+    ]).then(([orthoResult, surgeryResult]) => {
+      if (cancelled) return;
+
+      if (orthoResult.status === "fulfilled") {
+        setOrthoCases(orthoResult.value.data);
+        setOrthoCasesError(null);
+      } else {
+        setOrthoCases([]);
+        setOrthoCasesError(extractErrorMessage(orthoResult.reason, "تعذر تحميل حالات التقويم"));
+      }
+
+      if (surgeryResult.status === "fulfilled") {
+        setSurgeryCases(surgeryResult.value.data.data ?? []);
+        setSurgeryCasesError(null);
+      } else {
+        setSurgeryCases([]);
+        setSurgeryCasesError(extractErrorMessage(surgeryResult.reason, "تعذر تحميل الحالات الجراحية"));
+      }
+
+      setRelatedCasesLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [patientIdentifier, hasGuidPatientId, relatedCasesRetryKey]);
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
@@ -441,12 +471,16 @@ export default function PatientProfilePage() {
       case "info":
         return (
           <>
-            {relatedCasesError && (
+            {relatedCasesLoading ? (
+              <div role="status" className="mb-3 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700">
+                جارٍ تحميل الحالات المرتبطة…
+              </div>
+            ) : relatedCasesError ? (
               <div role="alert" className="mb-3 flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
                 <span>{relatedCasesError}</span>
-                <button type="button" onClick={retrySummary} className="underline decoration-dotted">إعادة المحاولة</button>
+                <button type="button" onClick={retryRelatedCases} className="underline decoration-dotted">إعادة المحاولة</button>
               </div>
-            )}
+            ) : null}
             <BasicInfoTab
               patient={patient}
               orthoCases={orthoCases}

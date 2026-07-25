@@ -104,7 +104,7 @@ public class PatientService(
         for (int attempt = 0; attempt < 5; attempt++)
         {
             var numberPrefix = await patientSettings.GetNumberPrefixAsync();
-        var number = await repo.GeneratePatientNumberAsync(numberPrefix);
+            var number = await repo.GeneratePatientNumberAsync(numberPrefix);
 
             var patient = new Patient
             {

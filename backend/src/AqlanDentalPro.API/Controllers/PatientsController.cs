@@ -20,7 +20,6 @@ namespace AqlanDentalPro.API.Controllers;
 public class PatientsController(
     PatientService service,
     AppDbContext db,
-    IPatientPortalService portalService,
     IFinanceReadService financeReadService,
     ICurrentUserService currentUser,
     IPatientAccessService patientAccess,
@@ -243,7 +242,7 @@ public class PatientsController(
                 .Where(p => p.IsActive && (p.NormalizedPhone == normalizedPhone || p.NormalizedWhatsApp == normalizedPhone));
             if (excludeId.HasValue) query = query.Where(p => p.Id != excludeId.Value);
             var match = await query
-                .Select(p => new { p.Id, p.PatientNumber, FullName = p.FirstName + " " + p.MiddleName + " " + p.LastName, p.Phone, MatchType = "phone" })
+                .Select(p => new { p.Id, p.PatientNumber, FullName = (p.FirstName + " " + (string.IsNullOrWhiteSpace(p.MiddleName) ? "" : p.MiddleName + " ") + p.LastName).Trim(), p.Phone, MatchType = "phone" })
                 .FirstOrDefaultAsync();
             if (match != null) duplicates.Add(match);
         }
@@ -255,7 +254,7 @@ public class PatientsController(
                 .Where(p => p.IsActive && (p.NormalizedWhatsApp == normalizedWhatsApp || p.NormalizedPhone == normalizedWhatsApp));
             if (excludeId.HasValue) query = query.Where(p => p.Id != excludeId.Value);
             var match = await query
-                .Select(p => new { p.Id, p.PatientNumber, FullName = p.FirstName + " " + p.MiddleName + " " + p.LastName, p.Phone, MatchType = "whatsapp" })
+                .Select(p => new { p.Id, p.PatientNumber, FullName = (p.FirstName + " " + (string.IsNullOrWhiteSpace(p.MiddleName) ? "" : p.MiddleName + " ") + p.LastName).Trim(), p.Phone, MatchType = "whatsapp" })
                 .FirstOrDefaultAsync();
             if (match != null) duplicates.Add(match);
         }
@@ -267,7 +266,7 @@ public class PatientsController(
                 .Where(p => p.PatientNumber == patientNumber && p.IsActive);
             if (excludeId.HasValue) query = query.Where(p => p.Id != excludeId.Value);
             var match = await query
-                .Select(p => new { p.Id, p.PatientNumber, FullName = p.FirstName + " " + p.MiddleName + " " + p.LastName, p.Phone, MatchType = "patientNumber" })
+                .Select(p => new { p.Id, p.PatientNumber, FullName = (p.FirstName + " " + (string.IsNullOrWhiteSpace(p.MiddleName) ? "" : p.MiddleName + " ") + p.LastName).Trim(), p.Phone, MatchType = "patientNumber" })
                 .FirstOrDefaultAsync();
             if (match != null) duplicates.Add(match);
         }
@@ -280,7 +279,7 @@ public class PatientsController(
                 nameQuery = nameQuery.Where(p => p.DateOfBirth == dob);
 
             var nameMatches = await nameQuery
-                .Select(p => new { p.Id, p.PatientNumber, FullName = p.FirstName + " " + p.MiddleName + " " + p.LastName, p.Phone, MatchType = "name" })
+                .Select(p => new { p.Id, p.PatientNumber, FullName = (p.FirstName + " " + (string.IsNullOrWhiteSpace(p.MiddleName) ? "" : p.MiddleName + " ") + p.LastName).Trim(), p.Phone, MatchType = "name" })
                 .Take(5)
                 .ToListAsync();
             duplicates.AddRange(nameMatches.Where(nm => !duplicates.Any(d => ((dynamic)d).Id == nm.Id)));
@@ -649,19 +648,10 @@ public class PatientsController(
         return Ok(allEvents);
     }
 
-    // ── Portal credentials (reception / admin only) ───────────────────────────
-
-    [HttpGet("{id:guid}/portal-credentials")]
-    [Authorize(Policy = "AdminOrReception")]
-    public async Task<IActionResult> GetPortalCredentials(Guid id)
-    {
-        var exists = await db.Patients.AnyAsync(p => p.Id == id);
-        if (!exists) return NotFound(new { message = "المريض غير موجود" });
-
-        var creds = await portalService.GetPatientCredentialsAsync(id);
-        if (creds == null) return NotFound(new { message = "لا يوجد حساب بوابة لهذا المريض" });
-        return Ok(creds);
-    }
+    // CORE-PAT-047: removed dead GET {id}/portal-credentials — zero frontend
+    // callers (verified: grep across frontend/src). The live path is
+    // PatientPortalController's GET /api/portal/credentials/{patientId},
+    // which shares the same IPatientPortalService.GetPatientCredentialsAsync.
 
     // ── Account statement (granular finance permission) ───────────────────────
 

@@ -73,7 +73,6 @@ public class PatientFinancePermissionEnforcementTests
         var controller = new PatientsController(
             service: null!,
             db: db,
-            portalService: new Mock<IPatientPortalService>().Object,
             financeReadService: financeRead.Object,
             currentUser: user,
             patientAccess: patientAccess.Object,

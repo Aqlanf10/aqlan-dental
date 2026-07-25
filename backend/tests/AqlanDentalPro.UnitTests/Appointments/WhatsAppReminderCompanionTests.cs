@@ -184,4 +184,24 @@ public class WhatsAppReminderCompanionTests
         var appt = await db.Appointments.FirstAsync(a => a.Id == apptId);
         appt.WhatsAppReminderSentAt.Should().NotBeNull();
     }
+
+    // CORE-PAT-046: a phone typed WITH the country code but no "+" (staff
+    // entered "967770245745" directly) used to fall through NormalizePhone
+    // unchanged, dialing Meta's Cloud API without the "+" every other stored
+    // format above resolves to.
+    [Fact]
+    public async Task SendAppointmentReminder_CompanionPhoneWithCountryCodeButNoPlus_GetsPlusPrefixed()
+    {
+        await using var db = CreateContext();
+        var (apptId, _) = await SeedAsync(db, companionPhone: "967772222222");
+        var service = CreateService(db);
+
+        await service.SendAppointmentReminderAsync(
+            new SendAppointmentReminderRequest { AppointmentId = apptId, HoursBefore = 24 });
+
+        var messages = await db.WhatsAppMessages
+            .Where(m => m.RelatedEntityId == apptId)
+            .ToListAsync();
+        messages.Should().Contain(m => m.PhoneNumber == "+967772222222");
+    }
 }

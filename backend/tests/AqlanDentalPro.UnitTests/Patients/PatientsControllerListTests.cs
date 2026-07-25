@@ -71,7 +71,6 @@ public class PatientsControllerListTests
         ILogger<PatientsController>? logger = null)
     {
         var db = CreateDb();
-        var mockPortal = new Mock<IPatientPortalService>().Object;
         var mockAudit = new Mock<IAuditService>().Object;
         logger ??= new Mock<ILogger<PatientsController>>().Object;
 
@@ -82,7 +81,6 @@ public class PatientsControllerListTests
         return new PatientsController(
             service: null!,
             db: db,
-            portalService: mockPortal,
             financeReadService: null!,
             currentUser: currentUser,
             patientAccess: patientAccess,

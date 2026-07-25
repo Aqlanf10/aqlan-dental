@@ -24,13 +24,16 @@ jobs:
           dotnet-version: '8.0.x'
       - run: dotnet restore
       - run: dotnet build --no-restore --configuration Release --warnaserror:CS9113
-      - name: Capture failures
+      - name: Capture concise failures
         run: |
           set +e
           dotnet test tests/AqlanDentalPro.UnitTests/AqlanDentalPro.UnitTests.csproj \
             --no-restore --no-build --configuration Release --verbosity normal \
-            > ../docs/audits/CORE-PAT-040_UNIT_TEST_DIAGNOSTICS.txt 2>&1
+            > /tmp/core-pat-040-tests.txt 2>&1
           status=$?
+          grep -E "(^  Failed |^    Error Message:|^    Stack Trace:|^Failed!|^Passed!|^Total tests:|^     Failed:|^     Passed:|^ Test Run Failed|ArgumentException|ActivePatientWriteGuard)" \
+            /tmp/core-pat-040-tests.txt \
+            > ../docs/audits/CORE-PAT-040_UNIT_TEST_DIAGNOSTICS.txt || true
           printf '\nEXIT_STATUS=%s\n' "$status" >> ../docs/audits/CORE-PAT-040_UNIT_TEST_DIAGNOSTICS.txt
           exit 0
       - name: Commit diagnostics
@@ -39,5 +42,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/audits/CORE-PAT-040_UNIT_TEST_DIAGNOSTICS.txt
-          git commit -m "chore: capture CORE-PAT-040 unit test diagnostics"
+          git commit -m "chore: capture concise CORE-PAT-040 diagnostics"
           git push

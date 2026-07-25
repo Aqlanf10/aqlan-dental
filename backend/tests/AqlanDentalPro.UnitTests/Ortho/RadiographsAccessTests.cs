@@ -29,8 +29,8 @@ namespace AqlanDentalPro.UnitTests.Ortho;
 ///     patient they are not linked to.
 ///   * A doctor (non-admin) gets HTTP 200 when adding a radiograph for a
 ///     patient they ARE linked to.
-///   * An admin (non-doctor) bypasses the per-patient check and gets HTTP 200
-///     for any patient.
+///   * An admin (non-doctor) bypasses the per-patient access check and gets
+///     HTTP 200 for an existing active patient.
 /// </summary>
 public class RadiographsAccessTests : IDisposable
 {
@@ -51,6 +51,14 @@ public class RadiographsAccessTests : IDisposable
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         _db = new AppDbContext(options);
+
+        // CORE-PAT-040: successful writes now require a real active patient.
+        // Seed both access-control subjects so these tests isolate authorization
+        // behavior instead of failing the patient-existence guard first.
+        _db.Patients.AddRange(
+            NewActivePatient(PatientAId, "PT-RAD-A"),
+            NewActivePatient(PatientBId, "PT-RAD-B"));
+        _db.SaveChanges();
 
         _currentUser.SetupGet(x => x.UserId).Returns(DoctorUserId);
         _currentUser.SetupGet(x => x.Role).Returns(UserRole.GeneralDentist);
@@ -101,7 +109,7 @@ public class RadiographsAccessTests : IDisposable
 
         var result = await _controller.AddRadiograph(req);
 
-        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        _ = result.Should().BeOfType<OkObjectResult>().Subject;
         _db.Radiographs.Should().ContainSingle(
             "the radiograph must be persisted when access is granted");
         var saved = _db.Radiographs.Single();
@@ -114,8 +122,8 @@ public class RadiographsAccessTests : IDisposable
     public async Task Admin_AddingRadiographForAnyPatient_BypassesAccessCheck()
     {
         // Admin is not a "doctor" role, so DenyIfDoctorCannotAccess
-        // short-circuits (returns null) and the radiograph is persisted
-        // regardless of which patient it targets.
+        // short-circuits (returns null) and the radiograph is persisted for an
+        // existing active patient without a doctor-patient access lookup.
         _patientAccess.SetupGet(x => x.IsDoctor).Returns(false);
         // CanAccessPatientAsync must NOT be called for admin — if it is,
         // the mock returns false by default and the test would fail loudly.
@@ -132,11 +140,21 @@ public class RadiographsAccessTests : IDisposable
 
         var result = await _controller.AddRadiograph(req);
 
-        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        _ = result.Should().BeOfType<OkObjectResult>().Subject;
         _db.Radiographs.Should().ContainSingle(
             "the radiograph must be persisted for admin without per-patient check");
         _db.Radiographs.Single().PatientId.Should().Be(PatientBId);
     }
+
+    private static Patient NewActivePatient(Guid id, string patientNumber) =>
+        new()
+        {
+            Id = id,
+            PatientNumber = patientNumber,
+            FirstName = "مريض",
+            LastName = "اختبار",
+            IsActive = true,
+        };
 
     private static AddRadiographRequest NewRadiographRequest(Guid patientId) =>
         new()

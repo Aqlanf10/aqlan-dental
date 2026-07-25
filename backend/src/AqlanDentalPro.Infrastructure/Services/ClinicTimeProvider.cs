@@ -57,13 +57,28 @@ public static class ClinicTimeProvider
     /// Explicit timezone parameters remain available for deterministic tests.
     /// </summary>
     public static DateOnly ClinicToday(TimeZoneInfo? tz = null)
-        => DateOnly.FromDateTime(ClinicNow(tz));
+        => ClinicDateFromUtc(DateTime.UtcNow, tz);
+
+    /// <summary>
+    /// Deterministically converts a UTC instant to the clinic-local calendar date.
+    /// Useful at midnight boundaries and in tests.
+    /// </summary>
+    public static DateOnly ClinicDateFromUtc(DateTime utc, TimeZoneInfo? tz = null)
+        => DateOnly.FromDateTime(ClinicTimeFromUtc(utc, tz));
 
     /// <summary>
     /// Returns the clinic-local DateTime (UTC converted to clinic timezone).
     /// </summary>
     public static DateTime ClinicNow(TimeZoneInfo? tz = null)
-        => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz ?? CurrentTimeZone);
+        => ClinicTimeFromUtc(DateTime.UtcNow, tz);
+
+    public static DateTime ClinicTimeFromUtc(DateTime utc, TimeZoneInfo? tz = null)
+    {
+        var normalizedUtc = utc.Kind == DateTimeKind.Utc
+            ? utc
+            : DateTime.SpecifyKind(utc, DateTimeKind.Utc);
+        return TimeZoneInfo.ConvertTimeFromUtc(normalizedUtc, tz ?? CurrentTimeZone);
+    }
 
     /// <summary>
     /// Converts a clinic-local DateOnly to a UTC DateTime range [start, end)

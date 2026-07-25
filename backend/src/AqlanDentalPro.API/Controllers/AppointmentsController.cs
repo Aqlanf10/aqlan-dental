@@ -63,7 +63,7 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         DateOnly targetDate;
         if (string.IsNullOrWhiteSpace(date))
         {
-            targetDate = DateOnly.FromDateTime(DateTime.UtcNow);
+            targetDate = ClinicTimeProvider.ClinicToday();
         }
         else if (!DateOnly.TryParse(date, out targetDate))
         {
@@ -92,7 +92,7 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         if (windowDays is < 1 or > 365)
             return BadRequest(new { message = "نافذة الأيام يجب أن تكون بين 1 و 365" });
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
         var since = today.AddDays(-windowDays);
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
 
@@ -303,7 +303,7 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         {
             try
             {
-                var today = DateOnly.FromDateTime(DateTime.UtcNow);
+                var today = ClinicTimeProvider.ClinicToday();
                 var activeStatuses = new HashSet<ClinicQueueStatus>
                 {
                     ClinicQueueStatus.Waiting,
@@ -405,7 +405,7 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         if (hours < 1) hours = 1;
         if (hours > 72) hours = 72;
 
-        var now = DateTime.UtcNow;
+        var now = ClinicTimeProvider.ClinicNow();
         var today = DateOnly.FromDateTime(now);
         var currentTime = TimeOnly.FromDateTime(now);
         var maxTime = currentTime.AddHours(hours);
@@ -480,7 +480,7 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         // Previously, soft-deleting an appointment left the linked ClinicQueueItem
         // in an active state (Waiting/Called/InRoom), causing the TV display and
         // queue listing to show patients for deleted appointments.
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
         var activeQueueItem = await db.ClinicQueueItems
             .FirstOrDefaultAsync(q => q.AppointmentId == id
                 && q.QueueDate == today

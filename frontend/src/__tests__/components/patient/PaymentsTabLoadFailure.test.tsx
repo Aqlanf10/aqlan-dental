@@ -39,7 +39,7 @@ describe("PaymentsTab honest loading", () => {
 
   it("does not render a trusted zero total when the payments request fails", async () => {
     vi.mocked(api.get).mockImplementation((url: string) => {
-      if (url.startsWith("/api/payments")) {
+      if (url.startsWith("/api/patients/patient-1/payments")) {
         return Promise.reject({
           isAxiosError: true,
           response: { status: 503, data: { message: "خدمة المدفوعات غير متاحة حالياً" } },

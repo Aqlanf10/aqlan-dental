@@ -81,7 +81,7 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
     setError("");
     try {
       const [paymentsResult, contractsResult] = await Promise.allSettled([
-        api.get<Payment[]>(`/api/payments?patientId=${patientId}`).then((response) => response.data),
+        api.get<Payment[]>(`/api/patients/${patientId}/payments`).then((response) => response.data),
         api.get<Contract[]>(`/api/contracts?patientId=${patientId}&status=active`).then((response) => response.data),
       ]);
 

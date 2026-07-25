@@ -60,6 +60,8 @@ export function FinanceTab({ patientId, refreshKey }: FinanceTabProps) {
   }
 
   const { totalContracted, totalDiscounts, totalPaid, totalRemaining, activeContracts, completedContracts, contracts, recentPayments } = statement;
+  const paymentHistory = statement.payments ?? recentPayments;
+  const totalPaymentsCount = statement.totalPaymentsCount ?? paymentHistory.length;
 
   return (
     <div className="space-y-6">
@@ -151,13 +153,13 @@ export function FinanceTab({ patientId, refreshKey }: FinanceTabProps) {
       <div>
         <h3 className="text-sm font-semibold text-[#0d2137] mb-3 flex items-center gap-2">
           <CreditCard className="w-4 h-4 text-[#3d7ab5]" />
-          المدفوعات الأخيرة
+          سجل المدفوعات ({totalPaymentsCount})
         </h3>
-        {recentPayments.length === 0 ? (
+        {paymentHistory.length === 0 ? (
           <p className="text-sm text-[#94a3b8]">لا توجد مدفوعات مسجّلة</p>
         ) : (
           <div className="space-y-2">
-            {recentPayments.map((p) => (
+            {paymentHistory.map((p) => (
               <div key={p.id} className="flex items-center justify-between p-3 bg-[#f7fafd] rounded-xl border border-[#e8f0f9]">
                 <div className="flex items-center gap-2">
                   <TrendingDown className="w-4 h-4 text-green-500" />

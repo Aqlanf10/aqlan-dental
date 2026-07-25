@@ -61,6 +61,14 @@ public class PaymentsController(IPaymentService service, IFinanceReadService fin
         return Ok(result);
     }
 
+    [HttpGet("patients/{patientId:guid}/payments")]
+    public async Task<IActionResult> GetPatientPayments(Guid patientId)
+    {
+        if (!await CanAsync("finance.payments", "view")) return Deny();
+        var result = await service.GetPatientPaymentsAsync(patientId);
+        return Ok(result);
+    }
+
     [HttpGet("payments/{id:guid}")]
     public async Task<IActionResult> GetPaymentById(Guid id)
     {

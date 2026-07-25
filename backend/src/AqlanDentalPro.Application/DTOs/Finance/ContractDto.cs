@@ -47,6 +47,9 @@ public class AccountStatementDto
     public int ActiveContracts { get; set; }
     public int CompletedContracts { get; set; }
     public List<ContractStatementDto> Contracts { get; set; } = [];
+    public int TotalPaymentsCount { get; set; }
+    public List<PaymentDto> Payments { get; set; } = [];
+    // Backward-compatible 20-item window for older clients.
     public List<PaymentDto> RecentPayments { get; set; } = [];
 }
 

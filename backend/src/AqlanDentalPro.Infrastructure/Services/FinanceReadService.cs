@@ -207,15 +207,16 @@ public class FinanceReadService(
         var activeContracts     = await db.Contracts.CountAsync(c => c.PatientId == patientId && c.Status == ContractStatus.Active);
         var completedContracts  = await db.Contracts.CountAsync(c => c.PatientId == patientId && c.Status == ContractStatus.Completed);
 
-        // FIX: Filter recentPayments to active only — inactive/refunded/cancelled
-        // payments should not appear in the recent list.
-        var recentPayments = await db.Payments
+        // CORE-PAT-025: the patient file needs the complete active payment history.
+        // Keep RecentPayments below as a 20-item compatibility window for older clients,
+        // but query and map the full patient-scoped list once.
+        var paymentRows = await db.Payments
             .Include(p => p.Patient)
             .Include(p => p.Doctor)
             .Where(p => p.PatientId == patientId && p.IsActive)
             .OrderByDescending(p => p.PaymentDate).ThenByDescending(p => p.CreatedAt)
-            .Take(20)
             .ToListAsync();
+        var paymentHistory = paymentRows.Select(p => FinanceMappers.MapPayment(p)).ToList();
 
         return new AccountStatementDto
         {
@@ -230,7 +231,9 @@ public class FinanceReadService(
             ActiveContracts  = activeContracts,
             CompletedContracts = completedContracts,
             Contracts        = contracts,
-            RecentPayments   = recentPayments.Select(p => FinanceMappers.MapPayment(p)).ToList()
+            TotalPaymentsCount = paymentHistory.Count,
+            Payments          = paymentHistory,
+            RecentPayments    = paymentHistory.Take(20).ToList()
         };
     }
 

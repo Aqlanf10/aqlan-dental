@@ -33,6 +33,13 @@ const dentalHistory = {
   notes: "قبل الحفظ",
 };
 
+function changeLastTextarea(value: string) {
+  const textareas = screen.getAllByRole("textbox");
+  const notes = textareas.at(-1);
+  expect(notes).toBeDefined();
+  fireEvent.change(notes!, { target: { value } });
+}
+
 describe("Patient history save reliability", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -46,7 +53,7 @@ describe("Patient history save reliability", () => {
 
     render(<MedicalHistoryTab patientId="patient-1" />);
     fireEvent.click(await screen.findByRole("button", { name: "تعديل" }));
-    fireEvent.change(screen.getByLabelText("ملاحظات"), { target: { value: "نسخة محلية" } });
+    changeLastTextarea("نسخة محلية");
     fireEvent.click(screen.getByRole("button", { name: "حفظ" }));
 
     expect(await screen.findByText("القيمة المعتمدة من الخادم")).toBeInTheDocument();
@@ -61,7 +68,7 @@ describe("Patient history save reliability", () => {
 
     render(<DentalHistoryTab patientId="patient-1" />);
     fireEvent.click(await screen.findByRole("button", { name: "تعديل" }));
-    fireEvent.change(screen.getByLabelText("ملاحظات"), { target: { value: "نسخة محلية" } });
+    changeLastTextarea("نسخة محلية");
     fireEvent.click(screen.getByRole("button", { name: "حفظ" }));
 
     expect(await screen.findByText("السجل السني المعتمد")).toBeInTheDocument();
@@ -86,7 +93,7 @@ describe("Patient history save reliability", () => {
   it("keeps the loading state during retry and does not show a false empty history", async () => {
     let attempt = 0;
     vi.mocked(api.get).mockImplementation(() => {
-      if (attempt == 0) {
+      if (attempt === 0) {
         return Promise.reject({ response: { status: 503, data: { message: "الخدمة غير متاحة" } } });
       }
       return Promise.resolve({ data: medicalHistory });

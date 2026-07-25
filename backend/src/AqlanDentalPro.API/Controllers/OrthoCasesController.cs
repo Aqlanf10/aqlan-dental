@@ -308,8 +308,15 @@ public class OrthoCasesController(
         var denied = await DenyIfDoctorCannotAccess(req.PatientId);
         if (denied is not null) return denied;
 
-        var result = await service.CreateAsync(req);
-        return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
+        try
+        {
+            var result = await service.CreateAsync(req);
+            return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
+        }
+        catch (ArgumentException ex) when (ex.Message == ActivePatientWriteGuard.ErrorMessage)
+        {
+            return BadRequest(new { message = ActivePatientWriteGuard.ErrorMessage });
+        }
     }
 
     // ─── Visits ──────────────────────────────────────────────────────────────────

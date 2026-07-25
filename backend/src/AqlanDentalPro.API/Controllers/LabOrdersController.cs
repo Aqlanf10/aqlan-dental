@@ -322,6 +322,9 @@ public class LabOrdersController(
         var denied = await DenyIfDoctorCannotAccess(req.PatientId);
         if (denied is not null) return denied;
 
+        if (!await ActivePatientWriteGuard.ExistsAsync(db, req.PatientId))
+            return BadRequest(new { message = ActivePatientWriteGuard.ErrorMessage });
+
         // CON-02 FIX: Use advisory lock + unique constraint retry to prevent race condition
         // on order number generation. Strategy: advisory lock serializes generation within
         // the DB, unique index on OrderNumber is the safety net, and retry with fresh count

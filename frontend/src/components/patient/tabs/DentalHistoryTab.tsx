@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Stethoscope, Pencil, Save, X } from "lucide-react";
 import type { DentalHistory } from "@/types/patient";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { toast } from "@/stores/toastStore";
 
 interface DentalHistoryTabProps {
@@ -14,7 +15,7 @@ interface DentalHistoryTabProps {
 export function DentalHistoryTab({ patientId, initialData }: DentalHistoryTabProps) {
   const [data, setData] = useState<DentalHistory | null>(initialData ?? null);
   const [loading, setLoading] = useState(!initialData);
-  const [fetchError, setFetchError] = useState(false);
+  const [fetchError, setFetchError] = useState("");
   const [retryKey, setRetryKey] = useState(0);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -22,13 +23,27 @@ export function DentalHistoryTab({ patientId, initialData }: DentalHistoryTabPro
   const [form, setForm] = useState<Partial<DentalHistory>>({});
 
   useEffect(() => {
-    if (!initialData) {
-      setFetchError(false);
-      api.get<DentalHistory>(`/api/patients/${patientId}/dental-history`)
-        .then((r) => setData(r.data))
-        .catch(() => { setFetchError(true); })
-        .finally(() => setLoading(false));
+    if (initialData) {
+      setData(initialData);
+      setLoading(false);
+      setFetchError("");
+      return;
     }
+
+    let cancelled = false;
+    setLoading(true);
+    setFetchError("");
+    api.get<DentalHistory>(`/api/patients/${patientId}/dental-history`)
+      .then((r) => { if (!cancelled) setData(r.data); })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setData(null);
+          setFetchError(extractErrorMessage(error, "فشل تحميل التاريخ السني"));
+        }
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
   }, [patientId, initialData, retryKey]);
 
   const startEdit = () => {
@@ -56,13 +71,15 @@ export function DentalHistoryTab({ patientId, initialData }: DentalHistoryTabPro
   const saveEdit = async () => {
     setSaving(true);
     try {
-      await api.put(`/api/patients/${patientId}/dental-history`, form);
-      setData({ ...form } as DentalHistory);
+      const response = await api.put<DentalHistory>(`/api/patients/${patientId}/dental-history`, form);
+      // CORE-PAT-033: the server is the source of truth after validation and
+      // normalization; do not display an optimistic local copy as persisted data.
+      setData(response.data);
       setEditing(false);
       setForm({});
       toast.success("تم حفظ التاريخ السني بنجاح");
-    } catch {
-      toast.error("فشل حفظ التاريخ السني");
+    } catch (error: unknown) {
+      toast.error(extractErrorMessage(error, "فشل حفظ التاريخ السني"));
     } finally {
       setSaving(false);
     }
@@ -134,7 +151,7 @@ export function DentalHistoryTab({ patientId, initialData }: DentalHistoryTabPro
   if (fetchError) {
     return (
       <div className="p-4 text-center">
-        <p className="text-sm text-red-600 mb-2">فشل في تحميل البيانات</p>
+        <p role="alert" className="text-sm text-red-600 mb-2">{fetchError}</p>
         <button onClick={() => setRetryKey((k) => k + 1)} className="text-xs text-blue-600 underline">إعادة المحاولة</button>
       </div>
     );

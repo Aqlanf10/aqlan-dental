@@ -133,6 +133,8 @@ export interface AccountStatement {
   activeContracts: number;
   completedContracts: number;
   contracts: ContractStatement[];
+  totalPaymentsCount?: number;
+  payments?: Payment[];
   recentPayments: Payment[];
 }
 

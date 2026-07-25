@@ -49,6 +49,26 @@ public class PaymentService(AppDbContext db, ICurrentUserService currentUser, IN
             .ToListAsync();
     }
 
+    public async Task<List<PaymentDto>> GetPatientPaymentsAsync(Guid patientId)
+    {
+        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+
+        var query = db.Payments
+            .Include(p => p.Patient)
+            .Include(p => p.Doctor)
+            .Where(p => p.PatientId == patientId && p.IsActive)
+            .AsQueryable();
+
+        if (branchId.HasValue)
+            query = query.Where(p => p.BranchId == branchId.Value);
+
+        return await query
+            .OrderByDescending(p => p.PaymentDate)
+            .ThenByDescending(p => p.CreatedAt)
+            .Select(p => FinanceMappers.MapPayment(p))
+            .ToListAsync();
+    }
+
     public async Task<PaymentDto> CreatePaymentAsync(CreatePaymentRequest req)
     {
         // Require active open cashier session

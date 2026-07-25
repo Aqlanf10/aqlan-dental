@@ -12,6 +12,7 @@ namespace AqlanDentalPro.Application.Interfaces.Services;
 public interface IPaymentService
 {
     Task<List<PaymentDto>> GetPaymentsAsync(int page, int pageSize, Guid? patientId);
+    Task<List<PaymentDto>> GetPatientPaymentsAsync(Guid patientId);
     Task<PaymentDto?> GetPaymentByIdAsync(Guid id);
     Task<PaymentDto> CreatePaymentAsync(CreatePaymentRequest req);
     Task<PaymentDto?> UpdatePaymentAsync(Guid id, UpdatePaymentRequest req);

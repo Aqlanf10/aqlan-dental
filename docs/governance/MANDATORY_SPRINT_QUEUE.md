@@ -408,7 +408,11 @@
 - Provider-managed models with undisclosed artifacts remain `observed` and cannot be promoted. Existing unsaved-draft and doctor-review gates remain unchanged.
 - **Exit:** focused model/lineage/migration tests, old-analysis compatibility, ceph/frontend regression suites, full builds, documentation/schema contract, PR CI, and deployment checks pass. This exit proves traceability, not clinical accuracy.
 
-### 🔵 CORE-PAT — تدقيق وإصلاح وحدة المرضى (توجيه مالك مباشر 2026-07-24)
+### 🔵 CORE-PAT — تدقيق وإصلاح وحدة المرضى (توجيه مالك مباشر 2026-07-24) — CORE-PAT-001..047 مُنفَّذة
+- **الحالة الحالية:** 47 بندًا مُصلحًا عبر جلستين متوازيتين (هذه الجلسة +
+  جلسة أخرى أنجزت CORE-PAT-019..043 بالتوازي، تحقّقتُ من كل PR منها بقراءة
+  الكود الفعلي قبل البناء عليها). التفصيل الكامل والمتبقي الحقيقي (اليوم UTC في
+  موضعين، ازدواجية رصيد/بحث ثانوية، FK صريح لجدولين) في التقرير.
 - **التقرير:** `docs/audits/PATIENTS_MODULE_AUDIT_2026-07-24.md` (خلفية + واجهة +
   ترابط وازدواجية، على خط الأساس `9909b16`).
 - **الشريحة الأولى (هذا الـPR):** إصلاح عطلين يُسقطان صفحة المريض

@@ -433,6 +433,13 @@ public class WhatsAppService(
             cleaned = "+967" + cleaned;
         else if (cleaned.StartsWith("0") && cleaned.Length == 10)
             cleaned = "+967" + cleaned[1..];
+        // CORE-PAT-046: staff sometimes type the number with the country code
+        // already but no "+" (e.g. "967770245745", 12 digits) — this fell
+        // through both branches above unchanged, so the Meta Cloud API call
+        // dialed a number missing the "+" the test suite's own contract
+        // (WhatsAppReminderCompanionTests) asserts every stored PhoneNumber has.
+        else if (cleaned.StartsWith("967") && cleaned.Length == 12)
+            cleaned = "+" + cleaned;
         return cleaned;
     }
 

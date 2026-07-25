@@ -17,6 +17,7 @@ import type { PatientProfile } from "@/types/patient";
 import type { PatientSummary } from "@/types/patientSummary";
 import type { OrthoOverview } from "@/types/ortho";
 import { financeV3CollectionsUrl } from "@/lib/financeRoutes";
+import { patientActiveOrthoCasesUrl } from "@/lib/orthoCaseRoutes";
 import { SURGERY_STATUS_LABELS } from "@/types/surgery";
 // FE-09: centralized appointment status colors (includes 'signed' for mixed timeline views)
 import { APPOINTMENT_STATUS_COLORS as STATUS_COLORS } from "@/lib/statusStyles";
@@ -110,7 +111,7 @@ export function OverviewTab({ patientId, summary, patient, canViewFinance = fals
 
       const [timelineResult, orthoResult, surgeryResult] = await Promise.allSettled([
         api.get<TimelineEvent[]>(`/api/patients/${patientId}/timeline`).then((response) => response.data),
-        api.get<OrthoCase[]>(`/api/ortho-cases?patientId=${patientId}&pageSize=5`).then((response) => response.data),
+        api.get<OrthoCase[]>(patientActiveOrthoCasesUrl(patientId, 5)).then((response) => response.data),
         api.get<{ data: SurgeryCase[] }>(`/api/surgery-cases?patientId=${patientId}&pageSize=5`)
           .then((response) => response.data.data ?? []),
       ]);

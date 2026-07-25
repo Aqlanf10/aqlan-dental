@@ -110,7 +110,6 @@ public class PatientClinicalSummaryTests
         var controller = new PatientsController(
             service: null!,
             db: db,
-            portalService: new Mock<IPatientPortalService>().Object,
             financeReadService: financeRead.Object,
             currentUser: currentUser.Object,
             patientAccess: patientAccess.Object,

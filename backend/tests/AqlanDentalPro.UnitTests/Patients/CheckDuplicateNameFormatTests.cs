@@ -31,7 +31,6 @@ public class CheckDuplicateNameFormatTests
         return new PatientsController(
             service: null!,
             db: db,
-            portalService: new Mock<IPatientPortalService>().Object,
             financeReadService: null!,
             currentUser: new Mock<ICurrentUserService>().Object,
             patientAccess: new Mock<IPatientAccessService>().Object,

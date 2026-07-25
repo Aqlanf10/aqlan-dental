@@ -20,7 +20,6 @@ namespace AqlanDentalPro.API.Controllers;
 public class PatientsController(
     PatientService service,
     AppDbContext db,
-    IPatientPortalService portalService,
     IFinanceReadService financeReadService,
     ICurrentUserService currentUser,
     IPatientAccessService patientAccess,

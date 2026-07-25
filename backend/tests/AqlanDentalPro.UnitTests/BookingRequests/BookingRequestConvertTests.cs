@@ -47,9 +47,11 @@ public class BookingRequestConvertTests
         var portal = new Mock<IPatientPortalService>();
         portal.Setup(x => x.EnsurePatientAccountAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>()))
               .ReturnsAsync(("user", "pass"));
+        var clinicClock = new Mock<IClinicClock>();
+        clinicClock.Setup(c => c.Today()).Returns(new DateOnly(2026, 1, 1));
         var patientService = new PatientService(
             new PatientRepository(db), currentUser.Object, patientSettings.Object,
-            portal.Object, new Mock<ILogger<PatientService>>().Object);
+            portal.Object, clinicClock.Object, new Mock<ILogger<PatientService>>().Object);
         return new BookingRequestService(db, patientService, logger.Object);
     }
 

@@ -67,13 +67,17 @@
 
 **تحقّق مسبق منع الازدواج الوهمي:** قبل كتابة هذه الشريحة راجعتُ الكود الفعلي (لا التوثيق القديم فقط) لبنود كانت مُدرجة سابقًا كمتبقية، فتبيّن أنها أُغلقت بالفعل ضمن CORE-PAT-021..043: رصيد البوابة الموحّد، بحث/ترقيم `PatientTable`، كل الإخفاقات الصامتة المذكورة (`PaymentsTab`/`OverviewTab`/`OrthoSurgicalTab`/`MessagesTab`/`PortalAccessTab`)، حذف `hooks/usePatients.ts`، بادئة رقم المريض من الإعدادات (CORE-PAT-043)، حارس الكتابة على ملف مؤرشف عبر كل الوحدات (CORE-PAT-040)، ودمج «حالة التقويم النشطة» في امتداد مشترك واحد (`OrthoCasesQueryExtensions.ActiveCases()`) مستخدم في 4 مواضع مختلفة بلا انحراف، وملخّص المريض الآن يُعبّئ فعليًا كل الحقول (آخر زيارة، الموعد القادم، التنبيهات الطبية...) من endpoint واحد حقيقي، لا 13 حقلًا فارغًا كما ورد سابقًا.
 
+## 1-ز) ما أُصلح في الشريحة السابعة (CORE-PAT-048)
+
+| # | العطل | الإصلاح |
+|---|-------|---------|
+| `CORE-PAT-048` | عمر المريض في `PatientService.ToListDto`/`ToProfileDto` كان لا يزال يُحسب على `DateOnly.FromDateTime(DateTime.UtcNow)` — بقية موضعَي «اليوم» المذكورين سابقًا (`AppointmentsController`، `PatientPortalService`) تبيّن بالفحص أنهما يستخدمان `ClinicTimeProvider.ClinicToday()` بالفعل. اليمن UTC+3، فيختلف يوم العيادة عن يوم UTC لنحو 3 ساعات كل يوم؛ في نافذة الميلاد تحديدًا يظهر المريض أصغر بسنة. السبب: طبقة `Application` لا تُرجع `Infrastructure` (`ClinicTimeProvider` هناك) — قيد معماري حقيقي لا إهمال. | تجريد جديد `IClinicClock` في `Application.Interfaces.Services` (مطابق لنمط `IPatientSettingsReader`)، وتنفيذه `ClinicClock` في `Infrastructure` كغلاف رقيق فوق `ClinicTimeProvider.ClinicToday()`، ويُحقن في `PatientService`. اختبارات جديدة لـ`PatientAge.Calculate` النقية (لم تكن مُختبَرة مباشرة رغم وجودها منذ CORE-PAT-003) واختباران يثبتان أن `PatientService` يستخدم الساعة المحقونة لا UTC الحقيقي. |
+
 ## 2) المتبقي الموثّق — بالأولوية (لم يُنفَّذ بعد)
 
 ### بيانات (P1)
 
 ### اتساق (P2)
-- «اليوم» ما يزال UTC في `AppointmentsController` و`PatientPortalService`
-  — تحتاج المواضع مراجعة كل موضع على حدة لأن بعضها يغذي مقارنات مواعيد مستقبلية.
 - مساران مزدوجان لأرشفة المريض (`DELETE /{id}` و`PUT /{id}/archive`) ينتهيان
   لنفس المنطق — تنظيف واجهي بحت، لا خطورة.
 

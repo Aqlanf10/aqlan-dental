@@ -7,6 +7,7 @@ import {
   Wrench, ChevronLeft, CheckCircle2, AlertCircle, FileImage
 } from "lucide-react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { EmptyState } from "./EmptyState";
 import { cn } from "@/lib/utils";
 
@@ -63,26 +64,74 @@ interface OrthodonticsTabProps {
 export function OrthodonticsTab({ patientId }: OrthodonticsTabProps) {
   const [cases, setCases] = useState<OrthoCaseDto[]>([]);
   const [overviews, setOverviews] = useState<Record<string, OrthoOverviewDto>>({});
+  const [failedOverviewIds, setFailedOverviewIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState(false);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
-    setFetchError(false);
-    api
-      .get<OrthoCaseDto[]>(`/api/ortho-cases?patientId=${patientId}`)
-      .then((r) => {
-        setCases(r.data);
-        // Fetch overview for each case
-        r.data.forEach((c) => {
-          api
-            .get<OrthoOverviewDto>(`/api/ortho-cases/${c.id}/overview`)
-            .then((ov) => setOverviews((prev) => ({ ...prev, [c.id]: ov.data })))
-            .catch(() => {});
+    let cancelled = false;
+
+    const loadCases = async () => {
+      setLoading(true);
+      setOverviewLoading(false);
+      setFetchError(null);
+      setOverviewError(null);
+      setCases([]);
+      setOverviews({});
+      setFailedOverviewIds([]);
+
+      try {
+        const response = await api.get<OrthoCaseDto[]>(`/api/ortho-cases?patientId=${patientId}`);
+        if (cancelled) return;
+
+        const nextCases = response.data;
+        setCases(nextCases);
+        setLoading(false);
+
+        if (nextCases.length === 0) return;
+
+        setOverviewLoading(true);
+        const overviewResults = await Promise.allSettled(
+          nextCases.map((orthoCase) =>
+            api.get<OrthoOverviewDto>(`/api/ortho-cases/${orthoCase.id}/overview`)
+          )
+        );
+        if (cancelled) return;
+
+        const nextOverviews: Record<string, OrthoOverviewDto> = {};
+        const failures: string[] = [];
+        overviewResults.forEach((result, index) => {
+          const caseId = nextCases[index].id;
+          if (result.status === "fulfilled") {
+            nextOverviews[caseId] = result.value.data;
+          } else {
+            failures.push(caseId);
+          }
         });
-      })
-      .catch(() => { setFetchError(true); })
-      .finally(() => setLoading(false));
+
+        setOverviews(nextOverviews);
+        setFailedOverviewIds(failures);
+        if (failures.length > 0) {
+          setOverviewError(
+            failures.length === nextCases.length
+              ? "تعذر تحميل تفاصيل الحالات التقويمية — أعد المحاولة"
+              : `تعذر تحميل تفاصيل ${failures.length} من الحالات التقويمية`
+          );
+        }
+        setOverviewLoading(false);
+      } catch (error: unknown) {
+        if (cancelled) return;
+        setCases([]);
+        setFetchError(extractErrorMessage(error, "فشل تحميل الحالات التقويمية"));
+        setLoading(false);
+      }
+    };
+
+    void loadCases();
+    return () => { cancelled = true; };
   }, [patientId, retryKey]);
 
   if (loading) {
@@ -97,8 +146,8 @@ export function OrthodonticsTab({ patientId }: OrthodonticsTabProps) {
 
   if (fetchError) {
     return (
-      <div className="p-4 text-center">
-        <p className="text-sm text-red-600 mb-2">فشل في تحميل البيانات</p>
+      <div role="alert" className="p-4 text-center">
+        <p className="text-sm text-red-600 mb-2">{fetchError}</p>
         <button onClick={() => setRetryKey((k) => k + 1)} className="text-xs text-blue-600 underline">إعادة المحاولة</button>
       </div>
     );
@@ -119,6 +168,19 @@ export function OrthodonticsTab({ patientId }: OrthodonticsTabProps) {
 
   return (
     <div className="space-y-4">
+      {overviewError && (
+        <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
+          <p className="text-sm text-amber-800">{overviewError}</p>
+          <button
+            type="button"
+            onClick={() => setRetryKey((key) => key + 1)}
+            className="mt-1 text-xs font-semibold text-blue-600 underline decoration-dotted"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+
       {cases.map((c) => {
         const ov = overviews[c.id];
         const isActive = c.status === "active";
@@ -194,6 +256,15 @@ export function OrthodonticsTab({ patientId }: OrthodonticsTabProps) {
                 </p>
               )}
             </div>
+
+            {overviewLoading && !ov && (
+              <div className="mx-4 mb-4 h-16 rounded-xl bg-slate-100 animate-pulse" aria-label="جار تحميل تفاصيل الحالة" />
+            )}
+            {!overviewLoading && failedOverviewIds.includes(c.id) && (
+              <div className="mx-4 mb-4 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                تعذر تحميل تفاصيل هذه الحالة
+              </div>
+            )}
 
             {/* ── Status Chips (only if overview loaded) ── */}
             {ov && (

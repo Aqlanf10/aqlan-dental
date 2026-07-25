@@ -24,6 +24,17 @@ public class PatientDependentWriteGuardContractTests
         source.Should().Contain("ActivePatientWriteGuard.ErrorMessage");
     }
 
+    [Fact]
+    public void OrthoController_MapsTheServiceGuardToAnArabicBadRequest()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "backend/src/AqlanDentalPro.API/Controllers/OrthoCasesController.cs"));
+
+        source.Should().Contain("catch (ArgumentException ex) when (ex.Message == ActivePatientWriteGuard.ErrorMessage)");
+        source.Should().Contain("BadRequest(new { message = ActivePatientWriteGuard.ErrorMessage })");
+    }
+
     [Theory]
     [InlineData("backend/src/AqlanDentalPro.Infrastructure/Services/PaymentService.cs")]
     [InlineData("backend/src/AqlanDentalPro.Infrastructure/Services/ContractService.cs")]

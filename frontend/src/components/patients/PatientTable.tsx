@@ -9,6 +9,7 @@ import {
   AlertCircle, RefreshCw, Coins, User, Activity
 } from "lucide-react";
 import type { PatientListItem, PatientProfile } from "@/types/patient";
+import type { PatientSummary } from "@/types/patientSummary";
 import type { PaginatedResponse } from "@/types/api";
 import api from "@/lib/api";
 import { extractErrorMessage } from "@/lib/errors";
@@ -26,14 +27,6 @@ import {
 
 interface Doctor { id: string; name: string; }
 
-interface PatientSummary {
-  totalAppointments: number;
-  completedAppointments: number;
-  activeOrthoCases: number;
-  totalPaid: number | null;
-  totalOutstanding: number | null;
-  prescriptionsCount: number;
-}
 
 function exportCsv(patients: PatientListItem[]) {
   const headers = ["رقم المريض", "الاسم", "الجنس", "العمر", "الهاتف", "الطبيب", "تاريخ التسجيل"];

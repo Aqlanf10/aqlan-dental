@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
+import type { PatientSummary } from "@/types/patientSummary";
 import api from "@/lib/api";
 import { extractErrorMessage } from "@/lib/errors";
 import { patientBalanceView } from "@/lib/patientSummary";
@@ -54,14 +55,6 @@ import { ReferralsTab }        from "@/components/patient/tabs/ReferralsTab";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
-interface PatientSummary {
-  totalAppointments: number;
-  completedAppointments: number;
-  activeOrthoCases: number;
-  totalPaid: number | null;
-  totalOutstanding: number | null;
-  prescriptionsCount: number;
-}
 
 interface OrthoCase   { id: string; caseNumber: string; applianceType?: string; status: string; stagePercentage: number; doctorName?: string; }
 interface SurgeryCase { id: string; caseNumber: string; surgeryType: string;   status: string; doctorName?: string; }

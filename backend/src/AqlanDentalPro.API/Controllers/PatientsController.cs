@@ -3,8 +3,10 @@ using AqlanDentalPro.Application.DTOs.Common;
 using AqlanDentalPro.Application.DTOs.Patients;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -417,58 +419,152 @@ public class PatientsController(
         var denied = await DenyIfDoctorCannotAccess(id);
         if (denied != null) return denied;
 
-        // CORE-PAT-015: GET /api/patients/{id} deliberately serves archived
-        // patients (GetWithHistoriesIgnoreFiltersAsync), but this existence check
-        // used the soft-delete filter — so an archived patient's file rendered
-        // its header while every stat card 404'd. Match the profile's behavior.
+        // CORE-PAT-015: the profile deliberately serves archived patients, so the
+        // summary must use the same existence rule instead of returning a partial 404.
         var exists = await db.Patients.IgnoreQueryFilters().AnyAsync(p => p.Id == id);
         if (!exists) return NotFound(new { message = "المريض غير موجود" });
 
-        var totalAppointments = await db.Appointments.CountAsync(a => a.PatientId == id);
-        var completedAppointments = await db.Appointments.CountAsync(a => a.PatientId == id && a.Status == Domain.Enums.AppointmentStatus.Completed);
-        var activeOrthoCases = await db.OrthoCases.CountAsync(o => o.PatientId == id && o.Status == OrthoCaseStatus.Active);
-        var prescriptionsCount = await db.Prescriptions.CountAsync(p => p.PatientId == id);
+        var clinicNow = ClinicTimeProvider.ClinicNow();
+        var today = DateOnly.FromDateTime(clinicNow);
+        var currentTime = TimeOnly.FromDateTime(clinicNow);
 
-        // CORE-PAT-019: finance visibility must follow the owner-configurable
-        // RolePermissions row, not a hard-coded list of role names. This matches
-        // PaymentsController and makes revocation in Settings effective everywhere.
+        var latestVisit = await db.Visits
+            .AsNoTracking()
+            .Include(v => v.Doctor)
+            .Where(v => v.PatientId == id)
+            .OrderByDescending(v => v.VisitDate)
+            .ThenByDescending(v => v.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        var nextAppointment = await db.Appointments
+            .AsNoTracking()
+            .Include(a => a.Doctor)
+            .Where(a => a.PatientId == id
+                && (a.Status == AppointmentStatus.Scheduled || a.Status == AppointmentStatus.Confirmed)
+                && (a.AppointmentDate > today
+                    || (a.AppointmentDate == today && a.StartTime >= currentTime)))
+            .OrderBy(a => a.AppointmentDate)
+            .ThenBy(a => a.StartTime)
+            .FirstOrDefaultAsync();
+
+        var dentalHistory = await db.DentalHistories
+            .AsNoTracking()
+            .FirstOrDefaultAsync(h => h.PatientId == id);
+        var medicalHistory = await db.MedicalHistories
+            .AsNoTracking()
+            .FirstOrDefaultAsync(h => h.PatientId == id);
+
+        var nextTreatmentStep = await db.PatientTreatmentPlanSteps
+            .AsNoTracking()
+            .Where(step => step.PatientId == id
+                && step.Status != TreatmentStepStatus.Completed
+                && step.Status != TreatmentStepStatus.Cancelled)
+            .OrderBy(step => step.Status == TreatmentStepStatus.InProgress ? 0
+                : step.Status == TreatmentStepStatus.Planned ? 1 : 2)
+            .ThenBy(step => step.SequenceNumber)
+            .FirstOrDefaultAsync();
+
+        var activeOrthoSummary = await db.OrthoCases
+            .AsNoTracking()
+            .Where(o => o.PatientId == id && o.Status == OrthoCaseStatus.Active)
+            .OrderBy(o => o.CaseNumber)
+            .Select(o => new PatientOrthoSummaryDto
+            {
+                CaseNumber = o.CaseNumber,
+                ApplianceType = o.ApplianceType,
+                StagePercentage = o.StagePercentage,
+            })
+            .ToListAsync();
+
+        var activeSurgerySummary = await db.SurgeryCases
+            .AsNoTracking()
+            .Where(s => s.PatientId == id
+                && (s.Status == SurgeryCaseStatus.Scheduled
+                    || s.Status == SurgeryCaseStatus.InProgress
+                    || s.Status == SurgeryCaseStatus.Postponed))
+            .OrderBy(s => s.CaseNumber)
+            .Select(s => new PatientSurgerySummaryDto
+            {
+                CaseNumber = s.CaseNumber,
+                SurgeryType = s.SurgeryType,
+                Status = s.Status.ToString(),
+            })
+            .ToListAsync();
+
+        var summary = new PatientSummaryDto
+        {
+            TotalAppointments = await db.Appointments.CountAsync(a => a.PatientId == id),
+            CompletedAppointments = await db.Appointments.CountAsync(a => a.PatientId == id
+                && a.Status == AppointmentStatus.Completed),
+            ActiveOrthoCases = activeOrthoSummary.Count,
+            PrescriptionsCount = await db.Prescriptions.CountAsync(p => p.PatientId == id),
+            LastVisitDate = latestVisit?.VisitDate.ToString("yyyy-MM-dd"),
+            LastVisitDoctor = latestVisit?.Doctor?.Name,
+            LastVisitDiagnosis = latestVisit?.Diagnosis,
+            NextAppointmentDate = nextAppointment?.AppointmentDate.ToString("yyyy-MM-dd"),
+            NextAppointmentTime = nextAppointment?.StartTime.ToString("HH:mm"),
+            NextAppointmentType = nextAppointment?.AppointmentType,
+            NextAppointmentDoctor = nextAppointment?.Doctor?.Name,
+            ChiefComplaint = FirstNonBlank(latestVisit?.ChiefComplaint, dentalHistory?.ChiefComplaint),
+            CurrentDiagnosis = latestVisit?.Diagnosis,
+            NextPlannedStep = FirstNonBlank(
+                nextTreatmentStep?.Title,
+                nextTreatmentStep?.ServiceNameSnapshot,
+                nextTreatmentStep?.Description,
+                latestVisit?.NextVisitPlan),
+            ActiveOrthoSummary = activeOrthoSummary,
+            ActiveSurgerySummary = activeSurgerySummary,
+            MedicalAlerts = BuildMedicalAlerts(medicalHistory),
+        };
+
+        // CORE-PAT-019: clinical fields are always returned, while financial fields
+        // remain null unless the granular owner-configurable permission is granted.
         var canViewFinanceTotals = !patientAccess.IsDoctor
             && await CanViewFinanceAsync("finance.patient_balance");
-
-        if (!canViewFinanceTotals)
+        if (canViewFinanceTotals)
         {
-            return Ok(new
-            {
-                totalAppointments,
-                completedAppointments,
-                activeOrthoCases,
-                prescriptionsCount,
-                totalPaid = (decimal?)null,
-                totalOutstanding = (decimal?)null,
-            });
+            var financeSummary = await financeReadService.GetPatientFinanceSummaryAsync(id);
+            summary.TotalPaid = financeSummary.TotalPaid;
+            summary.TotalOutstanding = financeSummary.OutstandingBalance;
+            summary.UnbilledVisitsAmount = financeSummary.UnbilledVisitsAmount;
+
+            await audit.LogAsync(AuditAction.View, "PatientFinanceSummary", id,
+                newData: new { role = currentUser.Role?.ToString() });
         }
 
-        // Align with canonical finance-summary (contracts + invoices + orphan payments + unbilled visits).
-        var financeSummary = await financeReadService.GetPatientFinanceSummaryAsync(id);
-        var totalPaid = financeSummary.TotalPaid;
-        var totalOutstanding = financeSummary.OutstandingBalance;
+        return Ok(summary);
+    }
 
-        // Audit: non-doctor viewed financial summary.
-        await audit.LogAsync(AuditAction.View, "PatientFinanceSummary", id,
-            newData: new { role = currentUser.Role?.ToString() });
+    private static string? FirstNonBlank(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
 
-        return Ok(new
+    private static List<string> BuildMedicalAlerts(MedicalHistory? history)
+    {
+        if (history == null) return [];
+
+        var alerts = new List<string>();
+        void Add(string label, string? value)
         {
-            totalAppointments,
-            completedAppointments,
-            activeOrthoCases,
-            totalPaid,
-            totalOutstanding,
-            // QA-596: surface unbilled sessions so the frontend can show them as
-            // provisional debt (separate line under the outstanding balance card).
-            unbilledVisitsAmount = financeSummary.UnbilledVisitsAmount,
-            prescriptionsCount
-        });
+            if (!string.IsNullOrWhiteSpace(value))
+                alerts.Add($"{label}: {value.Trim()}");
+        }
+
+        Add("حساسية أدوية", history.DrugAllergies);
+        Add("أمراض مزمنة", history.ChronicDiseases);
+        Add("أدوية حالية", history.CurrentMedications);
+        if (history.BleedingDisorders) alerts.Add("اضطرابات نزف");
+        if (history.TmjProblems) alerts.Add("مشكلات مفصل الفك");
+
+        var pregnancy = history.IsPregnant?.Trim();
+        if (!string.IsNullOrWhiteSpace(pregnancy)
+            && !pregnancy.Equals("لا", StringComparison.OrdinalIgnoreCase)
+            && !pregnancy.Equals("no", StringComparison.OrdinalIgnoreCase)
+            && !pregnancy.Equals("false", StringComparison.OrdinalIgnoreCase))
+        {
+            alerts.Add($"حمل: {pregnancy}");
+        }
+
+        return alerts.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     // ── Timeline ──────────────────────────────────────────────────────────────

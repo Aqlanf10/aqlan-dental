@@ -33,6 +33,7 @@ public static class ServiceRegistrationConfiguration
         services.AddScoped<ITokenService, TokenService>();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<IAuditService, AuditService>();
+        services.AddScoped<IPatientSettingsReader, PatientSettingsReader>();
         services.AddScoped<PatientService>();
         services.AddScoped<AppointmentService>();
         services.AddScoped<DashboardService>();

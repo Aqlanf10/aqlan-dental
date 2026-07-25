@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Configuration;
 using AqlanDentalPro.Infrastructure.Repositories;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Application.Interfaces.Services;
@@ -43,12 +42,13 @@ public class BookingRequestConvertTests
         // account) instead of hand-rolling a Patient row.
         var currentUser = new Mock<ICurrentUserService>();
         currentUser.Setup(u => u.IsAdmin).Returns(true);
-        var config = new Mock<IConfiguration>();
+        var patientSettings = new Mock<IPatientSettingsReader>();
+        patientSettings.Setup(s => s.GetNumberPrefixAsync(It.IsAny<CancellationToken>())).ReturnsAsync("GM");
         var portal = new Mock<IPatientPortalService>();
         portal.Setup(x => x.EnsurePatientAccountAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>()))
               .ReturnsAsync(("user", "pass"));
         var patientService = new PatientService(
-            new PatientRepository(db), currentUser.Object, config.Object,
+            new PatientRepository(db), currentUser.Object, patientSettings.Object,
             portal.Object, new Mock<ILogger<PatientService>>().Object);
         return new BookingRequestService(db, patientService, logger.Object);
     }

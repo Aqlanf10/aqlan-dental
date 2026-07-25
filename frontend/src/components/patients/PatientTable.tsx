@@ -14,6 +14,7 @@ import api from "@/lib/api";
 import { extractErrorMessage } from "@/lib/errors";
 import { useDoctors } from "@/hooks/useDoctors";
 import { GENDER_LABELS, formatPhoneForWhatsApp, normalizePhone } from "@/lib/utils";
+import { getPatientPaginationItems } from "@/lib/patientTablePagination";
 import { canViewPatientFinance, isAccountantRole, isAdminRole } from "@/lib/roles";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
@@ -65,6 +66,8 @@ export function PatientTable() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const patientRequestIdRef = useRef(0);
 
   // Split-pane selected patient state
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -103,6 +106,7 @@ export function PatientTable() {
   }, []);
 
   const fetchPatients = useCallback(async () => {
+    const requestId = ++patientRequestIdRef.current;
     setLoading(true);
     setLoadError(false);
     try {
@@ -113,12 +117,17 @@ export function PatientTable() {
       const { data: res } = await api.get<PaginatedResponse<PatientListItem>>(
         `/api/patients?${params}`
       );
+      if (requestId !== patientRequestIdRef.current) return;
       setData(res);
-    } catch {
+    } catch (error) {
+      if (requestId !== patientRequestIdRef.current) return;
       setLoadError(true);
-      toast.error("تعذر تحميل بيانات المرضى حالياً");
+      toast.error(extractErrorMessage(error, "تعذر تحميل بيانات المرضى حالياً"));
+    } finally {
+      if (requestId === patientRequestIdRef.current) {
+        setLoading(false);
+      }
     }
-    setLoading(false);
   }, [page, search, gender, doctorId, status]);
 
   useEffect(() => {
@@ -169,6 +178,8 @@ export function PatientTable() {
   }, [data, selectedId]);
 
   const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
     try {
       const params = new URLSearchParams({ page: "1", pageSize: "1000", status });
       if (search) params.set("search", search);
@@ -176,7 +187,12 @@ export function PatientTable() {
       if (doctorId) params.set("doctorId", doctorId);
       const { data: res } = await api.get<PaginatedResponse<PatientListItem>>(`/api/patients?${params}`);
       exportCsv(res.data);
-    } catch { /* ignore */ }
+      toast.success(`تم تصدير ${res.data.length} مريض`);
+    } catch (error) {
+      toast.error(extractErrorMessage(error, "تعذر تصدير قائمة المرضى حالياً"));
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleContextMenu = (e: React.MouseEvent, patient: PatientListItem) => {
@@ -301,10 +317,11 @@ export function PatientTable() {
 
             <button
               onClick={handleExport}
-              className="h-10 flex items-center gap-2 px-3 text-sm font-bold rounded-lg transition-all duration-200 border border-slate-200 text-slate-700 bg-white hover:bg-slate-50"
+              disabled={exporting}
+              className="h-10 flex items-center gap-2 px-3 text-sm font-bold rounded-lg transition-all duration-200 border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Download className="w-4 h-4 text-slate-500" />
-              تصدير
+              {exporting ? "جارٍ التصدير..." : "تصدير"}
             </button>
           </div>
         </div>
@@ -603,25 +620,49 @@ export function PatientTable() {
 
           {/* Pagination Footer */}
           {data && data.totalPages > 1 && (
-            <div className="flex items-center justify-between px-5 py-3" style={{ borderTop: "1px solid #f1f5f9" }}>
+            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3" style={{ borderTop: "1px solid #f1f5f9" }}>
               <span className="text-xs" style={{ color: "#94a3b8" }}>
                 عرض {(page - 1) * 20 + 1}–{Math.min(page * 20, data.totalCount)} من {data.totalCount}
               </span>
-              <div className="flex items-center gap-1.5">
-                {[...Array(Math.min(data.totalPages, 3))].map((_, n) => (
-                  <button
-                    key={n + 1}
-                    onClick={() => setPage(n + 1)}
-                    className="w-7 h-7 rounded-md text-xs font-semibold transition"
-                    style={{
-                      border: "1px solid #dce8f5",
-                      background: page === n + 1 ? "#3d7ab5" : "#fff",
-                      color: page === n + 1 ? "#fff" : "#64748b",
-                    }}
-                  >
-                    {n + 1}
-                  </button>
-                ))}
+              <div className="flex items-center gap-1.5" aria-label="ترقيم صفحات المرضى">
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={page <= 1}
+                  className="h-8 px-2.5 rounded-md text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{ border: "1px solid #dce8f5", background: "#fff", color: "#64748b" }}
+                >
+                  السابق
+                </button>
+                {getPatientPaginationItems(data.totalPages, page).map((item, index) =>
+                  typeof item === "number" ? (
+                    <button
+                      type="button"
+                      key={item}
+                      aria-current={page === item ? "page" : undefined}
+                      onClick={() => setPage(item)}
+                      className="w-8 h-8 rounded-md text-xs font-semibold transition"
+                      style={{
+                        border: "1px solid #dce8f5",
+                        background: page === item ? "#3d7ab5" : "#fff",
+                        color: page === item ? "#fff" : "#64748b",
+                      }}
+                    >
+                      {item}
+                    </button>
+                  ) : (
+                    <span key={`${item}-${index}`} className="w-6 text-center text-xs text-slate-400" aria-hidden="true">…</span>
+                  )
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.min(data.totalPages, current + 1))}
+                  disabled={page >= data.totalPages}
+                  className="h-8 px-2.5 rounded-md text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{ border: "1px solid #dce8f5", background: "#fff", color: "#64748b" }}
+                >
+                  التالي
+                </button>
               </div>
             </div>
           )}

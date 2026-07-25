@@ -371,7 +371,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
         var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
 
-        var now = DateOnly.FromDateTime(DateTime.Today);
+        var now = ClinicTimeProvider.ClinicToday();
         var nextAppt = await db.Appointments
             .Include(a => a.Doctor)
             .Where(a => a.PatientId == patientId && a.AppointmentDate >= now
@@ -528,7 +528,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
     public async Task<List<PatientAppointmentDto>> GetAppointmentsAsync(Guid patientId, int limit = 20)
     {
         limit = Math.Max(1, Math.Min(limit, 100));
-        var now = DateOnly.FromDateTime(DateTime.Today);
+        var now = ClinicTimeProvider.ClinicToday();
         var appointments = await db.Appointments
             .Include(a => a.Doctor)
             .Where(a => a.PatientId == patientId)
@@ -549,7 +549,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         var end = start.AddMinutes(30);
 
         // Cannot book in the past
-        if (date < DateOnly.FromDateTime(DateTime.Today))
+        if (date < ClinicTimeProvider.ClinicToday())
             return (null, "لا يمكن حجز موعد في تاريخ سابق");
 
         var doctorId = req.DoctorId ?? patient.PrimaryDoctorId;
@@ -602,7 +602,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
             return (false, "لا يمكن إلغاء موعد جارٍ التنفيذ");
 
         // Cannot cancel past appointments
-        if (appointment.AppointmentDate < DateOnly.FromDateTime(DateTime.Today))
+        if (appointment.AppointmentDate < ClinicTimeProvider.ClinicToday())
             return (false, "لا يمكن إلغاء موعد سابق");
 
         appointment.Status = AppointmentStatus.Cancelled;
@@ -801,7 +801,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
     private static PatientAppointmentDto MapAppointment(Appointment a, DateOnly? now = null)
     {
-        var today = now ?? DateOnly.FromDateTime(DateTime.Today);
+        var today = now ?? ClinicTimeProvider.ClinicToday();
         var canCancel = a.AppointmentDate >= today
             && a.Status != AppointmentStatus.Completed
             && a.Status != AppointmentStatus.InProgress

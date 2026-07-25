@@ -3,16 +3,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import api from "@/lib/api";
 import PatientProfilePage from "@/app/(dashboard)/patients/[id]/page";
 
-const navigation = vi.hoisted(() => ({
-  id: "",
-  replace: vi.fn(),
-  push: vi.fn(),
-}));
+const navigation = vi.hoisted(() => {
+  const replace = vi.fn();
+  const push = vi.fn();
+  return {
+    id: "",
+    replace,
+    push,
+    router: { replace, push },
+    searchParams: { get: () => null },
+  };
+});
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: navigation.id }),
-  useRouter: () => ({ replace: navigation.replace, push: navigation.push }),
-  useSearchParams: () => ({ get: () => null }),
+  // Next returns stable router/search-param objects. Keeping the mocks stable
+  // prevents the effects under test from restarting for an artificial reason.
+  useRouter: () => navigation.router,
+  useSearchParams: () => navigation.searchParams,
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -84,7 +92,7 @@ describe("Patient profile identifier routing", () => {
 
   it("uses the normal patient requests only when the route identifier is a GUID", async () => {
     navigation.id = "11111111-1111-1111-1111-111111111111";
-    vi.mocked(api.get).mockImplementation(() => new Promise(() => undefined));
+    vi.mocked(api.get).mockImplementation(() => new Promise(() => {}));
 
     render(<PatientProfilePage />);
 

@@ -7,6 +7,7 @@ import {
   Search, FileText, Printer,
 } from "lucide-react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate, localDateString } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
@@ -75,18 +76,37 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
   // Doctors
   const { data: doctors = [] } = useDoctors();
 
-  const fetchPayments = useCallback(() => {
+  const fetchPayments = useCallback(async () => {
     setLoading(true);
     setError("");
-    Promise.all([
-      api.get<Payment[]>(`/api/payments?patientId=${patientId}`).then((r) => r.data).catch(() => []),
-      api.get<Contract[]>(`/api/contracts?patientId=${patientId}&status=active`).then((r) => r.data).catch(() => []),
-    ]).then(([p, c]) => {
-      setPayments(p);
-      setContracts(c);
-    }).catch(() => {
-      setError("فشل تحميل المدفوعات");
-    }).finally(() => setLoading(false));
+    try {
+      const [paymentsResult, contractsResult] = await Promise.allSettled([
+        api.get<Payment[]>(`/api/payments?patientId=${patientId}`).then((response) => response.data),
+        api.get<Contract[]>(`/api/contracts?patientId=${patientId}&status=active`).then((response) => response.data),
+      ]);
+
+      if (paymentsResult.status === "rejected") {
+        setPayments([]);
+        setContracts(contractsResult.status === "fulfilled" ? contractsResult.value : []);
+        setError(extractErrorMessage(paymentsResult.reason, "فشل تحميل مدفوعات المريض — حاول مجدداً"));
+        return;
+      }
+
+      setPayments(paymentsResult.value);
+      if (contractsResult.status === "fulfilled") {
+        setContracts(contractsResult.value);
+      } else {
+        setContracts([]);
+        toast.error(
+          extractErrorMessage(
+            contractsResult.reason,
+            "تعذر تحميل عقود المريض؛ المدفوعات متاحة لكن ربطها بالعقود غير متاح حالياً"
+          )
+        );
+      }
+    } finally {
+      setLoading(false);
+    }
   }, [patientId]);
 
   useEffect(() => {
@@ -229,23 +249,25 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
         </button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl px-3 py-2 bg-green-50 flex items-center gap-2">
-          <CreditCard className="w-4 h-4 text-green-600 flex-shrink-0" />
-          <div className="min-w-0">
-            <p className="text-xs text-[#94a3b8]">إجمالي المدفوعات</p>
-            <p className="text-sm font-bold text-green-600">{totalPaid.toLocaleString()} ر.ي</p>
+      {/* Stats — only trustworthy after a successful payments response */}
+      {!loading && !error && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl px-3 py-2 bg-green-50 flex items-center gap-2">
+            <CreditCard className="w-4 h-4 text-green-600 flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="text-xs text-[#94a3b8]">إجمالي المدفوعات</p>
+              <p className="text-sm font-bold text-green-600">{totalPaid.toLocaleString()} ر.ي</p>
+            </div>
+          </div>
+          <div className="rounded-xl px-3 py-2 bg-[#3d7ab518] flex items-center gap-2">
+            <FileText className="w-4 h-4 text-[#3d7ab5] flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="text-xs text-[#94a3b8]">عدد المدفوعات</p>
+              <p className="text-sm font-bold text-[#3d7ab5]">{payments.length}</p>
+            </div>
           </div>
         </div>
-        <div className="rounded-xl px-3 py-2 bg-[#3d7ab518] flex items-center gap-2">
-          <FileText className="w-4 h-4 text-[#3d7ab5] flex-shrink-0" />
-          <div className="min-w-0">
-            <p className="text-xs text-[#94a3b8]">عدد المدفوعات</p>
-            <p className="text-sm font-bold text-[#3d7ab5]">{payments.length}</p>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Search */}
       <div className="relative">

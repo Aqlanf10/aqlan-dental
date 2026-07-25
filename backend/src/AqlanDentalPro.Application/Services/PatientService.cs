@@ -15,6 +15,7 @@ public class PatientService(
     ICurrentUserService currentUser,
     IPatientSettingsReader patientSettings,
     IPatientPortalService portalService,
+    IClinicClock clinicClock,
     ILogger<PatientService> logger)
 {
     public async Task<PaginatedResponse<PatientListDto>> GetListAsync(
@@ -23,6 +24,7 @@ public class PatientService(
     {
         var branchId = currentUser.IsAdmin ? null : currentUser.BranchId;
         var result = await repo.SearchAsync(search, page, pageSize, branchId, gender, doctorId, status, allowedPatientIds);
+        var today = clinicClock.Today();
 
         // Batch-load last visit/appointment dates for the current page
         var patientIds = result.Data.Select(p => p.Id).ToList();
@@ -64,7 +66,7 @@ public class PatientService(
         {
             Data = result.Data.Select(p =>
             {
-                var dto = ToListDto(p);
+                var dto = ToListDto(p, today);
                 dto.LastVisitDate = lastVisitDates.GetValueOrDefault(p.Id);
                 dto.Email = patientEmails.GetValueOrDefault(p.Id);
                 return dto;
@@ -82,7 +84,7 @@ public class PatientService(
         if (patient == null)
             patient = await repo.GetWithHistoriesIgnoreFiltersAsync(id);
         if (patient == null) return null;
-        var dto = ToProfileDto(patient);
+        var dto = ToProfileDto(patient, clinicClock.Today());
         try
         {
             dto.Email = await portalService.GetPatientEmailAsync(patient.Id);
@@ -187,7 +189,7 @@ public class PatientService(
                     }
                 }
 
-                var result = await GetByIdAsync(patient.Id) ?? ToProfileDto(patient);
+                var result = await GetByIdAsync(patient.Id) ?? ToProfileDto(patient, clinicClock.Today());
 
                 // Attach portal credentials to the result (temp password shown only once)
                 if (portalUsername != null)
@@ -360,7 +362,7 @@ public class PatientService(
 
         patient.UpdatedAt = DateTime.UtcNow;
         await repo.SaveChangesAsync();
-        return ToProfileDto(patient);
+        return ToProfileDto(patient, clinicClock.Today());
     }
 
     public async Task<(bool exists, string? patientNumber, string? fullName)> CheckDuplicatePhoneAsync(string? phone, Guid? excludeId = null)
@@ -522,21 +524,24 @@ public class PatientService(
     public async Task<bool> SoftDeleteAsync(Guid id) => await ArchiveAsync(id);
 
     // LastVisitDate is populated separately by batch-loading appointment/visit dates
-    private static PatientListDto ToListDto(Patient p) => new()
+    // CORE-PAT-048: age is computed against the CLINIC day (via the injected
+    // clock), not UTC — Yemen is UTC+3, so the two disagree for ~3 hours a
+    // year, exactly on a patient's birthday.
+    private static PatientListDto ToListDto(Patient p, DateOnly today) => new()
     {
         Id = p.Id,
         PatientNumber = p.PatientNumber,
         FullName = $"{p.FirstName} {p.MiddleName} {p.LastName}".Replace("  ", " ").Trim(),
         Phone = p.Phone,
         Gender = p.Gender?.ToString(),
-        Age = PatientAge.Calculate(p.DateOfBirth, DateOnly.FromDateTime(DateTime.UtcNow)),
+        Age = PatientAge.Calculate(p.DateOfBirth, today),
         PrimaryDoctorName = p.PrimaryDoctor?.Name,
         BranchName = p.Branch?.Name,
         CreatedAt = p.CreatedAt,
         IsActive = p.IsActive
     };
 
-    private static PatientProfileDto ToProfileDto(Patient p) => new()
+    private static PatientProfileDto ToProfileDto(Patient p, DateOnly today) => new()
     {
         Id = p.Id,
         PatientNumber = p.PatientNumber,
@@ -545,7 +550,7 @@ public class PatientService(
         LastName = p.LastName,
         DateOfBirth = p.DateOfBirth?.ToString("yyyy-MM-dd"),
         Gender = p.Gender?.ToString(),
-        Age = PatientAge.Calculate(p.DateOfBirth, DateOnly.FromDateTime(DateTime.UtcNow)),
+        Age = PatientAge.Calculate(p.DateOfBirth, today),
         Phone = p.Phone,
         WhatsApp = p.WhatsApp,
         Address = p.Address,

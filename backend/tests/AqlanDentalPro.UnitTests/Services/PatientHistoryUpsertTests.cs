@@ -22,6 +22,7 @@ public class PatientHistoryUpsertTests
     private readonly Mock<ICurrentUserService> _currentUserMock;
     private readonly Mock<IPatientSettingsReader> _patientSettingsMock;
     private readonly Mock<IPatientPortalService> _portalServiceMock;
+    private readonly Mock<IClinicClock> _clinicClockMock;
     private readonly Mock<ILogger<PatientService>> _loggerMock;
     private readonly PatientService _service;
 
@@ -31,13 +32,15 @@ public class PatientHistoryUpsertTests
         _currentUserMock = new Mock<ICurrentUserService>();
         _patientSettingsMock = new Mock<IPatientSettingsReader>();
         _portalServiceMock = new Mock<IPatientPortalService>();
+        _clinicClockMock = new Mock<IClinicClock>();
         _loggerMock = new Mock<ILogger<PatientService>>();
 
         _currentUserMock.Setup(c => c.BranchId).Returns(Guid.NewGuid());
         _currentUserMock.Setup(c => c.IsAdmin).Returns(false);
         _patientSettingsMock.Setup(s => s.GetNumberPrefixAsync(It.IsAny<CancellationToken>())).ReturnsAsync("GM");
+        _clinicClockMock.Setup(c => c.Today()).Returns(new DateOnly(2026, 1, 1));
 
-        _service = new PatientService(_repoMock.Object, _currentUserMock.Object, _patientSettingsMock.Object, _portalServiceMock.Object, _loggerMock.Object);
+        _service = new PatientService(_repoMock.Object, _currentUserMock.Object, _patientSettingsMock.Object, _portalServiceMock.Object, _clinicClockMock.Object, _loggerMock.Object);
     }
 
     private static Patient CreateTestPatient(Guid? id = null)

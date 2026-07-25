@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Wallet, CreditCard, FileSignature, FileText, TrendingDown, ArrowLeft } from "lucide-react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { EmptyState } from "./EmptyState";
 import { cn } from "@/lib/utils";
 import type { Invoice, AccountStatement } from "@/types/finance";
@@ -20,26 +21,40 @@ export function FinanceTab({ patientId, refreshKey }: FinanceTabProps) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [invoicesError, setInvoicesError] = useState(false);
+  const [invoicesError, setInvoicesError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
-    api
-      .get<AccountStatement>(`/api/patients/${patientId}/account-statement`)
-      .then((r) => {
-        setStatement(r.data);
-        setLoading(false);
-      })
-      .catch(() => {
-        setError("تعذّر تحميل البيانات المالية");
-        setLoading(false);
-      });
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setInvoicesError(null);
 
-    setInvoicesError(false);
-    api
-      .get<Invoice[]>(`/api/patients/${patientId}/invoices`)
-      .then((r) => setInvoices(r.data))
-      .catch(() => { setInvoicesError(true); });
-  }, [patientId, refreshKey]);
+    Promise.allSettled([
+      api.get<AccountStatement>(`/api/patients/${patientId}/account-statement`),
+      api.get<Invoice[]>(`/api/patients/${patientId}/invoices`),
+    ]).then(([statementResult, invoicesResult]) => {
+      if (cancelled) return;
+
+      if (statementResult.status === "fulfilled") {
+        setStatement(statementResult.value.data);
+      } else {
+        setStatement(null);
+        setError(extractErrorMessage(statementResult.reason, "تعذّر تحميل البيانات المالية"));
+      }
+
+      if (invoicesResult.status === "fulfilled") {
+        setInvoices(invoicesResult.value.data);
+      } else {
+        setInvoices([]);
+        setInvoicesError(extractErrorMessage(invoicesResult.reason, "فشل تحميل الفواتير"));
+      }
+
+      setLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [patientId, refreshKey, retryKey]);
 
   if (loading) {
     return (
@@ -53,7 +68,16 @@ export function FinanceTab({ patientId, refreshKey }: FinanceTabProps) {
 
   if (error || !statement) {
     return error ? (
-      <p className="text-sm text-red-500 text-center py-4">{error}</p>
+      <div role="alert" className="text-center py-8">
+        <p className="text-sm text-red-600 mb-2">{error}</p>
+        <button
+          type="button"
+          onClick={() => setRetryKey((key) => key + 1)}
+          className="text-xs font-semibold text-blue-600 underline decoration-dotted"
+        >
+          إعادة المحاولة
+        </button>
+      </div>
     ) : (
       <EmptyState icon={Wallet} title="لا توجد بيانات مالية" description="لم يتم تسجيل أي معاملات مالية لهذا المريض" />
     );
@@ -185,8 +209,15 @@ export function FinanceTab({ patientId, refreshKey }: FinanceTabProps) {
           الفواتير
         </h3>
         {invoicesError ? (
-          <div className="p-3 text-center">
-            <p className="text-sm text-red-600 mb-2">فشل في تحميل الفواتير</p>
+          <div role="alert" className="p-3 text-center rounded-lg border border-amber-200 bg-amber-50">
+            <p className="text-sm text-amber-800 mb-2">{invoicesError}</p>
+            <button
+              type="button"
+              onClick={() => setRetryKey((key) => key + 1)}
+              className="text-xs font-semibold text-blue-600 underline decoration-dotted"
+            >
+              إعادة المحاولة
+            </button>
           </div>
         ) : invoices.length === 0 ? (
           <p className="text-sm text-[#94a3b8]">لا توجد فواتير مسجّلة</p>

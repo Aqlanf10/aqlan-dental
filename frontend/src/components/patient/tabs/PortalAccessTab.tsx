@@ -6,6 +6,7 @@ import {
   RotateCcw, ExternalLink, AlertTriangle, Loader2,
 } from "lucide-react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
@@ -20,6 +21,7 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
   const { user } = useAuthStore();
   const [creds, setCreds] = useState<PatientPortalCredentials | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [creating, setCreating] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [showTempPassword, setShowTempPassword] = useState(false);
@@ -31,12 +33,16 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
   const PORTAL_URL = typeof window !== "undefined" ? `${window.location.origin}/portal/login` : "/portal/login";
 
   const fetchCredentials = useCallback(async () => {
+    setLoading(true);
+    setLoadError("");
     try {
       const { data } = await api.get<PatientPortalCredentials>(`/api/portal/credentials/${patientId}`);
       setCreds(data);
-    } catch {
-      // 404 means no account — that's fine
+    } catch (error: unknown) {
       setCreds(null);
+      setLoadError(
+        extractErrorMessage(error, "تعذر تحميل حالة حساب بوابة المريض — تحقق من الاتصال وحاول مجدداً")
+      );
     } finally {
       setLoading(false);
     }
@@ -71,9 +77,8 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
         toast.success("تم إنشاء حساب البوابة بنجاح");
         await fetchCredentials();
       }
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg ?? "فشل إنشاء حساب البوابة");
+    } catch (error: unknown) {
+      toast.error(extractErrorMessage(error, "فشل إنشاء حساب البوابة"));
     } finally {
       setCreating(false);
     }
@@ -88,9 +93,8 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
       setShowTempPassword(true);
       toast.success("تم إعادة تعيين كلمة المرور بنجاح");
       await fetchCredentials();
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg ?? "فشل إعادة تعيين كلمة المرور");
+    } catch (error: unknown) {
+      toast.error(extractErrorMessage(error, "فشل إعادة تعيين كلمة المرور"));
     } finally {
       setResetting(false);
     }
@@ -108,6 +112,25 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
         <div className="h-8 bg-gray-100 rounded-lg w-1/3" />
         <div className="h-20 bg-gray-100 rounded-lg" />
         <div className="h-10 bg-gray-100 rounded-lg w-1/2" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-6 text-center">
+        <AlertTriangle className="w-10 h-10 mx-auto mb-3 text-red-400" />
+        <p className="text-sm font-semibold text-red-700">{loadError}</p>
+        <p className="text-xs text-red-500 mt-1">
+          لم نعتبر فشل الطلب «لا يوجد حساب»، ولم نعرض إجراءات إنشاء أو إعادة تعيين قبل معرفة الحالة الحقيقية.
+        </p>
+        <button
+          type="button"
+          onClick={fetchCredentials}
+          className="mt-4 px-4 py-2 text-sm font-semibold rounded-lg bg-white border border-red-200 text-red-700 hover:bg-red-100 transition"
+        >
+          إعادة المحاولة
+        </button>
       </div>
     );
   }

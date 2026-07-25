@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { ScanLine, Plus, Trash2, X, Upload, FileText, Filter, Eye, Download } from "lucide-react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate, localDateString } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
@@ -82,6 +83,7 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
   const [xrayDate, setXrayDate] = useState(() => localDateString());
   const [xrayPreview, setXrayPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const loadRequestRef = useRef(0);
 
   // Image preview state
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -90,15 +92,25 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
   const [previewMimeType, setPreviewMimeType] = useState<string | undefined>();
 
   const fetchXrays = useCallback(() => {
+    const requestId = ++loadRequestRef.current;
     setLoading(true);
     setError("");
     const params = new URLSearchParams();
     if (filterType) params.set("xrayType", filterType);
     const qs = params.toString();
     api.get<RadiographItem[]>(`/api/radiographs/${patientId}${qs ? `?${qs}` : ""}`)
-      .then((r) => setXrays(r.data))
-      .catch(() => setError("فشل تحميل الأشعة"))
-      .finally(() => setLoading(false));
+      .then((r) => {
+        if (loadRequestRef.current === requestId) setXrays(r.data);
+      })
+      .catch((error: unknown) => {
+        if (loadRequestRef.current === requestId) {
+          setXrays([]);
+          setError(extractErrorMessage(error, "فشل تحميل الأشعة"));
+        }
+      })
+      .finally(() => {
+        if (loadRequestRef.current === requestId) setLoading(false);
+      });
   }, [patientId, filterType]);
 
   useEffect(() => {
@@ -206,6 +218,8 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
 
   return (
     <div className="space-y-4">
+      {!loading && !error && (
+        <>
       {/* Stats row */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <div className="rounded-xl px-3 py-2.5 flex items-center gap-2.5 bg-purple-50">
@@ -230,6 +244,9 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
           </div>
         </div>
       </div>
+
+        </>
+      )}
 
       {/* Header with filters and add button */}
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -265,7 +282,10 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
           ))}
         </div>
       ) : error ? (
-        <div className="text-center py-8 text-red-500 text-sm">{error}</div>
+        <div role="alert" className="text-center py-8">
+          <p className="text-sm text-red-600 mb-2">{error}</p>
+          <button type="button" onClick={fetchXrays} className="text-xs font-semibold text-blue-600 underline decoration-dotted">إعادة المحاولة</button>
+        </div>
       ) : activeXrays.length === 0 ? (
         <EmptyState
           icon={ScanLine}

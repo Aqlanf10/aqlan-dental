@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Image as ImageIcon, Plus, Trash2, X, Upload, Camera, Filter, Eye } from "lucide-react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate, localDateString } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
@@ -93,12 +94,14 @@ export function PhotosTab({ patientId, orthoCaseId }: PhotosTabProps) {
   const [photoNotes, setPhotoNotes] = useState("");
   const [photoDate, setPhotoDate] = useState(() => localDateString());
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const loadRequestRef = useRef(0);
 
   // Image preview state
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewIndex, setPreviewIndex] = useState(0);
 
   const fetchPhotos = useCallback(() => {
+    const requestId = ++loadRequestRef.current;
     setLoading(true);
     setError("");
     const params = new URLSearchParams();
@@ -106,9 +109,18 @@ export function PhotosTab({ patientId, orthoCaseId }: PhotosTabProps) {
     if (filterStage) params.set("stage", filterStage);
     const qs = params.toString();
     api.get<ClinicalPhotoItem[]>(`/api/clinical-photos/${patientId}${qs ? `?${qs}` : ""}${orthoCaseId ? `${qs ? "&" : "?"}orthoCaseId=${orthoCaseId}` : ""}`)
-      .then((r) => setPhotos(r.data))
-      .catch(() => setError("فشل تحميل الصور"))
-      .finally(() => setLoading(false));
+      .then((r) => {
+        if (loadRequestRef.current === requestId) setPhotos(r.data);
+      })
+      .catch((error: unknown) => {
+        if (loadRequestRef.current === requestId) {
+          setPhotos([]);
+          setError(extractErrorMessage(error, "فشل تحميل الصور"));
+        }
+      })
+      .finally(() => {
+        if (loadRequestRef.current === requestId) setLoading(false);
+      });
   }, [patientId, filterCategory, filterStage, orthoCaseId]);
 
   useEffect(() => {
@@ -218,6 +230,8 @@ export function PhotosTab({ patientId, orthoCaseId }: PhotosTabProps) {
 
   return (
     <div className="space-y-4">
+      {!loading && !error && (
+        <>
       {/* Stats row */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <div className="rounded-xl px-3 py-2.5 flex items-center gap-2.5 bg-[#3d7ab510]">
@@ -242,6 +256,9 @@ export function PhotosTab({ patientId, orthoCaseId }: PhotosTabProps) {
           </div>
         </div>
       </div>
+
+        </>
+      )}
 
       {/* Header with filters and add button */}
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -288,7 +305,10 @@ export function PhotosTab({ patientId, orthoCaseId }: PhotosTabProps) {
           ))}
         </div>
       ) : error ? (
-        <div className="text-center py-8 text-red-500 text-sm">{error}</div>
+        <div role="alert" className="text-center py-8">
+          <p className="text-sm text-red-600 mb-2">{error}</p>
+          <button type="button" onClick={fetchPhotos} className="text-xs font-semibold text-blue-600 underline decoration-dotted">إعادة المحاولة</button>
+        </div>
       ) : activePhotos.length === 0 ? (
         <EmptyState
           icon={ImageIcon}

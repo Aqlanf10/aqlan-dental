@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Clock, Stethoscope, CreditCard, FolderOpen, Image as ImageIcon, ScanLine } from "lucide-react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate, APPOINTMENT_STATUS_LABELS } from "@/lib/utils";
 // FE-09: centralized appointment status colors (includes 'signed' for mixed timeline views)
@@ -70,16 +71,30 @@ const FILTER_OPTIONS = [
 export function TimelineTab({ patientId }: TimelineTabProps) {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const [filterType, setFilterType] = useState("all");
 
   useEffect(() => {
-    setFetchError(false);
+    let cancelled = false;
+    setLoading(true);
+    setFetchError(null);
+
     api.get<TimelineEvent[]>(`/api/patients/${patientId}/timeline`)
-      .then((r) => setEvents(r.data))
-      .catch(() => { setFetchError(true); })
-      .finally(() => setLoading(false));
+      .then((r) => {
+        if (!cancelled) setEvents(r.data);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setEvents([]);
+          setFetchError(extractErrorMessage(error, "فشل تحميل السجل الزمني"));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
   }, [patientId, retryKey]);
 
   if (loading) {
@@ -94,8 +109,8 @@ export function TimelineTab({ patientId }: TimelineTabProps) {
 
   if (fetchError) {
     return (
-      <div className="p-4 text-center">
-        <p className="text-sm text-red-600 mb-2">فشل في تحميل البيانات</p>
+      <div role="alert" className="p-4 text-center">
+        <p className="text-sm text-red-600 mb-2">{fetchError}</p>
         <button onClick={() => setRetryKey((k) => k + 1)} className="text-xs text-blue-600 underline">إعادة المحاولة</button>
       </div>
     );

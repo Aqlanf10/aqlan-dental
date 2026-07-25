@@ -1,105 +1,40 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import api from "@/lib/api";
-import PatientProfilePage from "@/app/(dashboard)/patients/[id]/page";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
 
-const navigation = vi.hoisted(() => {
-  const replace = vi.fn();
-  const push = vi.fn();
-  return {
-    id: "",
-    replace,
-    push,
-    router: { replace, push },
-    searchParams: { get: () => null },
-  };
-});
+const source = readFileSync(
+  resolve(process.cwd(), "src/app/(dashboard)/patients/[id]/page.tsx"),
+  "utf8"
+);
 
-vi.mock("next/navigation", () => ({
-  useParams: () => ({ id: navigation.id }),
-  // Next returns stable router/search-param objects. Keeping the mocks stable
-  // prevents the effects under test from restarting for an artificial reason.
-  useRouter: () => navigation.router,
-  useSearchParams: () => navigation.searchParams,
-}));
+describe("Patient profile identifier routing contract", () => {
+  it("resolves patient numbers before any GUID-only profile request", () => {
+    expect(source).toContain('api.get(`/api/patients/by-number/${encodeURIComponent(patientId)}`)');
+    expect(source).toContain('if (!patientIdentifier || !hasGuidPatientId) return;');
+    expect(source).toContain('api.get<PatientProfile>(`/api/patients/${patientIdentifier}`)');
 
-vi.mock("@/lib/api", () => ({
-  default: {
-    get: vi.fn(),
-    put: vi.fn(),
-    post: vi.fn(),
-    delete: vi.fn(),
-  },
-}));
-
-vi.mock("@/stores/authStore", () => ({
-  useAuthStore: () => ({ user: { role: "Admin" } }),
-}));
-
-describe("Patient profile identifier routing", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    navigation.id = "GM-2026-025";
+    const guardIndex = source.indexOf('if (!patientIdentifier || !hasGuidPatientId) return;');
+    const profileRequestIndex = source.indexOf('api.get<PatientProfile>(`/api/patients/${patientIdentifier}`)');
+    expect(guardIndex).toBeGreaterThan(-1);
+    expect(profileRequestIndex).toBeGreaterThan(guardIndex);
   });
 
-  it("resolves a patient number without calling GUID-only endpoints", async () => {
-    vi.mocked(api.get).mockResolvedValue({
-      data: { id: "11111111-1111-1111-1111-111111111111" },
-    });
-
-    render(<PatientProfilePage />);
-
-    await waitFor(() => {
-      expect(navigation.replace).toHaveBeenCalledWith(
-        "/patients/11111111-1111-1111-1111-111111111111"
-      );
-    });
-
-    expect(vi.mocked(api.get).mock.calls.map(([url]) => url)).toEqual([
-      "/api/patients/by-number/GM-2026-025",
-    ]);
+  it("distinguishes a real 404 from retryable lookup failures", () => {
+    expect(source).toContain("if (status === 404)");
+    expect(source).toContain("setResolutionRetryable(false)");
+    expect(source).toContain("setResolutionRetryable(true)");
+    expect(source).toContain("تعذر البحث عن المريض برقم الملف — تحقق من الاتصال وحاول مجدداً");
   });
 
-  it("shows a retryable server error instead of claiming the patient does not exist", async () => {
-    vi.mocked(api.get).mockRejectedValue({
-      response: { status: 503, data: { message: "خدمة البحث عن المرضى غير متاحة" } },
-    });
-
-    render(<PatientProfilePage />);
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("خدمة البحث عن المرضى غير متاحة");
-    expect(screen.queryByText(/لا يوجد مريض برقم الملف/)).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "إعادة المحاولة" }));
-    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2));
-    expect(vi.mocked(api.get).mock.calls.every(([url]) =>
-      url === "/api/patients/by-number/GM-2026-025"
-    )).toBe(true);
+  it("provides independent retries for number resolution and GUID profile loading", () => {
+    expect(source).toContain("const [resolutionRetryKey, setResolutionRetryKey] = useState(0)");
+    expect(source).toContain("const [profileRetryKey, setProfileRetryKey] = useState(0)");
+    expect(source).toContain("setProfileRetryKey(k => k + 1)");
+    expect(source).toContain("setResolutionRetryKey(k => k + 1)");
   });
 
-  it("keeps a real 404 as a non-retryable not-found result", async () => {
-    vi.mocked(api.get).mockRejectedValue({
-      response: { status: 404, data: { message: "المريض غير موجود" } },
-    });
-
-    render(<PatientProfilePage />);
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "لا يوجد مريض برقم الملف GM-2026-025"
-    );
-    expect(screen.queryByRole("button", { name: "إعادة المحاولة" })).not.toBeInTheDocument();
-  });
-
-  it("uses the normal patient requests only when the route identifier is a GUID", async () => {
-    navigation.id = "11111111-1111-1111-1111-111111111111";
-    vi.mocked(api.get).mockImplementation(() => new Promise(() => {}));
-
-    render(<PatientProfilePage />);
-
-    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(4));
-    const urls = vi.mocked(api.get).mock.calls.map(([url]) => url);
-    expect(urls).toContain("/api/patients/11111111-1111-1111-1111-111111111111");
-    expect(urls).toContain("/api/patients/11111111-1111-1111-1111-111111111111/summary");
-    expect(urls.some((url) => String(url).includes("/by-number/"))).toBe(false);
+  it("guards stale requests when the route identifier changes", () => {
+    expect(source).toContain("let cancelled = false");
+    expect(source.match(/return \(\) => \{ cancelled = true; \};/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
   });
 });

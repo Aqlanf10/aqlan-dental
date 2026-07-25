@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate, APPOINTMENT_STATUS_LABELS } from "@/lib/utils";
 import type { PatientProfile } from "@/types/patient";
@@ -50,6 +51,9 @@ interface SurgeryCase {
   doctorName?: string;
 }
 
+type OverviewSection = "timeline" | "ortho" | "surgery";
+type OverviewSectionErrors = Partial<Record<OverviewSection, string>>;
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const ORTHO_STATUS_LABELS: Record<string, string> = { active: "نشطة", completed: "مكتملة", cancelled: "ملغاة" };
@@ -88,6 +92,8 @@ export function OverviewTab({ patientId, summary, patient, canViewFinance = fals
   const [surgeryCases, setSurgeryCases] = useState<SurgeryCase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sectionErrors, setSectionErrors] = useState<OverviewSectionErrors>({});
+  const [reloadKey, setReloadKey] = useState(0);
   // Ortho case overview (next appointment + contract remaining). Fetched
   // opportunistically for the active ortho case only — keeps the patient file
   // summary card useful without forcing every patient into an extra round-trip
@@ -95,22 +101,57 @@ export function OverviewTab({ patientId, summary, patient, canViewFinance = fals
   const [orthoOverview, setOrthoOverview] = useState<OrthoOverview | null>(null);
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-    Promise.all([
-      api.get<TimelineEvent[]>(`/api/patients/${patientId}/timeline`).then((r) => r.data).catch(() => []),
-      api.get<OrthoCase[]>(`/api/ortho-cases?patientId=${patientId}&pageSize=5`).then((r) => r.data).catch(() => []),
-      api.get<{ data: SurgeryCase[] }>(`/api/surgery-cases?patientId=${patientId}&pageSize=5`).then((r) => r.data.data ?? []).catch(() => []),
-    ]).then(([timeline, ortho, surgery]) => {
-      setEvents(timeline);
-      setOrthoCases(ortho);
-      setSurgeryCases(surgery);
-    }).catch(() => {
-      setError("حدث خطأ أثناء تحميل البيانات");
-    }).finally(() => {
+    let cancelled = false;
+
+    const loadOverview = async () => {
+      setLoading(true);
+      setError(null);
+      setSectionErrors({});
+
+      const [timelineResult, orthoResult, surgeryResult] = await Promise.allSettled([
+        api.get<TimelineEvent[]>(`/api/patients/${patientId}/timeline`).then((response) => response.data),
+        api.get<OrthoCase[]>(`/api/ortho-cases?patientId=${patientId}&pageSize=5`).then((response) => response.data),
+        api.get<{ data: SurgeryCase[] }>(`/api/surgery-cases?patientId=${patientId}&pageSize=5`)
+          .then((response) => response.data.data ?? []),
+      ]);
+
+      if (cancelled) return;
+
+      const failures: OverviewSectionErrors = {};
+      if (timelineResult.status === "fulfilled") {
+        setEvents(timelineResult.value);
+      } else {
+        setEvents([]);
+        failures.timeline = extractErrorMessage(timelineResult.reason, "تعذر تحميل السجل الزمني");
+      }
+
+      if (orthoResult.status === "fulfilled") {
+        setOrthoCases(orthoResult.value);
+      } else {
+        setOrthoCases([]);
+        failures.ortho = extractErrorMessage(orthoResult.reason, "تعذر تحميل حالات التقويم");
+      }
+
+      if (surgeryResult.status === "fulfilled") {
+        setSurgeryCases(surgeryResult.value);
+      } else {
+        setSurgeryCases([]);
+        failures.surgery = extractErrorMessage(surgeryResult.reason, "تعذر تحميل حالات الجراحة");
+      }
+
+      if (Object.keys(failures).length === 3) {
+        setError("تعذر تحميل بيانات النظرة العامة — تحقق من الاتصال وحاول مجدداً");
+      } else {
+        setSectionErrors(failures);
+      }
       setLoading(false);
-    });
-  }, [patientId]);
+    };
+
+    loadOverview();
+    return () => {
+      cancelled = true;
+    };
+  }, [patientId, reloadKey]);
 
   const activeOrthoCase = orthoCases.find((c) => c.status?.toLowerCase() === "active") ?? null;
 
@@ -145,11 +186,13 @@ export function OverviewTab({ patientId, summary, patient, canViewFinance = fals
 
   if (error) {
     return (
-      <div className="text-center py-12">
+      <div role="alert" className="text-center py-12">
         <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
         <p className="text-sm text-red-500">{error}</p>
+        <p className="text-xs text-red-400 mt-1">لم نعرض قوائم فارغة بدل البيانات التي فشل تحميلها.</p>
         <button
-          onClick={() => window.location.reload()}
+          type="button"
+          onClick={() => setReloadKey((value) => value + 1)}
           className="mt-3 text-xs font-semibold text-[#3d7ab5] hover:underline"
         >
           إعادة المحاولة
@@ -163,6 +206,27 @@ export function OverviewTab({ patientId, summary, patient, canViewFinance = fals
 
   return (
     <div className="space-y-5">
+
+      {Object.keys(sectionErrors).length > 0 && (
+        <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 flex items-start gap-3">
+          <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-amber-800">تم تحميل جزء من نظرة المريض فقط</p>
+            <ul className="mt-1 space-y-0.5 text-xs text-amber-700">
+              {Object.entries(sectionErrors).map(([section, message]) => (
+                <li key={section}>• {message}</li>
+              ))}
+            </ul>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReloadKey((value) => value + 1)}
+            className="text-xs font-semibold text-amber-800 underline flex-shrink-0"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
 
       {/* ════════════════════ Quick Actions ════════════════════ */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
@@ -551,7 +615,13 @@ export function OverviewTab({ patientId, summary, patient, canViewFinance = fals
           </Link>
         </div>
         <div className="p-4">
-          {events.length === 0 ? (
+          {sectionErrors.timeline ? (
+            <div className="text-center py-8">
+              <AlertTriangle className="w-8 h-8 text-amber-400 mx-auto mb-2" />
+              <p className="text-xs font-semibold text-amber-700">{sectionErrors.timeline}</p>
+              <p className="text-[11px] text-amber-600 mt-1">هذه ليست حالة «لا يوجد نشاط».</p>
+            </div>
+          ) : events.length === 0 ? (
             <EmptyState
               icon={Clock}
               title="لا يوجد نشاط بعد"

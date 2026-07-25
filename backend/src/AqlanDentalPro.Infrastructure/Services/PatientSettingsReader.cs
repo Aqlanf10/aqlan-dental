@@ -21,7 +21,10 @@ public sealed class PatientSettingsReader(AppDbContext db) : IPatientSettingsRea
         return NormalizePrefix(stored);
     }
 
-    internal static string NormalizePrefix(string? value)
+    // Public (not internal): the test project is a separate assembly with no
+    // InternalsVisibleTo grant, and this is a pure algorithm — same visibility
+    // as PhoneNormalizer.Normalize / PatientAge.Calculate elsewhere in the codebase.
+    public static string NormalizePrefix(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return DefaultNumberPrefix;
 

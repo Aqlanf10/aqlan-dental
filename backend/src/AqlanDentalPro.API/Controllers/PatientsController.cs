@@ -466,7 +466,8 @@ public class PatientsController(
 
         var activeOrthoSummary = await db.OrthoCases
             .AsNoTracking()
-            .Where(o => o.PatientId == id && o.Status == OrthoCaseStatus.Active)
+            .ActiveCases()
+            .Where(o => o.PatientId == id)
             .OrderBy(o => o.CaseNumber)
             .Select(o => new PatientOrthoSummaryDto
             {

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { GitBranch, ChevronLeft, Plus, Loader2, Stethoscope, Scissors } from "lucide-react";
 import api from "@/lib/api";
+import { patientActiveOrthoCasesUrl } from "@/lib/orthoCaseRoutes";
 import { EmptyState } from "./EmptyState";
 import { cn } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
@@ -33,7 +34,7 @@ export function OrthoSurgicalTab({ patientId }: OrthoSurgicalTabProps) {
       setLoading(true);
       const [osRes, orthoRes] = await Promise.all([
         api.get<{ data: OrthoSurgicalCaseListItem[] }>(`/api/ortho-surgical-cases?patientId=${patientId}`),
-        api.get<OrthoCaseLite[]>(`/api/ortho-cases?patientId=${patientId}`),
+        api.get<OrthoCaseLite[]>(patientActiveOrthoCasesUrl(patientId)),
       ]);
       setCases(osRes.data?.data ?? []);
       setOrthoCases(orthoRes.data ?? []);

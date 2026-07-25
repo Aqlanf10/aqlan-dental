@@ -666,7 +666,8 @@ public class PatientJourneyService(
             // 6. Active ortho case — use actual OrthoCase entity fields only
             var activeOrthoCase = await db.OrthoCases
                 .IgnoreQueryFilters()
-                .Where(o => o.PatientId == patientId && o.IsActive)
+                .ActiveCases()
+                .Where(o => o.PatientId == patientId)
                 .OrderByDescending(o => o.CreatedAt)
                 .Select(o => new
                 {
@@ -978,9 +979,8 @@ public class PatientJourneyService(
 
         var cases = await db.OrthoCases
             .IgnoreQueryFilters()
-            .Where(c => c.IsActive
-                && c.Status == OrthoCaseStatus.Active
-                && patientIds.Contains(c.PatientId))
+            .ActiveCases()
+            .Where(c => patientIds.Contains(c.PatientId))
             .Select(c => new
             {
                 c.Id,

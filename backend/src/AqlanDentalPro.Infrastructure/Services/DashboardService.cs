@@ -62,7 +62,7 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
         var patientQuery = db.Patients.Where(p => p.CreatedAt >= todayStart && p.CreatedAt < todayEnd);
         if (branchId.HasValue) patientQuery = patientQuery.Where(p => p.BranchId == branchId);
 
-        var orthoQuery = db.OrthoCases.Where(o => o.Status == OrthoCaseStatus.Active);
+        var orthoQuery = db.OrthoCases.ActiveCases();
         if (branchId.HasValue) orthoQuery = orthoQuery.Where(o => o.BranchId == branchId);
 
         var labQuery = db.LabOrders.Where(l => l.Status == "sent" || l.Status == "manufacturing");

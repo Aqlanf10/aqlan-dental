@@ -110,4 +110,90 @@ public class AppointmentConflictGuardTests
         appointment.Doctor!.Name.Should().Be("د. عقلان الكامل");
         appointment.Doctor.Color.Should().Be("#2563eb");
     }
+
+    // ── CORE-APPT-002: TryUpdateWithConflictGuardAsync (reschedule) ────────────
+
+    [Fact]
+    public async Task TryUpdate_RejectsOverlapWithAnotherAppointment_AndDoesNotSave()
+    {
+        await using var db = CreateDb();
+        var doctorId = Guid.NewGuid();
+        var fixedSlot = Slot(doctorId, new TimeOnly(10, 0), new TimeOnly(10, 30));
+        var toMove = Slot(doctorId, new TimeOnly(14, 0), new TimeOnly(14, 30));
+        db.Appointments.AddRange(fixedSlot, toMove);
+        await db.SaveChangesAsync();
+        var repo = new AppointmentRepository(db);
+
+        // Try to move `toMove` onto a slot overlapping the OTHER appointment's time.
+        toMove.StartTime = new TimeOnly(10, 15);
+        toMove.EndTime = new TimeOnly(10, 45);
+
+        (await repo.TryUpdateWithConflictGuardAsync(toMove)).Should().BeFalse();
+
+        db.ChangeTracker.Clear();
+        var stored = await db.Appointments.SingleAsync(a => a.Id == toMove.Id);
+        stored.StartTime.Should().Be(new TimeOnly(14, 0), "a rejected reschedule must not persist the new time");
+        stored.EndTime.Should().Be(new TimeOnly(14, 30));
+    }
+
+    [Fact]
+    public async Task TryUpdate_ExcludesItsOwnRow_AllowsRescheduleWithinItsOwnUnchangedSlot()
+    {
+        await using var db = CreateDb();
+        var doctorId = Guid.NewGuid();
+        var appointment = Slot(doctorId, new TimeOnly(10, 0), new TimeOnly(10, 30));
+        db.Appointments.Add(appointment);
+        await db.SaveChangesAsync();
+        var repo = new AppointmentRepository(db);
+
+        // "Reschedule" onto the exact same slot (e.g. only Notes changed) — must not
+        // conflict with itself.
+        appointment.Notes = "ملاحظة محدّثة";
+
+        (await repo.TryUpdateWithConflictGuardAsync(appointment)).Should().BeTrue();
+
+        db.ChangeTracker.Clear();
+        var stored = await db.Appointments.SingleAsync(a => a.Id == appointment.Id);
+        stored.Notes.Should().Be("ملاحظة محدّثة");
+    }
+
+    [Fact]
+    public async Task TryUpdate_AllowsMovingIntoClearSlot_ForSameDoctor()
+    {
+        await using var db = CreateDb();
+        var doctorId = Guid.NewGuid();
+        var toMove = Slot(doctorId, new TimeOnly(10, 0), new TimeOnly(10, 30));
+        db.Appointments.Add(toMove);
+        await db.SaveChangesAsync();
+        var repo = new AppointmentRepository(db);
+
+        toMove.StartTime = new TimeOnly(11, 0);
+        toMove.EndTime = new TimeOnly(11, 30);
+
+        (await repo.TryUpdateWithConflictGuardAsync(toMove)).Should().BeTrue();
+
+        db.ChangeTracker.Clear();
+        var stored = await db.Appointments.SingleAsync(a => a.Id == toMove.Id);
+        stored.StartTime.Should().Be(new TimeOnly(11, 0));
+        stored.EndTime.Should().Be(new TimeOnly(11, 30));
+    }
+
+    [Fact]
+    public async Task TryUpdate_AllowsOverlapWithADifferentDoctorsAppointment()
+    {
+        await using var db = CreateDb();
+        var doctorA = Guid.NewGuid();
+        var doctorB = Guid.NewGuid();
+        var otherDoctorsAppointment = Slot(doctorB, new TimeOnly(10, 0), new TimeOnly(10, 30));
+        var toMove = Slot(doctorA, new TimeOnly(14, 0), new TimeOnly(14, 30));
+        db.Appointments.AddRange(otherDoctorsAppointment, toMove);
+        await db.SaveChangesAsync();
+        var repo = new AppointmentRepository(db);
+
+        // Same time as doctorB's appointment, but this one belongs to doctorA — no conflict.
+        toMove.StartTime = new TimeOnly(10, 0);
+        toMove.EndTime = new TimeOnly(10, 30);
+
+        (await repo.TryUpdateWithConflictGuardAsync(toMove)).Should().BeTrue();
+    }
 }

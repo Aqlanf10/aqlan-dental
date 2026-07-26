@@ -73,6 +73,44 @@ public class AppointmentRepository(AppDbContext context)
         }
     }
 
+    public async Task<bool> TryUpdateWithConflictGuardAsync(Appointment appointment)
+    {
+        if (!Context.Database.IsRelational())
+        {
+            if (await HasConflictAsync(appointment.DoctorId, appointment.AppointmentDate, appointment.StartTime, appointment.EndTime, excludeId: appointment.Id))
+                return false;
+            DbSet.Update(appointment);
+            await Context.SaveChangesAsync();
+            return true;
+        }
+
+        await using var tx = await Context.Database.BeginTransactionAsync();
+        try
+        {
+            // Same per-doctor advisory lock as TryCreateWithConflictGuardAsync — serializes
+            // concurrent reschedules onto the same doctor, closing the race between the
+            // conflict check and the save (CORE-APPT-002).
+            var lockKey = (int)(appointment.DoctorId.GetHashCode() % 100000);
+            await Context.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            if (await HasConflictAsync(appointment.DoctorId, appointment.AppointmentDate, appointment.StartTime, appointment.EndTime, excludeId: appointment.Id))
+            {
+                await tx.RollbackAsync();
+                return false;
+            }
+
+            DbSet.Update(appointment);
+            await Context.SaveChangesAsync();
+            await tx.CommitAsync();
+            return true;
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
     private async Task LoadDisplayDetailsAsync(Appointment appointment)
     {
         var entry = Context.Entry(appointment);

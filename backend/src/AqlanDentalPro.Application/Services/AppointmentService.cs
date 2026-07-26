@@ -139,9 +139,6 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         var start = TimeOnly.Parse(req.StartTime);
         var end   = start.AddMinutes(req.DurationMinutes);
 
-        if (await repo.HasConflictAsync(req.DoctorId, date, start, end, excludeId: id))
-            return (null, "يوجد تعارض في المواعيد مع هذا الطبيب في هذا الوقت");
-
         var previousDoctorId = appointment.DoctorId;
         appointment.DoctorId        = req.DoctorId;
         appointment.AppointmentDate = date;
@@ -161,8 +158,12 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         appointment.AppointmentColor      = req.AppointmentColor;
         appointment.PackageId             = req.PackageId;
 
-        repo.Update(appointment);
-        await repo.SaveChangesAsync();
+        // CORE-APPT-002: atomic conflict-check + save (transaction + per-doctor advisory
+        // lock), the same guard CreateAsync already uses — closes the race where two
+        // concurrent reschedules onto the same doctor/slot could both pass a plain
+        // check-then-save and double-book the doctor.
+        if (!await repo.TryUpdateWithConflictGuardAsync(appointment))
+            return (null, "يوجد تعارض في المواعيد مع هذا الطبيب في هذا الوقت");
 
         var dto           = ToDto(appointment);
         var patientLabel  = dto.PatientName.Length > 0 ? dto.PatientName : "مريض";

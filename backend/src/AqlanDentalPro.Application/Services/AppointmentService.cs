@@ -56,10 +56,11 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
             PackageId = req.PackageId,
         };
 
-        // C-15: atomic conflict-check + insert (transaction + per-doctor advisory
-        // lock) to prevent the double-booking race between check and save.
+        // C-15/CORE-APPT-003: atomic conflict-check + insert (transaction + per-doctor
+        // and, when a room is set, per-room advisory lock) to prevent the double-booking
+        // race between check and save — for either the doctor or the room.
         if (!await repo.TryCreateWithConflictGuardAsync(appointment))
-            return (null, "يوجد تعارض في المواعيد مع هذا الطبيب في هذا الوقت");
+            return (null, await DescribeConflictAsync(appointment, excludeId: null));
 
         // M1 FIX: Use IServiceScopeFactory for proper DI in fire-and-forget
         var dto = ToDto(appointment);
@@ -158,12 +159,13 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         appointment.AppointmentColor      = req.AppointmentColor;
         appointment.PackageId             = req.PackageId;
 
-        // CORE-APPT-002: atomic conflict-check + save (transaction + per-doctor advisory
-        // lock), the same guard CreateAsync already uses — closes the race where two
-        // concurrent reschedules onto the same doctor/slot could both pass a plain
-        // check-then-save and double-book the doctor.
+        // CORE-APPT-002/003: atomic conflict-check + save (transaction + per-doctor and,
+        // when a room is set, per-room advisory lock), the same guard CreateAsync already
+        // uses — closes the race where two concurrent reschedules onto the same doctor
+        // slot, or two different doctors onto the same room, could both pass a plain
+        // check-then-save.
         if (!await repo.TryUpdateWithConflictGuardAsync(appointment))
-            return (null, "يوجد تعارض في المواعيد مع هذا الطبيب في هذا الوقت");
+            return (null, await DescribeConflictAsync(appointment, excludeId: appointment.Id));
 
         var dto           = ToDto(appointment);
         var patientLabel  = dto.PatientName.Length > 0 ? dto.PatientName : "مريض";
@@ -292,6 +294,22 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
 
         var endTime = start.AddMinutes(durationMinutes);
         return await repo.HasConflictAsync(doctorId, appointmentDate, start, endTime, excludeId);
+    }
+
+    /// <summary>
+    /// CORE-APPT-003: TryCreate/TryUpdateWithConflictGuardAsync return a bare bool —
+    /// atomically correct, but not which of the (possibly two) resources conflicted.
+    /// After a rejection, the transaction has already been rolled back, so this is a
+    /// plain, non-transactional read purely to pick the accurate Arabic message; it
+    /// cannot affect whether the booking was accepted.
+    /// </summary>
+    private async Task<string> DescribeConflictAsync(Appointment appointment, Guid? excludeId)
+    {
+        if (appointment.ClinicRoomId.HasValue &&
+            await repo.HasRoomConflictAsync(appointment.ClinicRoomId.Value, appointment.AppointmentDate, appointment.StartTime, appointment.EndTime, excludeId))
+            return "الغرفة محجوزة في هذا الوقت";
+
+        return "يوجد تعارض في المواعيد مع هذا الطبيب في هذا الوقت";
     }
 
     private static AppointmentDto ToDto(Appointment a) => new()

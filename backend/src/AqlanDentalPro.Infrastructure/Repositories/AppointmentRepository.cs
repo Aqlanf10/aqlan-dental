@@ -24,6 +24,23 @@ public class AppointmentRepository(AppDbContext context)
             (excludeId == null || a.Id != excludeId));
     }
 
+    // CORE-APPT-003: same shape as HasConflictAsync but scoped to the clinic room
+    // instead of the doctor — a room can only host one appointment at a time
+    // regardless of which doctor booked it.
+    public async Task<bool> HasRoomConflictAsync(
+        Guid roomId, DateOnly date, TimeOnly start, TimeOnly end, Guid? excludeId = null)
+    {
+        return await DbSet.AnyAsync(a =>
+            a.ClinicRoomId == roomId &&
+            a.AppointmentDate == date &&
+            a.IsActive &&
+            a.Status != AppointmentStatus.Cancelled &&
+            a.Status != AppointmentStatus.NoShow &&
+            a.StartTime < end &&
+            a.EndTime > start &&
+            (excludeId == null || a.Id != excludeId));
+    }
+
     public async Task<bool> TryCreateWithConflictGuardAsync(Appointment appointment)
     {
         // Non-relational providers (InMemory tests) have no advisory lock — fall
@@ -31,7 +48,7 @@ public class AppointmentRepository(AppDbContext context)
         // process race protection (which needs PostgreSQL) is unavailable.
         if (!Context.Database.IsRelational())
         {
-            if (await HasConflictAsync(appointment.DoctorId, appointment.AppointmentDate, appointment.StartTime, appointment.EndTime))
+            if (await HasConflictOrRoomConflictAsync(appointment, excludeId: null))
                 return false;
             await DbSet.AddAsync(appointment);
             await Context.SaveChangesAsync();
@@ -42,12 +59,14 @@ public class AppointmentRepository(AppDbContext context)
         await using var tx = await Context.Database.BeginTransactionAsync();
         try
         {
-            // Advisory lock scoped to the doctor serializes concurrent bookings for
-            // the same doctor, making the conflict-check + insert atomic (C-15).
-            var lockKey = (int)(appointment.DoctorId.GetHashCode() % 100000);
-            await Context.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            // Advisory lock(s) scoped to the doctor (and the room, if any) serialize
+            // concurrent bookings against the same doctor or room, making the
+            // conflict-check + insert atomic (C-15, extended by CORE-APPT-003 to
+            // also cover the room — a doctor-only lock doesn't stop two different
+            // doctors from double-booking the same room).
+            await AcquireDoctorAndRoomLocksAsync(appointment.DoctorId, appointment.ClinicRoomId);
 
-            if (await HasConflictAsync(appointment.DoctorId, appointment.AppointmentDate, appointment.StartTime, appointment.EndTime))
+            if (await HasConflictOrRoomConflictAsync(appointment, excludeId: null))
             {
                 await tx.RollbackAsync();
                 return false;
@@ -77,7 +96,7 @@ public class AppointmentRepository(AppDbContext context)
     {
         if (!Context.Database.IsRelational())
         {
-            if (await HasConflictAsync(appointment.DoctorId, appointment.AppointmentDate, appointment.StartTime, appointment.EndTime, excludeId: appointment.Id))
+            if (await HasConflictOrRoomConflictAsync(appointment, excludeId: appointment.Id))
                 return false;
             DbSet.Update(appointment);
             await Context.SaveChangesAsync();
@@ -87,13 +106,12 @@ public class AppointmentRepository(AppDbContext context)
         await using var tx = await Context.Database.BeginTransactionAsync();
         try
         {
-            // Same per-doctor advisory lock as TryCreateWithConflictGuardAsync — serializes
-            // concurrent reschedules onto the same doctor, closing the race between the
-            // conflict check and the save (CORE-APPT-002).
-            var lockKey = (int)(appointment.DoctorId.GetHashCode() % 100000);
-            await Context.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            // Same doctor+room advisory locks as TryCreateWithConflictGuardAsync —
+            // serializes concurrent reschedules onto the same doctor or room, closing
+            // the race between the conflict check and the save (CORE-APPT-002/003).
+            await AcquireDoctorAndRoomLocksAsync(appointment.DoctorId, appointment.ClinicRoomId);
 
-            if (await HasConflictAsync(appointment.DoctorId, appointment.AppointmentDate, appointment.StartTime, appointment.EndTime, excludeId: appointment.Id))
+            if (await HasConflictOrRoomConflictAsync(appointment, excludeId: appointment.Id))
             {
                 await tx.RollbackAsync();
                 return false;
@@ -109,6 +127,44 @@ public class AppointmentRepository(AppDbContext context)
             await tx.RollbackAsync();
             throw;
         }
+    }
+
+    private async Task<bool> HasConflictOrRoomConflictAsync(Appointment appointment, Guid? excludeId)
+    {
+        if (await HasConflictAsync(appointment.DoctorId, appointment.AppointmentDate, appointment.StartTime, appointment.EndTime, excludeId))
+            return true;
+
+        return appointment.ClinicRoomId.HasValue &&
+            await HasRoomConflictAsync(appointment.ClinicRoomId.Value, appointment.AppointmentDate, appointment.StartTime, appointment.EndTime, excludeId);
+    }
+
+    /// <summary>
+    /// Acquires the per-doctor advisory lock and, when a room is involved, the
+    /// per-room advisory lock too — always in ascending numeric key order. A
+    /// doctor id and a room id can independently be the contended resource (two
+    /// different doctors can collide on the same room; the same doctor can't
+    /// collide with themselves on two rooms), so both must be held for the
+    /// conflict-check + save to be atomic. Acquiring in a fixed, deterministic
+    /// order — regardless of which key belongs to which resource — is what
+    /// prevents a classic deadlock: two concurrent transactions can never end up
+    /// waiting on each other's lock in a cycle if every transaction that needs
+    /// N of these locks always takes them in the same relative order.
+    /// </summary>
+    private async Task AcquireDoctorAndRoomLocksAsync(Guid doctorId, Guid? roomId)
+    {
+        var doctorKey = (int)(doctorId.GetHashCode() % 100000);
+        if (!roomId.HasValue)
+        {
+            await Context.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", doctorKey);
+            return;
+        }
+
+        var roomKey = (int)(roomId.Value.GetHashCode() % 100000) + 100000;
+        var (first, second) = doctorKey <= roomKey ? (doctorKey, roomKey) : (roomKey, doctorKey);
+
+        await Context.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", first);
+        if (second != first)
+            await Context.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", second);
     }
 
     private async Task LoadDisplayDetailsAsync(Appointment appointment)

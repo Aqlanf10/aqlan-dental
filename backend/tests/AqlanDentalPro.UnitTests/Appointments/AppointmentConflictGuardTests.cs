@@ -22,11 +22,12 @@ public class AppointmentConflictGuardTests
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options);
 
-    private static Appointment Slot(Guid doctorId, TimeOnly start, TimeOnly end) => new()
+    private static Appointment Slot(Guid doctorId, TimeOnly start, TimeOnly end, Guid? roomId = null) => new()
     {
         Id = Guid.NewGuid(),
         DoctorId = doctorId,
         PatientId = Guid.NewGuid(),
+        ClinicRoomId = roomId,
         AppointmentDate = new DateOnly(2026, 6, 20),
         StartTime = start,
         EndTime = end,
@@ -195,5 +196,92 @@ public class AppointmentConflictGuardTests
         toMove.EndTime = new TimeOnly(10, 30);
 
         (await repo.TryUpdateWithConflictGuardAsync(toMove)).Should().BeTrue();
+    }
+
+    // ── CORE-APPT-003: room conflicts across DIFFERENT doctors ─────────────────
+    // This is exactly the gap the controller's old standalone AnyAsync pre-check
+    // had no atomicity guard for: a doctor-scoped advisory lock alone doesn't
+    // serialize two different doctors racing to book the same room.
+
+    [Fact]
+    public async Task TryCreate_RejectsRoomOverlap_EvenForADifferentDoctor()
+    {
+        await using var db = CreateDb();
+        var roomId = Guid.NewGuid();
+        db.Appointments.Add(Slot(Guid.NewGuid(), new TimeOnly(10, 0), new TimeOnly(10, 30), roomId));
+        await db.SaveChangesAsync();
+        var repo = new AppointmentRepository(db);
+
+        // Different doctor, same room, overlapping time → must still be rejected.
+        var conflicting = Slot(Guid.NewGuid(), new TimeOnly(10, 15), new TimeOnly(10, 45), roomId);
+        (await repo.TryCreateWithConflictGuardAsync(conflicting)).Should().BeFalse();
+        (await db.Appointments.CountAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task TryCreate_AllowsSameRoom_NonOverlappingTime()
+    {
+        await using var db = CreateDb();
+        var roomId = Guid.NewGuid();
+        db.Appointments.Add(Slot(Guid.NewGuid(), new TimeOnly(10, 0), new TimeOnly(10, 30), roomId));
+        await db.SaveChangesAsync();
+        var repo = new AppointmentRepository(db);
+
+        var clear = Slot(Guid.NewGuid(), new TimeOnly(11, 0), new TimeOnly(11, 30), roomId);
+        (await repo.TryCreateWithConflictGuardAsync(clear)).Should().BeTrue();
+        (await db.Appointments.CountAsync()).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task TryCreate_NoRoomSpecified_OnlyChecksDoctorConflict()
+    {
+        await using var db = CreateDb();
+        var doctorId = Guid.NewGuid();
+        db.Appointments.Add(Slot(doctorId, new TimeOnly(10, 0), new TimeOnly(10, 30), roomId: null));
+        await db.SaveChangesAsync();
+        var repo = new AppointmentRepository(db);
+
+        // Different doctor, no room on either side, overlapping time → no conflict.
+        var otherDoctor = Slot(Guid.NewGuid(), new TimeOnly(10, 0), new TimeOnly(10, 30), roomId: null);
+        (await repo.TryCreateWithConflictGuardAsync(otherDoctor)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task TryUpdate_RejectsRoomOverlap_EvenForADifferentDoctor_AndDoesNotSave()
+    {
+        await using var db = CreateDb();
+        var roomId = Guid.NewGuid();
+        var fixedSlot = Slot(Guid.NewGuid(), new TimeOnly(10, 0), new TimeOnly(10, 30), roomId);
+        var toMove = Slot(Guid.NewGuid(), new TimeOnly(14, 0), new TimeOnly(14, 30), Guid.NewGuid());
+        db.Appointments.AddRange(fixedSlot, toMove);
+        await db.SaveChangesAsync();
+        var repo = new AppointmentRepository(db);
+
+        // Reschedule toMove into the fixed appointment's room+time — different
+        // doctor, so only the room conflicts.
+        toMove.ClinicRoomId = roomId;
+        toMove.StartTime = new TimeOnly(10, 15);
+        toMove.EndTime = new TimeOnly(10, 45);
+
+        (await repo.TryUpdateWithConflictGuardAsync(toMove)).Should().BeFalse();
+
+        db.ChangeTracker.Clear();
+        var stored = await db.Appointments.SingleAsync(a => a.Id == toMove.Id);
+        stored.StartTime.Should().Be(new TimeOnly(14, 0), "a rejected room reschedule must not persist the new time/room");
+    }
+
+    [Fact]
+    public async Task TryUpdate_ExcludesItsOwnRow_AllowsRescheduleWithinItsOwnUnchangedRoomAndSlot()
+    {
+        await using var db = CreateDb();
+        var roomId = Guid.NewGuid();
+        var appointment = Slot(Guid.NewGuid(), new TimeOnly(10, 0), new TimeOnly(10, 30), roomId);
+        db.Appointments.Add(appointment);
+        await db.SaveChangesAsync();
+        var repo = new AppointmentRepository(db);
+
+        appointment.Notes = "ملاحظة محدّثة";
+
+        (await repo.TryUpdateWithConflictGuardAsync(appointment)).Should().BeTrue("the appointment's own row must not conflict with itself on the room check either");
     }
 }

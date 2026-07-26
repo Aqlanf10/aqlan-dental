@@ -292,6 +292,70 @@ public class AppointmentsControllerAccessTests : IDisposable
         stored.StartTime.Should().Be(appointment.StartTime, "a denied Update must not mutate the persisted appointment");
     }
 
+    [Fact]
+    public async Task Update_SpoofedAccessiblePatientIdInBody_StillDenied_AndDoesNotMutateInaccessibleAppointment()
+    {
+        // Codex review finding on PR #760: AppointmentService.UpdateAsync loads the
+        // appointment by route `id` and never reassigns PatientId from req.PatientId —
+        // it always stays whichever patient the appointment already belongs to. A guard
+        // that only checks req.PatientId can be defeated by naming an OWN accessible
+        // patient in the body while the route id targets a completely different,
+        // inaccessible patient's appointment. The authorization must be against the
+        // appointment's *stored* owner, not the request body.
+        var (ownPatient, _) = await SeedAsync();
+        var (otherPatient, otherAppointment) = await SeedAsync();
+
+        var accessMock = new Mock<IPatientAccessService>();
+        SetupDoctorWithAccess(accessMock, ownPatient.Id); // only ownPatient is accessible
+
+        var controller = BuildController(accessMock);
+        var req = new CreateAppointmentRequest
+        {
+            PatientId = ownPatient.Id, // spoofed: names an accessible patient in the body
+            DoctorId = Guid.NewGuid(),
+            AppointmentDate = otherAppointment.AppointmentDate.ToString("yyyy-MM-dd"),
+            StartTime = "11:00",
+            DurationMinutes = 30,
+            AppointmentType = "معاينة",
+        };
+
+        var result = await controller.Update(otherAppointment.Id, req); // route id targets the OTHER patient's appointment
+
+        var status = result.Should().BeOfType<ObjectResult>().Subject;
+        status.StatusCode.Should().Be(403,
+            "authorization must be checked against the appointment's actual stored patient, not the spoofable request body");
+
+        _db.ChangeTracker.Clear();
+        var stored = await _db.Appointments.SingleAsync(a => a.Id == otherAppointment.Id);
+        stored.StartTime.Should().Be(otherAppointment.StartTime,
+            "the inaccessible patient's appointment must not be mutated just because the body named a different, accessible patient");
+        stored.PatientId.Should().Be(otherPatient.Id, "PatientId must never change on Update");
+    }
+
+    [Fact]
+    public async Task Update_OwnPatientAppointment_Succeeds()
+    {
+        var (patient, appointment) = await SeedAsync();
+
+        var accessMock = new Mock<IPatientAccessService>();
+        SetupDoctorWithAccess(accessMock, patient.Id);
+
+        var controller = BuildController(accessMock);
+        var req = new CreateAppointmentRequest
+        {
+            PatientId = patient.Id,
+            DoctorId = Guid.NewGuid(),
+            AppointmentDate = appointment.AppointmentDate.ToString("yyyy-MM-dd"),
+            StartTime = "11:00",
+            DurationMinutes = 30,
+            AppointmentType = "معاينة",
+        };
+
+        var result = await controller.Update(appointment.Id, req);
+
+        result.Should().BeOfType<OkObjectResult>();
+    }
+
     // ── UpdateStatus ─────────────────────────────────────────────────────────────
 
     [Fact]

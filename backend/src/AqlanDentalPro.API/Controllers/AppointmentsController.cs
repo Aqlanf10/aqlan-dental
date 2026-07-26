@@ -306,8 +306,19 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] CreateAppointmentRequest req)
     {
-        var denied = await DenyIfDoctorCannotAccess(req.PatientId);
-        if (denied != null) return denied;
+        // CORE-APPT-001 follow-up (Codex review): AppointmentService.UpdateAsync loads
+        // the appointment by route `id` and never reassigns PatientId — it always stays
+        // whichever patient the appointment already belongs to. Checking req.PatientId
+        // here would let a restricted doctor name one of their OWN accessible patients
+        // in the body while actually mutating (and reading back PHI for) a completely
+        // different, inaccessible patient's appointment. Must authorize against the
+        // appointment's stored owner, not the request body.
+        var ownerPatientId = await db.Appointments.Where(a => a.Id == id).Select(a => (Guid?)a.PatientId).FirstOrDefaultAsync();
+        if (ownerPatientId.HasValue)
+        {
+            var denied = await DenyIfDoctorCannotAccess(ownerPatientId.Value);
+            if (denied != null) return denied;
+        }
 
         var orthoValidation = await ValidateOrthoCaseLinkAsync(req);
         if (orthoValidation != null)

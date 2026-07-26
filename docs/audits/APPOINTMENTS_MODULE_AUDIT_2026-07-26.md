@@ -17,6 +17,7 @@
 |---|---------|
 | `CORE-APPT-001` | إضافة `IPatientAccessService`/`IAuditService` إلى `AppointmentsController` مع `DenyIfDoctorCannotAccess` (يطابق نمط `PatientsController`) لكل endpoint يحمل مريضًا محددًا (`GetById`، `Create`، `Update`، `UpdateStatus`، `Delete`، `SendReminder`، `SendEmailReminder`، `StartVisit`، `GetEmailAvailable`)، و`GetAccessiblePatientIdsIfDoctorAsync` لتصفية نتائج القوائم (`GetToday`، `GetByRange` عند غياب `patientId`، `GetUpcoming`، `GetRecallCandidates`، `BatchUpdateStatus`). اختبارات ارتداد جديدة (`AppointmentsControllerAccessTests`) تثبت 403 مع عدم أي تعديل بيانات للمسارات الكاتبة، وتصفية صحيحة للقوائم. |
 | `CORE-APPT-013` | أُصلح ضمن نفس التعديل (نفس endpoint بالضبط): أُضيف حقل `PatientId` إلى استجابة `GET /api/appointments/upcoming` — كان غائبًا تمامًا فتنتقل كل نقرة في ودجت «المواعيد القادمة» إلى `/patients/undefined`. |
+| `CORE-APPT-002` | إضافة `IAppointmentRepository.TryUpdateWithConflictGuardAsync` (معاملة + `pg_advisory_xact_lock` لكل طبيب، مطابق تمامًا لـ`TryCreateWithConflictGuardAsync`) و`AppointmentService.UpdateAsync` يستدعيه بدل `HasConflictAsync` ثم حفظ منفصل بلا قفل. اختبارات جديدة (`AppointmentConflictGuardTests`) تثبت رفض التداخل مع موعد آخر، السماح بإعادة الجدولة لنفس الفتحة (استبعاد الصف نفسه)، الانتقال لفتحة خالية، والسماح بالتداخل مع طبيب آخر. |
 
 ---
 

@@ -16,6 +16,17 @@ public interface IAppointmentRepository : IGenericRepository<Appointment>
     Task<bool> TryCreateWithConflictGuardAsync(Appointment appointment);
 
     /// <summary>
+    /// CORE-APPT-002: same atomic guard as <see cref="TryCreateWithConflictGuardAsync"/>,
+    /// for rescheduling an existing appointment. The caller must have already assigned
+    /// the appointment's new DoctorId/AppointmentDate/StartTime/EndTime on the tracked
+    /// entity before calling this — the conflict check and the save both read those
+    /// (already-mutated) values, excluding the appointment's own id. Returns false
+    /// (without saving) when a conflict is detected, closing the double-booking race
+    /// between check and save that a plain HasConflictAsync-then-SaveChanges has.
+    /// </summary>
+    Task<bool> TryUpdateWithConflictGuardAsync(Appointment appointment);
+
+    /// <summary>
     /// Returns appointments for the clinic-local day. Production callers omit
     /// <paramref name="clinicDate"/> and use the configured clinic timezone; tests
     /// may pass an explicit date to verify midnight-boundary behavior deterministically.

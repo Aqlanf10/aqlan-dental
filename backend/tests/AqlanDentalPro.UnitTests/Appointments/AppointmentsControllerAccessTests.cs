@@ -49,9 +49,21 @@ public class AppointmentsControllerAccessTests : IDisposable
         IsActive = true,
     };
 
-    private static Appointment BuildAppointment(Guid patientId, DateOnly date, AppointmentStatus status = AppointmentStatus.Scheduled) => new()
+    // Appointment.DoctorId is a required (non-nullable) FK, and AppointmentRepository's
+    // queries all .Include(a => a.Doctor) — EF Core translates a required navigation
+    // Include to an INNER JOIN, so an appointment with no matching Doctor row is silently
+    // dropped from every result set. Every seeded appointment needs a real Doctor row.
+    private static Doctor BuildDoctor(string name = "د. تجريبي") => new()
+    {
+        UserId = Guid.NewGuid(),
+        Name = name,
+        IsActive = true,
+    };
+
+    private static Appointment BuildAppointment(Guid patientId, Guid doctorId, DateOnly date, AppointmentStatus status = AppointmentStatus.Scheduled) => new()
     {
         PatientId = patientId,
+        DoctorId = doctorId,
         AppointmentDate = date,
         StartTime = new TimeOnly(10, 0),
         EndTime = new TimeOnly(10, 30),
@@ -64,10 +76,12 @@ public class AppointmentsControllerAccessTests : IDisposable
     private async Task<(Patient Patient, Appointment Appointment)> SeedAsync(DateOnly? date = null)
     {
         var patient = BuildPatient();
+        var doctor = BuildDoctor();
         _db.Patients.Add(patient);
+        _db.Doctors.Add(doctor);
         await _db.SaveChangesAsync();
 
-        var appointment = BuildAppointment(patient.Id, date ?? DateOnly.FromDateTime(DateTime.UtcNow));
+        var appointment = BuildAppointment(patient.Id, doctor.Id, date ?? DateOnly.FromDateTime(DateTime.UtcNow));
         _db.Appointments.Add(appointment);
         await _db.SaveChangesAsync();
 
@@ -435,18 +449,20 @@ public class AppointmentsControllerAccessTests : IDisposable
 
         var ownPatient = BuildPatient();
         var otherPatient = BuildPatient("خالد", "العولقي");
+        var doctor = BuildDoctor();
         _db.Patients.AddRange(ownPatient, otherPatient);
+        _db.Doctors.Add(doctor);
         await _db.SaveChangesAsync();
 
         _db.Appointments.AddRange(
             new Appointment
             {
-                PatientId = ownPatient.Id, AppointmentDate = today, StartTime = soon, EndTime = soon.AddMinutes(30),
+                PatientId = ownPatient.Id, DoctorId = doctor.Id, AppointmentDate = today, StartTime = soon, EndTime = soon.AddMinutes(30),
                 DurationMinutes = 30, AppointmentType = "معاينة", Status = AppointmentStatus.Scheduled, IsActive = true,
             },
             new Appointment
             {
-                PatientId = otherPatient.Id, AppointmentDate = today, StartTime = soon, EndTime = soon.AddMinutes(30),
+                PatientId = otherPatient.Id, DoctorId = doctor.Id, AppointmentDate = today, StartTime = soon, EndTime = soon.AddMinutes(30),
                 DurationMinutes = 30, AppointmentType = "معاينة", Status = AppointmentStatus.Scheduled, IsActive = true,
             });
         await _db.SaveChangesAsync();

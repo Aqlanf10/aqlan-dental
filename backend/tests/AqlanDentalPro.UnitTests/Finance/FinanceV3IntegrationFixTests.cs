@@ -534,6 +534,40 @@ public class FinanceV3IntegrationFixTests
         entityBalanceProp.Should().NotBeNull("Fix 5: response must have EntityBalance for reconciliation");
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CORE-PAT-049: EntityBalance must exclude cancelled contracts, same as
+    // FinanceReadService.GetPatientFinanceSummaryAsync (a cancelled treatment
+    // plan is not an obligation — CORE-PAT-012). Previously this endpoint
+    // filtered contracts by IsActive only (a soft-delete no-op) instead of
+    // Status != Cancelled, so a cancelled contract showed a phantom balance
+    // here while the canonical patient-finance summary showed zero.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task GetPatientBalance_EntityBalance_ExcludesCancelledContract()
+    {
+        await using var db = CreateDb();
+        var (branchId, userId) = SeedBranchAndUser(db);
+        var patient = new Patient
+        {
+            Id = Guid.NewGuid(), FirstName = "مريض", LastName = "ملغى",
+            PatientNumber = "P-CANC-EB", BranchId = branchId
+        };
+        db.Patients.Add(patient);
+        db.Contracts.Add(new Contract
+        {
+            Id = Guid.NewGuid(), PatientId = patient.Id,
+            TotalAmount = 50_000m, Status = ContractStatus.Cancelled, IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await BuildFinanceV3Controller(db, CreateAdminUser(branchId)).GetPatientBalance(patient.Id);
+
+        var response = ((OkObjectResult)result).Value!;
+        var entityBalance = (decimal)response.GetType().GetProperty("EntityBalance")!.GetValue(response)!;
+        entityBalance.Should().Be(0m, "a cancelled contract is not an outstanding obligation, matching FinanceReadService");
+    }
+
     [Fact]
     public async Task GetPatientBalance_ReturnsSeparateBalancesForEachJournalCurrency()
     {

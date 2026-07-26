@@ -1093,9 +1093,10 @@ public partial class FinanceV3Controller
                 && (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Paid))
             .SumAsync(i => (decimal?)i.TotalAmount) ?? 0;
 
-        // Contract-based costs (same calculation as GetPatientFinanceSummaryAsync)
+        // Contract-based costs (same calculation as GetPatientFinanceSummaryAsync —
+        // a cancelled treatment plan is not an obligation, so it must be excluded here too)
         var totalContracted = await db.Contracts
-            .Where(c => c.PatientId == patientId && c.IsActive)
+            .Where(c => c.PatientId == patientId && c.IsActive && c.Status != ContractStatus.Cancelled)
             .SumAsync(c => (decimal?)(c.TotalAmount - c.DiscountAmount)) ?? 0;
 
         // MULTI-CURRENCY: patient balance is YER-denominated → settle in AppliedAmount
@@ -1110,7 +1111,7 @@ public partial class FinanceV3Controller
             .SumAsync(p => (decimal?)(p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount)) ?? 0; // negative values
 
         var totalDiscounts = await db.Contracts
-            .Where(c => c.PatientId == patientId && c.IsActive)
+            .Where(c => c.PatientId == patientId && c.IsActive && c.Status != ContractStatus.Cancelled)
             .SumAsync(c => (decimal?)c.DiscountAmount) ?? 0;
 
         // QA-594: Unbilled visits — sessions with AmountDueReference > 0 and no

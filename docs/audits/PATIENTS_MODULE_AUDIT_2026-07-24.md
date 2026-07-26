@@ -73,6 +73,12 @@
 |---|-------|---------|
 | `CORE-PAT-048` | عمر المريض في `PatientService.ToListDto`/`ToProfileDto` كان لا يزال يُحسب على `DateOnly.FromDateTime(DateTime.UtcNow)` — بقية موضعَي «اليوم» المذكورين سابقًا (`AppointmentsController`، `PatientPortalService`) تبيّن بالفحص أنهما يستخدمان `ClinicTimeProvider.ClinicToday()` بالفعل. اليمن UTC+3، فيختلف يوم العيادة عن يوم UTC لنحو 3 ساعات كل يوم؛ في نافذة الميلاد تحديدًا يظهر المريض أصغر بسنة. السبب: طبقة `Application` لا تُرجع `Infrastructure` (`ClinicTimeProvider` هناك) — قيد معماري حقيقي لا إهمال. | تجريد جديد `IClinicClock` في `Application.Interfaces.Services` (مطابق لنمط `IPatientSettingsReader`)، وتنفيذه `ClinicClock` في `Infrastructure` كغلاف رقيق فوق `ClinicTimeProvider.ClinicToday()`، ويُحقن في `PatientService`. اختبارات جديدة لـ`PatientAge.Calculate` النقية (لم تكن مُختبَرة مباشرة رغم وجودها منذ CORE-PAT-003) واختباران يثبتان أن `PatientService` يستخدم الساعة المحقونة لا UTC الحقيقي. |
 
+## 1-ح) ما أُصلح في الشريحة الثامنة (CORE-PAT-049)
+
+| # | العطل | الإصلاح |
+|---|-------|---------|
+| `CORE-PAT-049` | تحقّق (وكيل بحث مستقل) في بند «رصيد المريض: عدة تنفيذات» أثبت عطلًا حقيقيًا: `FinanceV3Controller.GetPatientBalance` (`EntityBalance`/`totalContracted`/`totalDiscounts`) و`PatientSegmentsController` (`GetList` و`GetBuiltInMembersAsync`، شريحة «مرضى عليهم مبالغ») يُصفّيان العقود بـ`c.IsActive` فقط — وهو فحص حذف ناعم لا علاقة له بحالة العقد، ويُطابقه فلتر عام على مستوى `AppDbContext` أصلًا فيصبح بلا أثر. الصيغة القانونية في `FinanceReadService.GetPatientFinanceSummaryAsync` تستثني `Status == Cancelled` صراحة (عقد ملغى ليس التزامًا ماليًا — نفس عطل CORE-PAT-012 الذي أُصلح هناك). النتيجة: مريض له عقد واحد **ملغى** بقيمة 50,000 يظهر برصيد **صفر** في شاشة الملخّص المالي، لكنه يظهر بدين 50,000 في تقرير `FinanceV3` **ويُدرَج فعليًا في قائمة تحصيل «مرضى عليهم مبالغ»** — دين وهمي حقيقي، لا افتراض. | تصحيح الفلتر في كل المواضع الأربعة إلى `Status != ContractStatus.Cancelled` (مطابقة حرفية لصيغة `FinanceReadService`)، مع اختبارات انحدار جديدة: `PatientSegmentsControllerTests` (عقد ملغى لا يُحتسب في `GetList`/`GetMembers`، وعقد نشط ما زال يُحتسب) و`FinanceV3IntegrationFixTests` (`EntityBalance` يعود صفرًا لعقد ملغى). لم تُلمس بقية النتائج الفرعية للتحقيق (`Balance` القائم على دفتر اليومية لا يتضمن الزيارات غير المفوترة كرقم — فجوة معمارية موثّقة، وليست نسخة كود خاطئة، تُترك لمراجعة لاحقة). |
+
 ## 2) المتبقي الموثّق — بالأولوية (لم يُنفَّذ بعد)
 
 ### بيانات (P1)
@@ -82,16 +88,11 @@
   لنفس المنطق — تنظيف واجهي بحت، لا خطورة.
 
 ### ازدواجية (P3) — أبرزها
-- **رصيد المريض: عدة تنفيذات** خارج `FinanceReadService` القانوني (تقارير
-  `FinanceV3Controller`، `PatientSegmentsController`) — لم تُفحص كلها بعد.
 - **بحث المرضى: عدة تنفيذات** (`SearchController` صُفِّي أمنيًا لكن لم يُدمج مع
   `PatientRepository.SearchAsync`)، **تطبيع الهاتف للبوابات**: `WhatsAppService`
   و`SmsService` ما زالا يحملان منطقًا منفصلًا (غرضهما صياغة رقم اتصال E.164
   للبوابات الخارجية، لا التخزين — تدقيق `CORE-PAT-046` أصلح ثغرة واحدة فيهما دون
   دمجهما بالكامل، لتجنّب المخاطرة بمسار إرسال حي بلا اختبار طرفي حقيقي).
-- `PatientSummary` كان معرَّفًا 4 مرات في الواجهة؛ التعريف المشترك
-  `types/patientSummary.ts` موجود الآن ويُستخدم في `OverviewTab` — يستحق تدقيقًا
-  سريعًا للتأكد من عدم بقاء نسخة قديمة في صفحة الطباعة.
 - `Payment.PatientId` بلا FK مُعرّف صراحةً (خلافًا لبقية كيانات المالية)،
   و`BookingRequest.ConvertedToAppointmentId` ليس FK إطلاقًا — تغيير مخطط،
   يحتاج migration ولا يُنفَّذ أعمى في هذه البيئة (لا `dotnet ef` محليًا).
@@ -114,4 +115,7 @@ endpoints بيانات المرضى داخل `PatientsController`؛ `GetList` م
 مثالي (إلغاء + تسلسل + رسالة صادقة)؛ قاعدة التاريخ المحلي (`localDateString`)
 مطبّقة بلا مخالفة واحدة في كل ملفات المرضى؛ فخّ `LabOrders.DoctorId` معالج
 صحيحًا ولا نظير له في مسارات المرضى؛ تكرار شاشات ملف المريض سبق حلّه
-(`/patient-journey` أصبح إعادة توجيه).
+(`/patient-journey` أصبح إعادة توجيه)؛ صفحة طباعة الملخص
+(`patients/[id]/print/summary/page.tsx`) تستورد وتستخدم فعليًا التعريف
+المشترك `types/patientSummary.ts` — لا نسخة محلية قديمة متبقية من `PatientSummary`
+(البند المدرَج سابقًا في القسم 2 أُغلق دون حاجة لأي تعديل كود).

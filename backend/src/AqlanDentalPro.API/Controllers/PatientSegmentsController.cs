@@ -116,7 +116,7 @@ public class PatientSegmentsController(AppDbContext db) : ControllerBase
         // Visit.AmountDueReference for sessions with no linked invoice, so patients
         // with unbilled sessions appear in the "مرضى عليهم مبالغ" segment.
         var contractSpend = await db.Contracts
-            .Where(c => c.IsActive && c.PatientId != Guid.Empty)
+            .Where(c => c.IsActive && c.PatientId != Guid.Empty && c.Status != ContractStatus.Cancelled)
             .GroupBy(c => c.PatientId)
             .Select(g => new { PatientId = g.Key, Total = g.Sum(c => c.TotalAmount - c.DiscountAmount) })
             .ToListAsync();
@@ -359,7 +359,7 @@ public class PatientSegmentsController(AppDbContext db) : ControllerBase
         {
             // Server-side aggregations + in-memory balance calculation per patient.
             var contractSpend = await db.Contracts
-                .Where(c => c.IsActive)
+                .Where(c => c.IsActive && c.Status != ContractStatus.Cancelled)
                 .GroupBy(c => c.PatientId)
                 .Select(g => new { PatientId = g.Key, Total = g.Sum(c => c.TotalAmount - c.DiscountAmount) })
                 .ToListAsync();

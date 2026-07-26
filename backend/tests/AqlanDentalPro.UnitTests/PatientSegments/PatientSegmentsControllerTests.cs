@@ -407,6 +407,90 @@ public class PatientSegmentsControllerTests
         members.Count().Should().Be(1);
     }
 
+    // ── CORE-PAT-049: cancelled contracts must not count as outstanding debt ──
+
+    [Fact]
+    public async Task GetList_OutstandingBalance_ExcludesCancelledContracts()
+    {
+        var db = CreateDb();
+        var controller = CreateController(db);
+        var patient = SeedPatient(db, "P-CANC1");
+
+        // A cancelled treatment plan is not an obligation (CORE-PAT-012) — must
+        // not inflate the "مرضى عليهم مبالغ" segment count, same as
+        // FinanceReadService.GetPatientFinanceSummaryAsync already excludes it.
+        db.Contracts.Add(new Contract
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patient.Id,
+            TotalAmount = 50_000m,
+            Status = ContractStatus.Cancelled,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await controller.GetList();
+        var ok = (OkObjectResult)result;
+        dynamic payload = ok.Value!;
+        var builtIn = (IEnumerable<object>)payload.GetType().GetProperty("builtIn")!.GetValue(payload)!;
+
+        var outstanding = builtIn.Single(b =>
+            (string)b.GetType().GetProperty("Key")!.GetValue(b)! == PatientSegmentBuiltInKeys.OutstandingBalance);
+        var count = (int)outstanding.GetType().GetProperty("MemberCount")!.GetValue(outstanding)!;
+        count.Should().Be(0, "a cancelled contract is not an outstanding obligation");
+    }
+
+    [Fact]
+    public async Task GetMembers_OutstandingBalance_ExcludesCancelledContracts()
+    {
+        var db = CreateDb();
+        var controller = CreateController(db);
+        var patient = SeedPatient(db, "P-CANC2");
+
+        db.Contracts.Add(new Contract
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patient.Id,
+            TotalAmount = 50_000m,
+            Status = ContractStatus.Cancelled,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var membersResult = await controller.GetMembers(PatientSegmentBuiltInKeys.OutstandingBalance);
+        var ok = (OkObjectResult)membersResult;
+        var members = (IEnumerable<object>)ok.Value!;
+        members.Should().BeEmpty("a patient whose only contract is cancelled owes nothing and must not appear on the collections list");
+    }
+
+    [Fact]
+    public async Task GetList_OutstandingBalance_StillCountsActiveContractDebt()
+    {
+        var db = CreateDb();
+        var controller = CreateController(db);
+        var patient = SeedPatient(db, "P-ACTIVE1");
+
+        db.Contracts.Add(new Contract
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patient.Id,
+            TotalAmount = 50_000m,
+            Status = ContractStatus.Active,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await controller.GetList();
+        var ok = (OkObjectResult)result;
+        dynamic payload = ok.Value!;
+        var builtIn = (IEnumerable<object>)payload.GetType().GetProperty("builtIn")!.GetValue(payload)!;
+
+        var outstanding = builtIn.Single(b =>
+            (string)b.GetType().GetProperty("Key")!.GetValue(b)! == PatientSegmentBuiltInKeys.OutstandingBalance);
+        var count = (int)outstanding.GetType().GetProperty("MemberCount")!.GetValue(outstanding)!;
+        count.Should().Be(1, "an active contract with no payments is genuine outstanding debt");
+    }
+
     [Fact]
     public async Task GetMembers_LabReady_ReturnsPatientsWithReadyLabOrders()
     {

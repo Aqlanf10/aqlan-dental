@@ -281,10 +281,14 @@ public class JourneyUpdatedSignalRTests
         var push = new Mock<IRealTimePushService>();
         var whatsapp = new Mock<IWhatsAppService>();
         var email = new Mock<IEmailService>();
+        var patientAccess = new Mock<IPatientAccessService>();
+        patientAccess.SetupGet(p => p.IsDoctor).Returns(false);
+        var audit = new Mock<IAuditService>();
 
         var controller = new AppointmentsController(
             appointmentService, db, currentUser.Object,
             whatsapp.Object, email.Object, push.Object,
+            patientAccess.Object, audit.Object,
             NullLogger<AppointmentsController>.Instance);
 
         var result = await controller.UpdateStatus(

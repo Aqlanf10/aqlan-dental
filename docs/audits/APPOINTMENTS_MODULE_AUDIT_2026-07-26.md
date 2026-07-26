@@ -11,6 +11,15 @@
 
 ---
 
+## 0) ما أُصلح حتى الآن
+
+| # | الإصلاح |
+|---|---------|
+| `CORE-APPT-001` | إضافة `IPatientAccessService`/`IAuditService` إلى `AppointmentsController` مع `DenyIfDoctorCannotAccess` (يطابق نمط `PatientsController`) لكل endpoint يحمل مريضًا محددًا (`GetById`، `Create`، `Update`، `UpdateStatus`، `Delete`، `SendReminder`، `SendEmailReminder`، `StartVisit`، `GetEmailAvailable`)، و`GetAccessiblePatientIdsIfDoctorAsync` لتصفية نتائج القوائم (`GetToday`، `GetByRange` عند غياب `patientId`، `GetUpcoming`، `GetRecallCandidates`، `BatchUpdateStatus`). اختبارات ارتداد جديدة (`AppointmentsControllerAccessTests`) تثبت 403 مع عدم أي تعديل بيانات للمسارات الكاتبة، وتصفية صحيحة للقوائم. |
+| `CORE-APPT-013` | أُصلح ضمن نفس التعديل (نفس endpoint بالضبط): أُضيف حقل `PatientId` إلى استجابة `GET /api/appointments/upcoming` — كان غائبًا تمامًا فتنتقل كل نقرة في ودجت «المواعيد القادمة» إلى `/patients/undefined`. |
+
+---
+
 ## 1) نتائج الخلفية — الحجز وكشف التعارض
 
 | # | الخطورة | الموقع | العطل |

@@ -24,7 +24,7 @@ namespace AqlanDentalPro.API.Controllers;
 // patient-data controller (Visits, Prescriptions, LabOrders, Documents…)
 // already applies it.
 [ServiceFilter(typeof(PatientAccessFilter))]
-public class AppointmentsController(AppointmentService service, AppDbContext db, ICurrentUserService currentUser, IWhatsAppService whatsapp, IEmailService emailService, IRealTimePushService pushService, ILogger<AppointmentsController> logger) : ControllerBase
+public class AppointmentsController(AppointmentService service, AppDbContext db, ICurrentUserService currentUser, IWhatsAppService whatsapp, IEmailService emailService, IRealTimePushService pushService, IPatientAccessService patientAccess, IAuditService audit, ILogger<AppointmentsController> logger) : ControllerBase
 {
     /// <summary>
     /// Best-effort push of JourneyUpdated. Scoped to the caller's branch when
@@ -46,6 +46,44 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
             logger.LogWarning(ex, "Failed to push JourneyUpdated ({Action})", action);
         }
     }
+
+    /// <summary>
+    /// CORE-APPT-001: [ServiceFilter(typeof(PatientAccessFilter))] only enforces on
+    /// endpoints that carry a "patientId" route/query value — which is exactly one
+    /// endpoint in this controller (GetByPatient). Every other action that reads or
+    /// writes a specific patient's appointment (by appointment id, or by request-body
+    /// PatientId) needs this explicit check, mirroring PatientsController's
+    /// DenyIfDoctorCannotAccess. Returns null when access is allowed (or the caller
+    /// is not a restricted doctor role).
+    /// </summary>
+    private async Task<ActionResult?> DenyIfDoctorCannotAccess(Guid patientId)
+    {
+        if (!patientAccess.IsDoctor)
+            return null;
+
+        if (!await patientAccess.CanAccessPatientAsync(patientId))
+        {
+            logger.LogWarning(
+                "Appointment patient access denied: user {UserId} (role {Role}) attempted to access patient {PatientId}",
+                currentUser.UserId, currentUser.Role, patientId);
+
+            await audit.LogAsync(AuditAction.View, "Patient", patientId,
+                newData: new { status = "denied", role = currentUser.Role?.ToString(), userId = currentUser.UserId, module = "appointments" });
+
+            return StatusCode(403, new { message = "غير مصرح لك بعرض بيانات هذا المريض" });
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// CORE-APPT-001: list endpoints (today/range/upcoming/recall) carry no single
+    /// patientId to gate on — a restricted doctor must instead have the result set
+    /// itself filtered down to patients they're linked to. Returns null for
+    /// non-doctor roles (no filter needed).
+    /// </summary>
+    private Task<HashSet<Guid>?> GetAccessiblePatientIdsIfDoctorAsync() =>
+        patientAccess.IsDoctor ? patientAccess.GetAccessiblePatientIdsAsync() : Task.FromResult<HashSet<Guid>?>(null);
 
     /// <summary>Check if a time slot conflicts with existing appointments</summary>
     [HttpPost("check-conflict")]
@@ -78,6 +116,11 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     public async Task<IActionResult> GetToday([FromQuery] Guid? doctorId)
     {
         var list = await service.GetTodayAsync(doctorId);
+
+        var accessible = await GetAccessiblePatientIdsIfDoctorAsync();
+        if (accessible != null)
+            list = list.Where(a => accessible.Contains(a.PatientId));
+
         return Ok(list);
     }
 
@@ -106,7 +149,7 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
                 && f.Status != AppointmentStatus.NoShow));
         if (branchId.HasValue) noShowQuery = noShowQuery.Where(a => a.BranchId == branchId);
 
-        var candidates = await noShowQuery
+        var candidatesQuery = noShowQuery
             .GroupBy(a => a.PatientId)
             .Select(g => new
             {
@@ -124,7 +167,13 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
                     p.Phone,
                     c.MissedCount,
                     c.LastMissedDate,
-                })
+                });
+
+        var accessible = await GetAccessiblePatientIdsIfDoctorAsync();
+        if (accessible != null)
+            candidatesQuery = candidatesQuery.Where(c => accessible.Contains(c.PatientId));
+
+        var candidates = await candidatesQuery
             .OrderByDescending(c => c.LastMissedDate)
             .ThenByDescending(c => c.MissedCount)
             .Take(200)
@@ -182,6 +231,16 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         // GAP-01 FIX: Pass status to service for DB-level filtering (was in-memory before)
         var result = await service.GetByDateRangeAsync(fromDate, toDate, doctorId, patientId, statusFilter);
 
+        // CORE-APPT-001: when patientId is supplied, PatientAccessFilter already gated it
+        // via the query string. When omitted, a restricted doctor must not see every
+        // patient's appointments in the range just by naming a doctorId/date window.
+        if (!patientId.HasValue)
+        {
+            var accessible = await GetAccessiblePatientIdsIfDoctorAsync();
+            if (accessible != null)
+                result = result.Where(a => accessible.Contains(a.PatientId));
+        }
+
         return Ok(result);
     }
 
@@ -196,12 +255,20 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     public async Task<ActionResult<AppointmentDto>> GetById(Guid id)
     {
         var result = await service.GetByIdAsync(id);
-        return result == null ? NotFound(new { message = "الموعد غير موجود" }) : Ok(result);
+        if (result == null) return NotFound(new { message = "الموعد غير موجود" });
+
+        var denied = await DenyIfDoctorCannotAccess(result.PatientId);
+        if (denied != null) return denied;
+
+        return Ok(result);
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateAppointmentRequest req)
     {
+        var denied = await DenyIfDoctorCannotAccess(req.PatientId);
+        if (denied != null) return denied;
+
         var orthoValidation = await ValidateOrthoCaseLinkAsync(req);
         if (orthoValidation != null)
             return orthoValidation;
@@ -239,6 +306,9 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] CreateAppointmentRequest req)
     {
+        var denied = await DenyIfDoctorCannotAccess(req.PatientId);
+        if (denied != null) return denied;
+
         var orthoValidation = await ValidateOrthoCaseLinkAsync(req);
         if (orthoValidation != null)
             return orthoValidation;
@@ -294,6 +364,13 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     [HttpPut("{id:guid}/status")]
     public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateAppointmentStatusRequest req)
     {
+        var ownerPatientId = await db.Appointments.Where(a => a.Id == id).Select(a => (Guid?)a.PatientId).FirstOrDefaultAsync();
+        if (ownerPatientId.HasValue)
+        {
+            var denied = await DenyIfDoctorCannotAccess(ownerPatientId.Value);
+            if (denied != null) return denied;
+        }
+
         var (result, error) = await service.UpdateStatusAsync(id, req.Status);
         if (error != null) return BadRequest(new { message = error });
         if (result == null) return NotFound();
@@ -367,9 +444,17 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         if (!Enum.TryParse<AppointmentStatus>(req.Status, true, out var targetStatus))
             return BadRequest(new { message = "حالة الموعد غير صالحة" });
 
-        var appointments = await db.Appointments
-            .Where(a => req.AppointmentIds.Contains(a.Id) && a.IsActive)
-            .ToListAsync();
+        var appointmentsQuery = db.Appointments
+            .Where(a => req.AppointmentIds.Contains(a.Id) && a.IsActive);
+
+        // CORE-APPT-001: a restricted doctor batch-updating status must not be able to
+        // touch appointments for patients outside their access set by simply supplying
+        // more appointment ids — filter them out the same way GetToday/GetByRange do.
+        var accessible = await GetAccessiblePatientIdsIfDoctorAsync();
+        if (accessible != null)
+            appointmentsQuery = appointmentsQuery.Where(a => accessible.Contains(a.PatientId));
+
+        var appointments = await appointmentsQuery.ToListAsync();
 
         var updated = 0;
         var skipped = 0;
@@ -445,9 +530,14 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
             appointments = appointments.Concat(tomorrowAppointments).ToList();
         }
 
+        var accessible = await GetAccessiblePatientIdsIfDoctorAsync();
+        if (accessible != null)
+            appointments = appointments.Where(a => accessible.Contains(a.PatientId)).ToList();
+
         var result = appointments.Select(a => new
         {
             a.Id,
+            a.PatientId,
             PatientName = a.Patient != null ? $"{a.Patient.FirstName} {a.Patient.LastName}".Trim() : "",
             DoctorName = a.Doctor != null ? a.Doctor.Name : "",
             a.AppointmentDate,
@@ -467,6 +557,9 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         var appointment = await db.Appointments.FindAsync(id);
         if (appointment is null)
             return NotFound(new { message = "الموعد غير موجود" });
+
+        var denied = await DenyIfDoctorCannotAccess(appointment.PatientId);
+        if (denied != null) return denied;
 
         if (!appointment.IsActive)
             return BadRequest(new { message = "الموعد محذوف بالفعل" });
@@ -513,6 +606,9 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         if (appointment is null)
             return NotFound(new { message = "الموعد غير موجود" });
 
+        var denied = await DenyIfDoctorCannotAccess(appointment.PatientId);
+        if (denied != null) return denied;
+
         var patientEmail = await AppointmentReminderJob.GetPatientEmailAsync(db, appointment.PatientId, appointment.Id);
 
         return Ok(new { hasEmail = !string.IsNullOrWhiteSpace(patientEmail) });
@@ -529,6 +625,9 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
 
         if (appointment is null)
             return NotFound(new { message = "الموعد غير موجود" });
+
+        var denied = await DenyIfDoctorCannotAccess(appointment.PatientId);
+        if (denied != null) return denied;
 
         if (appointment.Patient is null)
             return BadRequest(new { message = "بيانات المريض غير متوفرة" });
@@ -580,6 +679,9 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
 
         if (appointment is null)
             return NotFound(new { message = "الموعد غير موجود" });
+
+        var denied = await DenyIfDoctorCannotAccess(appointment.PatientId);
+        if (denied != null) return denied;
 
         if (appointment.Patient is null)
             return BadRequest(new { message = "بيانات المريض غير متوفرة" });
@@ -647,6 +749,9 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
 
         if (appointment is null)
             return NotFound(new { message = "الموعد غير موجود" });
+
+        var denied = await DenyIfDoctorCannotAccess(appointment.PatientId);
+        if (denied != null) return denied;
 
         // 2. Validate patient exists and is active
         if (appointment.Patient == null || !appointment.Patient.IsActive)

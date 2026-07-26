@@ -1,0 +1,450 @@
+using AqlanDentalPro.API.Controllers;
+using AqlanDentalPro.Application.DTOs.Appointments;
+using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
+using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Repositories;
+using AqlanDentalPro.Infrastructure.Services;
+using FluentAssertions;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+using Xunit;
+
+namespace AqlanDentalPro.UnitTests.Appointments;
+
+/// <summary>
+/// CORE-APPT-001: [ServiceFilter(typeof(PatientAccessFilter))] on AppointmentsController
+/// only enforces on endpoints carrying a "patientId" route/query value — in practice just
+/// GetByPatient. Every other action (by appointment id, or by request-body PatientId, or a
+/// list with no patientId at all) previously let a restricted doctor read or write any
+/// patient's appointment. These tests exercise the explicit DenyIfDoctorCannotAccess /
+/// GetAccessiblePatientIdsIfDoctorAsync checks added to close that gap, mirroring the
+/// established VisitsControllerAccessTests shape.
+/// </summary>
+public class AppointmentsControllerAccessTests : IDisposable
+{
+    private readonly AppDbContext _db;
+
+    public AppointmentsControllerAccessTests()
+    {
+        _db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase($"appt-access-{Guid.NewGuid()}")
+            .Options);
+    }
+
+    public void Dispose() => _db.Dispose();
+
+    // ── Helpers ──────────────────────────────────────────────────────────────────
+
+    private static Patient BuildPatient(string first = "سعيد", string last = "المريض") => new()
+    {
+        PatientNumber = $"P-{Guid.NewGuid():N}"[..12],
+        FirstName = first,
+        LastName = last,
+        IsActive = true,
+    };
+
+    private static Appointment BuildAppointment(Guid patientId, DateOnly date, AppointmentStatus status = AppointmentStatus.Scheduled) => new()
+    {
+        PatientId = patientId,
+        AppointmentDate = date,
+        StartTime = new TimeOnly(10, 0),
+        EndTime = new TimeOnly(10, 30),
+        DurationMinutes = 30,
+        AppointmentType = "معاينة",
+        Status = status,
+        IsActive = true,
+    };
+
+    private async Task<(Patient Patient, Appointment Appointment)> SeedAsync(DateOnly? date = null)
+    {
+        var patient = BuildPatient();
+        _db.Patients.Add(patient);
+        await _db.SaveChangesAsync();
+
+        var appointment = BuildAppointment(patient.Id, date ?? DateOnly.FromDateTime(DateTime.UtcNow));
+        _db.Appointments.Add(appointment);
+        await _db.SaveChangesAsync();
+
+        return (patient, appointment);
+    }
+
+    private static void SetupNonDoctor(Mock<IPatientAccessService> mock)
+    {
+        mock.SetupGet(p => p.IsDoctor).Returns(false);
+        mock.Setup(p => p.CanAccessPatientAsync(It.IsAny<Guid>())).ReturnsAsync(true);
+        mock.Setup(p => p.GetAccessiblePatientIdsAsync()).ReturnsAsync((HashSet<Guid>?)null);
+    }
+
+    private static void SetupDoctorWithAccess(Mock<IPatientAccessService> mock, params Guid[] accessiblePatientIds)
+    {
+        var set = new HashSet<Guid>(accessiblePatientIds);
+        mock.SetupGet(p => p.IsDoctor).Returns(true);
+        mock.Setup(p => p.CanAccessPatientAsync(It.IsAny<Guid>())).ReturnsAsync((Guid pid) => set.Contains(pid));
+        mock.Setup(p => p.GetAccessiblePatientIdsAsync()).ReturnsAsync(set);
+    }
+
+    private AppointmentsController BuildController(Mock<IPatientAccessService> accessMock, bool isAdmin = false)
+    {
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.SetupGet(c => c.UserId).Returns(Guid.NewGuid());
+        currentUser.SetupGet(c => c.IsAdmin).Returns(isAdmin);
+        currentUser.SetupGet(c => c.Role).Returns(isAdmin ? UserRole.Admin : UserRole.GeneralDentist);
+        currentUser.SetupGet(c => c.BranchId).Returns((Guid?)null);
+
+        var repo = new AppointmentRepository(_db);
+        var scopeFactory = new Mock<IServiceScopeFactory>();
+        var service = new AppointmentService(repo, currentUser.Object, scopeFactory.Object, NullLogger<AppointmentService>.Instance);
+
+        var whatsapp = new Mock<IWhatsAppService>();
+        var email = new Mock<IEmailService>();
+        var push = new Mock<IRealTimePushService>();
+        var audit = new Mock<IAuditService>();
+
+        return new AppointmentsController(
+            service, _db, currentUser.Object, whatsapp.Object, email.Object, push.Object,
+            accessMock.Object, audit.Object, NullLogger<AppointmentsController>.Instance);
+    }
+
+    private static string ExtractMessage(object? value)
+    {
+        value.Should().NotBeNull("the 4xx/403 response must carry a payload");
+        var prop = value!.GetType().GetProperty("message");
+        prop.Should().NotBeNull("the response must carry a 'message' field (Arabic)");
+        return (string)prop!.GetValue(value)!;
+    }
+
+    // ── GetById ──────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetById_CrossPatientDoctor_Returns403_Arabic()
+    {
+        var (_, appointment) = await SeedAsync();
+        var accessMock = new Mock<IPatientAccessService>();
+        SetupDoctorWithAccess(accessMock); // no accessible patients
+
+        var controller = BuildController(accessMock);
+        var result = await controller.GetById(appointment.Id);
+
+        var status = result.Result.Should().BeOfType<ObjectResult>().Subject;
+        status.StatusCode.Should().Be(403);
+        ExtractMessage(status.Value).Should().Be("غير مصرح لك بعرض بيانات هذا المريض");
+    }
+
+    [Fact]
+    public async Task GetById_SamePatientDoctor_Returns200()
+    {
+        var (patient, appointment) = await SeedAsync();
+        var accessMock = new Mock<IPatientAccessService>();
+        SetupDoctorWithAccess(accessMock, patient.Id);
+
+        var controller = BuildController(accessMock);
+        var result = await controller.GetById(appointment.Id);
+
+        result.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task GetById_Admin_BypassesAccessCheck_Returns200()
+    {
+        var (_, appointment) = await SeedAsync();
+        var accessMock = new Mock<IPatientAccessService>();
+        SetupNonDoctor(accessMock);
+
+        var controller = BuildController(accessMock, isAdmin: true);
+        var result = await controller.GetById(appointment.Id);
+
+        result.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    // ── GetToday — list filtering (no single patientId to gate on) ──────────────
+
+    [Fact]
+    public async Task GetToday_RestrictedDoctor_OnlySeesAccessiblePatients()
+    {
+        // GetTodayAsync filters by ClinicTimeProvider.ClinicToday(), not DateTime.UtcNow
+        // (Yemen is UTC+3) — seed on the clinic day so the test isn't flaky in that window.
+        var today = ClinicTimeProvider.ClinicToday();
+        var (ownPatient, _) = await SeedAsync(today);
+        var (otherPatient, _) = await SeedAsync(today);
+
+        var accessMock = new Mock<IPatientAccessService>();
+        SetupDoctorWithAccess(accessMock, ownPatient.Id);
+
+        var controller = BuildController(accessMock);
+        var result = await controller.GetToday(doctorId: null);
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var list = ((IEnumerable<AppointmentDto>)ok.Value!).ToList();
+
+        list.Should().ContainSingle(a => a.PatientId == ownPatient.Id);
+        list.Should().NotContain(a => a.PatientId == otherPatient.Id,
+            "a restricted doctor must not see another patient's appointment just by calling /today without a patientId");
+    }
+
+    [Fact]
+    public async Task GetToday_Admin_SeesAllPatients()
+    {
+        var today = ClinicTimeProvider.ClinicToday();
+        await SeedAsync(today);
+        await SeedAsync(today);
+
+        var accessMock = new Mock<IPatientAccessService>();
+        SetupNonDoctor(accessMock);
+
+        var controller = BuildController(accessMock, isAdmin: true);
+        var result = await controller.GetToday(doctorId: null);
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        ((IEnumerable<AppointmentDto>)ok.Value!).Should().HaveCount(2);
+    }
+
+    // ── GetByRange — list filtering when patientId is omitted ────────────────────
+
+    [Fact]
+    public async Task GetByRange_NoPatientIdFilter_RestrictedDoctor_OnlySeesAccessiblePatients()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var (ownPatient, _) = await SeedAsync(today);
+        var (otherPatient, _) = await SeedAsync(today);
+
+        var accessMock = new Mock<IPatientAccessService>();
+        SetupDoctorWithAccess(accessMock, ownPatient.Id);
+
+        var controller = BuildController(accessMock);
+        var result = await controller.GetByRange(
+            from: today.ToString("yyyy-MM-dd"), to: today.ToString("yyyy-MM-dd"),
+            startDate: null, endDate: null, doctorId: null, patientId: null, status: null, branchId: null);
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var list = ((IEnumerable<AppointmentDto>)ok.Value!).ToList();
+
+        list.Should().ContainSingle(a => a.PatientId == ownPatient.Id);
+        list.Should().NotContain(a => a.PatientId == otherPatient.Id);
+    }
+
+    // ── Create ───────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Create_CrossPatientDoctor_Returns403_AndDoesNotPersist()
+    {
+        var otherPatient = BuildPatient();
+        _db.Patients.Add(otherPatient);
+        await _db.SaveChangesAsync();
+
+        var accessMock = new Mock<IPatientAccessService>();
+        SetupDoctorWithAccess(accessMock); // no accessible patients
+
+        var controller = BuildController(accessMock);
+        var req = new CreateAppointmentRequest
+        {
+            PatientId = otherPatient.Id,
+            DoctorId = Guid.NewGuid(),
+            AppointmentDate = DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+            StartTime = "10:00",
+            DurationMinutes = 30,
+            AppointmentType = "معاينة",
+        };
+
+        var result = await controller.Create(req);
+
+        var status = result.Should().BeOfType<ObjectResult>().Subject;
+        status.StatusCode.Should().Be(403);
+        ExtractMessage(status.Value).Should().Be("غير مصرح لك بعرض بيانات هذا المريض");
+
+        (await _db.Appointments.CountAsync()).Should().Be(0,
+            "a denied Create must not create an appointment for an inaccessible patient");
+    }
+
+    // ── Update ───────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Update_CrossPatientDoctor_Returns403_AndDoesNotMutate()
+    {
+        var (patient, appointment) = await SeedAsync();
+
+        var accessMock = new Mock<IPatientAccessService>();
+        SetupDoctorWithAccess(accessMock); // no accessible patients
+
+        var controller = BuildController(accessMock);
+        var req = new CreateAppointmentRequest
+        {
+            PatientId = patient.Id,
+            DoctorId = Guid.NewGuid(),
+            AppointmentDate = appointment.AppointmentDate.ToString("yyyy-MM-dd"),
+            StartTime = "11:00",
+            DurationMinutes = 30,
+            AppointmentType = "معاينة",
+        };
+
+        var result = await controller.Update(appointment.Id, req);
+
+        var status = result.Should().BeOfType<ObjectResult>().Subject;
+        status.StatusCode.Should().Be(403);
+
+        _db.ChangeTracker.Clear();
+        var stored = await _db.Appointments.SingleAsync(a => a.Id == appointment.Id);
+        stored.StartTime.Should().Be(appointment.StartTime, "a denied Update must not mutate the persisted appointment");
+    }
+
+    // ── UpdateStatus ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task UpdateStatus_CrossPatientDoctor_Returns403_AndDoesNotMutate()
+    {
+        var (_, appointment) = await SeedAsync();
+
+        var accessMock = new Mock<IPatientAccessService>();
+        SetupDoctorWithAccess(accessMock); // no accessible patients
+
+        var controller = BuildController(accessMock);
+        var result = await controller.UpdateStatus(appointment.Id, new UpdateAppointmentStatusRequest { Status = "Confirmed" });
+
+        var status = result.Should().BeOfType<ObjectResult>().Subject;
+        status.StatusCode.Should().Be(403);
+
+        _db.ChangeTracker.Clear();
+        var stored = await _db.Appointments.SingleAsync(a => a.Id == appointment.Id);
+        stored.Status.Should().Be(AppointmentStatus.Scheduled, "a denied status update must not mutate the appointment");
+    }
+
+    // ── BatchUpdateStatus — inaccessible appointments silently excluded ─────────
+
+    [Fact]
+    public async Task BatchUpdateStatus_RestrictedDoctor_OnlyUpdatesAccessiblePatientAppointments()
+    {
+        var (ownPatient, ownAppointment) = await SeedAsync();
+        var (_, otherAppointment) = await SeedAsync();
+
+        var accessMock = new Mock<IPatientAccessService>();
+        SetupDoctorWithAccess(accessMock, ownPatient.Id);
+
+        var controller = BuildController(accessMock);
+        var result = await controller.BatchUpdateStatus(new BatchUpdateStatusRequest
+        {
+            AppointmentIds = [ownAppointment.Id, otherAppointment.Id],
+            Status = "Confirmed",
+        });
+
+        result.Should().BeOfType<OkObjectResult>();
+
+        _db.ChangeTracker.Clear();
+        (await _db.Appointments.SingleAsync(a => a.Id == ownAppointment.Id)).Status.Should().Be(AppointmentStatus.Confirmed);
+        (await _db.Appointments.SingleAsync(a => a.Id == otherAppointment.Id)).Status.Should().Be(AppointmentStatus.Scheduled,
+            "a restricted doctor's batch request must not touch another patient's appointment");
+    }
+
+    // ── Delete ───────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Delete_CrossPatientDoctor_Returns403_AndDoesNotMutate()
+    {
+        var (_, appointment) = await SeedAsync();
+
+        var accessMock = new Mock<IPatientAccessService>();
+        SetupDoctorWithAccess(accessMock); // no accessible patients
+
+        var controller = BuildController(accessMock);
+        var result = await controller.Delete(appointment.Id);
+
+        var status = result.Should().BeOfType<ObjectResult>().Subject;
+        status.StatusCode.Should().Be(403);
+
+        _db.ChangeTracker.Clear();
+        var stored = await _db.Appointments.SingleAsync(a => a.Id == appointment.Id);
+        stored.IsActive.Should().BeTrue("a denied Delete must not soft-delete the appointment");
+    }
+
+    // ── GetUpcoming — list filtering + PatientId now present in the response ────
+
+    [Fact]
+    public async Task GetUpcoming_RestrictedDoctor_OnlySeesAccessiblePatients_AndResponseCarriesPatientId()
+    {
+        var now = ClinicTimeProvider.ClinicNow();
+        var soon = TimeOnly.FromDateTime(now).AddMinutes(30);
+        var today = DateOnly.FromDateTime(now);
+
+        var ownPatient = BuildPatient();
+        var otherPatient = BuildPatient("خالد", "العولقي");
+        _db.Patients.AddRange(ownPatient, otherPatient);
+        await _db.SaveChangesAsync();
+
+        _db.Appointments.AddRange(
+            new Appointment
+            {
+                PatientId = ownPatient.Id, AppointmentDate = today, StartTime = soon, EndTime = soon.AddMinutes(30),
+                DurationMinutes = 30, AppointmentType = "معاينة", Status = AppointmentStatus.Scheduled, IsActive = true,
+            },
+            new Appointment
+            {
+                PatientId = otherPatient.Id, AppointmentDate = today, StartTime = soon, EndTime = soon.AddMinutes(30),
+                DurationMinutes = 30, AppointmentType = "معاينة", Status = AppointmentStatus.Scheduled, IsActive = true,
+            });
+        await _db.SaveChangesAsync();
+
+        var accessMock = new Mock<IPatientAccessService>();
+        SetupDoctorWithAccess(accessMock, ownPatient.Id);
+
+        var controller = BuildController(accessMock);
+        var result = await controller.GetUpcoming(hours: 2);
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var items = ((System.Collections.IEnumerable)ok.Value!).Cast<object>().ToList();
+
+        items.Should().ContainSingle("only the accessible patient's appointment should be returned");
+        var patientIdProp = items[0].GetType().GetProperty("PatientId");
+        patientIdProp.Should().NotBeNull("CORE-APPT-013: the upcoming-appointments response must carry PatientId so the frontend widget can link to the patient");
+        ((Guid)patientIdProp!.GetValue(items[0])!).Should().Be(ownPatient.Id);
+    }
+
+    // ── SendReminder / StartVisit / GetEmailAvailable — spot-check the remaining
+    //    single-appointment endpoints all gate on the owning patient ──────────────
+
+    [Fact]
+    public async Task SendReminder_CrossPatientDoctor_Returns403()
+    {
+        var (_, appointment) = await SeedAsync();
+        var accessMock = new Mock<IPatientAccessService>();
+        SetupDoctorWithAccess(accessMock);
+
+        var controller = BuildController(accessMock);
+        var result = await controller.SendReminder(appointment.Id);
+
+        var status = result.Should().BeOfType<ObjectResult>().Subject;
+        status.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task StartVisit_CrossPatientDoctor_Returns403_AndDoesNotCreateVisit()
+    {
+        var (_, appointment) = await SeedAsync();
+        var accessMock = new Mock<IPatientAccessService>();
+        SetupDoctorWithAccess(accessMock);
+
+        var controller = BuildController(accessMock);
+        var result = await controller.StartVisit(appointment.Id);
+
+        var status = result.Should().BeOfType<ObjectResult>().Subject;
+        status.StatusCode.Should().Be(403);
+        (await _db.Visits.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetEmailAvailable_CrossPatientDoctor_Returns403()
+    {
+        var (_, appointment) = await SeedAsync();
+        var accessMock = new Mock<IPatientAccessService>();
+        SetupDoctorWithAccess(accessMock);
+
+        var controller = BuildController(accessMock);
+        var result = await controller.GetEmailAvailable(appointment.Id);
+
+        var status = result.Should().BeOfType<ObjectResult>().Subject;
+        status.StatusCode.Should().Be(403);
+    }
+}

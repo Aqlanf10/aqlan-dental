@@ -252,6 +252,8 @@ function AppointmentCard({
   const [queueLoading, setQueueLoading] = useState(false);
   const [reminderSending, setReminderSending] = useState(false);
   const [hasEmail, setHasEmail] = useState<boolean | null>(null);
+  // CORE-APPT-016: distinguishes "patient has no email" from "the check failed".
+  const [emailCheckFailed, setEmailCheckFailed] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const transitions = STATUS_TRANSITIONS[a.status] ?? [];
 
@@ -280,11 +282,18 @@ function AppointmentCard({
     };
   }, [a.patientId, a.id, visitCheckAttempt]);
 
-  // Check if patient has email for email reminder button state
+  // Check if patient has email for email reminder button state.
+  // CORE-APPT-016: a failed check used to collapse into setHasEmail(false), which
+  // renders the disabled button whose tooltip asserts "لا يوجد بريد إلكتروني لهذا
+  // المريض" — a claim about the patient's record that the failed request never
+  // established. Track the failure separately so the tooltip stays truthful.
   useEffect(() => {
+    let active = true;
+    setEmailCheckFailed(false);
     api.get<{ hasEmail: boolean }>(`/api/appointments/${a.id}/email-available`)
-      .then((r) => setHasEmail(r.data.hasEmail))
-      .catch(() => setHasEmail(false));
+      .then((r) => { if (active) setHasEmail(r.data.hasEmail); })
+      .catch(() => { if (active) { setHasEmail(false); setEmailCheckFailed(true); } });
+    return () => { active = false; };
   }, [a.id]);
 
   // Close menu on outside click
@@ -582,11 +591,13 @@ function AppointmentCard({
             ) : (
               <button
                 disabled
-                title="لا يوجد بريد إلكتروني لهذا المريض"
+                title={emailCheckFailed
+                  ? "تعذر التحقق من البريد الإلكتروني — تحقق من الاتصال"
+                  : "لا يوجد بريد إلكتروني لهذا المريض"}
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-400 cursor-not-allowed"
               >
                 <Mail className="w-3.5 h-3.5" />
-                إرسال تذكير بالإيميل
+                {emailCheckFailed ? "تعذر التحقق من الإيميل" : "إرسال تذكير بالإيميل"}
               </button>
             )}
             {canDelete && (

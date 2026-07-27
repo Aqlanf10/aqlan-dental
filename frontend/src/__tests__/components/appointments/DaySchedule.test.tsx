@@ -265,4 +265,43 @@ describe("SEQ-33 DaySchedule visit existence guard", () => {
     await waitFor(() => expect(screen.getByText("مريض تجريبي")).toBeInTheDocument());
     expect(screen.queryByText(/تعذر تحميل مواعيد هذا اليوم/)).not.toBeInTheDocument();
   });
+
+  // ── CORE-APPT-016: a failed email check must not assert a fact about the record ──
+
+  it("says the email check failed — not that the patient has no email — when it errors", async () => {
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url.includes("/api/appointments?from=")) {
+        return Promise.resolve({ data: [APPOINTMENT] }) as never;
+      }
+      if (url.includes("/api/visits")) return Promise.resolve({ data: { data: [] } }) as never;
+      // The availability probe fails — we learn nothing about the patient's email.
+      if (url.includes("/email-available")) return Promise.reject(SERVER_ERROR) as never;
+      throw new Error(`unmocked GET ${url}`);
+    });
+
+    render(<DaySchedule date="2026-07-10" />);
+    await screen.findByText("مريض تجريبي");
+    fireEvent.click(screen.getByRole("button", { name: "خيارات" }));
+
+    const button = await screen.findByText("تعذر التحقق من الإيميل");
+    expect(button).toBeInTheDocument();
+    expect(button.closest("button")).toHaveAttribute(
+      "title",
+      "تعذر التحقق من البريد الإلكتروني — تحقق من الاتصال",
+    );
+    // The false claim must be gone.
+    expect(screen.queryByTitle("لا يوجد بريد إلكتروني لهذا المريض")).not.toBeInTheDocument();
+  });
+
+  it("still reports a genuinely absent email as absent", async () => {
+    mockGets({ appointments: [APPOINTMENT] });
+
+    render(<DaySchedule date="2026-07-10" />);
+    await screen.findByText("مريض تجريبي");
+    fireEvent.click(screen.getByRole("button", { name: "خيارات" }));
+
+    // hasEmail:false from a SUCCESSFUL probe is a real fact — keep asserting it.
+    expect(await screen.findByTitle("لا يوجد بريد إلكتروني لهذا المريض")).toBeInTheDocument();
+    expect(screen.queryByText("تعذر التحقق من الإيميل")).not.toBeInTheDocument();
+  });
 });

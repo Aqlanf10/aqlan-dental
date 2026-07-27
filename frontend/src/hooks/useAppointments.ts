@@ -85,9 +85,18 @@ export function useUpdateAppointmentStatus() {
   });
 }
 
-/** Hook: Check appointment conflict
- *  Verified to work with the POST /api/appointments/check-conflict endpoint (Phase 8, P8-3).
- *  Previously unused (dead code); now active and available for form validation.
+/** Hook: Check appointment conflict — POST /api/appointments/check-conflict
+ *
+ *  CORE-APPT-017: this comment used to claim the hook was "now active and available
+ *  for form validation". It is not wired into any form — the only importer is its
+ *  own structural test. There is therefore NO live warning while the user is picking
+ *  a doctor/time; a clash is reported only after submit, via the 409 that
+ *  AppointmentForm already renders correctly (with a link to that day's schedule).
+ *
+ *  Kept because the endpoint works and a pre-submit check is a reasonable future
+ *  improvement, but the comment now describes the shipped behaviour rather than an
+ *  intent. Wiring it into the form is a feature, not a bug fix, so it is deliberately
+ *  not done here.
  */
 export function useCheckConflict() {
   return useMutation({

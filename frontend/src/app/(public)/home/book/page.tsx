@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
 import { useClinicBranding } from "@/hooks/useClinicBranding";
@@ -18,11 +18,24 @@ import {
   AlertCircle,
   User,
   Stethoscope,
-  FileText,
-  ClipboardCheck,
 } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+const PUBLIC_API_TIMEOUT_MS = 8_000;
+
+async function fetchPublicApi(input: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(
+    () => controller.abort(),
+    PUBLIC_API_TIMEOUT_MS
+  );
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
 
 /** Hardcoded fallback if API fails */
 const FALLBACK_SERVICES = [
@@ -75,6 +88,7 @@ interface FormErrors {
   patientName?: string;
   phoneNumber?: string;
   email?: string;
+  serviceType?: string;
   preferredDate?: string;
   preferredTime?: string;
 }
@@ -125,12 +139,24 @@ function toArabicDate(dateStr: string): string {
   return `${days[date.getDay()]}، ${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
 }
 
-const STEPS = [
-  { label: "معلومات المريض", icon: User },
-  { label: "الخدمة والطبيب", icon: Stethoscope },
-  { label: "التاريخ والوقت", icon: CalendarDays },
-  { label: "تأكيد الحجز", icon: ClipboardCheck },
-] as const;
+function getQuickBookingDates(): string[] {
+  const dates: string[] = [];
+  const cursor = new Date(`${getTodayDate()}T00:00:00`);
+
+  while (dates.length < 3) {
+    cursor.setDate(cursor.getDate() + 1);
+    if (cursor.getDay() === 5) continue;
+    dates.push(
+      [
+        cursor.getFullYear(),
+        String(cursor.getMonth() + 1).padStart(2, "0"),
+        String(cursor.getDate()).padStart(2, "0"),
+      ].join("-")
+    );
+  }
+
+  return dates;
+}
 
 const FALLBACK_WHATSAPP = "967770245745";
 
@@ -138,7 +164,6 @@ export default function BookPage() {
   const { whatsApp: clinicWhatsApp, phone: clinicPhone, address: clinicAddress } = useClinicBranding();
   const waNumber = clinicWhatsApp || FALLBACK_WHATSAPP;
   const telHref = `tel:${clinicPhone.replace(/[^\d+]/g, "")}`;
-  const [step, setStep] = useState(1);
   const [form, setForm] = useState<FormData>({
     patientName: "",
     phoneNumber: "",
@@ -154,6 +179,7 @@ export default function BookPage() {
   const [success, setSuccess] = useState(false);
   const [serverError, setServerError] = useState("");
   const [isConflict, setIsConflict] = useState(false);
+  const submittingRef = useRef(false);
 
   // ── Services state ──
   const [services, setServices] = useState<string[]>(FALLBACK_SERVICES);
@@ -169,13 +195,14 @@ export default function BookPage() {
   const [isClosed, setIsClosed] = useState(false);
   const [closedMessage, setClosedMessage] = useState("");
   const [availabilityDoctorName, setAvailabilityDoctorName] = useState("");
+  const availabilityRequestRef = useRef(0);
   const { executeRecaptcha } = useGoogleReCaptcha();
 
   // ── Fetch services on page load ──
   useEffect(() => {
     async function fetchServices() {
       try {
-        const res = await fetch(`${API_URL}/api/public/booking-services`);
+        const res = await fetchPublicApi(`${API_URL}/api/public/booking-services`);
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data) && data.length > 0) {
@@ -197,7 +224,7 @@ export default function BookPage() {
   useEffect(() => {
     async function fetchDoctors() {
       try {
-        const res = await fetch(`${API_URL}/api/public/doctors`);
+        const res = await fetchPublicApi(`${API_URL}/api/public/doctors`);
         if (res.ok) {
           const data = await res.json();
           setDoctors(Array.isArray(data) ? data : []);
@@ -214,9 +241,12 @@ export default function BookPage() {
   // ── Fetch availability when date or doctor changes ──
   const fetchAvailability = useCallback(
     async (date: string, doctorId: string, serviceType: string) => {
+      const requestId = ++availabilityRequestRef.current;
+
       if (!date) {
         setSlots([]);
         setSlotsError("");
+        setSlotsLoading(false);
         setIsClosed(false);
         setClosedMessage("");
         setAvailabilityDoctorName("");
@@ -234,19 +264,21 @@ export default function BookPage() {
         if (doctorId) params.set("doctorId", doctorId);
         if (serviceType) params.set("serviceType", serviceType);
 
-        const res = await fetch(
+        const res = await fetchPublicApi(
           `${API_URL}/api/public/booking-availability?${params}`
         );
+
+        if (requestId !== availabilityRequestRef.current) return;
 
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
           setSlotsError(data?.message || "تعذّر تحميل الأوقات المتاحة");
           setSlots([]);
-          setSlotsLoading(false);
           return;
         }
 
         const data: AvailabilityResponse = await res.json();
+        if (requestId !== availabilityRequestRef.current) return;
 
         if (data.isClosed) {
           setIsClosed(true);
@@ -256,11 +288,18 @@ export default function BookPage() {
           setSlots(data.slots || []);
         }
         setAvailabilityDoctorName(data.doctorName || "");
-      } catch {
-        setSlotsError("تعذّر الاتصال بالخادم لتحميل الأوقات");
+      } catch (error) {
+        if (requestId !== availabilityRequestRef.current) return;
+        setSlotsError(
+          error instanceof DOMException && error.name === "AbortError"
+            ? "استغرق تحميل الأوقات وقتاً أطول من المتوقع"
+            : "تعذّر الاتصال بالخادم لتحميل الأوقات"
+        );
         setSlots([]);
       } finally {
-        setSlotsLoading(false);
+        if (requestId === availabilityRequestRef.current) {
+          setSlotsLoading(false);
+        }
       }
     },
     []
@@ -277,8 +316,8 @@ export default function BookPage() {
     return () => clearTimeout(timer);
   }, [form.preferredDate, form.doctorId, form.serviceType, fetchAvailability]);
 
-  // ── Step validation ──
-  function validateStep1(): boolean {
+  // ── Form validation ──
+  function validateForm(): boolean {
     const errs: FormErrors = {};
     if (!form.patientName.trim()) errs.patientName = "الاسم مطلوب";
     if (!form.phoneNumber.trim()) errs.phoneNumber = "رقم الهاتف مطلوب";
@@ -288,12 +327,7 @@ export default function BookPage() {
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
       errs.email = "البريد الإلكتروني غير صحيح";
     }
-    setErrors(errs);
-    return Object.keys(errs).length === 0;
-  }
-
-  function validateStep3(): boolean {
-    const errs: FormErrors = {};
+    if (!form.serviceType) errs.serviceType = "اختر نوع الخدمة";
     if (!form.preferredDate) {
       errs.preferredDate = "التاريخ المفضل مطلوب";
     } else {
@@ -314,37 +348,12 @@ export default function BookPage() {
     return Object.keys(errs).length === 0;
   }
 
-  function goNext() {
-    setServerError("");
-    setIsConflict(false);
-    if (step === 1 && validateStep1()) {
-      setStep(2);
-    } else if (step === 2) {
-      setStep(3);
-    } else if (step === 3 && validateStep3()) {
-      setStep(4);
-    }
-  }
-
-  function goBack() {
-    setServerError("");
-    setIsConflict(false);
-    setErrors({});
-    if (step > 1) setStep(step - 1);
-  }
-
   // ── Submit ──
   async function handleSubmit() {
-    // Re-validate all before submit
-    const step1Valid = validateStep1();
-    const step3Valid = validateStep3();
-    if (!step1Valid || !step3Valid) {
-      // Go back to the first step with errors
-      if (!step1Valid) setStep(1);
-      else setStep(3);
-      return;
-    }
+    if (submittingRef.current) return;
+    if (!validateForm()) return;
 
+    submittingRef.current = true;
     setLoading(true);
     setServerError("");
     setIsConflict(false);
@@ -417,6 +426,7 @@ export default function BookPage() {
       );
       setIsConflict(false);
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   }
@@ -425,13 +435,7 @@ export default function BookPage() {
   const selectedDoctor = doctors.find((d) => d.id === form.doctorId);
   const availableSlots = slots.filter((s) => s.available);
   const hasNoAvailableSlots = slots.length > 0 && availableSlots.length === 0;
-  const canSubmit =
-    form.patientName.trim() !== "" &&
-    form.phoneNumber.trim() !== "" &&
-    /^[\d\s\-\+\(\)]{7,20}$/.test(form.phoneNumber.trim()) &&
-    form.preferredDate !== "" &&
-    form.preferredTime !== "" &&
-    !errors.preferredDate;
+  const quickBookingDates = getQuickBookingDates();
 
   // ── Success screen ──
   if (success) {
@@ -558,92 +562,41 @@ export default function BookPage() {
     );
   }
 
-  // ── Step indicator ──
-  function StepIndicator() {
-    return (
-      <div className="flex items-center justify-center gap-0 mb-8">
-        {STEPS.map((s, i) => {
-          const stepNum = i + 1;
-          const isActive = step === stepNum;
-          const isCompleted = step > stepNum;
-          const Icon = s.icon;
-
-          return (
-            <div key={stepNum} className="flex items-center">
-              {/* Step circle + label */}
-              <div className="flex flex-col items-center">
-                <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 border-2 ${
-                    isCompleted
-                      ? "border-[#87CEEB] bg-[#87CEEB] text-white"
-                      : isActive
-                      ? "border-[#FF8C00] bg-[#FF8C00] text-white shadow-md"
-                      : "border-slate-200 bg-white text-slate-400"
-                  }`}
-                >
-                  {isCompleted ? (
-                    <CheckCircle2 className="w-5 h-5" />
-                  ) : (
-                    <Icon className="w-4 h-4" />
-                  )}
-                </div>
-                <span
-                  className={`text-[10px] sm:text-xs mt-1.5 font-semibold text-center max-w-[72px] leading-tight transition-colors ${
-                    isCompleted
-                      ? "text-[#0284c7]"
-                      : isActive
-                      ? "text-[#FF8C00]"
-                      : "text-slate-400"
-                  }`}
-                >
-                  {s.label}
-                </span>
-              </div>
-              {/* Connector line */}
-              {i < STEPS.length - 1 && (
-                <div
-                  className={`w-6 sm:w-10 h-0.5 mx-1 mt-[-16px] transition-colors duration-300 ${
-                    step > stepNum ? "bg-[#87CEEB]" : "bg-slate-200"
-                  }`}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  // ── Step 1: Patient info ──
+  // ── Patient info ──
   function Step1() {
     return (
-      <div className="space-y-5">
-        <div className="text-center mb-6">
-          <div
-            className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3"
-            style={{ backgroundColor: "rgba(135,206,235,0.12)" }}
-          >
-            <User className="w-7 h-7" style={{ color: "#87CEEB" }} />
+      <section className="space-y-4" aria-labelledby="patient-info-title">
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50">
+            <User className="h-4 w-4 text-sky-600" />
+          </span>
+          <div>
+            <h2 id="patient-info-title" className="font-bold text-slate-900">
+              بيانات التواصل
+            </h2>
+            <p className="text-xs text-slate-500">
+              الاسم والهاتف مطلوبان، والبريد اختياري
+            </p>
           </div>
-          <h3 className="text-lg font-bold text-slate-900">
-            معلومات المريض
-          </h3>
-          <p className="text-sm text-slate-400 mt-1">
-            أدخل بياناتك للتواصل والتأكيد
-          </p>
         </div>
 
-        {/* Name */}
-        <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+        <div className="grid gap-4 sm:grid-cols-2">
+          {/* Name */}
+          <div>
+          <label
+            htmlFor="booking-name"
+            className="block text-sm font-semibold text-slate-700 mb-1.5"
+          >
             الاسم الكامل <span className="text-red-500">*</span>
           </label>
           <input
+            id="booking-name"
             type="text"
             value={form.patientName}
-            onChange={(e) =>
-              setForm({ ...form, patientName: e.target.value })
-            }
+            onChange={(e) => {
+              setForm({ ...form, patientName: e.target.value });
+              setErrors((current) => ({ ...current, patientName: undefined }));
+            }}
             placeholder="أدخل اسمك الكامل"
             className={`w-full px-4 py-3.5 rounded-xl border text-right transition-all duration-200 outline-none focus:ring-2 ${
               errors.patientName
@@ -657,19 +610,24 @@ export default function BookPage() {
               {errors.patientName}
             </p>
           )}
-        </div>
+          </div>
 
-        {/* Phone */}
-        <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+          {/* Phone */}
+          <div>
+          <label
+            htmlFor="booking-phone"
+            className="block text-sm font-semibold text-slate-700 mb-1.5"
+          >
             رقم الهاتف <span className="text-red-500">*</span>
           </label>
           <input
+            id="booking-phone"
             type="tel"
             value={form.phoneNumber}
-            onChange={(e) =>
-              setForm({ ...form, phoneNumber: e.target.value })
-            }
+            onChange={(e) => {
+              setForm({ ...form, phoneNumber: e.target.value });
+              setErrors((current) => ({ ...current, phoneNumber: undefined }));
+            }}
             placeholder="مثال: 04-253028"
             dir="ltr"
             className={`w-full px-4 py-3.5 rounded-xl border text-left transition-all duration-200 outline-none focus:ring-2 ${
@@ -684,67 +642,78 @@ export default function BookPage() {
               {errors.phoneNumber}
             </p>
           )}
-        </div>
+          </div>
 
-        {/* Email */}
-        <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-            البريد الإلكتروني{" "}
-            <span className="text-slate-400 font-normal">(اختياري)</span>
-          </label>
-          <input
-            type="email"
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-            placeholder="example@email.com"
-            dir="ltr"
-            className={`w-full px-4 py-3.5 rounded-xl border text-left transition-all duration-200 outline-none focus:ring-2 ${
-              errors.email
-                ? "border-red-400 bg-red-50 focus:ring-red-300"
-                : "border-slate-200 hover:border-slate-300 focus:border-[#87CEEB] focus:ring-[#87CEEB]/20"
-            }`}
-          />
-          {errors.email && (
-            <p className="text-red-500 text-xs mt-1.5 flex items-center gap-1">
-              <AlertCircle className="w-3.5 h-3.5" />
-              {errors.email}
-            </p>
-          )}
+          <div className="sm:col-span-2">
+            <label
+              htmlFor="booking-email"
+              className="block text-sm font-semibold text-slate-700 mb-1.5"
+            >
+              البريد الإلكتروني{" "}
+              <span className="font-normal text-slate-400">(اختياري)</span>
+            </label>
+            <input
+              id="booking-email"
+              type="email"
+              value={form.email}
+              onChange={(e) => {
+                setForm({ ...form, email: e.target.value });
+                setErrors((current) => ({ ...current, email: undefined }));
+              }}
+              placeholder="example@email.com"
+              dir="ltr"
+              className={`w-full px-4 py-3 rounded-xl border bg-white text-left outline-none transition-all focus:ring-2 ${
+                errors.email
+                  ? "border-red-400 focus:ring-red-300"
+                  : "border-slate-200 focus:border-[#87CEEB] focus:ring-[#87CEEB]/20"
+              }`}
+            />
+            {errors.email && (
+              <p className="text-red-500 text-xs mt-1.5 flex items-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5" />
+                {errors.email}
+              </p>
+            )}
+          </div>
         </div>
-      </div>
+      </section>
     );
   }
 
-  // ── Step 2: Service & Doctor ──
+  // ── Service ──
   function Step2() {
     return (
-      <div className="space-y-5">
-        <div className="text-center mb-6">
-          <div
-            className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3"
-            style={{ backgroundColor: "rgba(255,140,0,0.1)" }}
-          >
-            <Stethoscope className="w-7 h-7" style={{ color: "#FF8C00" }} />
+      <section className="space-y-4" aria-labelledby="service-title">
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-50">
+            <Stethoscope className="h-4 w-4 text-orange-500" />
+          </span>
+          <div>
+            <h2 id="service-title" className="font-bold text-slate-900">
+              سبب الزيارة
+            </h2>
+            <p className="text-xs text-slate-500">اختر الخدمة الأقرب لاحتياجك</p>
           </div>
-          <h3 className="text-lg font-bold text-slate-900">
-            نوع الخدمة والطبيب
-          </h3>
-          <p className="text-sm text-slate-400 mt-1">
-            اختر الخدمة المطلوبة والطبيب المفضل
-          </p>
         </div>
 
         {/* Service Type */}
         <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-            نوع الخدمة
+          <label
+            htmlFor="booking-service"
+            className="block text-sm font-semibold text-slate-700 mb-1.5"
+          >
+            نوع الخدمة <span className="text-red-500">*</span>
           </label>
           <select
+            id="booking-service"
             value={form.serviceType}
-            onChange={(e) =>
-              setForm({ ...form, serviceType: e.target.value })
-            }
-            className="w-full px-4 py-3.5 rounded-xl border border-slate-200 hover:border-slate-300 focus:border-[#87CEEB] outline-none focus:ring-2 focus:ring-[#87CEEB]/20 transition-all duration-200 bg-white text-right"
+            onChange={(e) => {
+              setForm({ ...form, serviceType: e.target.value });
+              setErrors((current) => ({ ...current, serviceType: undefined }));
+            }}
+            className={`w-full px-4 py-3.5 rounded-xl border hover:border-slate-300 focus:border-[#87CEEB] outline-none focus:ring-2 focus:ring-[#87CEEB]/20 transition-all duration-200 bg-white text-right ${
+              errors.serviceType ? "border-red-400" : "border-slate-200"
+            }`}
           >
             <option value="">اختر الخدمة...</option>
             {services.map((s) => (
@@ -753,102 +722,57 @@ export default function BookPage() {
               </option>
             ))}
           </select>
-        </div>
-
-        {/* Doctor Selection */}
-        <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-            الطبيب المفضل
-          </label>
-          {!doctorsLoaded ? (
-            <div className="flex items-center gap-2 text-slate-400 text-sm py-3">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              جاري تحميل قائمة الأطباء...
-            </div>
-          ) : (
-            <select
-              value={form.doctorId}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  doctorId: e.target.value,
-                  preferredTime: "",
-                })
-              }
-              className="w-full px-4 py-3.5 rounded-xl border border-slate-200 hover:border-slate-300 focus:border-[#87CEEB] outline-none focus:ring-2 focus:ring-[#87CEEB]/20 transition-all duration-200 bg-white text-right"
-            >
-              <option value="">أي طبيب متاح</option>
-              {doctors.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} — {d.specialty}
-                </option>
-              ))}
-            </select>
-          )}
-          {/* Show selected doctor preview */}
-          {selectedDoctor && (
-            <div className="mt-3 flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm flex-shrink-0"
-                style={{ backgroundColor: selectedDoctor.color }}
-              >
-                {selectedDoctor.avatarInitials}
-              </div>
-              <div>
-                <div className="text-sm font-bold text-slate-800">
-                  {selectedDoctor.name}
-                </div>
-                <div
-                  className="text-xs font-semibold"
-                  style={{ color: selectedDoctor.color }}
-                >
-                  {selectedDoctor.specialty}
-                </div>
-              </div>
-            </div>
+          {errors.serviceType && (
+            <p className="text-red-500 text-xs mt-1.5 flex items-center gap-1">
+              <AlertCircle className="w-3.5 h-3.5" />
+              {errors.serviceType}
+            </p>
           )}
         </div>
-      </div>
+      </section>
     );
   }
 
-  // ── Step 3: Date & Time ──
+  // ── Date & Time ──
   function Step3() {
     return (
-      <div className="space-y-5">
-        <div className="text-center mb-6">
-          <div
-            className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3"
-            style={{ backgroundColor: "rgba(135,206,235,0.12)" }}
-          >
-            <CalendarDays
-              className="w-7 h-7"
-              style={{ color: "#87CEEB" }}
-            />
+      <section className="space-y-4" aria-labelledby="appointment-time-title">
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50">
+            <CalendarDays className="h-4 w-4 text-sky-600" />
+          </span>
+          <div>
+            <h2 id="appointment-time-title" className="font-bold text-slate-900">
+              الموعد المفضل
+            </h2>
+            <p className="text-xs text-slate-500">اختر اليوم ثم أحد الأوقات المتاحة</p>
           </div>
-          <h3 className="text-lg font-bold text-slate-900">
-            التاريخ والوقت
-          </h3>
-          <p className="text-sm text-slate-400 mt-1">
-            اختر الموعد المناسب لك
-          </p>
         </div>
 
         {/* Date */}
         <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+          <label
+            htmlFor="booking-date"
+            className="block text-sm font-semibold text-slate-700 mb-1.5"
+          >
             التاريخ المفضل <span className="text-red-500">*</span>
           </label>
           <input
+            id="booking-date"
             type="date"
             value={form.preferredDate}
-            onChange={(e) =>
+            onChange={(e) => {
               setForm({
                 ...form,
                 preferredDate: e.target.value,
                 preferredTime: "",
-              })
-            }
+              });
+              setErrors((current) => ({
+                ...current,
+                preferredDate: undefined,
+                preferredTime: undefined,
+              }));
+            }}
             min={getTodayDate()}
             className={`w-full px-4 py-3.5 rounded-xl border transition-all duration-200 outline-none focus:ring-2 ${
               errors.preferredDate
@@ -856,6 +780,44 @@ export default function BookPage() {
                 : "border-slate-200 hover:border-slate-300 focus:border-[#87CEEB] focus:ring-[#87CEEB]/20"
             }`}
           />
+          <div className="mt-3">
+            <p className="mb-2 text-xs font-medium text-slate-500">
+              أقرب أيام العمل
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {quickBookingDates.map((date) => (
+                <button
+                  key={date}
+                  type="button"
+                  aria-label={`اختر ${toArabicDate(date)}`}
+                  aria-pressed={form.preferredDate === date}
+                  onClick={() => {
+                    setForm({
+                      ...form,
+                      preferredDate: date,
+                      preferredTime: "",
+                    });
+                    setErrors((current) => ({
+                      ...current,
+                      preferredDate: undefined,
+                      preferredTime: undefined,
+                    }));
+                  }}
+                  className={`rounded-xl border px-2 py-2 text-xs font-semibold transition-colors ${
+                    form.preferredDate === date
+                      ? "border-orange-500 bg-orange-50 text-orange-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:bg-sky-50"
+                  }`}
+                >
+                  {new Intl.DateTimeFormat("ar-YE", {
+                    weekday: "short",
+                    day: "numeric",
+                    month: "numeric",
+                  }).format(new Date(`${date}T00:00:00`))}
+                </button>
+              ))}
+            </div>
+          </div>
           {errors.preferredDate && (
             <p className="text-red-500 text-xs mt-1.5 flex items-center gap-1">
               <AlertCircle className="w-3.5 h-3.5" />
@@ -886,9 +848,24 @@ export default function BookPage() {
 
             {/* Error loading slots */}
             {slotsError && !slotsLoading && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-700 text-sm text-center flex items-center justify-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                {slotsError}
+              <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-center text-sm text-amber-700">
+                <div className="flex items-center justify-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  {slotsError}
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void fetchAvailability(
+                      form.preferredDate,
+                      form.doctorId,
+                      form.serviceType
+                    )
+                  }
+                  className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-semibold text-amber-800 transition-colors hover:bg-amber-100"
+                >
+                  إعادة المحاولة
+                </button>
               </div>
             )}
 
@@ -922,6 +899,7 @@ export default function BookPage() {
                       key={slot.time}
                       type="button"
                       disabled={isUnavailable}
+                      aria-pressed={isSelected}
                       onClick={() =>
                         setForm({ ...form, preferredTime: slot.time })
                       }
@@ -986,110 +964,77 @@ export default function BookPage() {
             {errors.preferredTime}
           </p>
         )}
-      </div>
+      </section>
     );
   }
 
-  // ── Step 4: Notes & Confirmation ──
+  // ── Optional details ──
   function Step4() {
     return (
-      <div className="space-y-5">
-        <div className="text-center mb-6">
-          <div
-            className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3"
-            style={{ backgroundColor: "rgba(5,150,105,0.1)" }}
-          >
-            <ClipboardCheck
-              className="w-7 h-7"
-              style={{ color: "#059669" }}
+      <details className="group rounded-2xl border border-slate-200 bg-slate-50/70">
+        <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-700">
+          <span className="flex items-center justify-between gap-3">
+            إضافة طبيب أو تفاصيل اختيارية
+            <span className="text-lg leading-none text-slate-400 transition-transform group-open:rotate-45">
+              +
+            </span>
+          </span>
+        </summary>
+        <div className="grid gap-4 border-t border-slate-200 p-4">
+          <div>
+            <label
+              htmlFor="booking-doctor"
+              className="block text-sm font-semibold text-slate-700 mb-1.5"
+            >
+              الطبيب المفضل
+            </label>
+            {!doctorsLoaded ? (
+              <div className="flex items-center gap-2 text-slate-400 text-sm py-3">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                جاري تحميل قائمة الأطباء...
+              </div>
+            ) : (
+              <select
+                id="booking-doctor"
+                value={form.doctorId}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    doctorId: e.target.value,
+                    preferredTime: "",
+                  })
+                }
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-right outline-none transition-all focus:border-[#87CEEB] focus:ring-2 focus:ring-[#87CEEB]/20"
+              >
+                <option value="">أي طبيب متاح</option>
+                {doctors.map((doctor) => (
+                  <option key={doctor.id} value={doctor.id}>
+                    {doctor.name} — {doctor.specialty}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <div>
+            <label
+              htmlFor="booking-notes"
+              className="block text-sm font-semibold text-slate-700 mb-1.5"
+            >
+              ملاحظات إضافية
+            </label>
+            <textarea
+              id="booking-notes"
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              rows={2}
+              placeholder="مثال: استشارة تقويم أو حالة طارئة..."
+              className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-right outline-none transition-all focus:border-[#87CEEB] focus:ring-2 focus:ring-[#87CEEB]/20"
+              maxLength={500}
             />
           </div>
-          <h3 className="text-lg font-bold text-slate-900">
-            ملاحظات وتأكيد
-          </h3>
-          <p className="text-sm text-slate-400 mt-1">
-            راجع بياناتك وأضف أي ملاحظات قبل الإرسال
-          </p>
         </div>
-
-        {/* Summary Card */}
-        <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
-          <h4 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-            <FileText className="w-4 h-4" style={{ color: "#87CEEB" }} />
-            ملخص الحجز
-          </h4>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center py-2 border-b border-slate-100">
-              <span className="text-xs text-slate-400">الاسم</span>
-              <span className="text-sm font-semibold text-slate-800">
-                {form.patientName}
-              </span>
-            </div>
-            <div className="flex justify-between items-center py-2 border-b border-slate-100">
-              <span className="text-xs text-slate-400">الهاتف</span>
-              <span
-                className="text-sm font-semibold text-slate-800"
-                dir="ltr"
-              >
-                {form.phoneNumber}
-              </span>
-            </div>
-            <div className="flex justify-between items-center py-2 border-b border-slate-100">
-              <span className="text-xs text-slate-400">الخدمة</span>
-              <span className="text-sm font-semibold text-slate-800">
-                {form.serviceType || "—"}
-              </span>
-            </div>
-            <div className="flex justify-between items-center py-2 border-b border-slate-100">
-              <span className="text-xs text-slate-400">الطبيب</span>
-              <span className="text-sm font-semibold text-slate-800">
-                {selectedDoctor ? selectedDoctor.name : "أي طبيب متاح"}
-              </span>
-            </div>
-            <div className="flex justify-between items-center py-2 border-b border-slate-100">
-              <span className="text-xs text-slate-400">التاريخ</span>
-              <span className="text-sm font-semibold text-slate-800">
-                {toArabicDate(form.preferredDate)}
-              </span>
-            </div>
-            <div className="flex justify-between items-center py-2">
-              <span className="text-xs text-slate-400">الوقت</span>
-              <span
-                className="text-sm font-semibold text-slate-800"
-                dir="ltr"
-              >
-                {form.preferredTime
-                  ? toArabicTime(form.preferredTime)
-                  : "—"}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* No time selected warning */}
-        {!form.preferredTime && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-700 text-sm text-center flex items-center justify-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            يرجى اختيار وقت مناسب من الأوقات المتاحة.
-          </div>
-        )}
-
-        {/* Notes */}
-        <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-            ملاحظات إضافية{" "}
-            <span className="text-slate-400 font-normal">(اختياري)</span>
-          </label>
-          <textarea
-            value={form.notes}
-            onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            rows={3}
-            placeholder="أي معلومات إضافية تود إضافتها..."
-            className="w-full px-4 py-3.5 rounded-xl border border-slate-200 hover:border-slate-300 focus:border-[#87CEEB] outline-none focus:ring-2 focus:ring-[#87CEEB]/20 transition-all duration-200 resize-none text-right"
-            maxLength={500}
-          />
-        </div>
-      </div>
+      </details>
     );
   }
 
@@ -1152,18 +1097,27 @@ export default function BookPage() {
       <div className="max-w-2xl mx-auto px-4 py-8 sm:py-10">
         {/* Form card */}
         <div className="bg-white rounded-3xl shadow-xl border border-slate-100 border-t-4 border-t-[#87CEEB] overflow-hidden">
-          <div className="p-6 sm:p-8">
-            {/* Step Indicator */}
-            {StepIndicator()}
+          <form
+            className="space-y-6 p-5 sm:p-7"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleSubmit();
+            }}
+            noValidate
+          >
+            <div className="rounded-xl bg-sky-50 px-4 py-3 text-center text-sm font-medium text-sky-800">
+              نموذج واحد سريع — الحجز يستغرق أقل من دقيقة
+            </div>
 
-            {/* Step Content */}
-            {step === 1 && Step1()}
-            {step === 2 && Step2()}
-            {step === 3 && Step3()}
-            {step === 4 && Step4()}
+            {Step1()}
+            <div className="border-t border-slate-100" />
+            {Step2()}
+            <div className="border-t border-slate-100" />
+            {Step3()}
+            {Step4()}
 
             {/* Server error */}
-            {serverError && step === 4 && (
+            {serverError && (
               <div className="mt-5 space-y-3">
                 <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-600 text-sm text-center flex items-start justify-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -1185,55 +1139,29 @@ export default function BookPage() {
               </div>
             )}
 
-            {/* Navigation buttons */}
-            <div className="flex gap-3 mt-8">
-              {step > 1 && (
-                <button
-                  type="button"
-                  onClick={goBack}
-                  className="flex-1 border border-slate-200 text-slate-700 font-semibold py-3.5 rounded-xl transition-all hover:bg-slate-50 hover:border-slate-300 inline-flex items-center justify-center gap-2"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                  السابق
-                </button>
-              )}
-              {step < 4 ? (
-                <button
-                  type="button"
-                  onClick={goNext}
-                  className="flex-1 text-white font-bold py-3.5 rounded-xl transition-opacity hover:opacity-90 inline-flex items-center justify-center gap-2 shadow-md"
-                  style={{ backgroundColor: "#FF8C00" }}
-                >
-                  التالي
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full disabled:cursor-not-allowed disabled:opacity-60 text-white font-bold py-3.5 rounded-xl transition-opacity hover:opacity-90 inline-flex items-center justify-center gap-2 shadow-md"
+              style={{ backgroundColor: "#FF8C00" }}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  جاري الإرسال...
+                </>
               ) : (
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={loading || !canSubmit}
-                  className="flex-1 disabled:opacity-60 text-white font-bold py-3.5 rounded-xl transition-opacity hover:opacity-90 inline-flex items-center justify-center gap-2 shadow-md"
-                  style={{ backgroundColor: "#FF8C00" }}
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      جاري الإرسال...
-                    </>
-                  ) : (
-                    <>
-                      إرسال طلب الحجز
-                      <CheckCircle2 className="w-5 h-5" />
-                    </>
-                  )}
-                </button>
+                <>
+                  إرسال طلب الحجز
+                  <CheckCircle2 className="w-5 h-5" />
+                </>
               )}
-            </div>
+            </button>
 
             <p className="text-center text-xs text-slate-400 mt-5">
               بإرسال هذا النموذج أنت توافق على التواصل معك لتأكيد موعدك
             </p>
-          </div>
+          </form>
         </div>
 
         {/* Contact help box */}

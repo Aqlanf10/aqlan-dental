@@ -16,7 +16,11 @@ public class Lab : BaseEntity
     public string? Notes { get; set; }
     public Guid? BranchId { get; set; }
 
+    /// <summary>The canonical finance supplier used for bills and payments for this lab.</summary>
+    public Guid? SupplierId { get; set; }
+
     // Navigation
     public Branch? Branch { get; set; }
+    public Supplier? Supplier { get; set; }
     public ICollection<LabOrder> LabOrders { get; set; } = [];
 }

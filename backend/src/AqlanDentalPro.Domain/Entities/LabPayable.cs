@@ -8,6 +8,7 @@ public class LabPayable : BaseEntity
 {
     public Guid LabOrderId { get; set; }
     public Guid LabId { get; set; }
+    public Guid? SupplierBillId { get; set; }
     public decimal Amount { get; set; }
     public decimal PaidAmount { get; set; }
     public DateTime? DueDate { get; set; }
@@ -17,4 +18,5 @@ public class LabPayable : BaseEntity
     // Navigation
     public LabOrder LabOrder { get; set; } = null!;
     public Lab Lab { get; set; } = null!;
+    public SupplierBill? SupplierBill { get; set; }
 }

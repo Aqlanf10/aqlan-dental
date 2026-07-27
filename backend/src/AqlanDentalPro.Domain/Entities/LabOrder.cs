@@ -29,6 +29,8 @@ public class LabOrder : BaseEntity
     public LabOrderPriority? PriorityEnum => Enum.TryParse<LabOrderPriority>(Priority, ignoreCase: true, out var p) ? p : null;
     public string? Instructions { get; set; }
     public decimal? Cost { get; set; }
+    public string Currency { get; set; } = "YER";
+    public decimal ExchangeRateToYer { get; set; } = 1m;
     public Guid? DoctorId { get; set; }
 
     // Sprint 2 — Daily Operations: extended fields

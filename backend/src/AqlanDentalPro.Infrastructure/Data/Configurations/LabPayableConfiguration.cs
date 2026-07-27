@@ -13,6 +13,7 @@ public class LabPayableConfiguration : IEntityTypeConfiguration<LabPayable>
 
         builder.HasIndex(p => p.LabOrderId);
         builder.HasIndex(p => p.LabId);
+        builder.HasIndex(p => p.SupplierBillId).IsUnique();
         builder.HasIndex(p => p.Status);
 
         builder.HasOne(p => p.LabOrder)
@@ -28,5 +29,10 @@ public class LabPayableConfiguration : IEntityTypeConfiguration<LabPayable>
             .WithMany()
             .HasForeignKey(p => p.LabId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(p => p.SupplierBill)
+            .WithOne()
+            .HasForeignKey<LabPayable>(p => p.SupplierBillId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

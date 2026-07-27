@@ -37,6 +37,7 @@ function RecordPaymentModal({
 }) {
   const queryClient = useQueryClient();
   const [amount, setAmount] = useState("");
+  const [exchangeRate, setExchangeRate] = useState(payable.currency === "YER" ? "" : String(payable.exchangeRateToYer || ""));
   const [notes, setNotes] = useState("");
   const balance = payable.amount - payable.paidAmount;
 
@@ -44,6 +45,8 @@ function RecordPaymentModal({
     mutationFn: async () => {
       const res = await api.post(`/api/lab-payables/${payable.id}/record-payment`, {
         amount: Number(amount),
+        paymentMethod: "cash",
+        exchangeRateToYer: payable.currency === "YER" ? 1 : Number(exchangeRate),
         notes: notes || undefined,
       });
       return res.data;
@@ -94,19 +97,19 @@ function RecordPaymentModal({
           <div className="flex justify-between">
             <span className="text-gray-500">المبلغ الإجمالي</span>
             <span className="font-medium text-gray-900">
-              {payable.amount.toLocaleString()}
+              {payable.amount.toLocaleString()} {payable.currency}
             </span>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-500">المدفوع</span>
             <span className="font-medium text-green-600">
-              {payable.paidAmount.toLocaleString()}
+              {payable.paidAmount.toLocaleString()} {payable.currency}
             </span>
           </div>
           <div className="flex justify-between border-t border-gray-200 pt-2">
             <span className="text-gray-500 font-medium">الرصيد المتبقي</span>
             <span className="font-bold text-red-600">
-              {balance.toLocaleString()}
+              {balance.toLocaleString()} {payable.currency}
             </span>
           </div>
         </div>
@@ -129,6 +132,13 @@ function RecordPaymentModal({
             />
           </div>
 
+          {payable.currency !== "YER" && (
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-gray-700">سعر الصرف الفعلي: 1 {payable.currency} = كم YER؟</label>
+              <input type="number" min="0.000001" step="0.000001" value={exchangeRate} onChange={(event) => setExchangeRate(event.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" dir="ltr" required />
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-gray-700">ملاحظات</label>
             <textarea
@@ -150,7 +160,7 @@ function RecordPaymentModal({
             </button>
             <button
               type="submit"
-              disabled={!amount || Number(amount) <= 0 || mutation.isPending}
+              disabled={!amount || Number(amount) <= 0 || (payable.currency !== "YER" && Number(exchangeRate) <= 0) || mutation.isPending}
               className="flex-1 bg-cyan-700 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-cyan-800 transition-colors disabled:opacity-50"
             >
               {mutation.isPending ? "جارٍ التسجيل..." : "تسجيل الدفعة"}

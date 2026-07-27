@@ -1311,10 +1311,8 @@ public partial class FinanceV3Controller
                 ["DoctorCommissionPayment"] = [FinancialDocumentType.CommissionPayment],
                 ["VaultTransfer"] = [FinancialDocumentType.VaultTransfer],
                 ["Treasury"] = [FinancialDocumentType.VaultTransfer],
-                // SupplierBill: bills themselves don't create JournalEntries — only payments do
-                // (FinancialDocumentType.SupplierPayment). Mapped here for completeness; enrichment
-                // will be null for bill-creation audit entries since FinancialDocumentId differs.
-                ["SupplierBill"] = [FinancialDocumentType.SupplierPayment],
+                // Supplier bill creation and payment both enrich the same audited bill lifecycle.
+                ["SupplierBill"] = [FinancialDocumentType.SupplierBill, FinancialDocumentType.SupplierPayment],
                 ["SupplierBillPayment"] = [FinancialDocumentType.SupplierPayment],
             };
 

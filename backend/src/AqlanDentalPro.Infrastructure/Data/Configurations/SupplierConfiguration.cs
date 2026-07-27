@@ -25,7 +25,7 @@ public class SupplierConfiguration : IEntityTypeConfiguration<Supplier>
         builder.Property(s => s.Notes).IsRequired(false);
 
         // Enum stored as string in DB (column is varchar(30))
-        builder.Property(s => s.Type).HasConversion<string>().HasMaxLength(30).HasDefaultValue(SupplierType.MedicalVendor);
+        builder.Property(s => s.Type).HasConversion<string>().HasMaxLength(30);
 
         // Decimal precision for balance
         builder.Property(s => s.Balance).HasPrecision(18, 2).HasDefaultValue(0m);

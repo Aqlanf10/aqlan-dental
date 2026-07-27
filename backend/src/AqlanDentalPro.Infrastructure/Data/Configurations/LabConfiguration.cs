@@ -20,10 +20,16 @@ public class LabConfiguration : IEntityTypeConfiguration<Lab>
 
         builder.HasIndex(l => l.Name);
         builder.HasIndex(l => l.BranchId);
+        builder.HasIndex(l => l.SupplierId).IsUnique();
 
         builder.HasOne(l => l.Branch)
             .WithMany()
             .HasForeignKey(l => l.BranchId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(l => l.Supplier)
+            .WithOne()
+            .HasForeignKey<Lab>(l => l.SupplierId)
             .OnDelete(DeleteBehavior.SetNull);
     }
 }

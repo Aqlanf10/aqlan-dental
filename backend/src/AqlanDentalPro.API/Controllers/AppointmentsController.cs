@@ -479,13 +479,22 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         var currentTime = TimeOnly.FromDateTime(now);
         var maxTime = currentTime.AddHours(hours);
 
+        // CORE-APPT-018: TimeOnly.AddHours WRAPS at midnight, so late in the evening
+        // maxTime lands before currentTime (e.g. 22:56 + 2h = 00:56). The same-day
+        // query below then read "StartTime >= 22:56 AND StartTime <= 00:56" — a range
+        // that can never match — and the widget showed NOTHING for the rest of today.
+        // The code already knew the window could wrap (see the tomorrow branch), but
+        // only compensated for the next day, never for the remainder of the current one.
+        var wrapsPastMidnight = maxTime < currentTime;
+
         var targetStatuses = new List<AppointmentStatus>
         {
             AppointmentStatus.Scheduled,
             AppointmentStatus.Confirmed
         };
 
-        // For same-day appointments
+        // For same-day appointments. When the window wraps, everything from now to
+        // end-of-day qualifies, so the (wrapped) upper bound must not be applied.
         var appointments = await db.Appointments
             .Include(a => a.Patient)
             .Include(a => a.Doctor)
@@ -493,12 +502,12 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
                      && targetStatuses.Contains(a.Status)
                      && a.AppointmentDate == today
                      && a.StartTime >= currentTime
-                     && a.StartTime <= maxTime)
+                     && (wrapsPastMidnight || a.StartTime <= maxTime))
             .OrderBy(a => a.StartTime)
             .ToListAsync();
 
         // If hours span across midnight, also get next day's early appointments
-        if (maxTime < currentTime)
+        if (wrapsPastMidnight)
         {
             var tomorrow = today.AddDays(1);
             var tomorrowAppointments = await db.Appointments

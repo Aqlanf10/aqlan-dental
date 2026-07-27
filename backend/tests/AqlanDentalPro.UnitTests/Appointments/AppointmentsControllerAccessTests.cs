@@ -443,9 +443,18 @@ public class AppointmentsControllerAccessTests : IDisposable
     [Fact]
     public async Task GetUpcoming_RestrictedDoctor_OnlySeesAccessiblePatients_AndResponseCarriesPatientId()
     {
+        // CORE-APPT-018: this used to do TimeOnly.FromDateTime(now).AddMinutes(30)
+        // with the date fixed to today. TimeOnly wraps at midnight, so a run after
+        // 23:30 produced an appointment dated TODAY at ~00:15 — already in the past —
+        // and the test failed for reasons unrelated to access filtering. Doing the
+        // arithmetic on DateTime cannot wrap and rolls the date correctly, so this
+        // test is now deterministic at every hour of the day.
         var now = ClinicTimeProvider.ClinicNow();
-        var soon = TimeOnly.FromDateTime(now).AddMinutes(30);
-        var today = DateOnly.FromDateTime(now);
+        var target = now.AddMinutes(30);
+        var soon = TimeOnly.FromDateTime(target);
+        // Named `date`, not `today` — near midnight the target legitimately falls on
+        // the next clinic day, and GetUpcoming is expected to span that boundary.
+        var date = DateOnly.FromDateTime(target);
 
         var ownPatient = BuildPatient();
         var otherPatient = BuildPatient("خالد", "العولقي");
@@ -457,12 +466,12 @@ public class AppointmentsControllerAccessTests : IDisposable
         _db.Appointments.AddRange(
             new Appointment
             {
-                PatientId = ownPatient.Id, DoctorId = doctor.Id, AppointmentDate = today, StartTime = soon, EndTime = soon.AddMinutes(30),
+                PatientId = ownPatient.Id, DoctorId = doctor.Id, AppointmentDate = date, StartTime = soon, EndTime = soon.AddMinutes(30),
                 DurationMinutes = 30, AppointmentType = "معاينة", Status = AppointmentStatus.Scheduled, IsActive = true,
             },
             new Appointment
             {
-                PatientId = otherPatient.Id, DoctorId = doctor.Id, AppointmentDate = today, StartTime = soon, EndTime = soon.AddMinutes(30),
+                PatientId = otherPatient.Id, DoctorId = doctor.Id, AppointmentDate = date, StartTime = soon, EndTime = soon.AddMinutes(30),
                 DurationMinutes = 30, AppointmentType = "معاينة", Status = AppointmentStatus.Scheduled, IsActive = true,
             });
         await _db.SaveChangesAsync();

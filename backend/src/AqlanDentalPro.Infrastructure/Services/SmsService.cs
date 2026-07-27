@@ -1,5 +1,6 @@
 using AqlanDentalPro.Application.DTOs.Sms;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -220,17 +221,26 @@ public class SmsService : ISmsService
         if (reminderHoursList.Count == 0) return 0;
 
         int sentCount = 0;
-        var now = DateTime.UtcNow;
+        // CORE-APPT-008: this used DateTime.UtcNow, so the target day was the host
+        // day, not the clinic day (Yemen is UTC+3 — between 21:00 and 00:00 UTC the
+        // reminder run targeted the wrong date entirely).
+        var now = ClinicTimeProvider.ClinicNow();
 
         foreach (var hoursBefore in reminderHoursList)
         {
-            var targetDate = DateOnly.FromDateTime(now.AddDays(hoursBefore >= 24 ? 1 : 0));
-            var targetHour = now.AddHours(hoursBefore).Hour;
+            // CORE-APPT-008: `targetHour` used to be computed here and then never
+            // used, and the query filtered by DATE ONLY — so enabling the 2-hour
+            // window sent "موعدك بعد ساعتين" to every scheduled appointment on that
+            // day regardless of its actual time. ReminderWindow.For resolves both the
+            // clinic date and the one-hour bucket; see its tests for the arithmetic.
+            var window = ReminderWindow.For(now, hoursBefore);
 
             var appointments = await _db.Appointments
                 .Include(a => a.Patient)
                 .Include(a => a.Doctor)
-                .Where(a => a.AppointmentDate == targetDate
+                .Where(a => a.AppointmentDate == window.Date
+                    && a.StartTime >= window.Start
+                    && a.StartTime <= window.End
                     && a.Status == Domain.Enums.AppointmentStatus.Scheduled
                     && a.IsActive
                     && !a.ConfirmationSent)

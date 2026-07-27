@@ -186,7 +186,11 @@ public class WhatsAppService(
 
     public async Task<int> SendPendingRemindersAsync()
     {
-        var tomorrow = DateOnly.FromDateTime(DateTime.Today.AddDays(1));
+        // CORE-APPT-007: DateTime.Today is the host/container day (UTC on Railway),
+        // not the clinic day. Yemen is UTC+3, so between 21:00 and 00:00 UTC —
+        // 00:00 to 03:00 clinic time — "tomorrow" resolved to the wrong date and
+        // the whole run reminded the wrong day's patients.
+        var tomorrow = ClinicTimeProvider.ClinicToday().AddDays(1);
         var appointments = await db.Appointments
             .Include(a => a.Patient)
             .Include(a => a.Doctor)

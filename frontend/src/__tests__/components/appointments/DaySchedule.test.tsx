@@ -203,4 +203,66 @@ describe("SEQ-33 DaySchedule visit existence guard", () => {
     expect(screen.queryByRole("button", { name: "بدء الزيارة" })).not.toBeInTheDocument();
     expect(screen.queryByText("تعذر التحقق من الزيارة — إعادة المحاولة")).not.toBeInTheDocument();
   });
+
+  // ── CORE-APPT-014: stale-response ordering ──────────────────────────────
+  // Stepping quickly between days fires overlapping GETs with no ordering
+  // guarantee. Before the sequence guard, a slower earlier response could land
+  // last and paint a different day than the header shows.
+
+  it("ignores a stale success that resolves after a newer one", async () => {
+    const first = deferred<{ data: unknown }>();
+    const second = deferred<{ data: unknown }>();
+    let call = 0;
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url.includes("/api/appointments?from=")) {
+        call += 1;
+        return (call === 1 ? first.promise : second.promise) as never;
+      }
+      if (url.includes("/api/visits")) return Promise.resolve({ data: { data: [] } }) as never;
+      if (url.includes("/email-available")) return Promise.resolve({ data: { hasEmail: false } }) as never;
+      throw new Error(`unmocked GET ${url}`);
+    });
+
+    const { rerender } = render(<DaySchedule date="2026-07-10" />);
+    // Switch days before the first request settles.
+    rerender(<DaySchedule date="2026-07-11" />);
+
+    // The NEWER request resolves first...
+    second.resolve({ data: [{ ...APPOINTMENT, id: "appt-new", patientName: "مريض اليوم الجديد" }] });
+    await waitFor(() => expect(screen.getByText("مريض اليوم الجديد")).toBeInTheDocument());
+
+    // ...then the stale one arrives late and must be discarded.
+    first.resolve({ data: [{ ...APPOINTMENT, id: "appt-old", patientName: "مريض اليوم القديم" }] });
+    await waitFor(() => expect(screen.getByText("مريض اليوم الجديد")).toBeInTheDocument());
+    expect(screen.queryByText("مريض اليوم القديم")).not.toBeInTheDocument();
+  });
+
+  it("ignores a stale failure that rejects after a newer success", async () => {
+    const first = deferred<{ data: unknown }>();
+    const second = deferred<{ data: unknown }>();
+    let call = 0;
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url.includes("/api/appointments?from=")) {
+        call += 1;
+        return (call === 1 ? first.promise : second.promise) as never;
+      }
+      if (url.includes("/api/visits")) return Promise.resolve({ data: { data: [] } }) as never;
+      if (url.includes("/email-available")) return Promise.resolve({ data: { hasEmail: false } }) as never;
+      throw new Error(`unmocked GET ${url}`);
+    });
+
+    const { rerender } = render(<DaySchedule date="2026-07-10" />);
+    rerender(<DaySchedule date="2026-07-11" />);
+
+    second.resolve({ data: [APPOINTMENT] });
+    await waitFor(() => expect(screen.getByText("مريض تجريبي")).toBeInTheDocument());
+
+    // A late failure from the ABANDONED day must not blank the visible schedule
+    // or raise a false error banner.
+    first.reject(SERVER_ERROR);
+    await waitFor(() => expect(screen.getByText("مريض تجريبي")).toBeInTheDocument());
+    expect(screen.queryByText(/تعذر تحميل مواعيد هذا اليوم/)).not.toBeInTheDocument();
+  });
 });

@@ -52,19 +52,30 @@ export function DaySchedule({ date, doctorId }: Props) {
   // NOTE: This component uses direct api.get() with from/to params instead of useAppointments hook.
   // The useAppointments hook uses startDate/endDate query params, while the backend expects from/to for date-range queries.
   // Until the hook is updated to support from/to params, direct API calls are the correct approach here.
+  // CORE-APPT-014: stepping quickly between days fires overlapping requests with no
+  // ordering guarantee, so a slower earlier response could land last and paint a
+  // different day than the header shows. Only the newest request may write state.
+  // (The visit-existence check further down this file already guards itself with an
+  // `active` flag — the schedule fetch was simply missing the same protection.)
+  const reqSeq = useRef(0);
+
   const reload = () => {
+    const seq = ++reqSeq.current;
     setLoading(true);
     setLoadError(false);
     const q = doctorId ? `&doctorId=${doctorId}` : "";
     api
       .get<Appointment[]>(`/api/appointments?from=${date}&to=${date}${q}`)
-      .then((r) => setAppointments(r.data))
+      .then((r) => { if (seq === reqSeq.current) setAppointments(r.data); })
       // A failed fetch must not render as an empty (appointment-free) day.
-      .catch(() => { setAppointments([]); setLoadError(true); })
-      .finally(() => setLoading(false));
+      // A STALE failure must not blank out the day that is actually displayed.
+      .catch(() => { if (seq === reqSeq.current) { setAppointments([]); setLoadError(true); } })
+      .finally(() => { if (seq === reqSeq.current) setLoading(false); });
   };
 
-  useEffect(() => { reload(); }, [date, doctorId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The cleanup bump invalidates the in-flight request when the day/doctor changes
+  // or the component unmounts, so a late reply can never apply.
+  useEffect(() => { reload(); return () => { reqSeq.current++; }; }, [date, doctorId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateStatus = async (id: string, status: string) => {
     try {

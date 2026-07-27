@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { cn } from "@/lib/utils";
 import api from "@/lib/api";
 import type { Appointment } from "@/types/appointment";
@@ -46,15 +46,28 @@ export function MonthCalendar({ anchor, doctorId, onDateClick }: Props) {
   const [loadError, setLoadError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
+  // CORE-APPT-014: paging quickly between months fires overlapping requests with no
+  // ordering guarantee, so a slower earlier response could land last and paint a
+  // different month than the header shows. Only the newest request may write state;
+  // the cleanup bump invalidates the in-flight one on change/unmount.
+  const reqSeq = useRef(0);
+
   useEffect(() => {
+    const seq = ++reqSeq.current;
     setLoading(true);
     setLoadError(false);
     const q = doctorId ? `&doctorId=${doctorId}` : "";
     api.get<Appointment[]>(`/api/appointments?from=${fromStr}&to=${toStr2}${q}`)
-      .then((r) => setAppointments(r.data))
+      .then((r) => { if (seq === reqSeq.current) setAppointments(r.data); })
       // A failed fetch must not render an empty (appointment-free) month grid.
-      .catch(() => { setAppointments([]); setLoadError(true); })
-      .finally(() => setLoading(false));
+      // A STALE failure must not blank out the month that is actually displayed.
+      .catch(() => { if (seq === reqSeq.current) { setAppointments([]); setLoadError(true); } })
+      .finally(() => { if (seq === reqSeq.current) setLoading(false); });
+    // Reading reqSeq.current at cleanup time is deliberate — the lint rule assumes a
+    // DOM-node ref, but here we want the LATEST counter so the in-flight request is
+    // invalidated. Copying it into a variable would defeat the guard.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { reqSeq.current++; };
   }, [fromStr, toStr2, doctorId, reloadKey]);
 
   // Group by date string

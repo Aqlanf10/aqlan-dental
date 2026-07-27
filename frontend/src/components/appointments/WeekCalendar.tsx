@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import type { Appointment } from "@/types/appointment";
 import api from "@/lib/api";
@@ -51,19 +51,33 @@ export function WeekCalendar({ anchor, doctorId, onDateClick }: Props) {
   // NOTE: This component uses direct api.get() with from/to params instead of useAppointments hook.
   // The useAppointments hook uses startDate/endDate query params, while the backend expects from/to for date-range queries.
   // Until the hook is updated to support from/to params, direct API calls are the correct approach here.
+  // CORE-APPT-014: stepping quickly between weeks fires overlapping requests with
+  // no ordering guarantee, so a slower earlier response could land last and paint a
+  // different week than the header shows. Each load takes a sequence number and
+  // only the newest one is allowed to write state.
+  const reqSeq = useRef(0);
+
   const load = useCallback(() => {
+    const seq = ++reqSeq.current;
     setLoading(true);
     setLoadError(false);
     const q = doctorId ? `&doctorId=${doctorId}` : "";
     api
       .get<Appointment[]>(`/api/appointments?from=${dates[0]}&to=${dates[6]}${q}`)
-      .then((r) => setAppointments(r.data))
+      .then((r) => { if (seq === reqSeq.current) setAppointments(r.data); })
       // A failed fetch must not render an empty (appointment-free) week grid.
-      .catch(() => { setAppointments([]); setLoadError(true); })
-      .finally(() => setLoading(false));
+      // A STALE failure must not blank out the week that is actually displayed.
+      .catch(() => { if (seq === reqSeq.current) { setAppointments([]); setLoadError(true); } })
+      .finally(() => { if (seq === reqSeq.current) setLoading(false); });
   }, [dates[0], dates[6], doctorId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { load(); }, [load]);
+  // The cleanup bump invalidates the in-flight request when the week/doctor
+  // changes or the component unmounts, so a late reply can never apply.
+  // Reading reqSeq.current at cleanup time is deliberate — the lint rule assumes a
+  // DOM-node ref, but here we want the LATEST counter so the in-flight request is
+  // invalidated. Copying it into a variable would defeat the guard.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); return () => { reqSeq.current++; }; }, [load]);
 
   const getSlotAppts = (date: string, hour: number) =>
     appointments.filter(

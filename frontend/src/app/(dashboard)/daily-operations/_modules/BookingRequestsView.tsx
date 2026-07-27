@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "@/lib/api";
 import type { PaginatedResponse } from "@/types/api";
 import { toast } from "@/stores/toastStore";
+import { extractErrorMessage } from "@/lib/errors";
 import { useAuthStore } from "@/stores/authStore";
 import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
 import { Loader2, RefreshCw, Globe, Stethoscope, Phone, MessageCircle } from "lucide-react";
@@ -61,8 +62,10 @@ export default function BookingRequestsView({ searchQuery }: { searchQuery: stri
       const res = await api.get<BookingRequest[] | PaginatedResponse<BookingRequest>>("/api/booking-requests?pageSize=50");
       const data = res.data;
       setItems(Array.isArray(data) ? data : data.data ?? []);
-    } catch {
-      toast.error("فشل تحميل طلبات الحجز");
+    } catch (err) {
+      // CORE-APPT-015: the catch used to discard the error and show a fixed
+      // string, hiding the server's own Arabic message.
+      toast.error(extractErrorMessage(err, "فشل تحميل طلبات الحجز"));
     } finally {
       setLoading(false);
     }
@@ -82,8 +85,14 @@ export default function BookingRequestsView({ searchQuery }: { searchQuery: stri
         toast.success("تم تأكيد الطلب");
       }
       await fetchItems();
-    } catch {
-      toast.error("فشل تأكيد الطلب أو إنشاء الموعد");
+    } catch (err) {
+      // CORE-APPT-015: this is the one that mattered most. The backend sends
+      // precise reasons here — "يوجد موعد آخر في نفس الوقت لهذا الطبيب",
+      // "الغرفة محجوزة في هذا الوقت", "تم تحويل هذا الطلب بالفعل إلى موعد" —
+      // and bookingConversion rethrows the original error so they survive. The
+      // bare catch replaced all of them with one generic line, so reception
+      // staff could not tell a real booking clash from a server fault.
+      toast.error(extractErrorMessage(err, "فشل تأكيد الطلب أو إنشاء الموعد"));
     } finally {
       setActionLoadingId(null);
     }
@@ -95,8 +104,8 @@ export default function BookingRequestsView({ searchQuery }: { searchQuery: stri
       await api.patch(`/api/booking-requests/${item.id}/status`, { status: "Rejected", staffNotes });
       toast.success("تم رفض الطلب");
       await fetchItems();
-    } catch {
-      toast.error("فشل رفض الطلب");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل رفض الطلب"));
     } finally {
       setActionLoadingId(null);
     }

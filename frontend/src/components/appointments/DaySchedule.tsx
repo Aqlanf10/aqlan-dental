@@ -52,19 +52,30 @@ export function DaySchedule({ date, doctorId }: Props) {
   // NOTE: This component uses direct api.get() with from/to params instead of useAppointments hook.
   // The useAppointments hook uses startDate/endDate query params, while the backend expects from/to for date-range queries.
   // Until the hook is updated to support from/to params, direct API calls are the correct approach here.
+  // CORE-APPT-014: stepping quickly between days fires overlapping requests with no
+  // ordering guarantee, so a slower earlier response could land last and paint a
+  // different day than the header shows. Only the newest request may write state.
+  // (The visit-existence check further down this file already guards itself with an
+  // `active` flag — the schedule fetch was simply missing the same protection.)
+  const reqSeq = useRef(0);
+
   const reload = () => {
+    const seq = ++reqSeq.current;
     setLoading(true);
     setLoadError(false);
     const q = doctorId ? `&doctorId=${doctorId}` : "";
     api
       .get<Appointment[]>(`/api/appointments?from=${date}&to=${date}${q}`)
-      .then((r) => setAppointments(r.data))
+      .then((r) => { if (seq === reqSeq.current) setAppointments(r.data); })
       // A failed fetch must not render as an empty (appointment-free) day.
-      .catch(() => { setAppointments([]); setLoadError(true); })
-      .finally(() => setLoading(false));
+      // A STALE failure must not blank out the day that is actually displayed.
+      .catch(() => { if (seq === reqSeq.current) { setAppointments([]); setLoadError(true); } })
+      .finally(() => { if (seq === reqSeq.current) setLoading(false); });
   };
 
-  useEffect(() => { reload(); }, [date, doctorId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The cleanup bump invalidates the in-flight request when the day/doctor changes
+  // or the component unmounts, so a late reply can never apply.
+  useEffect(() => { reload(); return () => { reqSeq.current++; }; }, [date, doctorId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateStatus = async (id: string, status: string) => {
     try {
@@ -241,6 +252,8 @@ function AppointmentCard({
   const [queueLoading, setQueueLoading] = useState(false);
   const [reminderSending, setReminderSending] = useState(false);
   const [hasEmail, setHasEmail] = useState<boolean | null>(null);
+  // CORE-APPT-016: distinguishes "patient has no email" from "the check failed".
+  const [emailCheckFailed, setEmailCheckFailed] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const transitions = STATUS_TRANSITIONS[a.status] ?? [];
 
@@ -269,11 +282,18 @@ function AppointmentCard({
     };
   }, [a.patientId, a.id, visitCheckAttempt]);
 
-  // Check if patient has email for email reminder button state
+  // Check if patient has email for email reminder button state.
+  // CORE-APPT-016: a failed check used to collapse into setHasEmail(false), which
+  // renders the disabled button whose tooltip asserts "لا يوجد بريد إلكتروني لهذا
+  // المريض" — a claim about the patient's record that the failed request never
+  // established. Track the failure separately so the tooltip stays truthful.
   useEffect(() => {
+    let active = true;
+    setEmailCheckFailed(false);
     api.get<{ hasEmail: boolean }>(`/api/appointments/${a.id}/email-available`)
-      .then((r) => setHasEmail(r.data.hasEmail))
-      .catch(() => setHasEmail(false));
+      .then((r) => { if (active) setHasEmail(r.data.hasEmail); })
+      .catch(() => { if (active) { setHasEmail(false); setEmailCheckFailed(true); } });
+    return () => { active = false; };
   }, [a.id]);
 
   // Close menu on outside click
@@ -571,11 +591,13 @@ function AppointmentCard({
             ) : (
               <button
                 disabled
-                title="لا يوجد بريد إلكتروني لهذا المريض"
+                title={emailCheckFailed
+                  ? "تعذر التحقق من البريد الإلكتروني — تحقق من الاتصال"
+                  : "لا يوجد بريد إلكتروني لهذا المريض"}
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-400 cursor-not-allowed"
               >
                 <Mail className="w-3.5 h-3.5" />
-                إرسال تذكير بالإيميل
+                {emailCheckFailed ? "تعذر التحقق من الإيميل" : "إرسال تذكير بالإيميل"}
               </button>
             )}
             {canDelete && (

@@ -1,5 +1,6 @@
 using AqlanDentalPro.Application.DTOs.Sms;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -195,6 +196,20 @@ public class SmsService : ISmsService
         if (result.Status == "sent")
         {
             appointment.ConfirmationSent = true;
+
+            // CORE-APPT-011: also record WHICH window was sent. ConfirmationSent alone
+            // is windowless, so the job could not tell a 24h send from a 2h one and
+            // re-texted the patient. Recording the window here makes both paths write
+            // the same per-window record; the legacy flag stays for compatibility with
+            // rows written before this change.
+            var sentWindows = ReminderSentWindows.Merge(
+                appointment.SmsReminderWindowsSent, legacyConfirmationSent: false);
+            if (!sentWindows.Contains(request.HoursBefore))
+            {
+                sentWindows.Add(request.HoursBefore);
+                appointment.SmsReminderWindowsSent = JsonSerializer.Serialize(sentWindows);
+            }
+
             appointment.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
         }
@@ -220,21 +235,39 @@ public class SmsService : ISmsService
         if (reminderHoursList.Count == 0) return 0;
 
         int sentCount = 0;
-        var now = DateTime.UtcNow;
+        // CORE-APPT-008: this used DateTime.UtcNow, so the target day was the host
+        // day, not the clinic day (Yemen is UTC+3 — between 21:00 and 00:00 UTC the
+        // reminder run targeted the wrong date entirely).
+        var now = ClinicTimeProvider.ClinicNow();
 
         foreach (var hoursBefore in reminderHoursList)
         {
-            var targetDate = DateOnly.FromDateTime(now.AddDays(hoursBefore >= 24 ? 1 : 0));
-            var targetHour = now.AddHours(hoursBefore).Hour;
+            // CORE-APPT-008: `targetHour` used to be computed here and then never
+            // used, and the query filtered by DATE ONLY — so enabling the 2-hour
+            // window sent "موعدك بعد ساعتين" to every scheduled appointment on that
+            // day regardless of its actual time. ReminderWindow.For resolves both the
+            // clinic date and the one-hour bucket; see its tests for the arithmetic.
+            var window = ReminderWindow.For(now, hoursBefore);
 
-            var appointments = await _db.Appointments
+            // CORE-APPT-011: this used to filter `!a.ConfirmationSent` in SQL, so the
+            // moment ANY reminder went out the appointment dropped out of every later
+            // window — a 24h reminder silently cancelled the 2h one. The per-window
+            // record is JSON and cannot be queried here, so candidates are fetched and
+            // then filtered on the merged view of both "sent" records.
+            var candidates = await _db.Appointments
                 .Include(a => a.Patient)
                 .Include(a => a.Doctor)
-                .Where(a => a.AppointmentDate == targetDate
+                .Where(a => a.AppointmentDate == window.Date
+                    && a.StartTime >= window.Start
+                    && a.StartTime <= window.End
                     && a.Status == Domain.Enums.AppointmentStatus.Scheduled
-                    && a.IsActive
-                    && !a.ConfirmationSent)
+                    && a.IsActive)
                 .ToListAsync();
+
+            var appointments = candidates
+                .Where(a => !ReminderSentWindows.WasSent(
+                    a.SmsReminderWindowsSent, a.ConfirmationSent, hoursBefore))
+                .ToList();
 
             foreach (var appointment in appointments)
             {
@@ -593,18 +626,23 @@ public class SmsService : ISmsService
         await _db.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// CORE-APPT-012: delegates to the canonical PhoneNormalizer instead of
+    /// hand-rolling the rules, then prefixes "+" for the gateway.
+    /// <para>
+    /// The previous implementation filtered with char.IsDigit, which ACCEPTS
+    /// Arabic-Indic digits (٠-٩) without converting them to ASCII — so every
+    /// StartsWith check below then failed and an unusable non-ASCII number was
+    /// handed to the gateway silently. It also never stripped the "00"
+    /// international prefix, turning "00967770245745" into "+9670967770245745".
+    /// PhoneNormalizer already handles both, and is what Patients.NormalizedPhone
+    /// is built with — so lookups and sends now agree on one format.
+    /// </para>
+    /// </summary>
     private static string NormalizePhone(string? phone)
     {
-        if (string.IsNullOrWhiteSpace(phone)) return "";
-
-        var digits = new string(phone.Where(char.IsDigit).ToArray());
-
-        // Yemen format normalization
-        if (digits.StartsWith("967")) return $"+{digits}";
-        if (digits.StartsWith("0")) return $"+967{digits[1..]}";
-        if (digits.StartsWith("7") && digits.Length == 9) return $"+967{digits}";
-
-        return $"+{digits}";
+        var normalized = PhoneNormalizer.Normalize(phone);
+        return string.IsNullOrEmpty(normalized) ? "" : $"+{normalized}";
     }
 
     private static string ReplacePlaceholders(string template, Dictionary<string, string> parameters)

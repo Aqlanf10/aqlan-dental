@@ -1,5 +1,6 @@
 using AqlanDentalPro.Application.DTOs.WhatsApp;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -186,7 +187,11 @@ public class WhatsAppService(
 
     public async Task<int> SendPendingRemindersAsync()
     {
-        var tomorrow = DateOnly.FromDateTime(DateTime.Today.AddDays(1));
+        // CORE-APPT-007: DateTime.Today is the host/container day (UTC on Railway),
+        // not the clinic day. Yemen is UTC+3, so between 21:00 and 00:00 UTC —
+        // 00:00 to 03:00 clinic time — "tomorrow" resolved to the wrong date and
+        // the whole run reminded the wrong day's patients.
+        var tomorrow = ClinicTimeProvider.ClinicToday().AddDays(1);
         var appointments = await db.Appointments
             .Include(a => a.Patient)
             .Include(a => a.Doctor)
@@ -426,21 +431,26 @@ public class WhatsAppService(
         return template;
     }
 
-    private static string NormalizePhone(string phone)
+    /// <summary>
+    /// CORE-APPT-012: delegates to the canonical PhoneNormalizer instead of
+    /// hand-rolling the rules, then prefixes "+" for the Meta Cloud API.
+    /// <para>
+    /// The previous implementation kept characters matching char.IsDigit, which
+    /// ACCEPTS Arabic-Indic digits (٠-٩) without converting them to ASCII — so all
+    /// three StartsWith branches then missed and an unusable non-ASCII number was
+    /// sent silently. It also never stripped the "00" international prefix.
+    /// PhoneNormalizer handles both, and already backs Patients.NormalizedPhone.
+    /// </para>
+    /// <para>
+    /// CORE-PAT-046 (preserved): a number typed with the country code but no "+"
+    /// (e.g. "967770245745") must still come back as "+967770245745" — the stored
+    /// PhoneNumber contract asserted by WhatsAppReminderCompanionTests.
+    /// </para>
+    /// </summary>
+    private static string NormalizePhone(string? phone)
     {
-        var cleaned = new string(phone.Where(c => char.IsDigit(c) || c == '+').ToArray());
-        if (cleaned.StartsWith("7") && cleaned.Length == 9)
-            cleaned = "+967" + cleaned;
-        else if (cleaned.StartsWith("0") && cleaned.Length == 10)
-            cleaned = "+967" + cleaned[1..];
-        // CORE-PAT-046: staff sometimes type the number with the country code
-        // already but no "+" (e.g. "967770245745", 12 digits) — this fell
-        // through both branches above unchanged, so the Meta Cloud API call
-        // dialed a number missing the "+" the test suite's own contract
-        // (WhatsAppReminderCompanionTests) asserts every stored PhoneNumber has.
-        else if (cleaned.StartsWith("967") && cleaned.Length == 12)
-            cleaned = "+" + cleaned;
-        return cleaned;
+        var normalized = PhoneNormalizer.Normalize(phone);
+        return string.IsNullOrEmpty(normalized) ? "" : $"+{normalized}";
     }
 
     private static WhatsAppMessageDto MapToDto(WhatsAppMessage m, Patient p) => new()

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
@@ -64,6 +64,27 @@ const inputCls = (err?: string) =>
     err ? "border-red-400" : "border-gray-300"
   );
 
+/**
+ * CORE-APPT-016: shown in place of an optional picker whose list failed to load.
+ * These pickers are hidden when empty, so a swallowed failure was indistinguishable
+ * from "nothing configured" — the receptionist would book without a room believing
+ * none existed. The field stays optional; this only makes the failure visible.
+ */
+function PickerLoadError({ label, onRetry }: { label: string; onRetry: () => void }) {
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+      <span className="text-xs text-amber-800">تعذر تحميل {label} — يمكنك المتابعة بدونها</span>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="shrink-0 rounded-md border border-amber-400 px-2 py-1 text-xs font-medium text-amber-900 transition hover:bg-amber-100"
+      >
+        إعادة المحاولة
+      </button>
+    </div>
+  );
+}
+
 // Quick-pick chips for the common orthodontic visit types. The orthodontist
 // taps one to pre-fill the appointmentType field instead of typing the full
 // Arabic phrase. The labels mirror APPOINTMENT_TYPES in @/components/shared/
@@ -110,6 +131,8 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
   const [rooms, setRooms] = useState<RoomOption[]>([]);
   // YOLO-S1: treatment packages dropdown
   const [packages, setPackages] = useState<TreatmentPackage[]>([]);
+  // CORE-APPT-016: distinguishes "failed to load" from "none configured".
+  const [loadFailed, setLoadFailed] = useState({ services: false, rooms: false, packages: false });
 
   // Available slots state
   const [slots, setSlots] = useState<string[]>([]);
@@ -153,26 +176,36 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
 
   // FE-13: Removed useEffect that fetched doctors — useDoctors() handles it.
 
-  // Load services (ShowInReception=true)
-  useEffect(() => {
+  // CORE-APPT-016: each of these pickers is hidden when its list is empty, and the
+  // loaders used to swallow failures with `.catch(() => {})`. A network failure
+  // therefore made the field vanish exactly like "nothing configured" — the
+  // receptionist had no way to tell that rooms/services/packages simply failed to
+  // load, and would book without a room believing none existed.
+  const loadServices = useCallback(() => {
+    setLoadFailed((p) => ({ ...p, services: false }));
     api.get<ServiceOption[]>("/api/settings/services", { params: { showInReception: true } })
       .then((r) => setServices(r.data ?? []))
-      .catch(() => {});
+      .catch(() => setLoadFailed((p) => ({ ...p, services: true })));
   }, []);
 
-  // Load rooms
-  useEffect(() => {
+  const loadRooms = useCallback(() => {
+    setLoadFailed((p) => ({ ...p, rooms: false }));
     api.get<RoomOption[]>("/api/settings/rooms")
       .then((r) => setRooms(r.data ?? []))
-      .catch(() => {});
+      .catch(() => setLoadFailed((p) => ({ ...p, rooms: true })));
   }, []);
 
   // YOLO-S1: load active treatment packages for the dropdown
-  useEffect(() => {
+  const loadPackages = useCallback(() => {
+    setLoadFailed((p) => ({ ...p, packages: false }));
     api.get<TreatmentPackage[]>("/api/treatment-packages?activeOnly=true")
       .then((r) => setPackages(r.data ?? []))
-      .catch(() => {});
+      .catch(() => setLoadFailed((p) => ({ ...p, packages: true })));
   }, []);
+
+  useEffect(() => { loadServices(); }, [loadServices]);
+  useEffect(() => { loadRooms(); }, [loadRooms]);
+  useEffect(() => { loadPackages(); }, [loadPackages]);
 
   // Auto-set type & duration when service changes
   useEffect(() => {
@@ -385,49 +418,61 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
         </div>
 
         {/* Service (optional) */}
-        {services.length > 0 && (
+        {(services.length > 0 || loadFailed.services) && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
               الخدمة <span className="text-gray-400 font-normal">(اختياري)</span>
             </label>
-            <select {...register("serviceId")} className={inputCls()}>
-              <option value="">— اختر الخدمة —</option>
-              {services.map((s) => (
-                <option key={s.id} value={s.id}>{s.arabicName}</option>
-              ))}
-            </select>
+            {loadFailed.services ? (
+              <PickerLoadError label="الخدمات" onRetry={loadServices} />
+            ) : (
+              <select {...register("serviceId")} className={inputCls()}>
+                <option value="">— اختر الخدمة —</option>
+                {services.map((s) => (
+                  <option key={s.id} value={s.id}>{s.arabicName}</option>
+                ))}
+              </select>
+            )}
           </div>
         )}
 
         {/* Treatment Package (optional — YOLO-S1) */}
-        {packages.length > 0 && (
+        {(packages.length > 0 || loadFailed.packages) && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
               باقة العلاج <span className="text-gray-400 font-normal">(اختياري)</span>
             </label>
-            <select {...register("packageId")} className={inputCls()}>
-              <option value="">— اختر الباقة —</option>
-              {packages.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} {p.sessionCount > 1 ? `(${p.sessionCount} جلسات)` : ""}
-                </option>
-              ))}
-            </select>
+            {loadFailed.packages ? (
+              <PickerLoadError label="باقات العلاج" onRetry={loadPackages} />
+            ) : (
+              <select {...register("packageId")} className={inputCls()}>
+                <option value="">— اختر الباقة —</option>
+                {packages.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} {p.sessionCount > 1 ? `(${p.sessionCount} جلسات)` : ""}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         )}
 
         {/* Room (optional) */}
-        {rooms.length > 0 && (
+        {(rooms.length > 0 || loadFailed.rooms) && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
               الغرفة <span className="text-gray-400 font-normal">(اختياري)</span>
             </label>
-            <select {...register("clinicRoomId")} className={inputCls()}>
-              <option value="">— اختر الغرفة —</option>
-              {rooms.map((r) => (
-                <option key={r.id} value={r.id}>{r.arabicName}</option>
-              ))}
-            </select>
+            {loadFailed.rooms ? (
+              <PickerLoadError label="الغرف" onRetry={loadRooms} />
+            ) : (
+              <select {...register("clinicRoomId")} className={inputCls()}>
+                <option value="">— اختر الغرفة —</option>
+                {rooms.map((r) => (
+                  <option key={r.id} value={r.id}>{r.arabicName}</option>
+                ))}
+              </select>
+            )}
           </div>
         )}
 

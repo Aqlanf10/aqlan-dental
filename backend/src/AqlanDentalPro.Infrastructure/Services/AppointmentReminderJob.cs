@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -164,55 +165,71 @@ public class AppointmentReminderJob : BackgroundService
 
             foreach (var appt in matchingAppointments)
             {
+                var appointmentMarked = false;
                 try
                 {
-                    // ── Check if this specific window already sent for email ──
-                    var sentWindows = ParseSentWindows(appt.EmailReminderWindowsSent);
-                    if (sentWindows.Contains(hoursBefore))
+                    // ── Channel 1: Email via linked User account ──
+                    // CORE-APPT-009: this block needs its own catch, exactly as the SMS
+                    // block below already has. Without one, any email-side exception
+                    // (GetPatientEmailAsync, FinanceClinicIdentity.ResolveAsync, template
+                    // building) escaped to the OUTER catch and skipped this appointment's
+                    // SMS send entirely — the opposite of the per-channel isolation the
+                    // surrounding comments claim.
+                    try
                     {
-                        _logger.LogDebug(
-                            "Email reminder for {Hours}h window already sent for appointment {Id}. Skipping email.",
-                            hoursBefore, appt.Id);
-                    }
-                    else
-                    {
-                        // ── Channel 1: Email via linked User account ──
-                        var patientEmail = await GetPatientEmailAsync(db, appt.PatientId, appt.Id);
-
-                        if (emailConfigured && !string.IsNullOrWhiteSpace(patientEmail))
+                        // ── Check if this specific window already sent for email ──
+                        var sentWindows = ParseSentWindows(appt.EmailReminderWindowsSent);
+                        if (sentWindows.Contains(hoursBefore))
                         {
-                            var patientName = $"{appt.Patient.FirstName} {appt.Patient.LastName}".Trim();
-                            var doctorName = appt.Doctor.Name ?? "الطبيب";
-                            var appointmentDate = appt.AppointmentDate.ToString("yyyy/MM/dd");
-                            var appointmentTime = appt.StartTime.ToString("HH:mm");
-                            var clinicService = appt.Service?.ArabicName;
-
-                            var identity = await FinanceClinicIdentity.ResolveAsync(db);
-                            var subject = $"تذكير بموعد {identity.Name} — {appointmentDate}";
-                            var htmlBody = EmailService.BuildAppointmentReminderHtml(
-                                patientName, doctorName, appointmentDate,
-                                appointmentTime, clinicService, appt.Notes,
-                                identity.Name, identity.Location);
-
-                            var sent = await emailService.SendAppointmentReminderAsync(patientEmail, subject, htmlBody, appt.Id);
-
-                            if (sent)
-                            {
-                                sentWindows.Add(hoursBefore);
-                                appt.EmailReminderWindowsSent = JsonSerializer.Serialize(sentWindows);
-                                appt.EmailReminderSentAt = DateTime.UtcNow;
-                                totalSent++;
-                                _logger.LogInformation(
-                                    "Sent {Hours}h email reminder for appointment {Id} to {Email}",
-                                    hoursBefore, appt.Id, MaskEmail(patientEmail));
-                            }
+                            _logger.LogDebug(
+                                "Email reminder for {Hours}h window already sent for appointment {Id}. Skipping email.",
+                                hoursBefore, appt.Id);
                         }
                         else
                         {
-                            _logger.LogDebug(
-                                "No email on file for patient {PatientId}. Skipping email reminder for appointment {Id}.",
-                                appt.PatientId, appt.Id);
+                            var patientEmail = await GetPatientEmailAsync(db, appt.PatientId, appt.Id);
+
+                            if (emailConfigured && !string.IsNullOrWhiteSpace(patientEmail))
+                            {
+                                var patientName = $"{appt.Patient.FirstName} {appt.Patient.LastName}".Trim();
+                                var doctorName = appt.Doctor.Name ?? "الطبيب";
+                                var appointmentDate = appt.AppointmentDate.ToString("yyyy/MM/dd");
+                                var appointmentTime = appt.StartTime.ToString("HH:mm");
+                                var clinicService = appt.Service?.ArabicName;
+
+                                var identity = await FinanceClinicIdentity.ResolveAsync(db);
+                                var subject = $"تذكير بموعد {identity.Name} — {appointmentDate}";
+                                var htmlBody = EmailService.BuildAppointmentReminderHtml(
+                                    patientName, doctorName, appointmentDate,
+                                    appointmentTime, clinicService, appt.Notes,
+                                    identity.Name, identity.Location);
+
+                                var sent = await emailService.SendAppointmentReminderAsync(patientEmail, subject, htmlBody, appt.Id);
+
+                                if (sent)
+                                {
+                                    sentWindows.Add(hoursBefore);
+                                    appt.EmailReminderWindowsSent = JsonSerializer.Serialize(sentWindows);
+                                    appt.EmailReminderSentAt = DateTime.UtcNow;
+                                    totalSent++;
+                                    appointmentMarked = true;
+                                    _logger.LogInformation(
+                                        "Sent {Hours}h email reminder for appointment {Id} to {Email}",
+                                        hoursBefore, appt.Id, MaskEmail(patientEmail));
+                                }
+                            }
+                            else
+                            {
+                                _logger.LogDebug(
+                                    "No email on file for patient {PatientId}. Skipping email reminder for appointment {Id}.",
+                                    appt.PatientId, appt.Id);
+                            }
                         }
+                    }
+                    catch (Exception emailEx)
+                    {
+                        _logger.LogWarning(emailEx,
+                            "Failed to send email reminder for appointment {Id}; continuing to SMS", appt.Id);
                     }
 
                     // ── Channel 2: SMS via Local Android SIM Gateway ──
@@ -220,7 +237,11 @@ public class AppointmentReminderJob : BackgroundService
                     {
                         try
                         {
-                            var smsSentWindows = ParseSentWindows(appt.SmsReminderWindowsSent);
+                            // CORE-APPT-011: also honour the legacy ConfirmationSent
+                            // flag the manual path writes, otherwise a manual 24h
+                            // reminder is invisible here and the patient is texted twice.
+                            var smsSentWindows = ReminderSentWindows.Merge(
+                                appt.SmsReminderWindowsSent, appt.ConfirmationSent);
                             if (!smsSentWindows.Contains(hoursBefore))
                             {
                                 await smsService.SendAppointmentReminderAsync(
@@ -232,6 +253,7 @@ public class AppointmentReminderJob : BackgroundService
                                 smsSentWindows.Add(hoursBefore);
                                 appt.SmsReminderWindowsSent = JsonSerializer.Serialize(smsSentWindows);
                                 totalSent++;
+                                appointmentMarked = true;
                                 _logger.LogInformation(
                                     "Sent {Hours}h SMS reminder for appointment {Id}",
                                     hoursBefore, appt.Id);
@@ -249,13 +271,28 @@ public class AppointmentReminderJob : BackgroundService
                     _logger.LogWarning(ex,
                         "Failed to send reminder for appointment {Id}", appt.Id);
                 }
-            }
-        }
 
-        // Save all tracking updates
-        if (totalSent > 0)
-        {
-            await db.SaveChangesAsync();
+                // CORE-APPT-010: persist this appointment's "sent" marks immediately.
+                // There used to be a single SaveChangesAsync after the ENTIRE nested
+                // loop (every window x every matching appointment). Messages go out
+                // during the loop, so losing the process mid-run — a Railway redeploy
+                // is enough — discarded every mark for that run while the reminders
+                // had already been delivered, and the next run re-sent all of them.
+                // Saving per appointment bounds that loss to at most one record.
+                if (appointmentMarked)
+                {
+                    try
+                    {
+                        await db.SaveChangesAsync();
+                    }
+                    catch (Exception saveEx)
+                    {
+                        _logger.LogError(saveEx,
+                            "Sent reminder(s) for appointment {Id} but failed to persist the sent-marks; "
+                            + "they may be re-sent on the next run", appt.Id);
+                    }
+                }
+            }
         }
 
         _logger.LogInformation(

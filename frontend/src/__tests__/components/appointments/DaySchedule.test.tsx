@@ -203,4 +203,105 @@ describe("SEQ-33 DaySchedule visit existence guard", () => {
     expect(screen.queryByRole("button", { name: "بدء الزيارة" })).not.toBeInTheDocument();
     expect(screen.queryByText("تعذر التحقق من الزيارة — إعادة المحاولة")).not.toBeInTheDocument();
   });
+
+  // ── CORE-APPT-014: stale-response ordering ──────────────────────────────
+  // Stepping quickly between days fires overlapping GETs with no ordering
+  // guarantee. Before the sequence guard, a slower earlier response could land
+  // last and paint a different day than the header shows.
+
+  it("ignores a stale success that resolves after a newer one", async () => {
+    const first = deferred<{ data: unknown }>();
+    const second = deferred<{ data: unknown }>();
+    let call = 0;
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url.includes("/api/appointments?from=")) {
+        call += 1;
+        return (call === 1 ? first.promise : second.promise) as never;
+      }
+      if (url.includes("/api/visits")) return Promise.resolve({ data: { data: [] } }) as never;
+      if (url.includes("/email-available")) return Promise.resolve({ data: { hasEmail: false } }) as never;
+      throw new Error(`unmocked GET ${url}`);
+    });
+
+    const { rerender } = render(<DaySchedule date="2026-07-10" />);
+    // Switch days before the first request settles.
+    rerender(<DaySchedule date="2026-07-11" />);
+
+    // The NEWER request resolves first...
+    second.resolve({ data: [{ ...APPOINTMENT, id: "appt-new", patientName: "مريض اليوم الجديد" }] });
+    await waitFor(() => expect(screen.getByText("مريض اليوم الجديد")).toBeInTheDocument());
+
+    // ...then the stale one arrives late and must be discarded.
+    first.resolve({ data: [{ ...APPOINTMENT, id: "appt-old", patientName: "مريض اليوم القديم" }] });
+    await waitFor(() => expect(screen.getByText("مريض اليوم الجديد")).toBeInTheDocument());
+    expect(screen.queryByText("مريض اليوم القديم")).not.toBeInTheDocument();
+  });
+
+  it("ignores a stale failure that rejects after a newer success", async () => {
+    const first = deferred<{ data: unknown }>();
+    const second = deferred<{ data: unknown }>();
+    let call = 0;
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url.includes("/api/appointments?from=")) {
+        call += 1;
+        return (call === 1 ? first.promise : second.promise) as never;
+      }
+      if (url.includes("/api/visits")) return Promise.resolve({ data: { data: [] } }) as never;
+      if (url.includes("/email-available")) return Promise.resolve({ data: { hasEmail: false } }) as never;
+      throw new Error(`unmocked GET ${url}`);
+    });
+
+    const { rerender } = render(<DaySchedule date="2026-07-10" />);
+    rerender(<DaySchedule date="2026-07-11" />);
+
+    second.resolve({ data: [APPOINTMENT] });
+    await waitFor(() => expect(screen.getByText("مريض تجريبي")).toBeInTheDocument());
+
+    // A late failure from the ABANDONED day must not blank the visible schedule
+    // or raise a false error banner.
+    first.reject(SERVER_ERROR);
+    await waitFor(() => expect(screen.getByText("مريض تجريبي")).toBeInTheDocument());
+    expect(screen.queryByText(/تعذر تحميل مواعيد هذا اليوم/)).not.toBeInTheDocument();
+  });
+
+  // ── CORE-APPT-016: a failed email check must not assert a fact about the record ──
+
+  it("says the email check failed — not that the patient has no email — when it errors", async () => {
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url.includes("/api/appointments?from=")) {
+        return Promise.resolve({ data: [APPOINTMENT] }) as never;
+      }
+      if (url.includes("/api/visits")) return Promise.resolve({ data: { data: [] } }) as never;
+      // The availability probe fails — we learn nothing about the patient's email.
+      if (url.includes("/email-available")) return Promise.reject(SERVER_ERROR) as never;
+      throw new Error(`unmocked GET ${url}`);
+    });
+
+    render(<DaySchedule date="2026-07-10" />);
+    await screen.findByText("مريض تجريبي");
+    fireEvent.click(screen.getByRole("button", { name: "خيارات" }));
+
+    const button = await screen.findByText("تعذر التحقق من الإيميل");
+    expect(button).toBeInTheDocument();
+    expect(button.closest("button")).toHaveAttribute(
+      "title",
+      "تعذر التحقق من البريد الإلكتروني — تحقق من الاتصال",
+    );
+    // The false claim must be gone.
+    expect(screen.queryByTitle("لا يوجد بريد إلكتروني لهذا المريض")).not.toBeInTheDocument();
+  });
+
+  it("still reports a genuinely absent email as absent", async () => {
+    mockGets({ appointments: [APPOINTMENT] });
+
+    render(<DaySchedule date="2026-07-10" />);
+    await screen.findByText("مريض تجريبي");
+    fireEvent.click(screen.getByRole("button", { name: "خيارات" }));
+
+    // hasEmail:false from a SUCCESSFUL probe is a real fact — keep asserting it.
+    expect(await screen.findByTitle("لا يوجد بريد إلكتروني لهذا المريض")).toBeInTheDocument();
+    expect(screen.queryByText("تعذر التحقق من الإيميل")).not.toBeInTheDocument();
+  });
 });

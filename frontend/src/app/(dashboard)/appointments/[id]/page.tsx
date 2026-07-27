@@ -43,6 +43,8 @@ export default function AppointmentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [hasEmail, setHasEmail] = useState<boolean | null>(null);
+  // CORE-APPT-016: distinguishes "patient has no email" from "the check failed".
+  const [emailCheckFailed, setEmailCheckFailed] = useState(false);
 
   useEffect(() => {
     api.get<AppointmentDetail>(`/api/appointments/${id}`)
@@ -50,10 +52,13 @@ export default function AppointmentDetailPage() {
       .catch(() => toast.error("فشل تحميل بيانات الموعد"))
       .finally(() => setLoading(false));
 
-    // Check email availability for the patient
+    // Check email availability for the patient.
+    // CORE-APPT-016: a failed check used to collapse into setHasEmail(false), which
+    // renders a disabled button asserting "لا يوجد بريد إلكتروني لهذا المريض" — a
+    // claim about the record that the failed request never established.
     api.get<{ hasEmail: boolean }>(`/api/appointments/${id}/email-available`)
-      .then((r) => setHasEmail(r.data.hasEmail))
-      .catch(() => setHasEmail(false));
+      .then((r) => { setHasEmail(r.data.hasEmail); setEmailCheckFailed(false); })
+      .catch(() => { setHasEmail(false); setEmailCheckFailed(true); });
   }, [id]);
 
   const handleDelete = async () => {
@@ -252,12 +257,14 @@ export default function AppointmentDetailPage() {
         ) : (
           <button
             disabled
-            title="لا يوجد بريد إلكتروني لهذا المريض"
+            title={emailCheckFailed
+              ? "تعذر التحقق من البريد الإلكتروني — تحقق من الاتصال"
+              : "لا يوجد بريد إلكتروني لهذا المريض"}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white opacity-50 cursor-not-allowed"
             style={{ background: "#0E7490" }}
           >
             <Mail className="w-4 h-4" />
-            إرسال تذكير بالإيميل
+            {emailCheckFailed ? "تعذر التحقق من الإيميل" : "إرسال تذكير بالإيميل"}
           </button>
         )}
 

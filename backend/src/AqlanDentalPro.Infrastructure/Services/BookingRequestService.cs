@@ -1,6 +1,7 @@
 using AqlanDentalPro.Application.DTOs.BookingRequests;
 using AqlanDentalPro.Application.DTOs.Common;
 using AqlanDentalPro.Application.Exceptions;
+using AqlanDentalPro.Application.Interfaces.Repositories;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Application.DTOs.Patients;
@@ -12,7 +13,11 @@ using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
-public class BookingRequestService(AppDbContext db, PatientService patientService, ILogger<BookingRequestService> logger) : IBookingRequestService
+public class BookingRequestService(
+    AppDbContext db,
+    PatientService patientService,
+    IAppointmentRepository appointmentRepository,
+    ILogger<BookingRequestService> logger) : IBookingRequestService
 {
     // Clinic working hours: Saturday-Thursday 08:00-20:00, Friday closed
     private static readonly TimeOnly ClinicOpen = new(8, 0);
@@ -444,18 +449,15 @@ public class BookingRequestService(AppDbContext db, PatientService patientServic
             }
         }
 
-        // 4. Check for appointment conflicts
-        var hasConflict = await db.Appointments
-            .AnyAsync(a => a.DoctorId == dto.DoctorId
-                        && a.AppointmentDate == dto.AppointmentDate
-                        && BlockingAppointmentStatuses.Contains(a.Status)
-                        && a.StartTime < dto.EndTime
-                        && a.EndTime > dto.StartTime);
-
-        if (hasConflict)
-            throw new ArgumentException("يوجد موعد آخر في نفس الوقت لهذا الطبيب");
-
-        // 5. Create the Appointment (use resolved patientId instead of dto.PatientId)
+        // 4-7. Create the Appointment (use resolved patientId instead of dto.PatientId),
+        // link the booking request, and save — all atomically under the same
+        // per-doctor/per-room advisory lock the direct booking path uses.
+        //
+        // CORE-APPT-004: this conversion path used to be a plain check-then-save
+        // with no transaction/lock at all (so two concurrent conversions for the
+        // same doctor/slot could both pass) and NO room-conflict check whatsoever
+        // despite storing ClinicRoomId — a real double-booking gap distinct from,
+        // and unprotected by, the guard AppointmentService.CreateAsync uses.
         var appointment = new Appointment
         {
             PatientId = patientId,
@@ -471,18 +473,45 @@ public class BookingRequestService(AppDbContext db, PatientService patientServic
             ClinicRoomId = dto.ClinicRoomId
         };
 
-        db.Appointments.Add(appointment);
+        // Non-relational providers (InMemory tests) have no transaction/advisory
+        // lock — the conflict logic below is identical, only the cross-process
+        // race protection (which needs PostgreSQL) is unavailable.
+        var tx = db.Database.IsRelational() ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            if (await appointmentRepository.HasConflictUnderLockAsync(appointment))
+            {
+                var roomConflict = appointment.ClinicRoomId.HasValue &&
+                    await appointmentRepository.HasRoomConflictAsync(
+                        appointment.ClinicRoomId.Value, appointment.AppointmentDate, appointment.StartTime, appointment.EndTime);
+                throw new ArgumentException(roomConflict
+                    ? "الغرفة محجوزة في هذا الوقت"
+                    : "يوجد موعد آخر في نفس الوقت لهذا الطبيب");
+            }
 
-        // 6. Set BookingRequest.ConvertedToAppointmentId
-        bookingRequest.ConvertedToAppointmentId = appointment.Id;
+            db.Appointments.Add(appointment);
 
-        // 7. Update StaffNotes
-        var existingNotes = string.IsNullOrWhiteSpace(bookingRequest.StaffNotes)
-            ? ""
-            : bookingRequest.StaffNotes + " | ";
-        bookingRequest.StaffNotes = existingNotes + "تم تحويل الطلب إلى موعد";
+            // Set BookingRequest.ConvertedToAppointmentId
+            bookingRequest.ConvertedToAppointmentId = appointment.Id;
 
-        await db.SaveChangesAsync();
+            // Update StaffNotes
+            var existingNotes = string.IsNullOrWhiteSpace(bookingRequest.StaffNotes)
+                ? ""
+                : bookingRequest.StaffNotes + " | ";
+            bookingRequest.StaffNotes = existingNotes + "تم تحويل الطلب إلى موعد";
+
+            await db.SaveChangesAsync();
+            if (tx != null) await tx.CommitAsync();
+        }
+        catch
+        {
+            if (tx != null) await tx.RollbackAsync();
+            throw;
+        }
+        finally
+        {
+            if (tx != null) await tx.DisposeAsync();
+        }
 
         // 8. If appointment is today, also add patient to the clinic queue
         // CORE-PAT-017: compare against the CLINIC day, not the UTC day —

@@ -129,6 +129,14 @@ public class AppointmentRepository(AppDbContext context)
         }
     }
 
+    public async Task<bool> HasConflictUnderLockAsync(Appointment appointment, Guid? excludeId = null)
+    {
+        if (Context.Database.IsRelational())
+            await AcquireDoctorAndRoomLocksAsync(appointment.DoctorId, appointment.ClinicRoomId);
+
+        return await HasConflictOrRoomConflictAsync(appointment, excludeId);
+    }
+
     private async Task<bool> HasConflictOrRoomConflictAsync(Appointment appointment, Guid? excludeId)
     {
         if (await HasConflictAsync(appointment.DoctorId, appointment.AppointmentDate, appointment.StartTime, appointment.EndTime, excludeId))

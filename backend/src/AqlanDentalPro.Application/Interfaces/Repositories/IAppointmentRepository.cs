@@ -33,6 +33,18 @@ public interface IAppointmentRepository : IGenericRepository<Appointment>
     Task<bool> TryUpdateWithConflictGuardAsync(Appointment appointment);
 
     /// <summary>
+    /// CORE-APPT-004: same doctor+room advisory-lock conflict check as
+    /// <see cref="TryCreateWithConflictGuardAsync"/>, but for a caller (e.g.
+    /// BookingRequestService.ConvertToAppointmentAsync) that needs the appointment
+    /// insert to be one part of a larger multi-entity save it commits itself. The
+    /// caller MUST already have an open transaction on the same DbContext before
+    /// calling this — it only acquires the advisory lock(s) and checks for a
+    /// conflict; it does not begin/commit a transaction, insert the appointment,
+    /// or save changes.
+    /// </summary>
+    Task<bool> HasConflictUnderLockAsync(Appointment appointment, Guid? excludeId = null);
+
+    /// <summary>
     /// Returns appointments for the clinic-local day. Production callers omit
     /// <paramref name="clinicDate"/> and use the configured clinic timezone; tests
     /// may pass an explicit date to verify midnight-boundary behavior deterministically.

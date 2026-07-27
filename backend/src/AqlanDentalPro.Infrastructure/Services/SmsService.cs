@@ -603,18 +603,23 @@ public class SmsService : ISmsService
         await _db.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// CORE-APPT-012: delegates to the canonical PhoneNormalizer instead of
+    /// hand-rolling the rules, then prefixes "+" for the gateway.
+    /// <para>
+    /// The previous implementation filtered with char.IsDigit, which ACCEPTS
+    /// Arabic-Indic digits (٠-٩) without converting them to ASCII — so every
+    /// StartsWith check below then failed and an unusable non-ASCII number was
+    /// handed to the gateway silently. It also never stripped the "00"
+    /// international prefix, turning "00967770245745" into "+9670967770245745".
+    /// PhoneNormalizer already handles both, and is what Patients.NormalizedPhone
+    /// is built with — so lookups and sends now agree on one format.
+    /// </para>
+    /// </summary>
     private static string NormalizePhone(string? phone)
     {
-        if (string.IsNullOrWhiteSpace(phone)) return "";
-
-        var digits = new string(phone.Where(char.IsDigit).ToArray());
-
-        // Yemen format normalization
-        if (digits.StartsWith("967")) return $"+{digits}";
-        if (digits.StartsWith("0")) return $"+967{digits[1..]}";
-        if (digits.StartsWith("7") && digits.Length == 9) return $"+967{digits}";
-
-        return $"+{digits}";
+        var normalized = PhoneNormalizer.Normalize(phone);
+        return string.IsNullOrEmpty(normalized) ? "" : $"+{normalized}";
     }
 
     private static string ReplacePlaceholders(string template, Dictionary<string, string> parameters)

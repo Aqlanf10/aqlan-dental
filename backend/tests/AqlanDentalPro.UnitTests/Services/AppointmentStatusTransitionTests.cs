@@ -431,6 +431,79 @@ public class AppointmentStatusTransitionTests
         }
     }
 
+    // ─── CORE-APPT-005: shared re-scheduling rule ──────────────────────────
+    // IsValidTransition keeps Cancelled/NoShow strictly terminal (pinned by the two
+    // theories above, and relied on by checkout/queue flows). The re-scheduling
+    // exception lives in its own predicate so the single-appointment and batch
+    // status endpoints can share one rule instead of disagreeing.
+
+    [Theory]
+    [InlineData(AppointmentStatus.Cancelled)]
+    [InlineData(AppointmentStatus.NoShow)]
+    public void IsReschedulingFromTerminal_TerminalToScheduled_IsTrue(AppointmentStatus from)
+    {
+        AppointmentStatusTransitions.IsReschedulingFromTerminal(from, AppointmentStatus.Scheduled)
+            .Should().BeTrue("a cancelled/no-show appointment may be re-booked");
+    }
+
+    [Theory]
+    [InlineData(AppointmentStatus.Cancelled, AppointmentStatus.Completed)]
+    [InlineData(AppointmentStatus.Cancelled, AppointmentStatus.InProgress)]
+    [InlineData(AppointmentStatus.NoShow, AppointmentStatus.Completed)]
+    [InlineData(AppointmentStatus.NoShow, AppointmentStatus.Arrived)]
+    public void IsReschedulingFromTerminal_TerminalToAnythingElse_IsFalse(
+        AppointmentStatus from, AppointmentStatus to)
+    {
+        AppointmentStatusTransitions.IsReschedulingFromTerminal(from, to)
+            .Should().BeFalse("only Scheduled reopens a terminal appointment");
+    }
+
+    [Theory]
+    [InlineData(AppointmentStatus.Scheduled)]
+    [InlineData(AppointmentStatus.Confirmed)]
+    [InlineData(AppointmentStatus.Completed)]
+    public void IsReschedulingFromTerminal_NonTerminalSource_IsFalse(AppointmentStatus from)
+    {
+        AppointmentStatusTransitions.IsReschedulingFromTerminal(from, AppointmentStatus.Scheduled)
+            .Should().BeFalse("the exception only applies to Cancelled/NoShow");
+    }
+
+    [Theory]
+    [InlineData(AppointmentStatus.Cancelled)]
+    [InlineData(AppointmentStatus.NoShow)]
+    public void IsValidStatusChange_AllowsRescheduleThatIsValidTransitionRejects(AppointmentStatus from)
+    {
+        // This exact pair is the bug: allowed one-at-a-time, rejected in batch.
+        AppointmentStatusTransitions.IsValidTransition(from, AppointmentStatus.Scheduled)
+            .Should().BeFalse("the base table intentionally keeps terminal states closed");
+
+        AppointmentStatusTransitions.IsValidStatusChange(from, AppointmentStatus.Scheduled)
+            .Should().BeTrue("the user-initiated status rule must permit re-scheduling");
+    }
+
+    [Theory]
+    [InlineData(AppointmentStatus.Cancelled, AppointmentStatus.Completed)]
+    [InlineData(AppointmentStatus.NoShow, AppointmentStatus.InProgress)]
+    [InlineData(AppointmentStatus.Completed, AppointmentStatus.Scheduled)]
+    [InlineData(AppointmentStatus.Scheduled, AppointmentStatus.Completed)]
+    public void IsValidStatusChange_StillRejectsGenuinelyInvalidChanges(
+        AppointmentStatus from, AppointmentStatus to)
+    {
+        AppointmentStatusTransitions.IsValidStatusChange(from, to)
+            .Should().BeFalse("the exception must not become a general escape hatch");
+    }
+
+    [Theory]
+    [InlineData(AppointmentStatus.Scheduled, AppointmentStatus.Confirmed)]
+    [InlineData(AppointmentStatus.Confirmed, AppointmentStatus.Arrived)]
+    [InlineData(AppointmentStatus.InProgress, AppointmentStatus.Completed)]
+    [InlineData(AppointmentStatus.Waiting, AppointmentStatus.Called)]
+    public void IsValidStatusChange_StillAllowsEveryNormalTransition(
+        AppointmentStatus from, AppointmentStatus to)
+    {
+        AppointmentStatusTransitions.IsValidStatusChange(from, to).Should().BeTrue();
+    }
+
     // ─── GetAllowedTransitions Tests ───────────────────────────────────────
 
     [Fact]

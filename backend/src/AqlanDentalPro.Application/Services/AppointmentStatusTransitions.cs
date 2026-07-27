@@ -90,6 +90,32 @@ public static class AppointmentStatusTransitions
     }
 
     /// <summary>
+    /// CORE-APPT-005: the one sanctioned way out of a terminal state — putting a
+    /// Cancelled/NoShow appointment back to Scheduled (re-booking the patient).
+    /// <para>
+    /// This is deliberately NOT an entry in <see cref="ValidTransitions"/>: the
+    /// clinical flows that consume that table (checkout, queue, visit) must keep
+    /// treating Cancelled/NoShow as strictly terminal, and existing tests pin that.
+    /// Only an explicit re-scheduling intent may reopen them.
+    /// </para>
+    /// </summary>
+    public static bool IsReschedulingFromTerminal(AppointmentStatus currentStatus, AppointmentStatus newStatus) =>
+        (currentStatus is AppointmentStatus.Cancelled or AppointmentStatus.NoShow)
+        && newStatus == AppointmentStatus.Scheduled;
+
+    /// <summary>
+    /// CORE-APPT-005: the full rule for a user-initiated appointment status change —
+    /// a normal transition OR the re-scheduling exception above. Single-appointment
+    /// and batch status updates must both use this, otherwise the same change is
+    /// accepted individually and rejected in bulk (which is exactly the bug this
+    /// closes: the batch path called <see cref="IsValidTransition"/> directly and
+    /// reported a genuine re-schedule as a "status conflict").
+    /// </summary>
+    public static bool IsValidStatusChange(AppointmentStatus currentStatus, AppointmentStatus newStatus) =>
+        IsReschedulingFromTerminal(currentStatus, newStatus)
+        || IsValidTransition(currentStatus, newStatus);
+
+    /// <summary>
     /// Gets all valid target statuses for a given current status.
     /// </summary>
     public static IEnumerable<AppointmentStatus> GetAllowedTransitions(AppointmentStatus currentStatus)

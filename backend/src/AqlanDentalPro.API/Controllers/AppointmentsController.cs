@@ -440,7 +440,11 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         var skipped = 0;
         foreach (var appointment in appointments)
         {
-            if (AppointmentStatusTransitions.IsValidTransition(appointment.Status, targetStatus))
+            // CORE-APPT-005: use the same rule the single-appointment endpoint uses.
+            // This called IsValidTransition directly, which treats Cancelled/NoShow as
+            // strictly terminal — so re-scheduling a no-show (allowed one at a time)
+            // was silently counted as "skipped due to a status conflict" in bulk.
+            if (AppointmentStatusTransitions.IsValidStatusChange(appointment.Status, targetStatus))
             {
                 appointment.Status = targetStatus;
                 appointment.UpdatedAt = DateTime.UtcNow;

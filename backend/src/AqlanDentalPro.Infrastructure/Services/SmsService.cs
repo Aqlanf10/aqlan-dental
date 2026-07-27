@@ -196,6 +196,20 @@ public class SmsService : ISmsService
         if (result.Status == "sent")
         {
             appointment.ConfirmationSent = true;
+
+            // CORE-APPT-011: also record WHICH window was sent. ConfirmationSent alone
+            // is windowless, so the job could not tell a 24h send from a 2h one and
+            // re-texted the patient. Recording the window here makes both paths write
+            // the same per-window record; the legacy flag stays for compatibility with
+            // rows written before this change.
+            var sentWindows = ReminderSentWindows.Merge(
+                appointment.SmsReminderWindowsSent, legacyConfirmationSent: false);
+            if (!sentWindows.Contains(request.HoursBefore))
+            {
+                sentWindows.Add(request.HoursBefore);
+                appointment.SmsReminderWindowsSent = JsonSerializer.Serialize(sentWindows);
+            }
+
             appointment.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
         }
@@ -235,16 +249,25 @@ public class SmsService : ISmsService
             // clinic date and the one-hour bucket; see its tests for the arithmetic.
             var window = ReminderWindow.For(now, hoursBefore);
 
-            var appointments = await _db.Appointments
+            // CORE-APPT-011: this used to filter `!a.ConfirmationSent` in SQL, so the
+            // moment ANY reminder went out the appointment dropped out of every later
+            // window — a 24h reminder silently cancelled the 2h one. The per-window
+            // record is JSON and cannot be queried here, so candidates are fetched and
+            // then filtered on the merged view of both "sent" records.
+            var candidates = await _db.Appointments
                 .Include(a => a.Patient)
                 .Include(a => a.Doctor)
                 .Where(a => a.AppointmentDate == window.Date
                     && a.StartTime >= window.Start
                     && a.StartTime <= window.End
                     && a.Status == Domain.Enums.AppointmentStatus.Scheduled
-                    && a.IsActive
-                    && !a.ConfirmationSent)
+                    && a.IsActive)
                 .ToListAsync();
+
+            var appointments = candidates
+                .Where(a => !ReminderSentWindows.WasSent(
+                    a.SmsReminderWindowsSent, a.ConfirmationSent, hoursBefore))
+                .ToList();
 
             foreach (var appointment in appointments)
             {

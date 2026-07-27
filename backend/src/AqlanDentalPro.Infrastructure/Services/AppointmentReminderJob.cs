@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -236,7 +237,11 @@ public class AppointmentReminderJob : BackgroundService
                     {
                         try
                         {
-                            var smsSentWindows = ParseSentWindows(appt.SmsReminderWindowsSent);
+                            // CORE-APPT-011: also honour the legacy ConfirmationSent
+                            // flag the manual path writes, otherwise a manual 24h
+                            // reminder is invisible here and the patient is texted twice.
+                            var smsSentWindows = ReminderSentWindows.Merge(
+                                appt.SmsReminderWindowsSent, appt.ConfirmationSent);
                             if (!smsSentWindows.Contains(hoursBefore))
                             {
                                 await smsService.SendAppointmentReminderAsync(

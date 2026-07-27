@@ -52,7 +52,9 @@ public class BookingRequestConvertTests
         var patientService = new PatientService(
             new PatientRepository(db), currentUser.Object, patientSettings.Object,
             portal.Object, clinicClock.Object, new Mock<ILogger<PatientService>>().Object);
-        return new BookingRequestService(db, patientService, logger.Object);
+        // CORE-APPT-004: conversion now goes through the same atomic
+        // doctor+room conflict guard the direct booking path uses.
+        return new BookingRequestService(db, patientService, new AppointmentRepository(db), logger.Object);
     }
 
     private static Doctor CreateActiveDoctor(AppDbContext db)
@@ -410,6 +412,145 @@ public class BookingRequestConvertTests
             newPatient.Should().NotBeNull("patient should be auto-created from booking request data");
             newPatient!.FirstName.Should().Be("خالد");
             newPatient.LastName.Should().Be("سالم");
+        }
+
+        // ── CORE-APPT-004: conversion must honor the room conflict guard ──────
+        // This path stored ClinicRoomId but never checked it at all, so a booking
+        // request could be converted straight into a room another doctor already
+        // occupied.
+
+        [Fact]
+        public async Task Conversion_RejectsRoomConflict_EvenForADifferentDoctor()
+        {
+            using var db = CreateInMemoryDb();
+            var doctor = CreateActiveDoctor(db);
+            var otherDoctor = new Doctor { Id = Guid.NewGuid(), Name = "دكتور آخر", IsActive = true, Specialty = "عام" };
+            db.Doctors.Add(otherDoctor);
+
+            var roomId = Guid.NewGuid();
+            db.Appointments.Add(new Appointment
+            {
+                Id = Guid.NewGuid(),
+                DoctorId = otherDoctor.Id,
+                PatientId = Guid.NewGuid(),
+                ClinicRoomId = roomId,
+                AppointmentDate = new DateOnly(2026, 6, 15),
+                StartTime = new TimeOnly(9, 0),
+                EndTime = new TimeOnly(9, 30),
+                DurationMinutes = 30,
+                AppointmentType = "فحص",
+                Status = AppointmentStatus.Scheduled,
+                IsActive = true
+            });
+
+            var br = CreateConfirmedBookingRequest(db, doctor, "2026-06-15", "09:00");
+            await db.SaveChangesAsync();
+
+            var service = CreateService(db);
+            var dto = new ConvertBookingRequestToAppointmentDto(
+                PatientId: Guid.Empty,
+                DoctorId: doctor.Id,           // different doctor — only the ROOM conflicts
+                AppointmentDate: new DateOnly(2026, 6, 15),
+                StartTime: new TimeOnly(9, 0),
+                EndTime: new TimeOnly(9, 30),
+                AppointmentType: "فحص أولي",
+                DurationMinutes: 30,
+                ClinicRoomId: roomId);
+
+            var act = () => service.ConvertToAppointmentAsync(br.Id, dto, Guid.NewGuid());
+
+            await act.Should().ThrowAsync<ArgumentException>()
+                .WithMessage("الغرفة محجوزة في هذا الوقت");
+
+            var reloaded = await db.BookingRequests.AsNoTracking().FirstAsync(r => r.Id == br.Id);
+            reloaded.ConvertedToAppointmentId.Should().BeNull("a rejected conversion must not mark the request converted");
+        }
+
+        [Fact]
+        public async Task Conversion_AllowsSameRoom_WhenTimesDoNotOverlap()
+        {
+            using var db = CreateInMemoryDb();
+            var doctor = CreateActiveDoctor(db);
+            var otherDoctor = new Doctor { Id = Guid.NewGuid(), Name = "دكتور آخر", IsActive = true, Specialty = "عام" };
+            db.Doctors.Add(otherDoctor);
+
+            var roomId = Guid.NewGuid();
+            db.Appointments.Add(new Appointment
+            {
+                Id = Guid.NewGuid(),
+                DoctorId = otherDoctor.Id,
+                PatientId = Guid.NewGuid(),
+                ClinicRoomId = roomId,
+                AppointmentDate = new DateOnly(2026, 6, 15),
+                StartTime = new TimeOnly(11, 0),
+                EndTime = new TimeOnly(11, 30),
+                DurationMinutes = 30,
+                AppointmentType = "فحص",
+                Status = AppointmentStatus.Scheduled,
+                IsActive = true
+            });
+
+            var br = CreateConfirmedBookingRequest(db, doctor, "2026-06-15", "09:00");
+            await db.SaveChangesAsync();
+
+            var service = CreateService(db);
+            var dto = new ConvertBookingRequestToAppointmentDto(
+                PatientId: Guid.Empty,
+                DoctorId: doctor.Id,
+                AppointmentDate: new DateOnly(2026, 6, 15),
+                StartTime: new TimeOnly(9, 0),
+                EndTime: new TimeOnly(9, 30),
+                AppointmentType: "فحص أولي",
+                DurationMinutes: 30,
+                ClinicRoomId: roomId);
+
+            var result = await service.ConvertToAppointmentAsync(br.Id, dto, Guid.NewGuid());
+
+            result.Should().NotBeNull();
+            result!.ConvertedToAppointmentId.Should().NotBeNull();
+        }
+
+        [Fact]
+        public async Task Conversion_RejectedByDoctorConflict_DoesNotMarkRequestConverted()
+        {
+            // The pre-existing doctor-conflict rejection now happens inside the
+            // guarded transaction — the request must stay unconverted and no
+            // appointment row may be left behind.
+            using var db = CreateInMemoryDb();
+            var doctor = CreateActiveDoctor(db);
+            db.Appointments.Add(new Appointment
+            {
+                Id = Guid.NewGuid(),
+                DoctorId = doctor.Id,
+                PatientId = Guid.NewGuid(),
+                AppointmentDate = new DateOnly(2026, 6, 15),
+                StartTime = new TimeOnly(9, 0),
+                EndTime = new TimeOnly(9, 30),
+                DurationMinutes = 30,
+                AppointmentType = "فحص",
+                Status = AppointmentStatus.Scheduled,
+                IsActive = true
+            });
+            var br = CreateConfirmedBookingRequest(db, doctor, "2026-06-15", "09:00");
+            await db.SaveChangesAsync();
+
+            var service = CreateService(db);
+            var dto = new ConvertBookingRequestToAppointmentDto(
+                PatientId: Guid.Empty,
+                DoctorId: doctor.Id,
+                AppointmentDate: new DateOnly(2026, 6, 15),
+                StartTime: new TimeOnly(9, 0),
+                EndTime: new TimeOnly(9, 30),
+                AppointmentType: "فحص أولي",
+                DurationMinutes: 30);
+
+            var act = () => service.ConvertToAppointmentAsync(br.Id, dto, Guid.NewGuid());
+            await act.Should().ThrowAsync<ArgumentException>()
+                .WithMessage("يوجد موعد آخر في نفس الوقت لهذا الطبيب");
+
+            var reloaded = await db.BookingRequests.AsNoTracking().FirstAsync(r => r.Id == br.Id);
+            reloaded.ConvertedToAppointmentId.Should().BeNull();
+            (await db.Appointments.CountAsync()).Should().Be(1, "no second appointment may be created");
         }
     }
 }

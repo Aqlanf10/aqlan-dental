@@ -273,26 +273,11 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         if (orthoValidation != null)
             return orthoValidation;
 
-        // Check room conflict BEFORE creating the appointment to avoid ghost appointments
-        if (req.ClinicRoomId.HasValue)
-        {
-            var date = DateOnly.Parse(req.AppointmentDate);
-            var start = TimeOnly.Parse(req.StartTime);
-            var end = start.AddMinutes(req.DurationMinutes);
-
-            var roomConflict = await db.Appointments
-                .AnyAsync(a => a.ClinicRoomId == req.ClinicRoomId
-                            && a.AppointmentDate == date
-                            && a.StartTime < end
-                            && a.EndTime > start
-                            && a.IsActive
-                            && a.Status != AppointmentStatus.Cancelled
-                            && a.Status != AppointmentStatus.NoShow);
-
-            if (roomConflict)
-                return Conflict(new { message = "الغرفة محجوزة في هذا الوقت" });
-        }
-
+        // CORE-APPT-003: the room (and doctor) conflict check now happens atomically
+        // inside AppointmentService.CreateAsync (TryCreateWithConflictGuardAsync,
+        // under a transaction + advisory lock) — a separate pre-check here was a
+        // non-atomic TOCTOU gap (two concurrent requests for different doctors could
+        // both pass this plain AnyAsync and double-book the room).
         var (result, error) = await service.CreateAsync(req);
         if (error != null)
             return Conflict(new { message = error });
@@ -324,30 +309,14 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         if (orthoValidation != null)
             return orthoValidation;
 
-        // Check room conflict BEFORE updating the appointment to avoid ghost state
-        if (req.ClinicRoomId.HasValue)
-        {
-            var date = DateOnly.Parse(req.AppointmentDate);
-            var start = TimeOnly.Parse(req.StartTime);
-            var end = start.AddMinutes(req.DurationMinutes);
-
-            var roomConflict = await db.Appointments
-                .AnyAsync(a => a.ClinicRoomId == req.ClinicRoomId
-                            && a.AppointmentDate == date
-                            && a.StartTime < end
-                            && a.EndTime > start
-                            && a.IsActive
-                            && a.Status != AppointmentStatus.Cancelled
-                            && a.Status != AppointmentStatus.NoShow
-                            && a.Id != id);
-
-            if (roomConflict)
-                return Conflict(new { message = "الغرفة محجوزة في هذا الوقت" });
-        }
-
+        // CORE-APPT-003: the room (and doctor) conflict check now happens atomically
+        // inside AppointmentService.UpdateAsync (TryUpdateWithConflictGuardAsync,
+        // under a transaction + advisory lock) — a separate pre-check here was a
+        // non-atomic TOCTOU gap (two concurrent requests for different doctors could
+        // both pass this plain AnyAsync and double-book the room).
         var (result, error) = await service.UpdateAsync(id, req);
         if (error != null)
-            return error.Contains("تعارض") ? Conflict(new { message = error }) : NotFound(new { message = error });
+            return error == "الموعد غير موجود" ? NotFound(new { message = error }) : Conflict(new { message = error });
 
         // SignalR: best-effort push so daily-ops screens invalidate instantly.
         await PushJourneyUpdatedAsync("appointment-updated", id, req.PatientId, branchId: currentUser.BranchId);

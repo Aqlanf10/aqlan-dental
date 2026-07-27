@@ -23,8 +23,9 @@ public class BookingRequestService(
     private static readonly TimeOnly ClinicOpen = new(8, 0);
     private static readonly TimeOnly ClinicClose = new(20, 0);
     private const int DefaultSlotDurationMinutes = 30;
-    private const string ClinicIanaTimeZoneId = "Asia/Aden";
-    private const string ClinicWindowsTimeZoneId = "Arab Standard Time";
+    // CORE-APPT-006: the hard-coded "Asia/Aden" / "Arab Standard Time" IDs that
+    // used to live here are gone — the clinic timezone comes from the configured
+    // ClinicTimeProvider (settings key `clinic.timezone`, SEQ-13) like everywhere else.
 
     // Booking request statuses that block a time slot
     private static readonly HashSet<BookingRequestStatus> BlockingStatuses =
@@ -659,32 +660,18 @@ public class BookingRequestService(
     }
 
     /// <summary>
-    /// Returns the current clinic-local time. Railway/Linux supports the IANA ID; the Windows ID is kept for local dev fallback.
+    /// Returns the current clinic-local time.
+    /// <para>
+    /// CORE-APPT-006: this used to resolve the timezone itself from two hard-coded
+    /// IDs ("Asia/Aden" / "Arab Standard Time") with its own fallback chain,
+    /// independent of the timezone SEQ-13 made configurable via the
+    /// `clinic.timezone` setting. The two happened to agree, so nothing was
+    /// visibly broken — but changing that setting would have moved the whole
+    /// system's idea of "today" while leaving public booking (availability, past-date
+    /// rejection, same-day slot cutoff) silently on Aden. One source of truth now.
+    /// </para>
     /// </summary>
-    private static DateTime GetClinicNow()
-    {
-        try
-        {
-            var timeZone = TimeZoneInfo.FindSystemTimeZoneById(ClinicIanaTimeZoneId);
-            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, timeZone);
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            try
-            {
-                var timeZone = TimeZoneInfo.FindSystemTimeZoneById(ClinicWindowsTimeZoneId);
-                return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, timeZone);
-            }
-            catch (TimeZoneNotFoundException)
-            {
-                return DateTime.UtcNow.AddHours(3);
-            }
-        }
-        catch (InvalidTimeZoneException)
-        {
-            return DateTime.UtcNow.AddHours(3);
-        }
-    }
+    private static DateTime GetClinicNow() => ClinicTimeProvider.ClinicNow();
 
     // Delegates to shared BookingUtilities (extracted for testability — P9-2)
     private static string? NormalizeTo24h(string time) => BookingUtilities.NormalizeTo24h(time);

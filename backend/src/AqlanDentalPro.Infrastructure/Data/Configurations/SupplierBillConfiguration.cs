@@ -29,6 +29,7 @@ public class SupplierBillConfiguration : IEntityTypeConfiguration<SupplierBill>
         builder.HasIndex(b => b.Status);
         builder.HasIndex(b => new { b.SupplierId, b.IsOpeningBalance });
         builder.HasIndex(b => new { b.SupplierId, b.Currency });
+        builder.HasIndex(b => b.LabOrderId).IsUnique();
 
         // Relationships
         builder.HasOne(b => b.Supplier)

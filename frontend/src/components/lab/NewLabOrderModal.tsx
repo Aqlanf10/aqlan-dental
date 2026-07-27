@@ -56,6 +56,8 @@ export function NewLabOrderModal({ onClose, initialPatient }: Props) {
     shade: "",
     restorationType: "",
     cost: undefined,
+    currency: "YER",
+    exchangeRateToYer: undefined,
   });
 
   const { data: labs = [] } = useQuery({
@@ -245,7 +247,21 @@ export function NewLabOrderModal({ onClose, initialPatient }: Props) {
 
             <div className="flex items-center justify-between rounded-lg bg-cyan-50 px-4 py-3">
               <span className="text-sm font-medium text-cyan-900">إجمالي تكلفة المعمل</span>
-              <span className="text-lg font-black text-cyan-800">{totalCost.toLocaleString()}</span>
+              <span className="text-lg font-black text-cyan-800">{totalCost.toLocaleString()} {form.currency}</span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-gray-700">عملة حساب المعمل</label>
+                <select value={form.currency} onChange={(event) => { set("currency", event.target.value); set("exchangeRateToYer", undefined); }} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+                  <option value="YER">YER</option><option value="SAR">SAR</option><option value="USD">USD</option>
+                </select>
+              </div>
+              {form.currency !== "YER" && (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-gray-700">سعر الصرف الفعلي: 1 {form.currency} = كم YER؟</label>
+                  <input type="number" min="0.000001" step="0.000001" value={form.exchangeRateToYer ?? ""} onChange={(event) => set("exchangeRateToYer", event.target.value === "" ? undefined : Number(event.target.value))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" dir="ltr" />
+                </div>
+              )}
             </div>
           </div>
 
@@ -292,7 +308,7 @@ export function NewLabOrderModal({ onClose, initialPatient }: Props) {
             </button>
             <button
               type="submit"
-              disabled={!selectedPatientId || (!form.applianceType && !items.some((i) => i.workTypeId)) || mutation.isPending}
+              disabled={!selectedPatientId || (!form.applianceType && !items.some((i) => i.workTypeId)) || (form.currency !== "YER" && !form.exchangeRateToYer) || mutation.isPending}
               className="flex-1 bg-cyan-700 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-cyan-800 transition-colors disabled:opacity-50"
             >
               {mutation.isPending ? "جارٍ الإنشاء..." : "إنشاء طلب المعمل"}

@@ -20,5 +20,6 @@ public enum FinancialDocumentType
     PaymentAllocation,
     Other,
     YearEndClosing,
-    OpeningBalance
+    OpeningBalance,
+    SupplierBill
 }

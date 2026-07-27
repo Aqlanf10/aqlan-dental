@@ -20,6 +20,7 @@ public partial class FinanceV3Controller
         FinancialDocumentType.Expense => "OperationalExpense",
         FinancialDocumentType.SalaryPayment => "SalaryPayment",
         FinancialDocumentType.CommissionPayment => "DoctorCommission",
+        FinancialDocumentType.SupplierBill => "SupplierBill",
         FinancialDocumentType.SupplierPayment => "SupplierPayment",
         FinancialDocumentType.VaultTransfer => "InternalTransfer",
         FinancialDocumentType.ContractCancellation => "Reversal",

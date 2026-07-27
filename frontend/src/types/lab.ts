@@ -18,6 +18,8 @@ export interface LabOrder {
   instructions?: string;
   cost?: number;
   totalCost?: number;
+  currency?: "YER" | "SAR" | "USD";
+  exchangeRateToYer?: number;
   doctorName?: string;
   shade?: string;
   restorationType?: string;
@@ -77,6 +79,8 @@ export interface CreateLabOrderRequest {
   priority?: LabOrderPriority;
   instructions?: string;
   cost?: number;
+  currency?: "YER" | "SAR" | "USD";
+  exchangeRateToYer?: number;
   doctorId?: string;
   shade?: string;
   restorationType?: string;
@@ -197,6 +201,9 @@ export interface LabPayable {
   paidAmount: number;
   balance: number;
   status: "pending" | "partial" | "paid";
+  currency: "YER" | "SAR" | "USD";
+  exchangeRateToYer: number;
+  supplierBillId?: string;
   dueDate?: string;
   notes?: string;
   createdAt: string;
@@ -205,6 +212,10 @@ export interface LabPayable {
 
 export interface RecordLabPaymentRequest {
   amount: number;
+  paymentMethod?: string;
+  treasuryId?: string;
+  exchangeRateToYer?: number;
+  referenceNumber?: string;
   notes?: string;
 }
 

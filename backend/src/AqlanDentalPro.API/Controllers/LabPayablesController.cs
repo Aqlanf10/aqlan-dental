@@ -1,5 +1,6 @@
 using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.API.Authorization;
+using AqlanDentalPro.Application.DTOs.Finance;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -19,7 +20,8 @@ public class LabPayablesController(
     ILogger<LabPayablesController> logger,
     ITreasuryResolutionService treasuryResolution,
     IJournalEntryService journalEntryService,
-    IAuditService audit) : ControllerBase
+    IAuditService audit,
+    ISupplierRefundService? supplierRefundService = null) : ControllerBase
 {
     private Task<bool> CanAsync(string action) => PermissionGuard.HasAsync(db, currentUser, "lab_payables", action);
 
@@ -36,6 +38,7 @@ public class LabPayablesController(
         var query = db.LabPayables
             .Include(p => p.Lab)
             .Include(p => p.LabOrder)
+            .Include(p => p.SupplierBill)
             .AsQueryable();
 
         if (labId.HasValue) query = query.Where(p => p.LabId == labId.Value);
@@ -55,10 +58,18 @@ public class LabPayablesController(
                 PatientName = p.LabOrder != null && p.LabOrder.Patient != null
                     ? p.LabOrder.Patient.FirstName + " " + p.LabOrder.Patient.LastName
                     : "",
-                p.Amount,
-                p.PaidAmount,
-                Balance = p.Amount - p.PaidAmount,
-                p.Status,
+                Amount = p.SupplierBill != null ? p.SupplierBill.TotalAmount : p.Amount,
+                PaidAmount = p.SupplierBill != null ? p.SupplierBill.PaidAmount : p.PaidAmount,
+                Balance = p.SupplierBill != null
+                    ? p.SupplierBill.TotalAmount - p.SupplierBill.PaidAmount
+                    : p.Amount - p.PaidAmount,
+                Status = p.SupplierBill != null
+                    ? p.SupplierBill.Status == BillStatus.FullyPaid ? "paid"
+                        : p.SupplierBill.Status == BillStatus.PartiallyPaid ? "partial" : "pending"
+                    : p.Status,
+                Currency = p.SupplierBill != null ? p.SupplierBill.Currency : "YER",
+                ExchangeRateToYer = p.SupplierBill != null ? p.SupplierBill.ExchangeRateToYer : 1m,
+                p.SupplierBillId,
                 DueDate = p.DueDate != null ? p.DueDate.Value.ToString("yyyy-MM-dd") : null,
                 p.Notes,
                 CreatedAt = p.CreatedAt.ToString("yyyy-MM-dd"),
@@ -77,6 +88,7 @@ public class LabPayablesController(
         var payable = await db.LabPayables
             .Include(p => p.Lab)
             .Include(p => p.LabOrder)
+            .Include(p => p.SupplierBill)
             .FirstOrDefaultAsync(p => p.Id == id);
 
         if (payable is null) return NotFound(new { message = "المديونية غير موجودة" });
@@ -87,10 +99,18 @@ public class LabPayablesController(
             payable.LabOrderId,
             LabName = payable.Lab?.Name ?? "",
             OrderNumber = payable.LabOrder?.OrderNumber ?? "",
-            payable.Amount,
-            payable.PaidAmount,
-            Balance = payable.Amount - payable.PaidAmount,
-            payable.Status,
+            Amount = payable.SupplierBill?.TotalAmount ?? payable.Amount,
+            PaidAmount = payable.SupplierBill?.PaidAmount ?? payable.PaidAmount,
+            Balance = payable.SupplierBill is not null
+                ? payable.SupplierBill.TotalAmount - payable.SupplierBill.PaidAmount
+                : payable.Amount - payable.PaidAmount,
+            Status = payable.SupplierBill is not null
+                ? payable.SupplierBill.Status == BillStatus.FullyPaid ? "paid"
+                    : payable.SupplierBill.Status == BillStatus.PartiallyPaid ? "partial" : "pending"
+                : payable.Status,
+            Currency = payable.SupplierBill?.Currency ?? "YER",
+            ExchangeRateToYer = payable.SupplierBill?.ExchangeRateToYer ?? 1m,
+            payable.SupplierBillId,
             DueDate = payable.DueDate?.ToString("yyyy-MM-dd"),
             payable.Notes,
             CreatedAt = payable.CreatedAt.ToString("yyyy-MM-dd")
@@ -100,6 +120,10 @@ public class LabPayablesController(
     public sealed class RecordPaymentRequest
     {
         public decimal Amount { get; init; }
+        public string PaymentMethod { get; init; } = "cash";
+        public Guid? TreasuryId { get; init; }
+        public decimal? ExchangeRateToYer { get; init; }
+        public string? ReferenceNumber { get; init; }
         public string? Notes { get; init; }
     }
 
@@ -112,6 +136,63 @@ public class LabPayablesController(
             return BadRequest(new { message = "المبلغ يجب أن يكون أكبر من صفر" });
 
         var userId = currentUser.UserId ?? Guid.Empty;
+
+        var canonical = await db.LabPayables
+            .AsNoTracking()
+            .Where(item => item.Id == id && item.IsActive)
+            .Select(item => new { item.SupplierBillId })
+            .FirstOrDefaultAsync();
+        if (canonical is null)
+            return NotFound(new { message = "المديونية غير موجودة" });
+
+        if (canonical.SupplierBillId.HasValue && supplierRefundService is not null)
+        {
+            SupplierPaymentPostingResult posting;
+            try
+            {
+                posting = await supplierRefundService.PaySupplierBillAsync(
+                    canonical.SupplierBillId.Value,
+                    new PaySupplierBillRequest
+                    {
+                        Amount = req.Amount,
+                        PaymentMethod = req.PaymentMethod,
+                        TreasuryId = req.TreasuryId,
+                        ExchangeRateToYer = req.ExchangeRateToYer,
+                        ExchangeRateSource = req.ExchangeRateToYer.HasValue ? "manual" : null,
+                        ReferenceNumber = req.ReferenceNumber,
+                        Notes = req.Notes
+                    },
+                    userId);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+
+            var bill = await db.SupplierBills.AsNoTracking()
+                .FirstAsync(item => item.Id == canonical.SupplierBillId.Value);
+            var legacy = await db.LabPayables.FirstAsync(item => item.Id == id);
+            legacy.PaidAmount = bill.PaidAmount;
+            legacy.Status = bill.Status == BillStatus.FullyPaid ? "paid" : "partial";
+            if (!string.IsNullOrWhiteSpace(req.Notes))
+                legacy.Notes = string.IsNullOrWhiteSpace(legacy.Notes) ? req.Notes : $"{legacy.Notes}\n{req.Notes}";
+            await db.SaveChangesAsync();
+
+            await audit.LogAsync(AuditAction.Update, "LabPayable", id,
+                details: $"Canonical supplier bill payment: bill={bill.Id}; amount={req.Amount}; journal={posting.JournalEntryId}");
+            return Ok(new
+            {
+                legacy.Id,
+                legacy.PaidAmount,
+                legacy.Status,
+                Balance = bill.TotalAmount - bill.PaidAmount,
+                supplierBillId = bill.Id,
+                paymentId = posting.PaymentId,
+                journalEntryId = posting.JournalEntryId,
+                journalEntryNumber = posting.JournalEntryNumber,
+                message = "تم سداد مستحق المعمل من نفس فاتورة المورد وترحيل القيد وسند الصرف."
+            });
+        }
 
         // Require active open cashier session
         var activeSession = await db.CashierSessions

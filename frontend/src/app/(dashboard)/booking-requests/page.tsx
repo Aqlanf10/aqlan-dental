@@ -591,31 +591,43 @@ export default function BookingRequestsPage() {
 
   // Pagination state
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const pageSize = 20;
+  const apiPageSize = 100;
 
   const fetchItems = useCallback(async (pageNum: number = 1) => {
     setLoading(true);
     setError("");
     try {
-      // Try paginated endpoint first
-      const res = await api.get<BookingRequest[] | PaginatedResponse<BookingRequest>>(
-        `/api/booking-requests?page=${pageNum}&pageSize=${pageSize}`
+      // Load the full staff queue so filters, search, and counters cover every
+      // request rather than only the currently visible server page.
+      const firstResponse = await api.get<BookingRequest[] | PaginatedResponse<BookingRequest>>(
+        `/api/booking-requests?page=1&pageSize=${apiPageSize}`
       );
-      const data = res.data;
+      const data = firstResponse.data;
       if (Array.isArray(data)) {
-        // Non-paginated response — fallback to client-side
         setItems(data);
         setTotalCount(data.length);
-        setTotalPages(1);
       } else {
-        // Paginated response
-        setItems(data.data ?? []);
-        setTotalCount(data.totalCount ?? 0);
-        setTotalPages(data.totalPages ?? 1);
-        setPage(data.page ?? pageNum);
+        const remainingPages = Array.from(
+          { length: Math.max(0, (data.totalPages ?? 1) - 1) },
+          (_, index) => index + 2
+        );
+        const remainingResponses = await Promise.all(
+          remainingPages.map((apiPage) =>
+            api.get<PaginatedResponse<BookingRequest>>(
+              `/api/booking-requests?page=${apiPage}&pageSize=${apiPageSize}`
+            )
+          )
+        );
+        const allItems = [
+          ...(data.data ?? []),
+          ...remainingResponses.flatMap((response) => response.data.data ?? []),
+        ];
+        setItems(allItems);
+        setTotalCount(data.totalCount ?? allItems.length);
       }
+      setPage(pageNum);
     } catch {
       setError("تعذّر تحميل طلبات الحجز");
     } finally {
@@ -749,6 +761,20 @@ export default function BookingRequestsPage() {
     return result;
   }, [items, activeFilter, searchQuery]);
 
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
+  const paginatedItems = useMemo(
+    () => filteredItems.slice((page - 1) * pageSize, page * pageSize),
+    [filteredItems, page]
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeFilter, searchQuery]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
   const pendingCount = items.filter((i) => i.status === "Pending").length;
   const notConvertedCount = items.filter(
     (i) => i.convertedToAppointmentId === null && i.status === "Confirmed"
@@ -877,7 +903,7 @@ export default function BookingRequestsPage() {
 
       {!loading && filteredItems.length > 0 && (
         <div className="grid gap-3">
-          {filteredItems.map((item) => {
+          {paginatedItems.map((item) => {
             const isConverted = item.convertedToAppointmentId !== null;
             const waPhone = normalizePhone(item.phoneNumber);
             const waMessage = encodeURIComponent(`مرحباً، معك ${branding.clinicName} بخصوص طلب الحجز الخاص بك.`);
@@ -1014,7 +1040,7 @@ export default function BookingRequestsPage() {
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 pt-4">
           <button
-            onClick={() => fetchItems(page - 1)}
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
             disabled={page <= 1 || loading}
             className="flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
           >
@@ -1036,7 +1062,7 @@ export default function BookingRequestsPage() {
               return (
                 <button
                   key={pageNum}
-                  onClick={() => fetchItems(pageNum)}
+                  onClick={() => setPage(pageNum)}
                   className={`w-9 h-9 rounded-lg text-sm font-semibold transition ${
                     pageNum === page
                       ? "bg-clinic-blue text-white"
@@ -1049,7 +1075,7 @@ export default function BookingRequestsPage() {
             })}
           </div>
           <button
-            onClick={() => fetchItems(page + 1)}
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
             disabled={page >= totalPages || loading}
             className="flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
           >
@@ -1057,7 +1083,9 @@ export default function BookingRequestsPage() {
             <ChevronLeft className="w-4 h-4" />
           </button>
           <span className="text-xs text-gray-400 mr-2">
-            {totalCount} طلب
+            {filteredItems.length === totalCount
+              ? `${totalCount} طلب`
+              : `${filteredItems.length} من ${totalCount} طلب`}
           </span>
         </div>
       )}

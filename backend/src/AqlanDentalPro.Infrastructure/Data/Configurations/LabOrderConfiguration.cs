@@ -14,6 +14,9 @@ public class LabOrderConfiguration : IEntityTypeConfiguration<LabOrder>
 {
     public void Configure(EntityTypeBuilder<LabOrder> builder)
     {
+        builder.Property(l => l.Currency).HasMaxLength(3).HasDefaultValue("YER");
+        builder.Property(l => l.ExchangeRateToYer).HasPrecision(18, 6).HasDefaultValue(1m);
+
         // DB-01 FIX: Index for querying lab orders by doctor
         builder.HasIndex(l => l.DoctorId);
 

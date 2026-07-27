@@ -363,6 +363,44 @@ public partial class FinanceV3SuppliersController(
                         BranchId = branchId,
                     });
             }
+            else
+            {
+                var entryNumber = await GenerateOpeningEntryNumberAsync();
+                var payableEntry = new JournalEntry
+                {
+                    EntryNumber = entryNumber,
+                    FinancialDocumentId = bill.Id,
+                    FinancialDocumentType = FinancialDocumentType.SupplierBill,
+                    Description = $"استحقاق فاتورة مورد/معمل: {supplier.Name} - {bill.BillNumber}",
+                    EntryDate = billDate,
+                    Currency = currency,
+                    ExchangeRateToYer = exchangeRateToYer,
+                    BranchId = branchId,
+                    PerformedBy = userId,
+                    IsPosted = true,
+                    PostedAt = DateTime.UtcNow,
+                };
+                db.JournalEntries.Add(payableEntry);
+                db.JournalLines.AddRange(
+                    new JournalLine
+                    {
+                        JournalEntryId = payableEntry.Id,
+                        AccountType = JournalAccountType.Expense,
+                        AccountId = bill.Id,
+                        Debit = req.TotalAmount,
+                        Description = bill.Description,
+                        BranchId = branchId,
+                    },
+                    new JournalLine
+                    {
+                        JournalEntryId = payableEntry.Id,
+                        AccountType = JournalAccountType.AccountsPayable,
+                        AccountId = supplierId,
+                        Credit = req.TotalAmount,
+                        Description = $"مستحق للمورد/المعمل {supplier.Name}",
+                        BranchId = branchId,
+                    });
+            }
 
             await db.SaveChangesAsync();
             if (useTx) await tx!.CommitAsync();

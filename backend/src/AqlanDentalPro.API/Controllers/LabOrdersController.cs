@@ -41,6 +41,8 @@ public sealed class CreateLabOrderRequest
     public string Priority { get; init; } = "normal";
     public string? Instructions { get; init; }
     public decimal? Cost { get; init; }
+    public string Currency { get; init; } = "YER";
+    public decimal? ExchangeRateToYer { get; init; }
     public Guid? DoctorId { get; init; }
     // Sprint 2 — new fields
     public string? Shade { get; init; }
@@ -63,6 +65,12 @@ public sealed class CreateLabOrderRequestValidator : AbstractValidator<CreateLab
         RuleFor(x => x.Cost)
             .GreaterThanOrEqualTo(0).WithMessage("التكلفة يجب أن تكون صفراً أو أكثر")
             .When(x => x.Cost.HasValue);
+        RuleFor(x => x.Currency)
+            .Must(currency => currency.Trim().ToUpperInvariant() is "YER" or "SAR" or "USD")
+            .WithMessage("العملة يجب أن تكون YER أو SAR أو USD");
+        RuleFor(x => x.ExchangeRateToYer)
+            .GreaterThan(0).WithMessage("سعر الصرف الفعلي إلى الريال اليمني مطلوب")
+            .When(x => !string.Equals(x.Currency, "YER", StringComparison.OrdinalIgnoreCase));
         RuleFor(x => x.SentDate)
             .Must(d => DateOnly.TryParse(d, out _)).WithMessage("تنسيق تاريخ الإرسال غير صالح")
             .When(x => !string.IsNullOrWhiteSpace(x.SentDate));
@@ -135,7 +143,8 @@ public class LabOrdersController(
     IPatientAccessService patientAccess,
     IAuditService audit,
     // Sprint 12 — read/query logic extracted to LabOrderQueryService.
-    LabOrderQueryService queryService) : ControllerBase
+    LabOrderQueryService queryService,
+    IJournalEntryService? journalEntryService = null) : ControllerBase
 {
     // CLIN-01: Per-patient access check for actions where patientId is in body or inferred.
     private async Task<IActionResult?> DenyIfDoctorCannotAccess(Guid patientId)
@@ -325,6 +334,20 @@ public class LabOrdersController(
         if (!await ActivePatientWriteGuard.ExistsAsync(db, req.PatientId))
             return BadRequest(new { message = ActivePatientWriteGuard.ErrorMessage });
 
+        var branchId = (await db.Patients
+            .Where(patient => patient.Id == req.PatientId && patient.IsActive)
+            .Select(patient => patient.BranchId)
+            .FirstOrDefaultAsync())
+            ?? currentUser.BranchId
+            ?? Guid.Empty;
+        if (branchId == Guid.Empty)
+            return BadRequest(new { message = "لا يمكن إنشاء طلب معمل لمريض بلا فرع محدد." });
+
+        var currency = req.Currency.Trim().ToUpperInvariant();
+        var exchangeRateToYer = currency == "YER" ? 1m : req.ExchangeRateToYer.GetValueOrDefault();
+        if (exchangeRateToYer <= 0m)
+            return BadRequest(new { message = "سعر الصرف الفعلي إلى الريال اليمني مطلوب لتكلفة المعمل." });
+
         // CON-02 FIX: Use advisory lock + unique constraint retry to prevent race condition
         // on order number generation. Strategy: advisory lock serializes generation within
         // the DB, unique index on OrderNumber is the safety net, and retry with fresh count
@@ -333,12 +356,16 @@ public class LabOrdersController(
 
         for (var attempt = 0; attempt < maxRetries; attempt++)
         {
-            await using var tx = await db.Database.BeginTransactionAsync();
+            var useTx = db.Database.IsRelational();
+            var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
             try
             {
                 // Acquire advisory lock for lab order number generation
-                var lockKey = Math.Abs("LabOrderNumber".GetHashCode()) % 100000;
-                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+                if (useTx && db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    var lockKey = Math.Abs("LabOrderNumber".GetHashCode()) % 100000;
+                    await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+                }
 
                 var year = DateTime.UtcNow.Year;
                 var count = await db.LabOrders.IgnoreQueryFilters()
@@ -386,6 +413,9 @@ public class LabOrdersController(
                     Shade            = req.Shade,
                     RestorationType  = req.RestorationType,
                     VisitId          = req.VisitId,
+                    BranchId         = branchId,
+                    Currency         = currency,
+                    ExchangeRateToYer = exchangeRateToYer,
                 };
 
                 // Lab Sprint 3 — Add items and auto-calculate TotalCost
@@ -450,28 +480,106 @@ public class LabOrdersController(
                     var payableAmount = order.TotalCost ?? order.Cost ?? 0;
                     if (payableAmount > 0)
                     {
+                        var supplier = selectedLab!.SupplierId.HasValue
+                            ? await db.Suppliers.FirstOrDefaultAsync(item => item.Id == selectedLab.SupplierId.Value && item.IsActive)
+                            : null;
+                        supplier ??= await db.Suppliers.FirstOrDefaultAsync(item =>
+                            item.IsActive && item.Type == SupplierType.DentalLab && item.Name == selectedLab.Name);
+                        if (supplier is null)
+                        {
+                            supplier = new Supplier
+                            {
+                                Name = selectedLab.Name,
+                                Type = SupplierType.DentalLab,
+                                ContactPerson = selectedLab.ContactPerson,
+                                Phone = selectedLab.Phone,
+                                Email = selectedLab.Email,
+                                Address = selectedLab.Address,
+                                Notes = "تم إنشاؤه تلقائياً من وحدة المعامل"
+                            };
+                            db.Suppliers.Add(supplier);
+                        }
+                        selectedLab.SupplierId = supplier.Id;
+
+                        var billDate = order.SentDate ?? ClinicTimeProvider.ClinicToday();
+                        var billPrefix = $"BILL-{billDate:yyyyMMdd}-";
+                        if (useTx && db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
+                            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", StableLockKeyHelper.BillNumber);
+                        var lastBillNumber = await db.SupplierBills.IgnoreQueryFilters()
+                            .Where(bill => bill.BillNumber.StartsWith(billPrefix))
+                            .OrderByDescending(bill => bill.BillNumber)
+                            .Select(bill => bill.BillNumber)
+                            .FirstOrDefaultAsync();
+                        var billSequence = 1;
+                        if (!string.IsNullOrWhiteSpace(lastBillNumber)
+                            && int.TryParse(lastBillNumber[billPrefix.Length..], out var previousBillSequence))
+                            billSequence = previousBillSequence + 1;
+
+                        var supplierBill = new SupplierBill
+                        {
+                            BillNumber = $"{billPrefix}{billSequence:D3}",
+                            SupplierId = supplier.Id,
+                            Description = $"طلب معمل {order.OrderNumber} - {order.ApplianceType}",
+                            TotalAmount = payableAmount,
+                            Currency = currency,
+                            ExchangeRateToYer = exchangeRateToYer,
+                            ExchangeRateSource = currency == "YER" ? "same_currency" : "manual",
+                            Status = BillStatus.Unpaid,
+                            BillDate = billDate,
+                            DueDate = order.ExpectedDate,
+                            LabOrderId = order.Id,
+                            BranchId = branchId,
+                            CreatedBy = currentUser.UserId ?? Guid.Empty
+                        };
+                        db.SupplierBills.Add(supplierBill);
+                        if (currency == "YER") supplier.Balance += payableAmount;
+
                         db.LabPayables.Add(new LabPayable
                         {
                             LabOrderId = order.Id,
                             LabId = order.LabId!.Value,
+                            SupplierBillId = supplierBill.Id,
                             Amount = payableAmount,
                             PaidAmount = 0,
                             Status = "pending",
                             DueDate = order.ExpectedDate?.ToDateTime(TimeOnly.MinValue),
                         });
+
+                        if (journalEntryService is not null && currentUser.UserId is { } performedBy && performedBy != Guid.Empty)
+                        {
+                            var entry = await journalEntryService.CreateEntryAsync(
+                                FinancialDocumentType.SupplierBill,
+                                supplierBill.Id,
+                                $"استحقاق طلب معمل {order.OrderNumber} - {selectedLab.Name}",
+                                billDate,
+                                branchId,
+                                performedBy,
+                                cashierSessionId: null,
+                                treasuryId: null,
+                                lines:
+                                [
+                                    (JournalAccountType.Expense, supplierBill.Id, payableAmount, 0m, $"تكلفة طلب المعمل {order.OrderNumber}"),
+                                    (JournalAccountType.AccountsPayable, supplier.Id, 0m, payableAmount, $"مستحق للمعمل {selectedLab.Name}")
+                                ],
+                                autoSave: false);
+                            entry.Currency = currency;
+                            entry.ExchangeRateToYer = exchangeRateToYer;
+                            entry.IsPosted = true;
+                            entry.PostedAt = DateTime.UtcNow;
+                        }
                     }
                 }
 
                 try
                 {
                     await db.SaveChangesAsync();
-                    await tx.CommitAsync();
+                    if (useTx) await tx!.CommitAsync();
                 }
                 catch (DbUpdateException ex) when (IsUniqueViolation(ex))
                 {
                     // CON-02 FIX: Unique constraint on OrderNumber caught a duplicate.
                     // Roll back and retry with a fresh count.
-                    await tx.RollbackAsync();
+                    if (useTx) await tx!.RollbackAsync();
                     logger.LogWarning("CON-02: Lab order number collision on attempt {Attempt}, retrying", attempt + 1);
                     continue;
                 }
@@ -502,12 +610,12 @@ public class LabOrdersController(
             catch (DbUpdateException)
             {
                 // Re-throw if not a unique violation (already handled above)
-                await tx.RollbackAsync();
+                if (useTx) await tx!.RollbackAsync();
                 throw;
             }
             catch
             {
-                await tx.RollbackAsync();
+                if (useTx) await tx!.RollbackAsync();
                 throw;
             }
         }

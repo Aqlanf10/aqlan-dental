@@ -47,6 +47,7 @@ import {
   useCallPatient,
   useRecallPatient,
   useEnterRoom,
+  useStartVisit,
   useUpdateAppointmentStatus,
   useCreatePayment,
   useCreateDraftInvoice,
@@ -212,6 +213,7 @@ export default function DailyOperationsPage() {
   const callPatientMutation = useCallPatient();
   const recallPatientMutation = useRecallPatient();
   const enterRoomMutation = useEnterRoom();
+  const startVisitMutation = useStartVisit();
   const updateStatusMutation = useUpdateAppointmentStatus();
   const createPaymentMutation = useCreatePayment();
   const createDraftInvoiceMutation = useCreateDraftInvoice();
@@ -539,6 +541,20 @@ export default function DailyOperationsPage() {
       { onSuccess: () => toast.success("تم دخول الغرفة"), onError: (err) => toast.error(extractErrorMessage(err, "فشل دخول الغرفة")) },
     );
   }, [enterRoomMutation]);
+
+  const handleStartVisit = useCallback((item: TodayJourneyItem) => {
+    if (!item.appointmentId) {
+      toast.error("لا يمكن بدء الزيارة دون موعد مرتبط");
+      return;
+    }
+    startVisitMutation.mutate(
+      item.appointmentId,
+      {
+        onSuccess: () => toast.success("تم بدء الزيارة بنجاح"),
+        onError: (err) => toast.error(extractErrorMessage(err, "فشل بدء الزيارة")),
+      },
+    );
+  }, [startVisitMutation]);
 
   const handleQuickPayment = useCallback((item: TodayJourneyItem) => {
     if (!activeCashierSession) {
@@ -1380,6 +1396,12 @@ export default function DailyOperationsPage() {
                           دخول
                         </button>
                       )}
+                      {nextPatient.nextAction === "StartVisit" && (
+                        <button onClick={() => handleStartVisit(nextPatient)}
+                          className="px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: "#dc2626" }}>
+                          بدء
+                        </button>
+                      )}
                       {(nextPatient.nextAction === "Intake" || nextPatient.nextAction === "SendToQueue") && (
                         <button onClick={() => handleIntake(nextPatient)}
                           className="px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: "#16a34a" }}>
@@ -1404,6 +1426,7 @@ export default function DailyOperationsPage() {
                     onSendToQueue={handleSendToQueue}
                     onCallPatient={handleCallPatient}
                     onEnterRoom={handleEnterRoom}
+                    onStartVisit={handleStartVisit}
                     onQuickPayment={handleQuickPayment}
                     onCreateDraftInvoice={handleCreateDraftInvoice}
                     createDraftInvoicePending={createDraftInvoiceMutation.isPending}
@@ -1498,6 +1521,7 @@ export default function DailyOperationsPage() {
                     onSendToQueue={handleSendToQueue}
                     onCallPatient={handleCallPatient}
                     onEnterRoom={handleEnterRoom}
+                    onStartVisit={handleStartVisit}
                     onQuickPayment={handleQuickPayment}
                     onCreateDraftInvoice={handleCreateDraftInvoice}
                     createDraftInvoicePending={createDraftInvoiceMutation.isPending}

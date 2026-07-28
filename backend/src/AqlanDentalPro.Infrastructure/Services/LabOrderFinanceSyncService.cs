@@ -62,6 +62,19 @@ public sealed class LabOrderFinanceSyncService(AppDbContext db, IJournalEntrySer
         if (rate <= 0m)
             return SyncResult.Failed("سعر الصرف الفعلي إلى الريال اليمني مطلوب لتكلفة المعمل.");
 
+        // CORE-LAB-004: refuse rather than write an unusable row. SupplierBill.BranchId is
+        // non-nullable, so an unresolved branch would silently persist Guid.Empty — a bill
+        // belonging to no branch, invisible to every branch-scoped finance report. The
+        // create path already rejects this; the update path must not be laxer.
+        if (branchId == Guid.Empty)
+            return SyncResult.Failed("لا يمكن تسجيل تكلفة المعمل لطلب بلا فرع محدد.");
+
+        // CORE-LAB-005: serialise the whole check-then-create for THIS order. Without it two
+        // concurrent updates can both observe "no bill yet" and both insert one — the
+        // BillNumber lock below only serialises numbering, which happens after the check, so
+        // it cannot prevent a duplicate bill for the same LabOrderId.
+        await AcquireOrderLockAsync(order.Id, ct);
+
         var existingBill = await db.SupplierBills
             .FirstOrDefaultAsync(b => b.LabOrderId == order.Id, ct);
 
@@ -229,6 +242,25 @@ public sealed class LabOrderFinanceSyncService(AppDbContext db, IJournalEntrySer
 
         lab.SupplierId = supplier.Id;
         return supplier;
+    }
+
+    /// <summary>
+    /// CORE-LAB-005: transaction-scoped advisory lock keyed on the lab order, so only one
+    /// request at a time may decide whether that order still needs a bill. No-op on
+    /// non-relational providers (InMemory tests), which are single-threaded per test.
+    /// </summary>
+    private async Task AcquireOrderLockAsync(Guid orderId, CancellationToken ct)
+    {
+        if (!db.Database.IsRelational()
+            || db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) != true)
+            return;
+
+        // StableGuidToLong, never Guid.GetHashCode(): the hash code is not stable across
+        // processes, and an advisory lock that differs between replicas serialises nothing.
+        // StableLockKeyHelper documents exactly this trap.
+        await db.Database.ExecuteSqlRawAsync(
+            "SELECT pg_advisory_xact_lock({0})",
+            StableLockKeyHelper.StableGuidToLong(orderId));
     }
 
     private async Task<string> GenerateBillNumberAsync(DateOnly billDate, CancellationToken ct)

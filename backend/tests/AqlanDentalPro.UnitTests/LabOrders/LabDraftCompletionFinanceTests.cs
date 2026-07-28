@@ -9,6 +9,11 @@ using Microsoft.EntityFrameworkCore;
 using Moq;
 using Xunit;
 
+// CS0118: this file lives in AqlanDentalPro.UnitTests.LabOrders, and name lookup walks
+// up to AqlanDentalPro.UnitTests.Lab — a NAMESPACE (the Lab/ test folder) — before it
+// ever reaches Domain.Entities.Lab. Alias the entity so the two can never collide.
+using LabEntity = AqlanDentalPro.Domain.Entities.Lab;
+
 namespace AqlanDentalPro.UnitTests.LabOrders;
 
 /// <summary>
@@ -27,7 +32,7 @@ namespace AqlanDentalPro.UnitTests.LabOrders;
 /// </summary>
 public class LabDraftCompletionFinanceTests
 {
-    private static async Task<(AppDbContext db, LabOrdersController controller, Patient patient, Lab lab)>
+    private static async Task<(AppDbContext db, LabOrdersController controller, Patient patient, LabEntity lab)>
         SetupAsync(bool seedLabSupplier = false)
     {
         var db = LabOrdersTestData.CreateDb();
@@ -35,7 +40,7 @@ public class LabDraftCompletionFinanceTests
         var patient = LabOrdersTestData.BuildPatient();
         db.Patients.Add(patient);
 
-        var lab = new Lab { Name = "معمل الأمل", IsActive = true };
+        var lab = new LabEntity { Name = "معمل الأمل", IsActive = true };
         if (seedLabSupplier)
         {
             var supplier = new Supplier { Name = lab.Name, Type = SupplierType.DentalLab, IsActive = true };
@@ -285,5 +290,49 @@ public class LabDraftCompletionFinanceTests
         // The bill must be untouched — rewriting it would desynchronise the ledger.
         (await db.SupplierBills.AsNoTracking().SingleAsync(b => b.LabOrderId == order.Id))
             .TotalAmount.Should().Be(5000m);
+    }
+
+    // ── CORE-LAB-004: never persist an unusable branch ────────────────────────
+
+    [Fact]
+    public async Task NoResolvableBranch_IsRefused_RatherThanWritingAnOrphanBill()
+    {
+        var db = LabOrdersTestData.CreateDb();
+        var patient = LabOrdersTestData.BuildPatient();
+        db.Patients.Add(patient);
+        var lab = new LabEntity { Name = "معمل الأمل", IsActive = true };
+        db.Labs.Add(lab);
+        await db.SaveChangesAsync();
+
+        // Neither the order nor the current user resolves a branch.
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.SetupGet(c => c.UserId).Returns(Guid.NewGuid());
+        currentUser.SetupGet(c => c.BranchId).Returns((Guid?)null);
+        currentUser.SetupGet(c => c.IsAdmin).Returns(true);
+        currentUser.SetupGet(c => c.Role).Returns(UserRole.Admin);
+        var access = new Mock<IPatientAccessService>();
+        LabOrdersTestData.SetupNonDoctor(access);
+        var controller = LabOrdersTestData.BuildController(db, access, currentUser);
+
+        var order = LabOrdersTestData.BuildLabOrder(patient.Id);
+        order.BranchId = null;
+        order.Currency = "YER";
+        order.ExchangeRateToYer = 1m;
+        db.LabOrders.Add(order);
+        await db.SaveChangesAsync();
+
+        var result = await controller.Update(order.Id, new UpdateLabOrderRequest
+        {
+            LabId = lab.Id,
+            Cost = 4000m,
+            Currency = "YER",
+        });
+
+        Message(result).Should().Contain("فرع");
+
+        // SupplierBill.BranchId is non-nullable — a Guid.Empty row would belong to no
+        // branch and vanish from every branch-scoped finance report.
+        (await db.SupplierBills.CountAsync(b => b.LabOrderId == order.Id)).Should().Be(0);
+        (await db.LabPayables.CountAsync(p => p.LabOrderId == order.Id)).Should().Be(0);
     }
 }

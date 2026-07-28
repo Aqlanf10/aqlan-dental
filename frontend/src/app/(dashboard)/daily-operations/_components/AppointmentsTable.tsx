@@ -12,7 +12,7 @@ import {
   MoreHorizontal, Eye, Phone, Clock,
   Building2, PanelRight, Timer, AlertCircle, Heart,
   ChevronDown, ChevronUp, GitBranch,
-  Wallet, ClipboardCheck, MessageCircle,
+  Wallet, ClipboardCheck, MessageCircle, PlayCircle,
 } from "lucide-react";
 import {
   ACTION_LABELS,
@@ -199,6 +199,7 @@ interface AppointmentsTableProps {
   onSendToQueue: (item: TodayJourneyItem) => void;
   onCallPatient: (item: TodayJourneyItem) => void;
   onEnterRoom: (item: TodayJourneyItem) => void;
+  onStartVisit: (item: TodayJourneyItem) => void;
   onQuickPayment: (item: TodayJourneyItem) => void;
   onCreateDraftInvoice: (item: TodayJourneyItem) => void;
   createDraftInvoicePending: boolean;
@@ -215,7 +216,7 @@ interface AppointmentsTableProps {
 
 export default function AppointmentsTable({
   items, loading, isDoctor, canProcessCheckout, queueWaitTime, selectedPatientId,
-  onIntake, onSendToQueue, onCallPatient, onEnterRoom,
+  onIntake, onSendToQueue, onCallPatient, onEnterRoom, onStartVisit,
   onQuickPayment, onCreateDraftInvoice, createDraftInvoicePending, onBookAppointment, onWhatsApp,
   onNoShow, onCancel, onViewPatient, onCompleteVisit, onOpenSidePanel,
   onContextMenu,
@@ -295,6 +296,7 @@ export default function AppointmentsTable({
               onSendToQueue={onSendToQueue}
               onCallPatient={onCallPatient}
               onEnterRoom={onEnterRoom}
+              onStartVisit={onStartVisit}
               onQuickPayment={onQuickPayment}
               onCreateDraftInvoice={onCreateDraftInvoice}
               createDraftInvoicePending={createDraftInvoicePending}
@@ -330,6 +332,7 @@ export default function AppointmentsTable({
             onSendToQueue={onSendToQueue}
             onCallPatient={onCallPatient}
             onEnterRoom={onEnterRoom}
+            onStartVisit={onStartVisit}
             onQuickPayment={onQuickPayment}
             onCreateDraftInvoice={onCreateDraftInvoice}
             createDraftInvoicePending={createDraftInvoicePending}
@@ -351,7 +354,7 @@ export default function AppointmentsTable({
 /* ─── Desktop row — Microsoft DataGrid style ───────────────────────────────── */
 function AppointmentRow({
   item, isDoctor, canProcessCheckout, isSelected, isEven, queueWaitMinutes,
-  onIntake, onSendToQueue, onCallPatient, onEnterRoom,
+  onIntake, onSendToQueue, onCallPatient, onEnterRoom, onStartVisit,
   onQuickPayment, onWhatsApp,
   onViewPatient, onCompleteVisit, onOpenSidePanel, onContextMenu,
 }: {
@@ -373,9 +376,7 @@ function AppointmentRow({
   );
   // Visit is in-progress and can be completed.
   const showCompleteVisit =
-    item.appointmentStatus === "InRoom" ||
     item.appointmentStatus === "InProgress" ||
-    item.queueStatus === "InRoom" ||
     item.queueStatus === "InProgress";
   const showWhatsApp = !!item.patientPhone;
 
@@ -431,6 +432,18 @@ function AppointmentRow({
         >
           <DoorOpen className="w-3.5 h-3.5" />
           <span>دخول العيادة</span>
+        </button>
+      );
+    } else if (item.appointmentId && item.nextAction === "StartVisit") {
+      hasPrimaryAction = true;
+      primaryBtn = (
+        <button
+          onClick={() => onStartVisit(item)}
+          className="px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex items-center justify-center gap-1.5 shadow-sm"
+          style={{ background: "#dc2626" }}
+        >
+          <PlayCircle className="w-3.5 h-3.5" />
+          <span>بدء الزيارة</span>
         </button>
       );
     }
@@ -632,7 +645,7 @@ function AppointmentRow({
 /* ─── Mobile card ──────────────────────────────────────────────────────────── */
 function MobileCard({
   item, isDoctor, canProcessCheckout, expanded, onToggle, queueWaitMinutes,
-  onIntake, onSendToQueue, onCallPatient, onEnterRoom,
+  onIntake, onSendToQueue, onCallPatient, onEnterRoom, onStartVisit,
   onViewPatient, onCompleteVisit, onOpenSidePanel, onContextMenu,
 }: {
   item: TodayJourneyItem; isDoctor: boolean; canProcessCheckout: boolean; expanded: boolean; onToggle: () => void; queueWaitMinutes?: number;
@@ -685,6 +698,17 @@ function MobileCard({
         >
           <DoorOpen className="w-3.5 h-3.5" />
           <span>دخول العيادة</span>
+        </button>
+      );
+    } else if (item.appointmentId && item.nextAction === "StartVisit") {
+      primaryBtn = (
+        <button
+          onClick={() => onStartVisit(item)}
+          className="w-full px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex items-center justify-center gap-1.5 shadow-sm"
+          style={{ background: "#dc2626" }}
+        >
+          <PlayCircle className="w-3.5 h-3.5" />
+          <span>بدء الزيارة</span>
         </button>
       );
     }

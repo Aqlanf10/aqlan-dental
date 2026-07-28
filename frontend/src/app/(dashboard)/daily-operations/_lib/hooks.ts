@@ -269,6 +269,23 @@ export function useEnterRoom() {
   });
 }
 
+// Enhanced: useJourneyStartVisit — daily-ops invalidates all journey surfaces
+export function useStartVisit() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (appointmentId: string) => {
+      const { data } = await api.post(`/api/patient-journey/${appointmentId}/start-visit`);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
+      queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
+      queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
+      queryClient.invalidateQueries({ queryKey: ["visits"] });
+    },
+  });
+}
+
 // Enhanced: useJourneyUpdateAppointmentStatus — daily-ops invalidates ["daily-ops"] keys
 export function useUpdateAppointmentStatus() {
   const queryClient = useQueryClient();

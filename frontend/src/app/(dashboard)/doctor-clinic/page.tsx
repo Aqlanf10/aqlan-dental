@@ -13,7 +13,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
 import { useSignalRClinicQueue } from "@/hooks/useSignalRClinicQueue";
 import {
-  fmtTime,
+  fmtTime, fmtRial,
   APPT_STATUS_LABELS, STATUS_COLORS,
   fmtSessionDuration, ORANGE,
 } from "../daily-operations/_lib/constants";
@@ -690,7 +690,7 @@ export default function DoctorClinicPage() {
                   { label: "ملاحظات سريرية", value: clinicalNotes.clinicalNotes },
                   { label: "التعليمات", value: clinicalNotes.instructions },
                   { label: "خطة الزيارة القادمة", value: clinicalNotes.nextVisitPlan },
-                  { label: "المبلغ المستحق", value: clinicalNotes.amountDue > 0 ? `${clinicalNotes.amountDue} ر.س` : "" },
+                  { label: "المبلغ المستحق", value: clinicalNotes.amountDue > 0 ? fmtRial(clinicalNotes.amountDue) : "" },
                 ].map(field => (
                   <div key={field.label} className="min-w-0">
                     <span className="text-[9px] font-semibold text-[#9ca3af]">{field.label}</span>

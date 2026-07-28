@@ -365,6 +365,40 @@ export function useCheckout() {
   });
 }
 
+export interface FinancialClosureValidation {
+  canClose: boolean;
+  reason?: string;
+  reasonCode?: string;
+  outstandingAmount?: number | null;
+  unbilledVisitsAmount?: number | null;
+}
+
+/**
+ * Runs the server-side financial guard before operational checkout.
+ * Checkout itself is intentionally payment-free, so every UI entry point must
+ * call this guard first to avoid closing a visit with an unpaid balance.
+ */
+export function useValidateFinancialClosure() {
+  return useMutation({
+    mutationFn: async (params: {
+      patientId: string;
+      visitId?: string | null;
+      managerOverride?: boolean;
+      closureReason?: string;
+    }) => {
+      const { data } = await api.post<FinancialClosureValidation>(
+        `/api/patient-journey/${params.patientId}/validate-financial-closure`,
+        {
+          visitId: params.visitId || undefined,
+          managerOverride: params.managerOverride ?? false,
+          closureReason: params.closureReason || undefined,
+        },
+      );
+      return data;
+    },
+  });
+}
+
 // Enhanced: useJourneyHandoff — includes proposedProcedure param + invalidates ["daily-ops"] keys
 export function useHandoff() {
   const queryClient = useQueryClient();

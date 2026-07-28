@@ -52,6 +52,7 @@ import {
   useCreatePayment,
   useCreateDraftInvoice,
   useCheckout,
+  useValidateFinancialClosure,
   useHandoff,
   useMarkLeftWithoutCompletion,
   useCancelQueue,
@@ -218,6 +219,7 @@ export default function DailyOperationsPage() {
   const createPaymentMutation = useCreatePayment();
   const createDraftInvoiceMutation = useCreateDraftInvoice();
   const checkoutMutation = useCheckout();
+  const validateFinancialClosureMutation = useValidateFinancialClosure();
   const handoffMutation = useHandoff();
   const leftWithoutCompletionMutation = useMarkLeftWithoutCompletion();
   const cancelQueueMutation = useCancelQueue();
@@ -805,6 +807,14 @@ export default function DailyOperationsPage() {
         // Payment creation is handled separately via the payment flow,
         // not auto-created during checkout with a hardcoded method.
         if (!selectedItem.appointmentId) { toast.error("لا يمكن إكمال الخروج بدون موعد"); return; }
+        const validation = await validateFinancialClosureMutation.mutateAsync({
+          patientId: selectedItem.patientId,
+          visitId: selectedItem.visitId,
+        });
+        if (!validation.canClose) {
+          toast.error(validation.reason || "لا يمكن إكمال الخروج قبل تسوية الرصيد المالي");
+          return;
+        }
         await checkoutMutation.mutateAsync({
           appointmentId: selectedItem.appointmentId,
           body: {
@@ -821,7 +831,7 @@ export default function DailyOperationsPage() {
     } catch (err) {
       toast.error(extractErrorMessage(err, "فشل إنهاء الزيارة"));
     }
-  }, [selectedItem, handoffMutation, checkoutMutation]);
+  }, [selectedItem, handoffMutation, validateFinancialClosureMutation, checkoutMutation]);
 
   const handleCheckoutConfirm = useCallback(async (data: {
     paymentAmount: number; paymentMethod: string; notes: string;
@@ -833,6 +843,14 @@ export default function DailyOperationsPage() {
       // Checkout only marks the appointment as completed.
       // Payment creation is handled separately via the payment flow,
       // not auto-created during checkout.
+      const validation = await validateFinancialClosureMutation.mutateAsync({
+        patientId: selectedItem.patientId,
+        visitId: selectedItem.visitId,
+      });
+      if (!validation.canClose) {
+        toast.error(validation.reason || "لا يمكن إكمال الخروج قبل تسوية الرصيد المالي");
+        return;
+      }
       await checkoutMutation.mutateAsync({
         appointmentId: selectedItem.appointmentId,
         body: {
@@ -845,7 +863,7 @@ export default function DailyOperationsPage() {
     } catch (err) {
       toast.error(extractErrorMessage(err, "فشل إنهاء الزيارة"));
     }
-  }, [selectedItem, checkoutMutation]);
+  }, [selectedItem, validateFinancialClosureMutation, checkoutMutation]);
 
   const handleLeftWithoutCompletionConfirm = useCallback(async () => {
     if (!selectedItem?.visitId) return;

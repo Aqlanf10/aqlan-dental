@@ -12,6 +12,11 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 /* ── Dashboard Overview ─────────────────────────────────────────────────────────── */
+export interface CurrencyAmount {
+  currency: string;
+  amount: number;
+}
+
 export interface DashboardData {
   todayInflow: number;
   todayOutflow: number;
@@ -23,6 +28,7 @@ export interface DashboardData {
   contractOutstanding: number;
   invoiceOutstanding: number;
   totalTreasuryBalance: number;
+  treasuryBalancesByCurrency?: CurrencyAmount[];
   todayAccruedRevenue: number;
   monthAccruedRevenue: number;
   journalEntryCount: number;
@@ -90,6 +96,7 @@ export interface InvoiceListItem {
   patientId: string;
   patientName: string;
   patientNumber: string;
+  currency: string;
   totalAmount: number;
   paidAmount: number;
   directPaidAmount?: number;
@@ -117,6 +124,7 @@ export interface InvoiceDetail {
   patientId: string;
   patientName: string;
   patientNumber: string;
+  currency: string;
   lineItems: InvoiceLineItem[];
   subtotal: number;
   totalDiscount: number;
@@ -193,6 +201,7 @@ export interface ContractListItem {
   patientNumber: string;
   /** Specialty field from Contract entity (used as display label when contractNumber is generated) */
   specialty?: string;
+  currency: string;
   totalAmount: number;
   paidAmount: number;
   outstandingAmount: number;
@@ -308,9 +317,14 @@ export interface ExpenseListItem {
   title: string;
   category: string;
   amount: number;
+  currency?: string;
   paymentMethod: string;
   expenseDate: string;
   status: string;
+  supplierId?: string | null;
+  supplierName?: string | null;
+  sourceType?: "OperationalExpense" | "SupplierBill" | "DoctorCommission";
+  supplierBillId?: string | null;
   requestedBy: string;
   approvedBy: string | null;
   approvedAt: string | null;
@@ -323,6 +337,18 @@ export interface ExpenseListItem {
   treasuryName: string | null;
 }
 
+export interface DoctorCommissionPaymentListItem {
+  id: string;
+  doctorId: string;
+  doctorName?: string | null;
+  amount: number;
+  paymentDate: string;
+  paymentMethod?: string | null;
+  referenceNumber?: string | null;
+  notes?: string | null;
+  createdAt: string;
+}
+
 export interface CreateExpenseRequest {
   title: string;
   category: string;
@@ -330,6 +356,7 @@ export interface CreateExpenseRequest {
   paymentMethod: string;
   expenseDate: string;
   treasuryId?: string;
+  supplierId?: string;
   notes?: string;
 }
 
@@ -381,6 +408,19 @@ export interface SupplierStatement {
   supplierName: string;
   currencyBalances: Array<{ currency: "YER" | "SAR" | "USD"; balance: number }>;
   bills: SupplierBillDto[];
+  directExpenses?: DirectSupplierExpense[];
+}
+
+export interface DirectSupplierExpense {
+  id: string;
+  expenseNumber: string;
+  title: string;
+  amount: number;
+  currency: "YER";
+  expenseDate: string;
+  paymentMethod: string;
+  status: string;
+  isPostedToLedger: boolean;
 }
 
 export interface SupplierBill {
@@ -391,9 +431,13 @@ export interface SupplierBill {
   totalAmount: number;
   paidAmount: number;
   balance: number;
-  dueDate: string;
+  currency: "YER" | "SAR" | "USD";
+  billDate: string;
+  dueDate: string | null;
   status: string;
   createdAt: string;
+  isOpeningBalance: boolean;
+  journalEntryId?: string | null;
 }
 
 export interface CreateSupplierBillRequest {
@@ -495,14 +539,25 @@ export interface DailyCashSummary {
 /* ── Account Balances ───────────────────────────────────────────────────────────── */
 export interface AccountBalance {
   accountType: string;
+  currency: string;
   totalDebit: number;
   totalCredit: number;
   netBalance: number;
   entryCount: number;
 }
 
+export interface AccountTotalsByCurrency {
+  currency: string;
+  totalAssets: number;
+  totalRevenue: number;
+  totalExpenses: number;
+  totalReceivables: number;
+  totalPayables: number;
+}
+
 export interface AccountBalancesData {
   accountBalances: AccountBalance[];
+  totalsByCurrency?: AccountTotalsByCurrency[];
   treasuries: { id: string; name: string; type: string; currency: "YER" | "SAR" | "USD"; balance: number; branchId: string }[];
   totalAssets: number;
   totalRevenue: number;

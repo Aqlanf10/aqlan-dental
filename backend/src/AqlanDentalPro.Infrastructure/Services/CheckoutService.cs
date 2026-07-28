@@ -988,6 +988,9 @@ public class CheckoutService(
                 UnitPrice = lineAmount,
                 TotalPrice = lineAmount,
                 RelatedVisitId = visitId,
+                // Attribute the service to the visit doctor so its calculated
+                // commission is included in doctor commission reports.
+                DoctorId = visit.DoctorId ?? visit.Appointment?.DoctorId,
                 SortOrder = 0
             };
             db.InvoiceLineItems.Add(lineItem);

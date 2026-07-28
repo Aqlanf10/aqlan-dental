@@ -199,6 +199,42 @@ public partial class FinanceV3SuppliersController(
             b.ExchangeRateToYer
         }).ToList();
 
+        // Direct operational expenses paid immediately to this supplier are not
+        // accounts payable, so they do not change the outstanding supplier balance.
+        // They still belong in the supplier statement as paid purchase history.
+        var rawDirectExpenses = await db.OperationalExpenses
+            .AsNoTracking()
+            .Where(expense => expense.SupplierId == supplierId
+                && expense.IsActive
+                && (currentUser.IsAdmin || (userBranchId.HasValue && expense.BranchId == userBranchId.Value)))
+            .OrderByDescending(expense => expense.ExpenseDate)
+            .ThenByDescending(expense => expense.CreatedAt)
+            .Select(expense => new
+            {
+                expense.Id,
+                expense.ExpenseNumber,
+                expense.Title,
+                expense.Amount,
+                expense.ExpenseDate,
+                expense.PaymentMethod,
+                expense.ApprovalStatus,
+                expense.IsPostedToLedger
+            })
+            .ToListAsync();
+
+        var directExpenses = rawDirectExpenses.Select(expense => new
+        {
+            expense.Id,
+            expense.ExpenseNumber,
+            expense.Title,
+            expense.Amount,
+            Currency = "YER",
+            ExpenseDate = expense.ExpenseDate.ToString("yyyy-MM-dd"),
+            expense.PaymentMethod,
+            Status = expense.ApprovalStatus.ToString(),
+            expense.IsPostedToLedger
+        }).ToList();
+
         return Ok(new
         {
             SupplierId = supplierId,
@@ -206,7 +242,8 @@ public partial class FinanceV3SuppliersController(
             CurrencyBalances = rawBills.GroupBy(b => string.IsNullOrWhiteSpace(b.Currency) ? "YER" : b.Currency)
                 .Select(group => new { Currency = group.Key, Balance = group.Sum(b => b.TotalAmount - b.PaidAmount) })
                 .OrderBy(group => group.Currency),
-            Bills = bills
+            Bills = bills,
+            DirectExpenses = directExpenses
         });
     }
 

@@ -19,6 +19,8 @@ public partial class FinanceV3Controller
         decimal Balance,
         decimal AvailableAdvance);
 
+    private sealed record DashboardCurrencyAmount(string Currency, decimal Amount);
+
     // ─── Dashboard KPIs ─────────────────────────────────────────────────────
 
     private async Task<IActionResult> GetDashboardSchemaTolerantAsync(string? period)
@@ -34,7 +36,6 @@ public partial class FinanceV3Controller
 
         var journalBranch = branchId.HasValue ? @" AND jl.""BranchId"" = @branchId" : "";
         var entryBranch = branchId.HasValue ? @" AND je.""BranchId"" = @branchId" : "";
-        var treasuryBranch = branchId.HasValue ? @" AND ""BranchId"" = @branchId" : "";
         var patientBranch = branchId.HasValue ? @" AND p.""BranchId"" = @branchId" : "";
         var expenseBranch = branchId.HasValue ? @" AND ""BranchId"" = @branchId" : "";
         var transferBranch = branchId.HasValue ? @" AND dt.""BranchId"" = @branchId" : "";
@@ -123,10 +124,20 @@ public partial class FinanceV3Controller
         var journalEntryCount = await ScalarIntAsync($@"SELECT COUNT(*) FROM ""JournalEntries"" je WHERE 1=1 {entryBranch}");
         var postedEntryCount = await ScalarIntAsync($@"SELECT COUNT(*) FROM ""JournalEntries"" je WHERE je.""IsPosted"" = TRUE {entryBranch}");
         var reversalEntryCount = await ScalarIntAsync($@"SELECT COUNT(*) FROM ""JournalEntries"" je WHERE je.""IsReversal"" = TRUE {entryBranch}");
-        // MULTI-CURRENCY: this dashboard figure is YER-denominated (formatted with formatYER on the
-        // client), so sum ONLY the YER treasuries — never add SAR/USD balances into a YER total.
-        // Foreign-currency balances are shown separately per-currency in the Treasuries tab.
-        var totalTreasuryBalance = await ScalarDecimalAsync($@"SELECT COALESCE(SUM(""Balance""), 0) FROM ""Treasuries"" WHERE ""IsActive"" = TRUE AND (""Currency"" = 'YER' OR ""Currency"" IS NULL) {treasuryBranch}");
+        // MULTI-CURRENCY: expose every treasury currency separately. Keep the legacy
+        // TotalTreasuryBalance field YER-only so older clients never add unlike currencies.
+        var fallbackTreasuryQuery = db.Treasuries.AsNoTracking().Where(t => t.IsActive);
+        if (branchId.HasValue)
+            fallbackTreasuryQuery = fallbackTreasuryQuery.Where(t => t.BranchId == branchId.Value);
+        var treasuryBalancesByCurrency = (await fallbackTreasuryQuery
+            .GroupBy(t => string.IsNullOrWhiteSpace(t.Currency) ? "YER" : t.Currency.ToUpper())
+            .Select(g => new { Currency = g.Key, Amount = g.Sum(t => t.Balance) })
+            .ToListAsync())
+            .Select(item => new DashboardCurrencyAmount(item.Currency, item.Amount))
+            .OrderBy(item => item.Currency == "YER" ? 0 : item.Currency == "SAR" ? 1 : 2)
+            .ToList();
+        var totalTreasuryBalance = treasuryBalancesByCurrency
+            .FirstOrDefault(item => item.Currency == "YER")?.Amount ?? 0m;
         var pendingExpenses = await ScalarIntAsync($@"SELECT COUNT(*) FROM ""OperationalExpenses"" WHERE ""ApprovalStatus""::text IN ('Pending', '1') AND ""IsActive"" = TRUE {expenseBranch}");
         var pendingTransfers = await ScalarIntAsync($@"
             SELECT COUNT(*)
@@ -169,6 +180,7 @@ public partial class FinanceV3Controller
             ContractOutstanding = contractOutstanding,
             InvoiceOutstanding = invoiceOutstanding,
             TotalTreasuryBalance = totalTreasuryBalance,
+            TreasuryBalancesByCurrency = treasuryBalancesByCurrency,
             TodayAccruedRevenue = todayAccruedRevenue,
             MonthAccruedRevenue = monthAccruedRevenue,
             JournalEntryCount = journalEntryCount,
@@ -296,11 +308,21 @@ public partial class FinanceV3Controller
             e.IsReversal && (!branchId.HasValue || e.BranchId == branchId.Value));
 
         // ── Treasury summary ──
-        // MULTI-CURRENCY: YER-denominated dashboard total — sum only YER treasuries (never mix
-        // SAR/USD into a YER figure). Foreign balances are shown per-currency in the Treasuries tab.
-        var treasuryQuery = db.Treasuries.Where(t => t.IsActive && (t.Currency == "YER" || t.Currency == null));
+        // MULTI-CURRENCY: expose every treasury currency separately. Keep the legacy
+        // TotalTreasuryBalance field YER-only so older clients never add unlike currencies.
+        var treasuryQuery = db.Treasuries.Where(t => t.IsActive);
         if (branchId.HasValue) treasuryQuery = treasuryQuery.Where(t => t.BranchId == branchId.Value);
-        var totalTreasuryBalance = await treasuryQuery.SumAsync(t => (decimal?)t.Balance) ?? 0;
+        var treasuryBalancesByCurrency = await treasuryQuery
+            .GroupBy(t => string.IsNullOrWhiteSpace(t.Currency) ? "YER" : t.Currency.ToUpper())
+            .Select(g => new
+            {
+                Currency = g.Key,
+                Amount = g.Sum(t => t.Balance)
+            })
+            .OrderBy(item => item.Currency == "YER" ? 0 : item.Currency == "SAR" ? 1 : 2)
+            .ToListAsync();
+        var totalTreasuryBalance = treasuryBalancesByCurrency
+            .FirstOrDefault(item => item.Currency == "YER")?.Amount ?? 0m;
 
         // ── Accrued revenue from posted JournalLines ──
         var todayAccruedRevenue = await db.JournalLines
@@ -441,6 +463,7 @@ public partial class FinanceV3Controller
 
             // Treasury
             TotalTreasuryBalance = totalTreasuryBalance,
+            TreasuryBalancesByCurrency = treasuryBalancesByCurrency,
 
             // Accrued Revenue (from posted JournalLines)
             TodayAccruedRevenue = todayAccruedRevenue,
@@ -662,16 +685,38 @@ public partial class FinanceV3Controller
         // FIX: Reversal entries are INCLUDED here (not filtered out) so that
         // net effect of original + reversal is correctly calculated (Blocker 5).
         var accountBalances = await linesQuery
-            .GroupBy(l => l.AccountType)
+            .GroupBy(l => new
+            {
+                l.AccountType,
+                Currency = string.IsNullOrWhiteSpace(l.JournalEntry.Currency)
+                    ? "YER"
+                    : l.JournalEntry.Currency.ToUpper()
+            })
             .Select(g => new
             {
-                AccountType = g.Key.ToString(),
+                AccountType = g.Key.AccountType.ToString(),
+                g.Key.Currency,
                 TotalDebit = (decimal?)g.Sum(l => l.Debit) ?? 0m,
                 TotalCredit = (decimal?)g.Sum(l => l.Credit) ?? 0m,
                 NetBalance = ((decimal?)g.Sum(l => l.Debit) ?? 0m) - ((decimal?)g.Sum(l => l.Credit) ?? 0m), // Debit-normal balance
                 EntryCount = g.Select(l => l.JournalEntryId).Distinct().Count()
             })
             .ToListAsync();
+
+        var totalsByCurrency = accountBalances
+            .GroupBy(a => a.Currency)
+            .Select(g => new
+            {
+                Currency = g.Key,
+                TotalAssets = g.FirstOrDefault(a => a.AccountType == "Treasury")?.NetBalance ?? 0m,
+                TotalRevenue = -(g.FirstOrDefault(a => a.AccountType == "Revenue")?.NetBalance ?? 0m),
+                TotalExpenses = g.FirstOrDefault(a => a.AccountType == "Expense")?.NetBalance ?? 0m,
+                TotalReceivables = g.FirstOrDefault(a => a.AccountType == "PatientReceivable")?.NetBalance ?? 0m,
+                TotalPayables = -(g.FirstOrDefault(a => a.AccountType == "Payable")?.NetBalance ?? 0m)
+            })
+            .OrderBy(item => item.Currency == "YER" ? 0 : item.Currency == "SAR" ? 1 : 2)
+            .ToList();
+        var yerTotals = totalsByCurrency.FirstOrDefault(item => item.Currency == "YER");
 
         // Treasury detail breakdown
         var treasuryQuery = db.Treasuries.Where(t => t.IsActive);
@@ -691,12 +736,14 @@ public partial class FinanceV3Controller
         return Ok(new
         {
             AccountBalances = accountBalances,
+            TotalsByCurrency = totalsByCurrency,
             Treasuries = treasuries,
-            TotalAssets = accountBalances.Find(a => a.AccountType == "Treasury")?.NetBalance ?? 0,
-            TotalRevenue = -(accountBalances.Find(a => a.AccountType == "Revenue")?.NetBalance ?? 0),
-            TotalExpenses = accountBalances.Find(a => a.AccountType == "Expense")?.NetBalance ?? 0,
-            TotalReceivables = accountBalances.Find(a => a.AccountType == "PatientReceivable")?.NetBalance ?? 0,
-            TotalPayables = -(accountBalances.Find(a => a.AccountType == "Payable")?.NetBalance ?? 0),
+            // Legacy fields remain YER-only for older clients.
+            TotalAssets = yerTotals?.TotalAssets ?? 0m,
+            TotalRevenue = yerTotals?.TotalRevenue ?? 0m,
+            TotalExpenses = yerTotals?.TotalExpenses ?? 0m,
+            TotalReceivables = yerTotals?.TotalReceivables ?? 0m,
+            TotalPayables = yerTotals?.TotalPayables ?? 0m,
 
             // Consolidation flag
             IsConsolidated = !branchId.HasValue // true when admin views all branches
@@ -1804,6 +1851,7 @@ public partial class FinanceV3Controller
                 i.Id,
                 i.InvoiceNumber,
                 i.PatientId,
+                i.Currency,
                 i.Status,
                 i.Subtotal,
                 i.DiscountAmount,
@@ -1822,6 +1870,7 @@ public partial class FinanceV3Controller
             i.Id,
             i.InvoiceNumber,
             i.PatientId,
+            i.Currency,
             Status = i.Status.ToString(),
             i.Subtotal,
             i.DiscountAmount,
@@ -1891,6 +1940,7 @@ public partial class FinanceV3Controller
                 PatientNumber = c.Patient.PatientNumber,
                 ContractNumber = "CTR-" + c.Id.ToString().Substring(0, 8).ToUpper(),
                 c.Specialty,
+                c.Currency,
                 c.TotalAmount,
                 c.DiscountAmount,
                 PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount),
@@ -1934,6 +1984,7 @@ public partial class FinanceV3Controller
                 c.PatientNumber,
                 c.ContractNumber,
                 c.Specialty,
+                c.Currency,
                 c.TotalAmount,
                 c.DiscountAmount,
                 c.PaidAmount,
@@ -1998,10 +2049,20 @@ public partial class FinanceV3Controller
                 b.Description,
                 b.TotalAmount,
                 b.PaidAmount,
+                b.Currency,
+                b.BillDate,
+                b.IsOpeningBalance,
                 Balance = b.TotalAmount - b.PaidAmount,
                 DueDate = b.DueDate.HasValue ? b.DueDate.Value.ToString("yyyy-MM-dd") : (string?)null,
                 b.Status,
-                b.CreatedAt
+                b.CreatedAt,
+                JournalEntryId = db.JournalEntries
+                    .Where(entry => entry.FinancialDocumentId == b.Id
+                        && entry.FinancialDocumentType == FinancialDocumentType.SupplierBill
+                        && entry.IsPosted
+                        && !entry.IsReversal)
+                    .Select(entry => (Guid?)entry.Id)
+                    .FirstOrDefault()
             })
             .ToListAsync();
 
@@ -2013,10 +2074,14 @@ public partial class FinanceV3Controller
             b.Description,
             b.TotalAmount,
             b.PaidAmount,
+            Currency = string.IsNullOrWhiteSpace(b.Currency) ? "YER" : b.Currency,
+            BillDate = b.BillDate.ToString("yyyy-MM-dd"),
+            b.IsOpeningBalance,
             b.Balance,
             b.DueDate,
             Status = b.Status.ToString(),
-            b.CreatedAt
+            b.CreatedAt,
+            b.JournalEntryId
         }).ToList();
 
         return Ok(new { data = bills, total, page, pageSize });
@@ -2157,6 +2222,8 @@ public partial class FinanceV3Controller
                 e.Category,
                 e.Amount,
                 e.PaymentMethod,
+                e.SupplierId,
+                SupplierName = e.Supplier != null ? e.Supplier.Name : null,
                 ExpenseDate = e.ExpenseDate.ToString("yyyy-MM-dd"),
                 e.ApprovalStatus,
                 RequestedBy = e.PaidBy.ToString(),
@@ -2183,7 +2250,10 @@ public partial class FinanceV3Controller
             e.Title,
             Category = e.Category.ToString(),
             e.Amount,
+            Currency = "YER",
             e.PaymentMethod,
+            e.SupplierId,
+            e.SupplierName,
             e.ExpenseDate,
             Status = e.ApprovalStatus.ToString(),
             e.RequestedBy,
@@ -2229,7 +2299,10 @@ public partial class FinanceV3Controller
                 e.Title,
                 e.Category,
                 e.Amount,
+                e.Currency,
                 e.PaymentMethod,
+                e.SupplierId,
+                e.SupplierName,
                 e.ExpenseDate,
                 e.Status,
                 e.RequestedBy,

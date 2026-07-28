@@ -21,7 +21,26 @@ import { toast } from "@/stores/toastStore";
 import type { ProfitLossData, DailyCashSummary, AccountBalancesData } from "./types";
 import { PAYMENT_METHODS } from "./types";
 import { KpiCard, LoadingSkeleton, EmptyState, tokens, inputStyle, labelStyle, btnPrimary } from "./FinanceSharedUI";
-import { formatMoney, formatYER, formatNumber } from "./FinanceHelpers";
+import { formatCurrencyAmounts, formatMoney, formatYER, formatNumber } from "./FinanceHelpers";
+
+type AccountTotalKey = "totalAssets" | "totalRevenue" | "totalExpenses" | "totalReceivables" | "totalPayables";
+
+function formatAccountTotals(data: AccountBalancesData, key: AccountTotalKey): string {
+  const legacyYerTotals = {
+    currency: "YER",
+    totalAssets: data.totalAssets,
+    totalRevenue: data.totalRevenue,
+    totalExpenses: data.totalExpenses,
+    totalReceivables: data.totalReceivables,
+    totalPayables: data.totalPayables,
+  };
+  return formatCurrencyAmounts(
+    (data.totalsByCurrency ?? [legacyYerTotals]).map((total) => ({
+      currency: total.currency,
+      amount: total[key],
+    })),
+  );
+}
 
 /* ── P&L Sub-tab ── */
 function PLSubTab() {
@@ -221,11 +240,11 @@ function AccountBalancesSubTab() {
         <div className="space-y-4">
           {/* Summary cards */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <KpiCard label="إجمالي الأصول" value={formatYER(data.totalAssets)} color={tokens.brand} icon={<Vault className="w-4 h-4" />} />
-            <KpiCard label="إجمالي الإيرادات" value={formatYER(data.totalRevenue)} color={tokens.successBorder} icon={<Receipt className="w-4 h-4" />} />
-            <KpiCard label="إجمالي المصروفات" value={formatYER(data.totalExpenses)} color={tokens.dangerBorder} icon={<TrendingDown className="w-4 h-4" />} />
-            <KpiCard label="إجمالي المستحقات" value={formatYER(data.totalReceivables)} color={tokens.warningBorder} icon={<HandCoins className="w-4 h-4" />} />
-            <KpiCard label="إجمالي الالتزامات" value={formatYER(data.totalPayables)} color={tokens.dangerBorder} icon={<Truck className="w-4 h-4" />} />
+            <KpiCard label="إجمالي الأصول" value={formatAccountTotals(data, "totalAssets")} color={tokens.brand} icon={<Vault className="w-4 h-4" />} />
+            <KpiCard label="إجمالي الإيرادات" value={formatAccountTotals(data, "totalRevenue")} color={tokens.successBorder} icon={<Receipt className="w-4 h-4" />} />
+            <KpiCard label="إجمالي المصروفات" value={formatAccountTotals(data, "totalExpenses")} color={tokens.dangerBorder} icon={<TrendingDown className="w-4 h-4" />} />
+            <KpiCard label="إجمالي المستحقات" value={formatAccountTotals(data, "totalReceivables")} color={tokens.warningBorder} icon={<HandCoins className="w-4 h-4" />} />
+            <KpiCard label="إجمالي الالتزامات" value={formatAccountTotals(data, "totalPayables")} color={tokens.dangerBorder} icon={<Truck className="w-4 h-4" />} />
           </div>
 
           {/* Account balances table */}
@@ -236,6 +255,7 @@ function AccountBalancesSubTab() {
                 <table className="w-full text-xs">
                   <thead><tr style={{ backgroundColor: tokens.cardHover }}>
                     <th className="text-right px-3 py-2">نوع الحساب</th>
+                    <th className="text-right px-3 py-2">العملة</th>
                     <th className="text-right px-3 py-2">مدين</th>
                     <th className="text-right px-3 py-2">دائن</th>
                     <th className="text-right px-3 py-2">صافي الرصيد</th>
@@ -245,9 +265,10 @@ function AccountBalancesSubTab() {
                     {data.accountBalances.map((ab, idx) => (
                       <tr key={idx} style={{ borderBottom: `1px solid ${tokens.border}` }}>
                         <td className="px-3 py-2 font-medium">{ab.accountType}</td>
-                        <td className="px-3 py-2">{formatYER(ab.totalDebit)}</td>
-                        <td className="px-3 py-2">{formatYER(ab.totalCredit)}</td>
-                        <td className="px-3 py-2 font-bold" style={{ color: ab.netBalance >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{formatYER(ab.netBalance)}</td>
+                        <td className="px-3 py-2 font-semibold" dir="ltr">{ab.currency}</td>
+                        <td className="px-3 py-2">{formatMoney(ab.totalDebit, ab.currency)}</td>
+                        <td className="px-3 py-2">{formatMoney(ab.totalCredit, ab.currency)}</td>
+                        <td className="px-3 py-2 font-bold" style={{ color: ab.netBalance >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{formatMoney(ab.netBalance, ab.currency)}</td>
                         <td className="px-3 py-2">{ab.entryCount}</td>
                       </tr>
                     ))}

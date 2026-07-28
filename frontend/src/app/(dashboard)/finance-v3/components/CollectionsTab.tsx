@@ -22,13 +22,14 @@ import { downloadPdfFromApi, printPdfFromApi } from "@/lib/pdfDownload";
 import type { PaymentListItem, RegisterPaymentRequest } from "./types";
 import { PAYMENT_METHODS } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, tokens, inputStyle, labelStyle, btnPrimary, btnGhost } from "./FinanceSharedUI";
-import { formatYER, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
+import { formatMoney, formatYER, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
 
 /* ── Inline types for API responses ──────────────────────────────────────────── */
 interface PatientInvoice {
   id: string;
   invoiceNumber: string;
+  currency: string;
   status: string;
   totalAmount: number;
   paidAmount: number;
@@ -39,6 +40,7 @@ interface FinanceV3Contract {
   id: string;
   contractNumber: string;
   specialty?: string;
+  currency: string;
   outstandingAmount: number;
   totalAmount: number;
   status: string;
@@ -101,8 +103,8 @@ export function CollectionsTab() {
   const { data: activeCashierSession } = useActiveCashierSession();
 
   // Linked invoice/contract option lists (populated on patient select).
-  const [invoiceOptions, setInvoiceOptions] = useState<{ id: string; invoiceNumber: string; balance: number }[]>([]);
-  const [contractOptions, setContractOptions] = useState<{ id: string; contractNumber: string; outstandingAmount: number }[]>([]);
+  const [invoiceOptions, setInvoiceOptions] = useState<{ id: string; invoiceNumber: string; balance: number; currency: string }[]>([]);
+  const [contractOptions, setContractOptions] = useState<{ id: string; contractNumber: string; outstandingAmount: number; currency: string }[]>([]);
 
   // FE-30: react-hook-form + zod for the register-payment modal.
   const {
@@ -148,6 +150,9 @@ export function CollectionsTab() {
     setValue("patientId", patientId);
     setValue("invoiceId", "");
     setValue("contractId", "");
+    setValue("currency", "YER");
+    setValue("accountCurrency", "YER");
+    setValue("exchangeRateToAccountCurrency", "");
     try {
       // Fix 1: Use real backend routes
       // Invoices: GET /api/patients/{patientId}/invoices (exists in InvoicesController)
@@ -165,7 +170,7 @@ export function CollectionsTab() {
       setInvoiceOptions(
         invData
           .filter((i) => i.balance > 0)
-          .map((i) => ({ id: i.id, invoiceNumber: i.invoiceNumber, balance: i.balance }))
+          .map((i) => ({ id: i.id, invoiceNumber: i.invoiceNumber, balance: i.balance, currency: i.currency || "YER" }))
       );
 
       // Parse contracts — FinanceV3 wraps in { data: [...] }
@@ -177,6 +182,7 @@ export function CollectionsTab() {
             id: c.id,
             contractNumber: c.contractNumber ?? c.specialty ?? `عقد ${c.id.substring(0, 8)}`,
             outstandingAmount: c.outstandingAmount,
+            currency: c.currency || "YER",
           }))
       );
     } catch { /* ignore */ }
@@ -186,12 +192,30 @@ export function CollectionsTab() {
   const selectedInvoice = watch("invoiceId");
   const selectedContract = watch("contractId");
   const payAmount = watch("amount");
+  const paymentCurrency = watch("currency") ?? "YER";
+  const accountCurrency = watch("accountCurrency") ?? "YER";
+  const exchangeRate = Number(watch("exchangeRateToAccountCurrency"));
 
   const maxAmount = (() => {
     if (selectedInvoice) { const inv = invoiceOptions.find((i) => i.id === selectedInvoice); return inv?.balance ?? 0; }
     if (selectedContract) { const con = contractOptions.find((c) => c.id === selectedContract); return con?.outstandingAmount ?? 0; }
     return 0;
   })();
+  const maxAmountCurrency = (() => {
+    if (selectedInvoice) return invoiceOptions.find((i) => i.id === selectedInvoice)?.currency ?? accountCurrency;
+    if (selectedContract) return contractOptions.find((c) => c.id === selectedContract)?.currency ?? accountCurrency;
+    return accountCurrency;
+  })();
+  const enteredAmountInAccountCurrency = paymentCurrency === accountCurrency
+    ? Number(payAmount)
+    : exchangeRate > 0
+      ? Number(payAmount) * exchangeRate
+      : null;
+  const maximumPaymentAmount = paymentCurrency === accountCurrency
+    ? maxAmount
+    : exchangeRate > 0
+      ? maxAmount / exchangeRate
+      : undefined;
 
   const onSubmit = handleSubmit(async (formData) => {
     if (!activeCashierSession) {
@@ -199,8 +223,13 @@ export function CollectionsTab() {
       return;
     }
     // Overpayment guard (dynamic — cannot live in zod).
-    if (maxAmount > 0 && Number(formData.amount) > maxAmount) {
-      toast.error(`المبلغ يتجاوز المستحق (${formatYER(maxAmount)})`);
+    const appliedAmount = formData.currency === formData.accountCurrency
+      ? Number(formData.amount)
+      : Number(formData.exchangeRateToAccountCurrency) > 0
+        ? Number(formData.amount) * Number(formData.exchangeRateToAccountCurrency)
+        : null;
+    if (maxAmount > 0 && appliedAmount !== null && appliedAmount > maxAmount) {
+      toast.error(`المبلغ يتجاوز المستحق (${formatMoney(maxAmount, maxAmountCurrency)})`);
       return;
     }
     try {
@@ -263,6 +292,9 @@ export function CollectionsTab() {
       contractId: "",
       amount: "",
       paymentMethod: "cash",
+      currency: "YER",
+      accountCurrency: "YER",
+      exchangeRateToAccountCurrency: "",
       notes: "",
     });
     setInvoiceOptions([]);
@@ -273,7 +305,9 @@ export function CollectionsTab() {
   const getReceiptNumber = (r: PaymentListItem) =>
     r.receiptNumber ?? r.paymentNumber ?? "—";
 
-  const overpaid = maxAmount > 0 && Number(payAmount) > maxAmount;
+  const overpaid = maxAmount > 0
+    && enteredAmountInAccountCurrency !== null
+    && enteredAmountInAccountCurrency > maxAmount;
 
   return (
     <div className="p-6 space-y-4">
@@ -421,12 +455,18 @@ export function CollectionsTab() {
                 {...register("invoiceId")}
                 onChange={(e) => {
                   setValue("invoiceId", e.target.value, { shouldValidate: false });
-                  if (e.target.value) setValue("contractId", "");
+                  if (e.target.value) {
+                    const invoice = invoiceOptions.find((item) => item.id === e.target.value);
+                    setValue("contractId", "");
+                    setValue("accountCurrency", invoice?.currency === "SAR" || invoice?.currency === "USD" ? invoice.currency : "YER");
+                    setValue("currency", invoice?.currency === "SAR" || invoice?.currency === "USD" ? invoice.currency : "YER");
+                    setValue("exchangeRateToAccountCurrency", "");
+                  }
                 }}
                 style={inputStyle}
               >
                 <option value="">— اختر فاتورة —</option>
-                {invoiceOptions.map((i) => (<option key={i.id} value={i.id}>{i.invoiceNumber} ({formatYER(i.balance)})</option>))}
+                {invoiceOptions.map((i) => (<option key={i.id} value={i.id}>{i.invoiceNumber} ({formatMoney(i.balance, i.currency)})</option>))}
               </select>
             </div>
             <div>
@@ -435,12 +475,18 @@ export function CollectionsTab() {
                 {...register("contractId")}
                 onChange={(e) => {
                   setValue("contractId", e.target.value, { shouldValidate: false });
-                  if (e.target.value) setValue("invoiceId", "");
+                  if (e.target.value) {
+                    const contract = contractOptions.find((item) => item.id === e.target.value);
+                    setValue("invoiceId", "");
+                    setValue("accountCurrency", contract?.currency === "SAR" || contract?.currency === "USD" ? contract.currency : "YER");
+                    setValue("currency", contract?.currency === "SAR" || contract?.currency === "USD" ? contract.currency : "YER");
+                    setValue("exchangeRateToAccountCurrency", "");
+                  }
                 }}
                 style={inputStyle}
               >
                 <option value="">— اختر عقد —</option>
-                {contractOptions.map((c) => (<option key={c.id} value={c.id}>{c.contractNumber} ({formatYER(c.outstandingAmount)})</option>))}
+                {contractOptions.map((c) => (<option key={c.id} value={c.id}>{c.contractNumber} ({formatMoney(c.outstandingAmount, c.currency)})</option>))}
               </select>
             </div>
           </div>
@@ -452,7 +498,7 @@ export function CollectionsTab() {
               {...register("amount")}
               type="number"
               min="0"
-              max={maxAmount || undefined}
+              max={maximumPaymentAmount || undefined}
               step="0.01"
               placeholder="0"
               dir="ltr"
@@ -462,7 +508,7 @@ export function CollectionsTab() {
               <p className="text-xs mt-1" style={{ color: tokens.dangerBorder }}>{errors.amount.message}</p>
             )}
             {overpaid && (
-              <p className="text-xs mt-1" style={{ color: tokens.dangerBorder }}>⚠ المبلغ يتجاوز المستحق ({formatYER(maxAmount)})</p>
+              <p className="text-xs mt-1" style={{ color: tokens.dangerBorder }}>⚠ المبلغ يتجاوز المستحق ({formatMoney(maxAmount, maxAmountCurrency)})</p>
             )}
           </div>
 

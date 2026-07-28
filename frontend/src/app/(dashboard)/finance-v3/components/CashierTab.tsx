@@ -15,9 +15,19 @@ import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import type { CashierForeignCurrencyActivity, CashierSession, CloseSessionRequest } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, StatusBadge, tokens, inputStyle, labelStyle, btnPrimary, btnDanger, btnGhost } from "./FinanceSharedUI";
-import { formatYER, extractErrorMessage, safeFormatDateTime } from "./FinanceHelpers";
+import { formatCurrencyAmounts, formatMoney, formatYER, extractErrorMessage, safeFormatDateTime } from "./FinanceHelpers";
 
 const FOREIGN_DRAWER_CURRENCIES = ["SAR", "USD"] as const;
+
+function getSessionOpeningBalances(session: CashierSession) {
+  return [
+    { currency: "YER", amount: session.openingBalance ?? 0 },
+    ...(session.currencyOpeningBalances ?? []).map((balance) => ({
+      currency: balance.currency,
+      amount: balance.openingCash,
+    })),
+  ];
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 6: Cashier — الورديات اليومية (التشغيل اليومي)
@@ -183,8 +193,8 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
 
       {/* Clarify Cash box (drawer/shift) vs Treasuries (persistent accounts) */}
       <div className="rounded-lg border p-3 text-xs leading-relaxed" style={{ backgroundColor: tokens.infoBg, borderColor: tokens.border, color: tokens.textSecondary }}>
-        <span className="font-bold">الصندوق</span> هو درج الكاش اليومي الذي تُفتح عليه <span className="font-bold">الوردية</span> (شيفت العمل) ويُحصَّل فيه النقد بالريال اليمني.
-        أمّا <span className="font-bold">الخزائن</span> (تبويب «الخزائن») فهي الأرصدة الدائمة — درج كاش وحساب بنكي — ولكل عملة (YER / SAR / USD) خزينة مستقلة.
+        <span className="font-bold">الصندوق</span> هو درج الكاش اليومي متعدد العملات الذي تُفتح عليه <span className="font-bold">الوردية</span> (شيفت العمل)، ويستقبل YER وSAR وUSD مع حفظ رصيد وحركة وإقفال كل عملة بصورة مستقلة.
+        أمّا <span className="font-bold">الخزائن</span> (تبويب «الخزائن») فهي الأرصدة الدائمة المرتبطة بهذه الحركات، ولكل عملة خزينة مستقلة.
       </div>
 
       {/* Current session info */}
@@ -194,20 +204,11 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
             <CircleDot className="w-4 h-4" style={{ color: tokens.successBorder }} />
             <h4 className="text-sm font-bold" style={{ color: tokens.successBorder }}>وردية مفتوحة</h4>
           </div>
-            <div className="grid grid-cols-3 gap-4 text-sm">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
             <div><span style={{ color: tokens.textTertiary }}>الكاشر:</span> <span className="font-bold">{openSession.cashierName ?? "—"}</span></div>
             <div><span style={{ color: tokens.textTertiary }}>الافتتاح:</span> <span className="font-bold">{safeFormatDateTime(openSession.openedAt)}</span></div>
-              <div><span style={{ color: tokens.textTertiary }}>رصيد الافتتاح:</span> <span className="font-bold">{formatYER(openSession.openingBalance ?? 0)}</span></div>
+              <div><span style={{ color: tokens.textTertiary }}>أرصدة الافتتاح:</span> <span className="font-bold">{formatCurrencyAmounts(getSessionOpeningBalances(openSession))}</span></div>
             </div>
-            {!!openSession.currencyOpeningBalances?.length && (
-              <div className="flex flex-wrap gap-3 mt-3 text-xs">
-                {openSession.currencyOpeningBalances.map((balance) => (
-                  <span key={balance.currency} className="font-semibold" dir="ltr">
-                    {balance.currency} {balance.openingCash.toLocaleString()}
-                  </span>
-                ))}
-              </div>
-            )}
         </div>
       )}
 
@@ -232,7 +233,7 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
             { key: "cashierName", label: "الكاشر" },
             { key: "openedAt", label: "وقت الافتتاح", render: (r) => safeFormatDateTime(r.openedAt) },
             { key: "closingTime", label: "وقت الإقفال", render: (r) => safeFormatDateTime(r.closingTime) },
-            { key: "openingBalance", label: "رصيد الافتتاح", render: (r) => formatYER(r.openingBalance) },
+            { key: "openingBalance", label: "أرصدة الافتتاح", render: (r) => formatCurrencyAmounts(getSessionOpeningBalances(r)) },
             { key: "shortageOrSurplus", label: "عجز/فائض", render: (r) => {
               if (r.shortageOrSurplus == null) return "—";
               if (r.shortageOrSurplus < 0) return <span style={{ color: tokens.dangerBorder, fontWeight: 700 }}>عجز {formatYER(Math.abs(r.shortageOrSurplus))}</span>;
@@ -260,7 +261,7 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
           </div>
 
           <div>
-            <label style={labelStyle}>مبلغ العهدة الافتتاحية</label>
+            <label style={labelStyle}>رصيد افتتاح YER</label>
             <input
               type="number"
               min="0"
@@ -272,7 +273,7 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
               style={inputStyle}
             />
             <p className="text-[11px] mt-1" style={{ color: tokens.textTertiary }}>
-              المبلغ النقدي الموجود في الدرج عند بدء الوردية (اختياري، يمكن تركه 0)
+              أدخل أرصدة النقد الموجودة في الدرج عند بدء الوردية لكل عملة بصورة مستقلة.
             </p>
           </div>
 
@@ -330,13 +331,13 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
 
             {foreignCurrencyActivity.length > 0 && (
               <div className="rounded-md p-3 space-y-2" style={{ backgroundColor: tokens.warningBg, border: `1px solid ${tokens.warningBorder}` }}>
-                <p className="text-xs font-bold" style={{ color: tokens.warningText }}>حركات العملات الأجنبية في الخزائن</p>
-                <p className="text-[11px]" style={{ color: tokens.warningText }}>هذه الحركات لا تدخل في عجز أو فائض الدرج اليمني، وتبقى مسجلة في خزائن عملتها.</p>
+                <p className="text-xs font-bold" style={{ color: tokens.warningText }}>حركات الصندوق حسب العملة</p>
+                <p className="text-[11px]" style={{ color: tokens.warningText }}>يُحسب المتوقع والفعلي والعجز أو الفائض لكل عملة مستقلة، ولا تُجمع العملات المختلفة.</p>
                 {foreignCurrencyActivity.map((activity) => (
                   <div key={activity.currency} className="border-t pt-2" style={{ borderColor: tokens.warningBorder }}>
                     <div className="flex items-center justify-between text-xs mb-2">
                       <span className="font-semibold">{activity.currency}</span>
-                      <span dir="ltr">Cash {activity.netCash.toLocaleString()} | Bank {activity.netBank.toLocaleString()}</span>
+                      <span dir="ltr">Cash {formatMoney(activity.netCash, activity.currency)} | Bank {formatMoney(activity.netBank, activity.currency)}</span>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>

@@ -21,6 +21,15 @@ export function formatMoney(amount: number | null | undefined, currency = "YER")
   return `${(amount ?? 0).toLocaleString("ar-YE", { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits })} ${suffixes[currency] ?? currency}`;
 }
 
+export function formatCurrencyAmounts(
+  items: { currency: string; amount: number }[] | null | undefined,
+): string {
+  if (!items?.length) return formatMoney(0, "YER");
+  return items
+    .map((item) => formatMoney(item.amount, item.currency))
+    .join(" • ");
+}
+
 export function formatNumber(amount: number | null | undefined): string {
   return (amount ?? 0).toLocaleString("ar-YE", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }

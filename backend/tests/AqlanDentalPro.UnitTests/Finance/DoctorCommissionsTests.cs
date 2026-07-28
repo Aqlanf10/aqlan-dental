@@ -146,6 +146,101 @@ public class DoctorCommissionsTests
     }
 
     [Fact]
+    public async Task GetDoctorCommissions_MissingLineDoctor_UsesVisitAppointmentDoctor()
+    {
+        await using var db = CreateDb();
+        var doctor = new Doctor
+        {
+            Id = Guid.NewGuid(),
+            Name = "Visit Doctor",
+            DefaultCommissionPercentage = 25m,
+            UserId = Guid.NewGuid()
+        };
+        var patient = new Patient
+        {
+            Id = Guid.NewGuid(),
+            FirstName = "Visit",
+            LastName = "Patient"
+        };
+        var appointment = new Appointment
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patient.Id,
+            DoctorId = doctor.Id,
+            AppointmentDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            StartTime = new TimeOnly(9, 0),
+            EndTime = new TimeOnly(9, 30),
+            AppointmentType = "Treatment"
+        };
+        var visit = new Visit
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patient.Id,
+            AppointmentId = appointment.Id,
+            VisitDate = DateOnly.FromDateTime(DateTime.UtcNow)
+        };
+        var invoice = new Invoice
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patient.Id,
+            VisitId = visit.Id,
+            AppointmentId = appointment.Id,
+            InvoiceNumber = "INV-VISIT-DOCTOR",
+            Status = InvoiceStatus.Issued,
+            CreatedAt = DateTime.UtcNow
+        };
+        var cancelledInvoice = new Invoice
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patient.Id,
+            VisitId = visit.Id,
+            AppointmentId = appointment.Id,
+            InvoiceNumber = "INV-CANCELLED",
+            Status = InvoiceStatus.Cancelled,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        db.AddRange(doctor, patient, appointment, visit, invoice, cancelledInvoice);
+        db.InvoiceLineItems.AddRange(
+            new InvoiceLineItem
+            {
+                Id = Guid.NewGuid(),
+                InvoiceId = invoice.Id,
+                RelatedVisitId = visit.Id,
+                DoctorId = null,
+                TotalPrice = 20_000m,
+                DoctorCommissionPercentage = 25m,
+                DoctorCommissionAmount = 5_000m,
+                IsActive = true
+            },
+            new InvoiceLineItem
+            {
+                Id = Guid.NewGuid(),
+                InvoiceId = cancelledInvoice.Id,
+                RelatedVisitId = visit.Id,
+                DoctorId = null,
+                TotalPrice = 99_000m,
+                DoctorCommissionPercentage = 25m,
+                DoctorCommissionAmount = 24_750m,
+                IsActive = true
+            });
+        await db.SaveChangesAsync();
+
+        var controller = BuildFinanceV3Controller(db);
+        var result = await controller.GetDoctorCommissions(
+            doctor.Id,
+            DateTime.UtcNow.AddDays(-1).ToString("yyyy-MM-dd"),
+            DateTime.UtcNow.AddDays(1).ToString("yyyy-MM-dd"));
+
+        var summary = ((List<DoctorCommissionSummaryDto>)((OkObjectResult)result).Value!).Single();
+        summary.DoctorId.Should().Be(doctor.Id);
+        summary.CasesCount.Should().Be(1);
+        summary.TotalServiceValue.Should().Be(20_000m);
+        summary.CommissionPercentage.Should().Be(25m);
+        summary.CommissionDue.Should().Be(5_000m);
+    }
+
+    [Fact]
     public async Task GetDoctorCommissions_InvalidDates_ReturnsBadRequest()
     {
         // Arrange

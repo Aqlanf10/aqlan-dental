@@ -16,7 +16,7 @@ import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import type { InvoiceListItem, InvoiceDetail, CreditNoteDto, CreateCreditNoteRequest, ProcessRefundRequest } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, StatusBadge, tokens, inputStyle, btnDanger, btnPrimary } from "./FinanceSharedUI";
-import { formatYER, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
+import { formatMoney, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
 import CreateCreditNoteModal from "./CreateCreditNoteModal";
 import ProcessRefundModal from "./ProcessRefundModal";
 
@@ -87,7 +87,7 @@ export function InvoicesTab() {
       if (result.skippedDueToUnresolvedRefunds) {
         toast.error("لا يمكن التسوية تلقائيا لوجود استرداد مقدم يحتاج مراجعة محاسبية.");
       } else if (result.allocationCount > 0) {
-        toast.success(`تمت تسوية ${formatYER(result.allocatedAmount)} من الدفعات المقدمة.`);
+        toast.success(`تمت تسوية ${formatMoney(result.allocatedAmount, detail.currency)} من الدفعات المقدمة.`);
       } else {
         toast.success("لا توجد دفعات مقدمة متاحة بنفس عملة الفاتورة.");
       }
@@ -164,9 +164,9 @@ export function InvoicesTab() {
           columns={[
             { key: "invoiceNumber", label: "رقم الفاتورة" },
             { key: "patientName", label: "المريض" },
-            { key: "totalAmount", label: "الإجمالي", render: (r) => formatYER(r.totalAmount) },
-            { key: "paidAmount", label: "المدفوع", render: (r) => formatYER(r.paidAmount) },
-            { key: "balance", label: "المتبقي", render: (r) => <span style={{ color: r.balance > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.balance)}</span> },
+            { key: "totalAmount", label: "الإجمالي", render: (r) => formatMoney(r.totalAmount, r.currency) },
+            { key: "paidAmount", label: "المدفوع", render: (r) => formatMoney(r.paidAmount, r.currency) },
+            { key: "balance", label: "المتبقي", render: (r) => <span style={{ color: r.balance > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatMoney(r.balance, r.currency)}</span> },
             { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
             { key: "issueDate", label: "التاريخ", render: (r) => safeFormatDate(r.issueDate) },
             { key: "refundAction", label: "", render: (r) => (
@@ -236,9 +236,9 @@ export function InvoicesTab() {
             <div className="grid grid-cols-2 gap-3">
               <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المريض</p><p className="text-sm font-bold" style={{ color: tokens.textPrimary }}>{detail.patientName} ({detail.patientNumber})</p></div>
               <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الحالة</p><StatusBadge status={detail.status} /></div>
-              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الإجمالي</p><p className="text-sm font-bold">{formatYER(detail.totalAmount)}</p></div>
-              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المدفوع</p><p className="text-sm font-bold" style={{ color: tokens.successBorder }}>{formatYER(detail.paidAmount)}</p></div>
-              {(detail.advanceAllocatedAmount ?? 0) > 0 && <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>دفعات مقدمة مسواة</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{formatYER(detail.advanceAllocatedAmount ?? 0)}</p></div>}
+               <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الإجمالي</p><p className="text-sm font-bold">{formatMoney(detail.totalAmount, detail.currency)}</p></div>
+               <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المدفوع</p><p className="text-sm font-bold" style={{ color: tokens.successBorder }}>{formatMoney(detail.paidAmount, detail.currency)}</p></div>
+               {(detail.advanceAllocatedAmount ?? 0) > 0 && <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>دفعات مقدمة مسواة</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{formatMoney(detail.advanceAllocatedAmount ?? 0, detail.currency)}</p></div>}
             </div>
 
             {/* Line items */}
@@ -261,9 +261,9 @@ export function InvoicesTab() {
                           <td className="px-3 py-2">{li.treatmentName}</td>
                           <td className="px-3 py-2">{li.toothNumber ?? "—"}</td>
                           <td className="px-3 py-2">{li.quantity}</td>
-                          <td className="px-3 py-2">{formatYER(li.unitPrice)}</td>
-                          <td className="px-3 py-2">{formatYER(li.discountAmount)}</td>
-                          <td className="px-3 py-2 font-bold">{formatYER(li.totalPrice)}</td>
+                          <td className="px-3 py-2">{formatMoney(li.unitPrice, detail.currency)}</td>
+                          <td className="px-3 py-2">{formatMoney(li.discountAmount, detail.currency)}</td>
+                          <td className="px-3 py-2 font-bold">{formatMoney(li.totalPrice, detail.currency)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -289,7 +289,7 @@ export function InvoicesTab() {
                         <tr key={allocation.id} style={{ borderBottom: `1px solid ${tokens.border}` }}>
                           <td className="px-3 py-2">{allocation.receiptNumber ?? "-"}</td>
                           <td className="px-3 py-2">{safeFormatDate(allocation.paymentDate)}</td>
-                          <td className="px-3 py-2 font-bold" style={{ color: tokens.brand }}>{formatYER(allocation.amount)}</td>
+                          <td className="px-3 py-2 font-bold" style={{ color: tokens.brand }}>{formatMoney(allocation.amount, allocation.currency)}</td>
                           <td className="px-3 py-2" dir="ltr">{allocation.currency}</td>
                           <td className="px-3 py-2" dir="ltr">{allocation.journalEntryId ? allocation.journalEntryId.slice(0, 8) : "-"}</td>
                         </tr>
@@ -316,7 +316,7 @@ export function InvoicesTab() {
                     <tbody>
                       {creditNotes.map((cn) => (
                         <tr key={cn.id} style={{ borderBottom: `1px solid ${tokens.border}` }}>
-                          <td className="px-3 py-2 font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(cn.amount)}</td>
+                          <td className="px-3 py-2 font-bold" style={{ color: tokens.dangerBorder }}>{formatMoney(cn.amount, detail.currency)}</td>
                           <td className="px-3 py-2">{cn.reason}</td>
                           <td className="px-3 py-2"><StatusBadge status={cn.status} /></td>
                           <td className="px-3 py-2">{safeFormatDate(cn.createdAt)}</td>

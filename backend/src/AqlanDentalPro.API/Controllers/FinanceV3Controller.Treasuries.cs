@@ -83,6 +83,7 @@ public partial class FinanceV3Controller
                 PerformedBy = currentUser.UserId ?? Guid.Empty,
                 CashierSessionId = null,
                 TreasuryId = treasury.Id,
+                Currency = currency,
                 IsPosted = true,
                 PostedAt = DateTime.UtcNow,
                 IsReversal = false,

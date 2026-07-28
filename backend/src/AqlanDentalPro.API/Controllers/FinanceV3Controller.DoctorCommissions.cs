@@ -73,17 +73,13 @@ public partial class FinanceV3Controller
         var itemsQuery = db.InvoiceLineItems
             .Where(i => i.IsActive
                      && i.Invoice.IsActive
+                     && i.Invoice.Status != InvoiceStatus.Cancelled
                      && i.Invoice.CreatedAt >= startDateTime
                      && i.Invoice.CreatedAt <= endDateTime);
 
         if (branchId.HasValue)
         {
             itemsQuery = itemsQuery.Where(i => i.Invoice.Patient.BranchId == branchId.Value);
-        }
-
-        if (doctorId.HasValue)
-        {
-            itemsQuery = itemsQuery.Where(i => i.DoctorId == doctorId.Value);
         }
 
         var itemsByDoctor = await itemsQuery
@@ -94,9 +90,98 @@ public partial class FinanceV3Controller
                 DoctorId = g.Key,
                 CasesCount = g.Count(),
                 TotalServiceValue = g.Sum(i => i.TotalPrice),
-                CommissionDue = g.Sum(i => i.DoctorCommissionAmount)
+                CommissionDue = g.Sum(i => i.DoctorCommissionAmount),
+                CommissionPercentageTotal = g.Sum(i => i.DoctorCommissionPercentage)
             })
-            .ToDictionaryAsync(x => x.DoctorId);
+            .ToDictionaryAsync(
+                x => x.DoctorId,
+                x => new DoctorCommissionAggregate(
+                    x.CasesCount,
+                    x.TotalServiceValue,
+                    x.CommissionDue,
+                    x.CommissionPercentageTotal));
+
+        // Older visit-generated invoices can have a calculated commission but no
+        // line-item DoctorId. Resolve those rows through the visit/appointment so
+        // they remain visible while the one-time data repair is being deployed.
+        var orphanItems = await itemsQuery
+            .Where(i => !i.DoctorId.HasValue)
+            .Select(i => new
+            {
+                i.RelatedVisitId,
+                InvoiceVisitId = i.Invoice.VisitId,
+                InvoiceAppointmentId = i.Invoice.AppointmentId,
+                i.TotalPrice,
+                i.DoctorCommissionAmount,
+                i.DoctorCommissionPercentage
+            })
+            .ToListAsync();
+
+        if (orphanItems.Count > 0)
+        {
+            var visitIds = orphanItems
+                .SelectMany(i => new[] { i.RelatedVisitId, i.InvoiceVisitId })
+                .Where(id => id.HasValue)
+                .Select(id => id!.Value)
+                .Distinct()
+                .ToList();
+            var visits = await db.Visits
+                .Where(v => visitIds.Contains(v.Id))
+                .Select(v => new { v.Id, v.DoctorId, v.AppointmentId })
+                .ToDictionaryAsync(v => v.Id);
+
+            var appointmentIds = orphanItems
+                .Select(i => i.InvoiceAppointmentId)
+                .Concat(visits.Values.Select(v => v.AppointmentId))
+                .Where(id => id.HasValue)
+                .Select(id => id!.Value)
+                .Distinct()
+                .ToList();
+            var appointmentDoctors = await db.Appointments
+                .Where(a => appointmentIds.Contains(a.Id))
+                .ToDictionaryAsync(a => a.Id, a => a.DoctorId);
+
+            foreach (var item in orphanItems)
+            {
+                var visit = item.RelatedVisitId.HasValue
+                    ? visits.GetValueOrDefault(item.RelatedVisitId.Value)
+                    : null;
+                visit ??= item.InvoiceVisitId.HasValue
+                    ? visits.GetValueOrDefault(item.InvoiceVisitId.Value)
+                    : null;
+
+                var effectiveDoctorId = visit?.DoctorId;
+                if (!effectiveDoctorId.HasValue && visit?.AppointmentId.HasValue == true)
+                    effectiveDoctorId = appointmentDoctors.TryGetValue(visit.AppointmentId.Value, out var visitDoctorId)
+                        ? visitDoctorId
+                        : null;
+                if (!effectiveDoctorId.HasValue && item.InvoiceAppointmentId.HasValue)
+                    effectiveDoctorId = appointmentDoctors.TryGetValue(item.InvoiceAppointmentId.Value, out var invoiceDoctorId)
+                        ? invoiceDoctorId
+                        : null;
+
+                if (!effectiveDoctorId.HasValue
+                    || (doctorId.HasValue && effectiveDoctorId.Value != doctorId.Value))
+                    continue;
+
+                var existing = itemsByDoctor.GetValueOrDefault(effectiveDoctorId.Value)
+                    ?? new DoctorCommissionAggregate(0, 0m, 0m, 0m);
+                itemsByDoctor[effectiveDoctorId.Value] = existing with
+                {
+                    CasesCount = existing.CasesCount + 1,
+                    TotalServiceValue = existing.TotalServiceValue + item.TotalPrice,
+                    CommissionDue = existing.CommissionDue + item.DoctorCommissionAmount,
+                    CommissionPercentageTotal = existing.CommissionPercentageTotal + item.DoctorCommissionPercentage
+                };
+            }
+        }
+
+        if (doctorId.HasValue)
+        {
+            itemsByDoctor = itemsByDoctor
+                .Where(pair => pair.Key == doctorId.Value)
+                .ToDictionary(pair => pair.Key, pair => pair.Value);
+        }
 
         // 3. Aggregate commission payments per doctor (server-side GROUP BY ... SUM)
         var paymentsQuery = db.DoctorCommissionPayments
@@ -153,7 +238,9 @@ public partial class FinanceV3Controller
 
             var casesCount = items?.CasesCount ?? 0;
             var totalServiceValue = items?.TotalServiceValue ?? 0m;
-            var commissionPercentage = doctor.DefaultCommissionPercentage ?? 0m;
+            var commissionPercentage = casesCount > 0 && items!.CommissionPercentageTotal > 0
+                ? items!.CommissionPercentageTotal / casesCount
+                : doctor.DefaultCommissionPercentage ?? 0m;
             var commissionDue = items?.CommissionDue ?? 0m;
             var commissionPaid = payments?.CommissionPaid ?? 0m;
             var commissionRemaining = commissionDue - commissionPaid;
@@ -173,6 +260,12 @@ public partial class FinanceV3Controller
 
         return Ok(resultList);
     }
+
+    private sealed record DoctorCommissionAggregate(
+        int CasesCount,
+        decimal TotalServiceValue,
+        decimal CommissionDue,
+        decimal CommissionPercentageTotal);
 
     /// <summary>
     /// GET /api/finance-v3/doctor-commissions/earned-from-collections

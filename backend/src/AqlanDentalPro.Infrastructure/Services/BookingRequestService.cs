@@ -514,42 +514,11 @@ public class BookingRequestService(
             if (tx != null) await tx.DisposeAsync();
         }
 
-        // 8. If appointment is today, also add patient to the clinic queue
-        // CORE-PAT-017: compare against the CLINIC day, not the UTC day —
-        // Yemen is UTC+3, so between 00:00 and 03:00 clinic time a same-day
-        // booking conversion silently skipped the queue insert.
-        var today = ClinicTimeProvider.ClinicToday();
-        if (dto.AppointmentDate == today)
-        {
-            var activeStatuses = new HashSet<ClinicQueueStatus>
-            {
-                ClinicQueueStatus.Waiting,
-                ClinicQueueStatus.Called,
-                ClinicQueueStatus.InRoom,
-                ClinicQueueStatus.InProgress
-            };
-
-            var existingQueueItem = await db.ClinicQueueItems
-                .AnyAsync(q => q.AppointmentId == appointment.Id
-                            && q.QueueDate == today
-                            && activeStatuses.Contains(q.Status)
-                            && q.IsActive);
-
-            if (!existingQueueItem)
-            {
-                var queueItem = new ClinicQueueItem
-                {
-                    PatientId = patientId,
-                    AppointmentId = appointment.Id,
-                    DoctorId = dto.DoctorId,
-                    Status = ClinicQueueStatus.Waiting,
-                    QueueDate = today,
-                    AddedByUserId = convertedBy
-                };
-                db.ClinicQueueItems.Add(queueItem);
-                await db.SaveChangesAsync();
-            }
-        }
+        // A converted booking is still only a confirmed appointment. Do not put
+        // the patient in the live queue until reception records arrival and then
+        // explicitly sends the patient to the queue. Pre-creating a Waiting item
+        // here made same-day conversions appear as waiting before they arrived and
+        // later caused SendToQueue to reject the real workflow as a duplicate.
 
         return ToDto(bookingRequest, bookingRequest.Doctor?.Name);
     }

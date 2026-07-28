@@ -201,6 +201,33 @@ public class BookingRequestConvertTests
         }
 
         [Fact]
+        public async Task SameDayConversion_DoesNotAddPatientToQueueBeforeArrival()
+        {
+            using var db = CreateInMemoryDb();
+            var doctor = CreateActiveDoctor(db);
+            var br = CreateConfirmedBookingRequest(db, doctor);
+            await db.SaveChangesAsync();
+
+            var service = CreateService(db);
+            var today = ClinicTimeProvider.ClinicToday();
+            var dto = new ConvertBookingRequestToAppointmentDto(
+                PatientId: Guid.Empty,
+                DoctorId: doctor.Id,
+                AppointmentDate: today,
+                StartTime: new TimeOnly(10, 0),
+                EndTime: new TimeOnly(10, 30),
+                AppointmentType: "معاينة",
+                DurationMinutes: 30);
+
+            var result = await service.ConvertToAppointmentAsync(br.Id, dto, Guid.NewGuid());
+
+            result.Should().NotBeNull();
+            result!.ConvertedToAppointmentId.Should().NotBeNull();
+            (await db.ClinicQueueItems.CountAsync()).Should().Be(
+                0, "conversion confirms the appointment; reception queues the patient only after arrival");
+        }
+
+        [Fact]
         public async Task BookingRequest_DoesNotConflictWithItself()
         {
             // Arrange — a confirmed booking request that occupies "09:00" on 2026-06-15

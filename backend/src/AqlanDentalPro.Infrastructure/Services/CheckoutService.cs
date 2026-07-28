@@ -185,25 +185,62 @@ public class CheckoutService(
 
         var today = ClinicTimeProvider.ClinicToday();
 
-        // Sprint 1 FIX: Wrap in transaction + advisory lock to prevent duplicate queue items
-        await using var tx = await db.Database.BeginTransactionAsync();
+        // Relational production providers use a transaction + advisory lock to
+        // serialize concurrent clicks. InMemory tests have no transactions/raw SQL,
+        // so they exercise the same state machine without the cross-process lock.
+        var tx = db.Database.IsRelational()
+            ? await db.Database.BeginTransactionAsync()
+            : null;
         try
         {
-            // Acquire advisory lock scoped to this patient (same as ClinicQueueController.AddToQueue)
-            var lockKey = (int)(appointment.PatientId.GetHashCode() % 100000);
-            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            if (tx != null)
+            {
+                // Acquire advisory lock scoped to this patient (same as ClinicQueueController.AddToQueue)
+                var lockKey = (int)(appointment.PatientId.GetHashCode() % 100000);
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            }
 
             // Re-check for existing active queue item for this appointment (inside lock)
             var existingQueueItem = await db.ClinicQueueItems
-                .AnyAsync(q => q.AppointmentId == appointmentId && q.QueueDate == today
+                .FirstOrDefaultAsync(q => q.AppointmentId == appointmentId && q.QueueDate == today
                     && q.Status != ClinicQueueStatus.Completed
                     && q.Status != ClinicQueueStatus.Cancelled
                     && q.IsActive);
 
-            if (existingQueueItem)
+            if (existingQueueItem != null)
             {
-                await tx.RollbackAsync();
-                return Conflict(new { message = "المريض موجود بالفعل في قائمة الانتظار" });
+                // Idempotent repair path for legacy same-day booking conversions
+                // that pre-created a Waiting queue row before reception recorded
+                // arrival. Reuse the row and complete Arrived -> Waiting instead
+                // of trapping the appointment in Arrived with a duplicate error.
+                existingQueueItem.DoctorId = appointment.DoctorId;
+                existingQueueItem.ServiceId = appointment.ServiceId;
+                existingQueueItem.ClinicRoomId = appointment.ClinicRoomId;
+                existingQueueItem.RoomName = appointment.RoomName;
+                if (!string.IsNullOrWhiteSpace(req?.Notes))
+                    existingQueueItem.Notes = req.Notes;
+
+                if (AppointmentStatusTransitions.IsValidTransition(
+                        appointment.Status, AppointmentStatus.Waiting))
+                {
+                    appointment.Status = AppointmentStatus.Waiting;
+                    appointment.UpdatedAt = DateTime.UtcNow;
+                }
+
+                await db.SaveChangesAsync();
+                if (tx != null) await tx.CommitAsync();
+
+                await PushJourneyUpdatedAsync(
+                    "send-to-queue", appointment.Id, appointment.PatientId,
+                    visitId: existingQueueItem.Id, branchId: currentUser.BranchId);
+
+                return Ok(new
+                {
+                    existingQueueItem.Id,
+                    QueueStatus = existingQueueItem.Status.ToString(),
+                    StatusArabic = ClinicQueueStatusTransitions.GetArabicLabel(existingQueueItem.Status),
+                    message = "المريض موجود في قائمة الانتظار وتم تحديث حالته بنجاح"
+                });
             }
 
             // Also check for duplicate queue item by patient for today (like ClinicQueueController.AddToQueue)
@@ -221,7 +258,7 @@ public class CheckoutService(
 
             if (duplicatePatientQueue)
             {
-                await tx.RollbackAsync();
+                if (tx != null) await tx.RollbackAsync();
                 return Conflict(new { message = "يوجد عنصر نشط لهذا المريض في قائمة الانتظار اليوم بالفعل" });
             }
 
@@ -263,7 +300,7 @@ public class CheckoutService(
             }
 
             await db.SaveChangesAsync();
-            await tx.CommitAsync();
+            if (tx != null) await tx.CommitAsync();
 
             // SignalR: best-effort push so daily-ops screens invalidate instantly.
             await PushJourneyUpdatedAsync("send-to-queue", appointment.Id, appointment.PatientId, visitId: queueItem.Id, branchId: currentUser.BranchId);
@@ -278,8 +315,12 @@ public class CheckoutService(
         }
         catch
         {
-            await tx.RollbackAsync();
+            if (tx != null) await tx.RollbackAsync();
             throw;
+        }
+        finally
+        {
+            if (tx != null) await tx.DisposeAsync();
         }
     }
 

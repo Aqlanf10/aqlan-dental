@@ -12,70 +12,20 @@ public partial class AddCephLandmarkProvenance : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.AddColumn<decimal>(
-            name: "AiProposalXCoord",
-            table: "CephLandmarks",
-            type: "numeric(12,4)",
-            precision: 12,
-            scale: 4,
-            nullable: true);
-
-        migrationBuilder.AddColumn<decimal>(
-            name: "AiProposalYCoord",
-            table: "CephLandmarks",
-            type: "numeric(12,4)",
-            precision: 12,
-            scale: 4,
-            nullable: true);
-
-        migrationBuilder.AddColumn<bool>(
-            name: "IsReviewed",
-            table: "CephLandmarks",
-            type: "boolean",
-            nullable: false,
-            defaultValue: false);
-
-        migrationBuilder.AddColumn<string>(
-            name: "PlacementSource",
-            table: "CephLandmarks",
-            type: "character varying(30)",
-            maxLength: 30,
-            nullable: false,
-            defaultValue: "manual");
-
-        migrationBuilder.AddColumn<string>(
-            name: "Reasoning",
-            table: "CephLandmarks",
-            type: "character varying(200)",
-            maxLength: 200,
-            nullable: true);
-
-        migrationBuilder.AddColumn<decimal>(
-            name: "ReviewErrorMm",
-            table: "CephLandmarks",
-            type: "numeric(10,4)",
-            precision: 10,
-            scale: 4,
-            nullable: true);
-
-        migrationBuilder.AddColumn<string>(
-            name: "SourceLandmarkKey",
-            table: "CephLandmarks",
-            type: "character varying(100)",
-            maxLength: 100,
-            nullable: true);
-
-        migrationBuilder.AddColumn<string>(
-            name: "SourceModelId",
-            table: "CephLandmarks",
-            type: "character varying(100)",
-            maxLength: 100,
-            nullable: true);
-
-        migrationBuilder.CreateIndex(
-            name: "IX_CephLandmarks_SourceModelId_IsReviewed_IsActive",
-            table: "CephLandmarks",
-            columns: new[] { "SourceModelId", "IsReviewed", "IsActive" });
+        // The startup compatibility repair mirrors these columns. Use guarded
+        // DDL so EF can record the migration after a partial production repair.
+        migrationBuilder.Sql("""
+            ALTER TABLE "CephLandmarks" ADD COLUMN IF NOT EXISTS "AiProposalXCoord" numeric(12,4) NULL;
+            ALTER TABLE "CephLandmarks" ADD COLUMN IF NOT EXISTS "AiProposalYCoord" numeric(12,4) NULL;
+            ALTER TABLE "CephLandmarks" ADD COLUMN IF NOT EXISTS "IsReviewed" boolean NOT NULL DEFAULT false;
+            ALTER TABLE "CephLandmarks" ADD COLUMN IF NOT EXISTS "PlacementSource" character varying(30) NOT NULL DEFAULT 'manual';
+            ALTER TABLE "CephLandmarks" ADD COLUMN IF NOT EXISTS "Reasoning" character varying(200) NULL;
+            ALTER TABLE "CephLandmarks" ADD COLUMN IF NOT EXISTS "ReviewErrorMm" numeric(10,4) NULL;
+            ALTER TABLE "CephLandmarks" ADD COLUMN IF NOT EXISTS "SourceLandmarkKey" character varying(100) NULL;
+            ALTER TABLE "CephLandmarks" ADD COLUMN IF NOT EXISTS "SourceModelId" character varying(100) NULL;
+            CREATE INDEX IF NOT EXISTS "IX_CephLandmarks_SourceModelId_IsReviewed_IsActive"
+                ON "CephLandmarks" ("SourceModelId", "IsReviewed", "IsActive");
+            """);
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)

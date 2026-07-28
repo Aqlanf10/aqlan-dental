@@ -9,7 +9,14 @@ import {
 } from "lucide-react";
 import { NAVY, BLUE, ORANGE, fmtRial, PAYMENT_METHODS } from "../_lib/constants";
 import type { FinanceSummaryData } from "../_lib/constants";
-import { useFinanceSummary, useTodayJourneyItems, useCreatePayment, useCheckout, useCreateDraftInvoice } from "../_lib/hooks";
+import {
+  useFinanceSummary,
+  useTodayJourneyItems,
+  useCreatePayment,
+  useCheckout,
+  useCreateDraftInvoice,
+  useValidateFinancialClosure,
+} from "../_lib/hooks";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import { canViewFinanceReports } from "@/lib/roles";
@@ -82,6 +89,7 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
   const createPaymentMutation = useCreatePayment();
   const checkoutMutation = useCheckout();
   const draftInvoiceMutation = useCreateDraftInvoice();
+  const validateFinancialClosureMutation = useValidateFinancialClosure();
 
   // ── Local UI state ──
   const [paymentPatient, setPaymentPatient] = useState<ReadyForCheckoutPatient | null>(null);
@@ -186,6 +194,14 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
     if (!checkoutPatient) return;
     if (!checkoutPatient.appointmentId) { toast.error("لا يمكن إكمال الخروج بدون موعد"); return; }
     try {
+      const validation = await validateFinancialClosureMutation.mutateAsync({
+        patientId: checkoutPatient.patientId,
+        visitId: checkoutPatient.visitId,
+      });
+      if (!validation.canClose) {
+        toast.error(validation.reason || "لا يمكن إكمال الخروج قبل تسوية الرصيد المالي");
+        return;
+      }
       await checkoutMutation.mutateAsync({
         appointmentId: checkoutPatient.appointmentId,
         body: {
@@ -199,7 +215,7 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
     } catch {
       toast.error("فشل إكمال الخروج");
     }
-  }, [checkoutPatient, checkoutNotes, checkoutMutation, refetchSummary, refetchJourney]);
+  }, [checkoutPatient, checkoutNotes, validateFinancialClosureMutation, checkoutMutation, refetchSummary, refetchJourney]);
 
   // ── Loading ──
   if (summaryLoading && journeyLoading) {
@@ -339,7 +355,7 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
                   {/* Complete Checkout */}
                   <button
                     onClick={() => handleOpenCheckout(p)}
-                    disabled={checkoutMutation.isPending}
+                    disabled={checkoutMutation.isPending || validateFinancialClosureMutation.isPending}
                     className="px-2 py-1.5 rounded-lg text-[10px] font-bold text-white transition hover:opacity-80"
                     style={{ background: BLUE }}
                     title="إكمال الخروج"
@@ -500,11 +516,11 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
                 </button>
                 <button
                   onClick={handleSubmitCheckout}
-                  disabled={checkoutMutation.isPending}
+                  disabled={checkoutMutation.isPending || validateFinancialClosureMutation.isPending}
                   className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
-                  style={{ background: "#16a34a", opacity: checkoutMutation.isPending ? 0.5 : 1 }}
+                  style={{ background: "#16a34a", opacity: (checkoutMutation.isPending || validateFinancialClosureMutation.isPending) ? 0.5 : 1 }}
                 >
-                  {checkoutMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                  {(checkoutMutation.isPending || validateFinancialClosureMutation.isPending) ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                   تأكيد الخروج
                 </button>
               </div>

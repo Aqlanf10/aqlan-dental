@@ -32,42 +32,18 @@ public partial class AddCephNormAgeGenderStratification : Migration
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)
     {
-        // Drop the legacy unique index first — it would block the new stratified
-        // rows (child SNA + adolescent SNA + adult SNA share the same
-        // (MeasurementName, AnalysisGroup) key).
-        migrationBuilder.DropIndex(
-            name: "IX_CephNorms_MeasurementName_AnalysisGroup",
-            table: "CephNorms");
-
-        // CLIN-10: age/gender stratification columns (nullable, backward compatible).
-        migrationBuilder.AddColumn<int>(
-            name: "AgeMin",
-            table: "CephNorms",
-            type: "integer",
-            nullable: true);
-
-        migrationBuilder.AddColumn<int>(
-            name: "AgeMax",
-            table: "CephNorms",
-            type: "integer",
-            nullable: true);
-
-        migrationBuilder.AddColumn<string>(
-            name: "Sex",
-            table: "CephNorms",
-            type: "character varying(1)",
-            maxLength: 1,
-            nullable: true);
-
-        // Non-unique composite index — supports the best-match lookup
-        // (WHERE MeasurementName = @m AND AnalysisGroup = @g
-        //        AND (AgeMin IS NULL OR AgeMin <= @age)
-        //        AND (AgeMax IS NULL OR AgeMax >= @age)
-        //        AND (Sex IS NULL OR Sex = @sex)).
-        migrationBuilder.CreateIndex(
-            name: "IX_CephNorms_MeasurementName_AnalysisGroup_AgeMin_AgeMax_Sex",
-            table: "CephNorms",
-            columns: new[] { "MeasurementName", "AnalysisGroup", "AgeMin", "AgeMax", "Sex" });
+        // Production may already have received this schema through the guarded
+        // startup repair before EF reaches this migration. Keep every statement
+        // idempotent so a partially repaired database can continue through the
+        // migration chain.
+        migrationBuilder.Sql("""
+            DROP INDEX IF EXISTS "IX_CephNorms_MeasurementName_AnalysisGroup";
+            ALTER TABLE "CephNorms" ADD COLUMN IF NOT EXISTS "AgeMin" integer NULL;
+            ALTER TABLE "CephNorms" ADD COLUMN IF NOT EXISTS "AgeMax" integer NULL;
+            ALTER TABLE "CephNorms" ADD COLUMN IF NOT EXISTS "Sex" character varying(1) NULL;
+            CREATE INDEX IF NOT EXISTS "IX_CephNorms_MeasurementName_AnalysisGroup_AgeMin_AgeMax_Sex"
+                ON "CephNorms" ("MeasurementName", "AnalysisGroup", "AgeMin", "AgeMax", "Sex");
+            """);
     }
 
     /// <inheritdoc />

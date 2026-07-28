@@ -90,6 +90,11 @@ internal static class LabOrdersTestData
         // is required by the constructor signature.
         var queryService = new LabOrderQueryService(db, new Mock<ILogger<LabOrderQueryService>>().Object);
 
+        // CORE-LAB-001 — supplier-bill/payable/journal linkage is now a constructor
+        // dependency. Built against the same in-memory db with no journal service, which
+        // is the "journal disabled" configuration the service already tolerates.
+        var financeSync = new LabOrderFinanceSyncService(db, journalEntryService: null);
+
         return new LabOrdersController(
             db,
             currentUserMock.Object,
@@ -97,7 +102,8 @@ internal static class LabOrdersTestData
             logger,
             patientAccessMock.Object,
             auditMock.Object,
-            queryService);
+            queryService,
+            financeSync);
     }
 
     /// <summary>

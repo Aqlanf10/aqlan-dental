@@ -98,6 +98,9 @@ public static class ServiceRegistrationConfiguration
         // Sprint 12: READ-side query service extracted from LabOrdersController.
         // Concrete class (no interface) — matches PatientJourneyService / DashboardService pattern.
         services.AddScoped<LabOrderQueryService>();
+        // CORE-LAB-001: shared, idempotent supplier-bill/payable/journal linkage for lab
+        // orders — used by both create and update so a draft completed later still bills.
+        services.AddScoped<LabOrderFinanceSyncService>();
         // READ-side query service extracted from OrthoCasesController (LabOrderQueryService pattern).
         // Concrete class (no interface). Controller keeps permission checks + write endpoints;
         // GET endpoints delegate their EF queries here.

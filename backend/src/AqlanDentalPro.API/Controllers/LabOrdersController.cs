@@ -110,14 +110,35 @@ public sealed class UpdateLabOrderRequest
     public string? Priority { get; init; }
     public string? Shade { get; init; }
     public string? RestorationType { get; init; }
+
+    // CORE-LAB-001: the draft workflow needs these. Without them a draft created
+    // with no lab and no cost could never be completed — Update accepted the lab but
+    // had no way to accept the cost it must be billed at.
+    public decimal? Cost { get; init; }
+    public string? Currency { get; init; }
+    public decimal? ExchangeRateToYer { get; init; }
 }
 
 public sealed class UpdateLabOrderRequestValidator : AbstractValidator<UpdateLabOrderRequest>
 {
     private static readonly HashSet<string> ValidPriorities = ["urgent", "normal", "low"];
+    private static readonly HashSet<string> ValidCurrencies = ["YER", "SAR", "USD"];
 
     public UpdateLabOrderRequestValidator()
     {
+        RuleFor(x => x.Cost)
+            .GreaterThan(0m).WithMessage("التكلفة يجب أن تكون أكبر من صفر")
+            .When(x => x.Cost.HasValue);
+        RuleFor(x => x.Currency)
+            .Must(c => ValidCurrencies.Contains(c!.Trim().ToUpperInvariant()))
+            .WithMessage("العملة غير مدعومة. المدعوم: YER أو SAR أو USD")
+            .When(x => !string.IsNullOrWhiteSpace(x.Currency));
+        // A non-YER cost is meaningless to the books without the rate it was agreed at.
+        RuleFor(x => x.ExchangeRateToYer)
+            .NotNull().GreaterThan(0m)
+            .WithMessage("سعر الصرف الفعلي إلى الريال اليمني مطلوب للعملات غير اليمنية")
+            .When(x => !string.IsNullOrWhiteSpace(x.Currency)
+                    && !string.Equals(x.Currency!.Trim(), "YER", StringComparison.OrdinalIgnoreCase));
         RuleFor(x => x.ApplianceType)
             .NotEmpty().WithMessage("نوع الجهاز مطلوب")
             .MaximumLength(200)
@@ -144,8 +165,38 @@ public class LabOrdersController(
     IAuditService audit,
     // Sprint 12 — read/query logic extracted to LabOrderQueryService.
     LabOrderQueryService queryService,
+    // CORE-LAB-001 — supplier bill + payable + journal linkage, shared by create and
+    // update so attaching a lab/cost after the fact still reaches the books.
+    LabOrderFinanceSyncService financeSync,
     IJournalEntryService? journalEntryService = null) : ControllerBase
 {
+    /// <summary>
+    /// CORE-LAB-002: a lab order may only leave "draft" (or "remake") for "sent" once
+    /// it actually describes billable work. Without this, the draft the create modal
+    /// happily saves with no lab and no cost could be pushed straight to "sent" and
+    /// would then sit in the lab queue forever with no supplier, no payable and no
+    /// expense — invisible to finance and to the doctor's commission.
+    /// </summary>
+    private static string? ValidateReadyToSend(LabOrder order)
+    {
+        if (!order.LabId.HasValue)
+            return "لا يمكن إرسال الطلب قبل تحديد المعمل.";
+
+        var amount = order.TotalCost ?? order.Cost ?? 0m;
+        if (amount <= 0m)
+            return "لا يمكن إرسال الطلب قبل إدخال تكلفة صحيحة أكبر من صفر.";
+
+        var currency = (order.Currency ?? "YER").Trim().ToUpperInvariant();
+        if (currency != "YER" && order.ExchangeRateToYer <= 0m)
+            return "سعر الصرف الفعلي إلى الريال اليمني مطلوب قبل إرسال الطلب.";
+
+        var hasWorkDescription = !string.IsNullOrWhiteSpace(order.ApplianceType)
+            || order.Items.Any(i => i.IsActive);
+        if (!hasWorkDescription)
+            return "لا يمكن إرسال الطلب قبل تحديد نوع العمل أو إضافة بند واحد على الأقل.";
+
+        return null;
+    }
     // CLIN-01: Per-patient access check for actions where patientId is in body or inferred.
     private async Task<IActionResult?> DenyIfDoctorCannotAccess(Guid patientId)
     {
@@ -739,7 +790,57 @@ public class LabOrdersController(
             order.Cost = newTotalCost; // keep Cost in sync with TotalCost (CLIN-08)
         }
 
-        await db.SaveChangesAsync();
+        // CORE-LAB-001: accept the money fields so a draft can actually be completed.
+        // Only an itemless order takes an explicit cost — when items exist they are the
+        // source of truth and the block above already recomputed the total.
+        var hasItems = order.Items != null && order.Items.Any(i => i.IsActive);
+        if (req.Cost.HasValue && !hasItems)
+        {
+            order.Cost = req.Cost.Value;
+            order.TotalCost = req.Cost.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(req.Currency))
+        {
+            var newCurrency = req.Currency.Trim().ToUpperInvariant();
+            order.Currency = newCurrency;
+            order.ExchangeRateToYer = newCurrency == "YER"
+                ? 1m
+                : req.ExchangeRateToYer ?? order.ExchangeRateToYer;
+        }
+        else if (req.ExchangeRateToYer.HasValue
+                 && !string.Equals(order.Currency, "YER", StringComparison.OrdinalIgnoreCase))
+        {
+            order.ExchangeRateToYer = req.ExchangeRateToYer.Value;
+        }
+
+        // CORE-LAB-001: keep the supplier bill / payable / ledger in step with whatever
+        // the order now says. Idempotent — repeated saves converge on one bill, and the
+        // whole thing commits with the order so a failure cannot leave a half-linked row.
+        var useTx = db.Database.IsRelational();
+        var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            var sync = await financeSync.SyncAsync(order, order.BranchId ?? currentUser.BranchId ?? Guid.Empty,
+                currentUser.UserId ?? Guid.Empty);
+            if (!sync.Ok)
+            {
+                if (useTx) await tx!.RollbackAsync();
+                return BadRequest(new { message = sync.Error });
+            }
+
+            await db.SaveChangesAsync();
+            if (useTx) await tx!.CommitAsync();
+        }
+        catch
+        {
+            if (useTx) await tx!.RollbackAsync();
+            throw;
+        }
+        finally
+        {
+            if (tx is not null) await tx.DisposeAsync();
+        }
 
         // Re-fetch navigation properties that may have changed (Lab)
         if (req.LabId.HasValue)
@@ -802,7 +903,11 @@ public class LabOrdersController(
         if (!ValidStatuses.Contains(nextStatus))
             return BadRequest(new { message = "الحالة غير صالحة" });
 
-        var order = await db.LabOrders.FindAsync(id);
+        // CORE-LAB-001/002: Items are needed both to validate "ready to send" and to
+        // price the order, so load them here instead of a bare FindAsync.
+        var order = await db.LabOrders
+            .Include(l => l.Items)
+            .FirstOrDefaultAsync(l => l.Id == id);
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
 
         // SEC-ROUTE: per-patient access check before mutating. The route only carries the
@@ -814,6 +919,18 @@ public class LabOrdersController(
         var oldStatus = order.Status;
         if (!CanTransition(oldStatus, nextStatus))
             return BadRequest(new { message = $"لا يمكن نقل الطلب من {oldStatus} إلى {nextStatus}" });
+
+        // CORE-LAB-002: gate every entry into "sent" (draft -> sent AND remake -> sent),
+        // not just the draft one — a remake is re-sent to a lab and must be just as
+        // complete. Blocking here is what makes the incomplete draft a dead end rather
+        // than something that quietly reaches the lab queue unbilled.
+        if (string.Equals(nextStatus, "sent", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(oldStatus, "sent", StringComparison.OrdinalIgnoreCase))
+        {
+            var notReady = ValidateReadyToSend(order);
+            if (notReady is not null)
+                return BadRequest(new { message = notReady });
+        }
 
         order.Status = nextStatus;
         if (nextStatus == "sent" && order.SentDate is null)
@@ -844,7 +961,42 @@ public class LabOrdersController(
             });
         }
 
-        await db.SaveChangesAsync();
+        // CORE-LAB-001: entering "sent" is the point the order becomes a real commitment
+        // to the lab, so make sure its financial trail exists. This is idempotent — if
+        // Create or Update already built the bill this is a no-op — and it catches any
+        // order that acquired a lab/cost through a path that did not sync.
+        if (string.Equals(nextStatus, "sent", StringComparison.OrdinalIgnoreCase))
+        {
+            var useSendTx = db.Database.IsRelational();
+            var sendTx = useSendTx ? await db.Database.BeginTransactionAsync() : null;
+            try
+            {
+                var sync = await financeSync.SyncAsync(order,
+                    order.BranchId ?? currentUser.BranchId ?? Guid.Empty,
+                    currentUser.UserId ?? Guid.Empty);
+                if (!sync.Ok)
+                {
+                    if (useSendTx) await sendTx!.RollbackAsync();
+                    return BadRequest(new { message = sync.Error });
+                }
+
+                await db.SaveChangesAsync();
+                if (useSendTx) await sendTx!.CommitAsync();
+            }
+            catch
+            {
+                if (useSendTx) await sendTx!.RollbackAsync();
+                throw;
+            }
+            finally
+            {
+                if (sendTx is not null) await sendTx.DisposeAsync();
+            }
+        }
+        else
+        {
+            await db.SaveChangesAsync();
+        }
 
         if (nextStatus == "ready")
         {

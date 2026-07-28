@@ -175,7 +175,7 @@ public class BackupController(AppDbContext db, IWebHostEnvironment env) : Contro
             var sizeBytes = fileBytes.Length;
 
             // Save backup file to disk
-            var backupDir = Path.Combine(env.ContentRootPath, "backups");
+            var backupDir = BackupStorage.GetDirectory(env);
             Directory.CreateDirectory(backupDir);
             var fileName = isEncrypted
                 ? $"backup_db_{DateTime.UtcNow:yyyyMMdd_HHmmss}.enc"
@@ -229,7 +229,7 @@ public class BackupController(AppDbContext db, IWebHostEnvironment env) : Contro
         if (record.Status != BackupStatus.Completed || string.IsNullOrWhiteSpace(record.FilePath))
             return BadRequest(new { message = "النسخة الاحتياطية غير متاحة للتحميل" });
 
-        var backupDir = Path.Combine(env.ContentRootPath, "backups");
+        var backupDir = BackupStorage.GetDirectory(env);
         var filePath = Path.Combine(backupDir, record.FilePath);
 
         if (!System.IO.File.Exists(filePath))
@@ -281,7 +281,7 @@ public class BackupController(AppDbContext db, IWebHostEnvironment env) : Contro
         if (record.Status != BackupStatus.Completed || string.IsNullOrWhiteSpace(record.FilePath))
             return BadRequest(new { message = "النسخة الاحتياطية غير متاحة" });
 
-        var backupDir = Path.Combine(env.ContentRootPath, "backups");
+        var backupDir = BackupStorage.GetDirectory(env);
         var filePath = Path.Combine(backupDir, record.FilePath);
 
         if (!System.IO.File.Exists(filePath))
@@ -289,7 +289,12 @@ public class BackupController(AppDbContext db, IWebHostEnvironment env) : Contro
 
         try
         {
-            var jsonBytes = await System.IO.File.ReadAllBytesAsync(filePath);
+            var fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
+            var isEncrypted = record.FilePath.EndsWith(".enc", StringComparison.OrdinalIgnoreCase)
+                              || record.ErrorMessage == "encrypted";
+            var jsonBytes = isEncrypted
+                ? BackupEncryption.Decrypt(fileBytes, BackupEncryption.LoadKeyFromEnvironment())
+                : fileBytes;
             using var doc = JsonDocument.Parse(jsonBytes);
             var root = doc.RootElement;
 
@@ -361,7 +366,7 @@ public class BackupController(AppDbContext db, IWebHostEnvironment env) : Contro
         // Delete the actual file from disk
         if (!string.IsNullOrWhiteSpace(record.FilePath))
         {
-            var backupDir = Path.Combine(env.ContentRootPath, "backups");
+            var backupDir = BackupStorage.GetDirectory(env);
             var filePath = Path.Combine(backupDir, record.FilePath);
             if (System.IO.File.Exists(filePath))
             {

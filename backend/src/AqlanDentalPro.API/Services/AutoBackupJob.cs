@@ -89,7 +89,7 @@ public class AutoBackupJob(IServiceProvider serviceProvider, ILogger<AutoBackupJ
             var sizeBytes = jsonBytes.Length;
 
             // Save to disk
-            var backupDir = Path.Combine(env.ContentRootPath, "backups");
+            var backupDir = BackupStorage.GetDirectory(env);
             Directory.CreateDirectory(backupDir);
             var fileName = $"auto_backup_{DateTime.UtcNow:yyyyMMdd_HHmmss}.json";
             var filePath = Path.Combine(backupDir, fileName);

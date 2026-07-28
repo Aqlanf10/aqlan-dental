@@ -1405,6 +1405,11 @@ public class LabOrdersController(
         var order = await db.LabOrders.FindAsync(id);
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
 
+        // CORE-LAB-006: soft-deleting another patient's lab order is a cross-patient
+        // mutation; this route carries only the order id so PatientAccessFilter never gates it.
+        var deniedAccess = await DenyIfDoctorCannotAccess(order.PatientId);
+        if (deniedAccess is not null) return deniedAccess;
+
         order.IsActive = false;
         await db.SaveChangesAsync();
         return Ok(new { message = "تم حذف الطلب بنجاح" });
@@ -1416,6 +1421,13 @@ public class LabOrdersController(
     public async Task<IActionResult> PrintPdf(Guid id)
     {
         if (!await CanAsync("export")) return Forbid();
+
+        // CORE-LAB-006: the generated PDF carries the patient's name, file number,
+        // treating doctor and clinical details. Exporting it is a read of that patient's
+        // record, and this route carries only the order id — PatientAccessFilter never
+        // fires on it, so the check must be explicit.
+        var deniedAccess = await DenyIfCannotAccessOrderAsync(id);
+        if (deniedAccess is not null) return deniedAccess;
 
         LabOrder? order;
         try

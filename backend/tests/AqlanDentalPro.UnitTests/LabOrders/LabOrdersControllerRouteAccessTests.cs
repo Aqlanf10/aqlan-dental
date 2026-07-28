@@ -357,6 +357,41 @@ public class LabOrdersControllerRouteAccessTests : IDisposable
         result.Should().BeOfType<OkObjectResult>();
     }
 
+
+    [Fact]
+    public async Task PrintPdf_ByDoctorWithoutAccess_Returns403_AndNeverGeneratesTheFile()
+    {
+        // The PDF carries the patient's name, file number, treating doctor and clinical
+        // details — exporting it is a read of that patient's record.
+        var seeded = await SeedLabOrderAsync();
+        var (access, user, audit) = BuildDeniedDoctor();
+        var controller = LabOrdersTestData.BuildController(_db, access, user, audit);
+
+        var result = await controller.PrintPdf(seeded.LabOrderId);
+
+        var status = result.Should().BeOfType<ObjectResult>().Subject;
+        status.StatusCode.Should().Be(403);
+        result.Should().NotBeOfType<FileContentResult>("a denied export must not produce a PDF");
+        access.Verify(p => p.CanAccessPatientAsync(seeded.PatientId), Times.Once);
+    }
+
+    [Fact]
+    public async Task Delete_ByDoctorWithoutAccess_Returns403_AndKeepsTheOrderActive()
+    {
+        var seeded = await SeedLabOrderAsync();
+        var (access, user, audit) = BuildDeniedDoctor();
+        var controller = LabOrdersTestData.BuildController(_db, access, user, audit);
+
+        var result = await controller.Delete(seeded.LabOrderId);
+
+        var status = result.Should().BeOfType<ObjectResult>().Subject;
+        status.StatusCode.Should().Be(403);
+
+        _db.ChangeTracker.Clear();
+        var stored = await _db.LabOrders.FindAsync(seeded.LabOrderId);
+        stored!.IsActive.Should().BeTrue("a 403 denial must not soft-delete the order");
+    }
+
     private async Task<(Guid LabOrderId, Guid PatientId)> SeedLabOrderAsync(string status = "draft")
     {
         var patient = LabOrdersTestData.BuildPatient();

@@ -5,7 +5,7 @@ import { Loader2, Wallet } from "lucide-react";
 import { api } from "@/lib/api";
 import type { ProcessRefundRequest, Treasury } from "./types";
 import { Modal, tokens, inputStyle, labelStyle, btnGhost, btnPrimary } from "./FinanceSharedUI";
-import { formatYER } from "./FinanceHelpers";
+import { formatMoney, formatYER } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Process Refund Modal
@@ -122,7 +122,7 @@ export default function ProcessRefundModal({
             >
               {treasuries.map((t) => (
                 <option key={t.id} value={t.id}>
-                  {t.name} ({formatYER(t.balance)})
+                  {t.name} ({formatMoney(t.balance, t.currency)})
                 </option>
               ))}
             </select>
@@ -152,7 +152,7 @@ export default function ProcessRefundModal({
             >
               <Wallet className="w-3.5 h-3.5 flex-shrink-0" style={{ color: tokens.brand }} />
               <span className="text-xs" style={{ color: tokens.infoText }}>
-                رصيد {selected.name}: <strong>{formatYER(selected.balance)}</strong>
+                رصيد {selected.name}: <strong>{formatMoney(selected.balance, selected.currency)}</strong>
                 {selected.balance < refundAmount && (
                   <span style={{ color: tokens.dangerText, marginRight: 8 }}>
                     ⚠ الرصيد غير كافٍ

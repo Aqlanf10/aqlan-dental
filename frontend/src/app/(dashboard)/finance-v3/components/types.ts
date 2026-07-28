@@ -503,7 +503,7 @@ export interface AccountBalance {
 
 export interface AccountBalancesData {
   accountBalances: AccountBalance[];
-  treasuries: { id: string; name: string; type: string; balance: number; branchId: string }[];
+  treasuries: { id: string; name: string; type: string; currency: "YER" | "SAR" | "USD"; balance: number; branchId: string }[];
   totalAssets: number;
   totalRevenue: number;
   totalExpenses: number;

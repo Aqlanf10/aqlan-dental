@@ -16,12 +16,12 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "Currency",
-                table: "Payments",
-                type: "character varying(3)",
-                maxLength: 3,
-                nullable: true);
+            // The guarded startup repair may add this column before EF reaches
+            // the migration. Keep the migration safe for that production path.
+            migrationBuilder.Sql("""
+                ALTER TABLE "Payments"
+                    ADD COLUMN IF NOT EXISTS "Currency" character varying(3) NULL;
+                """);
         }
 
         /// <inheritdoc />

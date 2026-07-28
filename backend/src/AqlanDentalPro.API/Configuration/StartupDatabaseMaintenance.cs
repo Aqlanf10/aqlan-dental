@@ -143,6 +143,7 @@ public static class StartupDatabaseMaintenance
         await EnsureMessageAttachmentsSchemaAsync(app);
         await EnsureMessagingBaseEntityColumnsAsync(app);
         await EnsureDoctorCommissionSchemaAsync(app);
+        await EnsureInvoiceLineItemDoctorAttributionAsync(app);
         await EnsureClinicServicesAndRoomsSchemaAsync(app);
         await EnsureDoctorDefaultRoomColumnAsync(app);
         await EnsurePasswordResetSchemaAsync(app);
@@ -803,6 +804,63 @@ public static class StartupDatabaseMaintenance
             commLogger2.LogError(ex, "HOTFIX: Failed to ensure Doctor Commission schema. Commission endpoints may return 404/500!");
         }
 
+    }
+
+    /// <summary>
+    /// Repairs historical visit-generated invoice lines whose commission values
+    /// were calculated before the performing DoctorId was copied to the line.
+    /// This runs unconditionally because production can intentionally disable
+    /// EF MigrateAsync; the matching data migration alone is therefore not enough.
+    /// </summary>
+    private static async Task EnsureInvoiceLineItemDoctorAttributionAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            var repaired = await db.Database.ExecuteSqlRawAsync(
+                """
+                WITH resolved AS (
+                    SELECT
+                        line."Id",
+                        COALESCE(
+                            related_visit."DoctorId",
+                            related_appointment."DoctorId",
+                            invoice_visit."DoctorId",
+                            invoice_appointment."DoctorId"
+                        ) AS "DoctorId"
+                    FROM "InvoiceLineItems" AS line
+                    JOIN "Invoices" AS invoice
+                      ON invoice."Id" = line."InvoiceId"
+                    LEFT JOIN "Visits" AS related_visit
+                      ON related_visit."Id" = line."RelatedVisitId"
+                    LEFT JOIN "Appointments" AS related_appointment
+                      ON related_appointment."Id" = related_visit."AppointmentId"
+                    LEFT JOIN "Visits" AS invoice_visit
+                      ON invoice_visit."Id" = invoice."VisitId"
+                    LEFT JOIN "Appointments" AS invoice_appointment
+                      ON invoice_appointment."Id" = invoice."AppointmentId"
+                    WHERE line."DoctorId" IS NULL
+                )
+                UPDATE "InvoiceLineItems" AS line
+                SET "DoctorId" = resolved."DoctorId"
+                FROM resolved
+                WHERE line."Id" = resolved."Id"
+                  AND resolved."DoctorId" IS NOT NULL;
+                """);
+
+            app.Logger.LogInformation(
+                "HOTFIX: Restored doctor attribution for {Count} historical invoice line items",
+                repaired);
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogError(
+                ex,
+                "HOTFIX: Failed to restore historical invoice line-item doctor attribution");
+        }
     }
 
     /// <summary>

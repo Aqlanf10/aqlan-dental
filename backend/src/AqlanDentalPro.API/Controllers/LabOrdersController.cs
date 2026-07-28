@@ -134,9 +134,18 @@ public sealed class UpdateLabOrderRequestValidator : AbstractValidator<UpdateLab
             .WithMessage("العملة غير مدعومة. المدعوم: YER أو SAR أو USD")
             .When(x => !string.IsNullOrWhiteSpace(x.Currency));
         // A non-YER cost is meaningless to the books without the rate it was agreed at.
+        //
+        // Each validator carries its OWN WithMessage: FluentValidation attaches a
+        // trailing .WithMessage() to the LAST validator in the chain only, so writing
+        // `.NotNull().GreaterThan(0m).WithMessage(arabic)` leaves NotNull emitting the
+        // default ENGLISH "'Exchange Rate To Yer' must not be empty." — a user-facing
+        // English error, which this project forbids. Caught by
+        // ForeignCurrency_WithoutRate_IsRejected_WithArabicMessage.
         RuleFor(x => x.ExchangeRateToYer)
-            .NotNull().GreaterThan(0m)
+            .NotNull()
             .WithMessage("سعر الصرف الفعلي إلى الريال اليمني مطلوب للعملات غير اليمنية")
+            .GreaterThan(0m)
+            .WithMessage("سعر الصرف الفعلي إلى الريال اليمني يجب أن يكون أكبر من صفر")
             .When(x => !string.IsNullOrWhiteSpace(x.Currency)
                     && !string.Equals(x.Currency!.Trim(), "YER", StringComparison.OrdinalIgnoreCase));
         RuleFor(x => x.ApplianceType)
@@ -208,6 +217,31 @@ public class LabOrdersController(
             return StatusCode(403, new { message = "غير مصرح لك بعرض بيانات هذا المريض" });
         }
         return null;
+    }
+
+    /// <summary>
+    /// CORE-LAB-006: per-patient gate for routes that carry only the ORDER id.
+    /// <para>
+    /// The class-level PatientAccessFilter only fires on a route/query value literally
+    /// named "patientId" (verified in PatientAccessFilter.OnActionExecutionAsync), so
+    /// every "{id:guid}/..." action is unguarded by it. History and attachments were
+    /// relying on it and were therefore readable — and downloadable — across patients
+    /// by a restricted doctor. Resolves the owning patient from the order and applies
+    /// the same explicit check Update/UpdateStatus/Cancel already use.
+    /// </para>
+    /// </summary>
+    private async Task<IActionResult?> DenyIfCannotAccessOrderAsync(Guid orderId)
+    {
+        var patientId = await db.LabOrders
+            .Where(l => l.Id == orderId)
+            .Select(l => (Guid?)l.PatientId)
+            .FirstOrDefaultAsync();
+
+        // Unknown order: let the action's own 404 path answer, so this guard never
+        // turns a "not found" into a misleading "forbidden".
+        if (!patientId.HasValue) return null;
+
+        return await DenyIfDoctorCannotAccess(patientId.Value);
     }
 
     private static readonly HashSet<string> ValidStatuses = new(StringComparer.OrdinalIgnoreCase)
@@ -1232,6 +1266,11 @@ public class LabOrdersController(
     {
         if (!await CanAsync("view")) return Forbid();
 
+        // CORE-LAB-006: this route carries only the order id, so PatientAccessFilter
+        // never gates it — check the owning patient explicitly.
+        var deniedAccess = await DenyIfCannotAccessOrderAsync(id);
+        if (deniedAccess is not null) return deniedAccess;
+
         // Sprint 12: query extracted to LabOrderQueryService. Service returns null
         // if the order itself doesn't exist (preserving the original 404 path).
         var history = await queryService.GetHistoryAsync(id);
@@ -1244,6 +1283,11 @@ public class LabOrdersController(
     public async Task<IActionResult> GetAttachments(Guid id)
     {
         if (!await CanAsync("view")) return Forbid();
+
+        // CORE-LAB-006: this route carries only the order id, so PatientAccessFilter
+        // never gates it — check the owning patient explicitly.
+        var deniedAccess = await DenyIfCannotAccessOrderAsync(id);
+        if (deniedAccess is not null) return deniedAccess;
 
         // Sprint 12: query extracted to LabOrderQueryService. Original behavior
         // (no existence check — empty list if no attachments) preserved.
@@ -1259,6 +1303,13 @@ public class LabOrdersController(
 
         var order = await db.LabOrders.FindAsync(id);
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
+
+        // CORE-LAB-006: the order is already loaded here, so check its owning patient
+        // directly — this route carries only the order id and PatientAccessFilter
+        // therefore never gates it.
+        var deniedAccess = await DenyIfDoctorCannotAccess(order.PatientId);
+        if (deniedAccess is not null) return deniedAccess;
+
         if (file is null || file.Length == 0) return BadRequest(new { message = "الملف مطلوب" });
 
         // Category validation with size limits
@@ -1308,6 +1359,11 @@ public class LabOrdersController(
     {
         if (!await CanAsync("view")) return Forbid();
 
+        // CORE-LAB-006: this route carries only the order id, so PatientAccessFilter
+        // never gates it — check the owning patient explicitly.
+        var deniedAccess = await DenyIfCannotAccessOrderAsync(id);
+        if (deniedAccess is not null) return deniedAccess;
+
         var attachment = await db.LabOrderAttachments
             .FirstOrDefaultAsync(a => a.Id == attachmentId && a.LabOrderId == id);
         if (attachment is null) return NotFound(new { message = "المرفق غير موجود" });
@@ -1322,6 +1378,11 @@ public class LabOrdersController(
     public async Task<IActionResult> DeleteAttachment(Guid id, Guid attachmentId)
     {
         if (!await CanAsync("edit")) return Forbid();
+
+        // CORE-LAB-006: this route carries only the order id, so PatientAccessFilter
+        // never gates it — check the owning patient explicitly.
+        var deniedAccess = await DenyIfCannotAccessOrderAsync(id);
+        if (deniedAccess is not null) return deniedAccess;
 
         var attachment = await db.LabOrderAttachments
             .FirstOrDefaultAsync(a => a.Id == attachmentId && a.LabOrderId == id);

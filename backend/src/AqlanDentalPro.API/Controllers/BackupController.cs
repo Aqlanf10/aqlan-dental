@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Data;
 using AqlanDentalPro.API.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -389,71 +390,65 @@ public class BackupController(AppDbContext db, IWebHostEnvironment env) : Contro
         var data = new Dictionary<string, object>
         {
             ["exportDate"] = DateTime.UtcNow,
-            ["version"] = "1.0",
+            ["version"] = "1.1",
         };
 
         var counts = new Dictionary<string, int>();
 
-        // Export key tables (exclude passwords and sensitive data)
-        var patients = await db.Patients.IgnoreQueryFilters().AsNoTracking()
-            .Select(p => new { p.Id, p.PatientNumber, p.FirstName, p.MiddleName, p.LastName, p.DateOfBirth, p.Gender, p.Phone, p.WhatsApp, p.Email, p.Address, p.PrimaryDoctorId, p.BranchId, p.IsActive })
-            .ToListAsync();
-        data["patients"] = patients;
-        counts["patients"] = patients.Count;
+        // Use PostgreSQL's row-to-JSON conversion instead of EF projections. A backup is
+        // most important while the production schema is behind the current application
+        // model; EF would otherwise request newly mapped columns that do not exist yet
+        // and make it impossible to take the pre-migration backup.
+        var tables = new (string Table, string Key)[]
+        {
+            ("Patients", "patients"),
+            ("Appointments", "appointments"),
+            ("Visits", "visits"),
+            ("Payments", "payments"),
+            ("Contracts", "contracts"),
+            ("Invoices", "invoices"),
+            ("Employees", "employees"),
+            ("Doctors", "doctors"),
+            ("Branches", "branches"),
+            ("ClinicServices", "clinicServices"),
+            ("OperationalExpenses", "operationalExpenses"),
+            ("Treasuries", "treasuries"),
+            ("CashFlowTransactions", "cashFlowTransactions"),
+            ("JournalEntries", "journalEntries"),
+            ("JournalLines", "journalLines"),
+            ("Suppliers", "suppliers"),
+            ("SupplierBills", "supplierBills"),
+            ("LabOrders", "labOrders"),
+            ("LabPayables", "labPayables"),
+        };
 
-        var appointments = await db.Appointments.IgnoreQueryFilters().AsNoTracking()
-            .Select(a => new { a.Id, a.PatientId, a.DoctorId, a.BranchId, a.AppointmentDate, a.StartTime, a.EndTime, a.DurationMinutes, a.Status, a.AppointmentType, a.Specialty, a.ServiceId })
-            .ToListAsync();
-        data["appointments"] = appointments;
-        counts["appointments"] = appointments.Count;
+        var connection = db.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose)
+            await connection.OpenAsync();
 
-        var visits = await db.Visits.IgnoreQueryFilters().AsNoTracking()
-            .Select(v => new { v.Id, v.PatientId, v.AppointmentId, v.VisitDate, v.VisitType, v.Specialty, v.DoctorId, v.ChiefComplaint, v.ClinicalNotes, v.TreatmentDone, v.Diagnosis, v.Cost })
-            .ToListAsync();
-        data["visits"] = visits;
-        counts["visits"] = visits.Count;
+        try
+        {
+            foreach (var (table, key) in tables)
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = $"""
+                    SELECT COALESCE(jsonb_agg(to_jsonb(row_data)), '[]'::jsonb)::text
+                    FROM "{table}" AS row_data
+                    """;
 
-        var payments = await db.Payments.IgnoreQueryFilters().AsNoTracking()
-            .Select(p => new { p.Id, p.ContractId, p.PatientId, p.Amount, p.PaymentDate, p.PaymentMethod, p.Specialty, p.DoctorId, p.ReceiptNumber })
-            .ToListAsync();
-        data["payments"] = payments;
-        counts["payments"] = payments.Count;
-
-        var contracts = await db.Contracts.IgnoreQueryFilters().AsNoTracking()
-            .Select(c => new { c.Id, c.PatientId, c.Specialty, c.TotalAmount, c.DownPayment, c.InstallmentsCount, c.InstallmentAmount, c.StartDate, c.DiscountAmount, c.Status })
-            .ToListAsync();
-        data["contracts"] = contracts;
-        counts["contracts"] = contracts.Count;
-
-        var invoices = await db.Invoices.IgnoreQueryFilters().AsNoTracking()
-            .Select(i => new { i.Id, i.PatientId, i.InvoiceNumber, i.Status, i.Subtotal, i.DiscountAmount, i.TaxAmount, i.TotalAmount })
-            .ToListAsync();
-        data["invoices"] = invoices;
-        counts["invoices"] = invoices.Count;
-
-        var employees = await db.Employees.IgnoreQueryFilters().AsNoTracking()
-            .Select(e => new { e.Id, e.FullName, e.Position, e.BranchId, e.HireDate, e.BaseSalary, e.IsActive })
-            .ToListAsync();
-        data["employees"] = employees;
-        counts["employees"] = employees.Count;
-
-        var doctors = await db.Doctors.IgnoreQueryFilters().AsNoTracking()
-            .Select(d => new { d.Id, d.Name, d.Specialty, d.LicenseNumber, d.BranchId, d.CompensationType, d.DefaultCommissionPercentage, d.IsActive })
-            .ToListAsync();
-        data["doctors"] = doctors;
-        counts["doctors"] = doctors.Count;
-
-        var branches = await db.Branches.IgnoreQueryFilters().AsNoTracking()
-            .Select(b => new { b.Id, b.Name, b.Address, b.Phone, b.IsMain, b.IsActive })
-            .ToListAsync();
-        data["branches"] = branches;
-        counts["branches"] = branches.Count;
-
-        var clinicServices = await db.ClinicServices.IgnoreQueryFilters().AsNoTracking()
-            .Select(s => new { s.Id, s.ArabicName, s.EnglishName, s.Category, s.DefaultPrice, s.IsActive })
-            .ToListAsync();
-        data["clinicServices"] = clinicServices;
-        counts["clinicServices"] = clinicServices.Count;
+                var json = Convert.ToString(await command.ExecuteScalarAsync()) ?? "[]";
+                using var document = JsonDocument.Parse(json);
+                var rows = document.RootElement.Clone();
+                data[key] = rows;
+                counts[key] = rows.GetArrayLength();
+            }
+        }
+        finally
+        {
+            if (shouldClose)
+                await connection.CloseAsync();
+        }
 
         data["counts"] = counts;
         return data;

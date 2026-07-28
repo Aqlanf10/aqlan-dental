@@ -26,12 +26,6 @@ interface DoctorCommissionSummary {
   commissionRemaining: number;
 }
 
-interface DoctorDto {
-  id: string;
-  name: string;
-  isActive?: boolean;
-}
-
 export function CommissionsTab() {
   // FE-13: useDoctors() replaces useState + fetch.
   const { data: allDoctors = [], isLoading: doctorsLoading } = useDoctors();
@@ -43,7 +37,7 @@ export function CommissionsTab() {
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>("");
   const [startDate, setStartDate] = useState<string>(() => {
     const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+    return `${d.getFullYear()}-01-01`;
   });
   const [endDate, setEndDate] = useState<string>(() => {
     return localDateString();

@@ -18,7 +18,7 @@ import { api } from "@/lib/api";
 import { buildMonthToDateComparisonRanges, calculatePercentageChange } from "@/lib/financePeriodComparison";
 import type { DashboardData, ProfitLossData } from "./types";
 import { KpiCard, tokens } from "./FinanceSharedUI";
-import { formatYER } from "./FinanceHelpers";
+import { formatCurrencyAmounts, formatYER } from "./FinanceHelpers";
 
 function formatChange(change: number | null): string {
   if (change === null) return "فترة جديدة";
@@ -154,7 +154,7 @@ export function OverviewTab() {
           <>
             <KpiCard label="إيراد اليوم (مستحق)" value={formatYER(data.todayAccruedRevenue)} sublabel={`التدفقات الداخلة: ${formatYER(data.todayInflow)}`} color={tokens.successBorder} icon={<Receipt className="w-4 h-4" />} />
             <KpiCard label="التدفقات الخارجة اليوم" value={formatYER(data.todayOutflow)} sublabel={`شهري: ${formatYER(data.monthOutflow)}`} color={tokens.dangerBorder} icon={<TrendingDown className="w-4 h-4" />} />
-            <KpiCard label="رصيد الخزائن" value={formatYER(data.totalTreasuryBalance)} sublabel={`${data.journalEntryCount} قيد محاسبي`} color={tokens.brand} icon={<Vault className="w-4 h-4" />} />
+            <KpiCard label="رصيد الخزائن حسب العملة" value={formatCurrencyAmounts(data.treasuryBalancesByCurrency ?? [{ currency: "YER", amount: data.totalTreasuryBalance }])} sublabel={`${data.journalEntryCount} قيد محاسبي — دون جمع العملات`} color={tokens.brand} icon={<Vault className="w-4 h-4" />} />
             <KpiCard label="المستحقات المعلقة" value={formatYER(data.totalOutstanding)} sublabel={`عقود: ${formatYER(data.contractOutstanding)}`} color={tokens.warningBorder} icon={<HandCoins className="w-4 h-4" />} />
           </>
         ) : null}

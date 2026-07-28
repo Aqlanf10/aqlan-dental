@@ -25,6 +25,7 @@ import type {
   PaySupplierBillRequest,
   SupplierType,
   Treasury,
+  DirectSupplierExpense,
 } from "./types";
 import { SUPPLIER_TYPE_MAP, SUPPLIER_TYPE_OPTIONS, PAYMENT_METHODS, getSupplierTypeLabel } from "./types";
 import {
@@ -40,7 +41,7 @@ import {
   btnPrimary,
   btnGhost,
 } from "./FinanceSharedUI";
-import { formatMoney, formatYER, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
+import { formatMoney, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 9: Suppliers — الموردون والمعامل
@@ -203,7 +204,7 @@ export function SuppliersTab() {
       return;
     }
     if (Number(payAmount) > showPayBill.remainingAmount) {
-      toast.error(`المبلغ يتجاوز المستحق (${formatYER(showPayBill.remainingAmount)})`);
+      toast.error(`المبلغ يتجاوز المستحق (${formatMoney(showPayBill.remainingAmount, showPayBill.currency)})`);
       return;
     }
     try {
@@ -553,8 +554,8 @@ export function SuppliersTab() {
                 </div>
               </div>
               <div>
-                <p className="text-[11px]" style={{ color: tokens.textTertiary }}>عدد الفواتير</p>
-                <p className="text-sm font-bold" style={{ color: tokens.textPrimary }}>{statementData.bills?.length ?? 0}</p>
+                <p className="text-[11px]" style={{ color: tokens.textTertiary }}>الفواتير / المدفوع مباشرة</p>
+                <p className="text-sm font-bold" style={{ color: tokens.textPrimary }}>{statementData.bills?.length ?? 0} / {statementData.directExpenses?.length ?? 0}</p>
               </div>
             </div>
 
@@ -613,6 +614,30 @@ export function SuppliersTab() {
                   },
                 ]}
               />
+            )}
+
+            {/* Direct expenses paid to this supplier — visible history, no payable balance. */}
+            {!!statementData.directExpenses?.length && (
+              <div className="space-y-2">
+                <div>
+                  <h4 className="text-sm font-bold" style={{ color: tokens.textPrimary }}>مشتريات مدفوعة مباشرة</h4>
+                  <p className="text-[11px]" style={{ color: tokens.textTertiary }}>
+                    هذه المصروفات مرتبطة بالمورد لكنها مدفوعة فورًا، لذلك تظهر في كشفه ولا تزيد الرصيد المستحق.
+                  </p>
+                </div>
+                <DataTable<DirectSupplierExpense>
+                  keyField="id"
+                  data={statementData.directExpenses}
+                  columns={[
+                    { key: "expenseNumber", label: "المرجع" },
+                    { key: "title", label: "الوصف" },
+                    { key: "amount", label: "المبلغ", render: (expense) => formatMoney(expense.amount, expense.currency) },
+                    { key: "paymentMethod", label: "طريقة الدفع", render: (expense) => PAYMENT_METHODS.find((method) => method.value === expense.paymentMethod?.toLowerCase())?.label ?? expense.paymentMethod },
+                    { key: "expenseDate", label: "التاريخ", render: (expense) => safeFormatDate(expense.expenseDate) },
+                    { key: "status", label: "الحالة", render: (expense) => <StatusBadge status={expense.status} /> },
+                  ]}
+                />
+              </div>
             )}
 
             <div className="flex justify-start pt-2">

@@ -14,16 +14,23 @@ import { api } from "@/lib/api";
 import { downloadPdfFromApi } from "@/lib/pdfDownload";
 import { localDateString } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
-import type { ExpenseListItem, CreateExpenseRequest } from "./types";
+import type {
+  ExpenseListItem,
+  CreateExpenseRequest,
+  SupplierBill,
+  SupplierDto,
+  DoctorCommissionPaymentListItem,
+} from "./types";
 import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, StatusBadge, tokens, inputStyle, labelStyle, btnPrimary, btnGhost } from "./FinanceSharedUI";
-import { formatYER, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
+import { formatMoney, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 8: Expenses
    ═══════════════════════════════════════════════════════════════════════════════ */
 export function ExpensesTab() {
   const [data, setData] = useState<ExpenseListItem[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -35,9 +42,81 @@ export function ExpensesTab() {
   const [eAmount, setEAmount] = useState("");
   const [eMethod, setEMethod] = useState("cash");
   const [eDate, setEDate] = useState(localDateString());
+  const [eSupplierId, setESupplierId] = useState("");
 
   const fetchData = useCallback(async () => {
-    try { setLoading(true); const { data: responseData } = await api.get<{ data: ExpenseListItem[]; total: number }>("/api/finance-v3/expenses"); setData(responseData?.data ?? []); } catch { toast.error("فشل في تحميل المصروفات"); } finally { setLoading(false); }
+    try {
+      setLoading(true);
+      const [expenseResponse, billResponse, supplierResponse, commissionResponse] = await Promise.all([
+        api.get<{ data: ExpenseListItem[]; total: number }>("/api/finance-v3/expenses", { params: { pageSize: 100 } }),
+        api.get<{ data: SupplierBill[]; total: number }>("/api/finance-v3/supplier-bills", { params: { pageSize: 100 } }),
+        api.get<{ data: SupplierDto[]; total: number }>("/api/finance-v3/suppliers", { params: { pageSize: 100 } }),
+        api.get<DoctorCommissionPaymentListItem[]>("/api/commissions/payments")
+          .catch(() => ({ data: [] as DoctorCommissionPaymentListItem[] })),
+      ]);
+
+      const directExpenses = (expenseResponse.data?.data ?? []).map((expense) => ({
+        ...expense,
+        currency: expense.currency ?? "YER",
+        sourceType: "OperationalExpense" as const,
+      }));
+      const supplierExpenses: ExpenseListItem[] = (billResponse.data?.data ?? [])
+        .filter((bill) => !bill.isOpeningBalance)
+        .map((bill) => ({
+          id: bill.id,
+          title: bill.description,
+          category: "SupplierBill",
+          amount: bill.totalAmount,
+          currency: bill.currency || "YER",
+          paymentMethod: "credit",
+          expenseDate: bill.billDate ?? bill.createdAt,
+          status: bill.status,
+          supplierId: bill.supplierId,
+          supplierName: bill.supplierName,
+          sourceType: "SupplierBill",
+          supplierBillId: bill.id,
+          requestedBy: "",
+          approvedBy: null,
+          approvedAt: null,
+          rejectedBy: null,
+          rejectedAt: null,
+          rejectionReason: null,
+          isReversal: false,
+          journalEntryId: bill.journalEntryId ?? null,
+          treasuryId: null,
+          treasuryName: null,
+        }));
+      const commissionExpenses: ExpenseListItem[] = (commissionResponse.data ?? []).map((payment) => ({
+        id: payment.id,
+        title: `عمولة الطبيب: ${payment.doctorName || "غير محدد"}`,
+        category: "DoctorCommission",
+        amount: payment.amount,
+        currency: "YER",
+        paymentMethod: payment.paymentMethod || "cash",
+        expenseDate: payment.paymentDate ?? payment.createdAt,
+        status: "Paid",
+        sourceType: "DoctorCommission",
+        requestedBy: "",
+        approvedBy: null,
+        approvedAt: null,
+        rejectedBy: null,
+        rejectedAt: null,
+        rejectionReason: null,
+        isReversal: false,
+        journalEntryId: null,
+        treasuryId: null,
+        treasuryName: null,
+      }));
+
+      setData([...directExpenses, ...supplierExpenses, ...commissionExpenses].sort(
+        (left, right) => new Date(right.expenseDate).getTime() - new Date(left.expenseDate).getTime(),
+      ));
+      setSuppliers(supplierResponse.data?.data ?? []);
+    } catch {
+      toast.error("فشل في تحميل المصروفات");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -55,11 +134,12 @@ export function ExpensesTab() {
         amount: Number(eAmount),
         paymentMethod: eMethod,
         expenseDate: eDate,
+        supplierId: eSupplierId || undefined,
       };
       await api.post("/api/finance-v3/expenses", payload);
       toast.success("تم إنشاء المصروف بنجاح");
       setShowCreate(false);
-      setETitle(""); setECategory("Miscellaneous"); setEAmount(""); setEMethod("cash"); setEDate(localDateString());
+      setETitle(""); setECategory("Miscellaneous"); setEAmount(""); setEMethod("cash"); setEDate(localDateString()); setESupplierId("");
       fetchData();
     } catch (err) { toast.error(extractErrorMessage(err, "فشل في إنشاء المصروف")); } finally { setSubmitting(false); }
   };
@@ -111,25 +191,26 @@ export function ExpensesTab() {
           data={data}
           columns={[
             { key: "title", label: "العنوان" },
-            { key: "category", label: "الفئة", render: (r) => EXPENSE_CATEGORIES.find((c) => c.value === r.category)?.label ?? r.category },
-            { key: "amount", label: "المبلغ", render: (r) => formatYER(r.amount) },
-            { key: "paymentMethod", label: "طريقة الدفع", render: (r) => PAYMENT_METHODS.find((m) => m.value === r.paymentMethod?.toLowerCase())?.label ?? r.paymentMethod },
+            { key: "category", label: "الفئة", render: (r) => r.sourceType === "SupplierBill" ? "فاتورة مورد/معمل" : r.sourceType === "DoctorCommission" ? "عمولة طبيب" : EXPENSE_CATEGORIES.find((c) => c.value === r.category)?.label ?? r.category },
+            { key: "supplierName", label: "المورد", render: (r) => r.supplierName || "—" },
+            { key: "amount", label: "المبلغ", render: (r) => formatMoney(r.amount, r.currency ?? "YER") },
+            { key: "paymentMethod", label: "طريقة الدفع", render: (r) => r.paymentMethod === "credit" ? "على الحساب" : PAYMENT_METHODS.find((m) => m.value === r.paymentMethod?.toLowerCase())?.label ?? r.paymentMethod },
             { key: "expenseDate", label: "التاريخ", render: (r) => safeFormatDate(r.expenseDate) },
             { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
             { key: "actions", label: "إجراءات", render: (r) => (
               <div className="flex items-center gap-1">
-                {r.status === "Pending" && (
+                {r.sourceType === "OperationalExpense" && r.status === "Pending" && (
                   <>
                     <button onClick={(e) => { e.stopPropagation(); setConfirmAction({ id: r.id, action: "approve" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.successBorder }} title="اعتماد"><ThumbsUp className="w-3.5 h-3.5" /></button>
                     <button onClick={(e) => { e.stopPropagation(); setConfirmAction({ id: r.id, action: "reject" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.dangerBorder }} title="رفض"><ThumbsDown className="w-3.5 h-3.5" /></button>
                   </>
                 )}
-                {r.journalEntryId && !r.isReversal && (
+                {r.sourceType === "OperationalExpense" && r.journalEntryId && !r.isReversal && (
                   <button onClick={(e) => { e.stopPropagation(); downloadDisbursementVoucher(r); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.brand }} title="سند صرف">
                     <Download className="w-3.5 h-3.5" />
                   </button>
                 )}
-                {!r.isReversal && <button onClick={(e) => { e.stopPropagation(); setConfirmAction({ id: r.id, action: "delete" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.dangerBorder }} title="حذف/عكس"><Trash2 className="w-3.5 h-3.5" /></button>}
+                {r.sourceType === "OperationalExpense" && !r.isReversal && <button onClick={(e) => { e.stopPropagation(); setConfirmAction({ id: r.id, action: "delete" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.dangerBorder }} title="حذف/عكس"><Trash2 className="w-3.5 h-3.5" /></button>}
               </div>
             )},
           ]}
@@ -142,6 +223,16 @@ export function ExpensesTab() {
           <div><label style={labelStyle}>العنوان <span style={{ color: tokens.dangerBorder }}>*</span></label><input value={eTitle} onChange={(e) => setETitle(e.target.value)} placeholder="وصف المصروف" style={inputStyle} /></div>
           <div><label style={labelStyle}>الفئة</label><select value={eCategory} onChange={(e) => setECategory(e.target.value)} style={inputStyle}>{EXPENSE_CATEGORIES.map((c) => (<option key={c.value} value={c.value}>{c.label}</option>))}</select></div>
           <div><label style={labelStyle}>المبلغ <span style={{ color: tokens.dangerBorder }}>*</span></label><input type="number" min="0.01" step="0.01" value={eAmount} onChange={(e) => setEAmount(e.target.value)} dir="ltr" style={inputStyle} /></div>
+          <div>
+            <label style={labelStyle}>المورد (اختياري)</label>
+            <select value={eSupplierId} onChange={(e) => setESupplierId(e.target.value)} style={inputStyle}>
+              <option value="">— مصروف بدون مورد —</option>
+              {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
+            </select>
+            <p className="text-[11px] mt-1" style={{ color: tokens.textTertiary }}>
+              عند اختيار المورد سيظهر هذا المصروف المدفوع مباشرة في كشف حسابه، من دون زيادة الرصيد المستحق عليه.
+            </p>
+          </div>
           <div><label style={labelStyle}>طريقة الدفع</label><select value={eMethod} onChange={(e) => setEMethod(e.target.value)} style={inputStyle}>{PAYMENT_METHODS.map((m) => (<option key={m.value} value={m.value}>{m.label}</option>))}</select></div>
           <div><label style={labelStyle}>تاريخ المصروف</label><input type="date" value={eDate} onChange={(e) => setEDate(e.target.value)} style={inputStyle} /></div>
           <div className="flex gap-3 pt-2 border-t" style={{ borderColor: tokens.border }}>

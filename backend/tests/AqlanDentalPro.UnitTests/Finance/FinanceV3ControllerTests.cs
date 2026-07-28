@@ -164,7 +164,7 @@ public class FinanceV3ControllerTests
         var invoice = new Invoice
         {
             Id = Guid.NewGuid(), PatientId = patient.Id, InvoiceNumber = "INV-001",
-            Status = InvoiceStatus.Issued, TotalAmount = 500m, Subtotal = 500m,
+            Status = InvoiceStatus.Issued, Currency = "SAR", TotalAmount = 500m, Subtotal = 500m,
             CreatedBy = userId
         };
         db.Invoices.Add(invoice);
@@ -214,6 +214,10 @@ public class FinanceV3ControllerTests
 
         var issueDateProp = dtoType.GetProperty("IssueDate");
         issueDateProp.Should().NotBeNull("invoice DTO must have IssueDate field");
+
+        var currencyProp = dtoType.GetProperty("Currency");
+        currencyProp.Should().NotBeNull("invoice DTO must identify the currency used for its balances");
+        currencyProp!.GetValue(invoiceDto).Should().Be("SAR");
     }
 
     [Fact]
@@ -430,10 +434,10 @@ public class FinanceV3ControllerTests
     }
 
     [Fact]
-    public async Task FinanceV3_Dashboard_TotalTreasuryBalance_SumsOnlyYerTreasuries()
+    public async Task FinanceV3_Dashboard_ReturnsTreasuryBalancesSeparatelyByCurrency()
     {
-        // MULTI-CURRENCY: the YER-denominated dashboard total must NOT add SAR/USD balances into
-        // a YER figure. Foreign balances are surfaced per-currency in the Treasuries tab instead.
+        // MULTI-CURRENCY: the legacy YER total stays compatible, while the dashboard also
+        // exposes every currency independently without adding unlike currencies together.
         await using var db = CreateDb();
         var (branchId, _) = SeedBranchAndUser(db);
 
@@ -448,6 +452,78 @@ public class FinanceV3ControllerTests
         var ok = result.Should().BeOfType<OkObjectResult>().Subject;
         var total = (decimal)ok.Value!.GetType().GetProperty("TotalTreasuryBalance")!.GetValue(ok.Value)!;
         total.Should().Be(1_000m, "only the YER treasury counts toward the YER-denominated total — SAR/USD are never mixed in");
+
+        var balancesProperty = ok.Value.GetType().GetProperty("TreasuryBalancesByCurrency");
+        balancesProperty.Should().NotBeNull();
+        var balances = ((System.Collections.IEnumerable)balancesProperty!.GetValue(ok.Value)!)
+            .Cast<object>()
+            .ToDictionary(
+                item => (string)item.GetType().GetProperty("Currency")!.GetValue(item)!,
+                item => (decimal)item.GetType().GetProperty("Amount")!.GetValue(item)!);
+        balances.Should().BeEquivalentTo(new Dictionary<string, decimal>
+        {
+            ["YER"] = 1_000m,
+            ["SAR"] = 500m,
+            ["USD"] = 200m
+        });
+    }
+
+    [Fact]
+    public async Task FinanceV3_AccountBalances_ReturnsTotalsSeparatelyByCurrency()
+    {
+        await using var db = CreateDb();
+        var (branchId, userId) = SeedBranchAndUser(db);
+
+        foreach (var (currency, amount) in new[] { ("YER", 1_000m), ("SAR", 50m), ("USD", 20m) })
+        {
+            var entry = new JournalEntry
+            {
+                Id = Guid.NewGuid(),
+                EntryNumber = $"JE-{currency}-001",
+                FinancialDocumentId = Guid.NewGuid(),
+                FinancialDocumentType = FinancialDocumentType.Payment,
+                Description = $"Payment in {currency}",
+                EntryDate = DateOnly.FromDateTime(DateTime.Today),
+                BranchId = branchId,
+                PerformedBy = userId,
+                Currency = currency,
+                IsPosted = true
+            };
+            entry.Lines.Add(new JournalLine
+            {
+                AccountType = JournalAccountType.Treasury,
+                AccountId = Guid.NewGuid(),
+                Debit = amount,
+                BranchId = branchId
+            });
+            entry.Lines.Add(new JournalLine
+            {
+                AccountType = JournalAccountType.Revenue,
+                AccountId = Guid.NewGuid(),
+                Credit = amount,
+                BranchId = branchId
+            });
+            db.JournalEntries.Add(entry);
+        }
+        await db.SaveChangesAsync();
+
+        var controller = BuildFinanceV3Controller(db, CreateAdminUser());
+        var result = await controller.GetAccountBalances();
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var totalsProperty = ok.Value!.GetType().GetProperty("TotalsByCurrency");
+        totalsProperty.Should().NotBeNull();
+        var totals = ((System.Collections.IEnumerable)totalsProperty!.GetValue(ok.Value)!)
+            .Cast<object>()
+            .ToDictionary(
+                item => (string)item.GetType().GetProperty("Currency")!.GetValue(item)!,
+                item => (
+                    Assets: (decimal)item.GetType().GetProperty("TotalAssets")!.GetValue(item)!,
+                    Revenue: (decimal)item.GetType().GetProperty("TotalRevenue")!.GetValue(item)!));
+
+        totals["YER"].Should().Be((1_000m, 1_000m));
+        totals["SAR"].Should().Be((50m, 50m));
+        totals["USD"].Should().Be((20m, 20m));
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -470,7 +546,7 @@ public class FinanceV3ControllerTests
         var invoice = new Invoice
         {
             Id = Guid.NewGuid(), PatientId = patient.Id, InvoiceNumber = "INV-002",
-            Status = InvoiceStatus.Issued, TotalAmount = 1000m, Subtotal = 1000m,
+            Status = InvoiceStatus.Issued, Currency = "USD", TotalAmount = 1000m, Subtotal = 1000m,
             CreatedBy = userId
         };
         db.Invoices.Add(invoice);
@@ -508,6 +584,7 @@ public class FinanceV3ControllerTests
         // Verify PaidAmount field
         var paidAmountProp = dtoType.GetProperty("PaidAmount");
         paidAmountProp.Should().NotBeNull("patient invoices DTO must have PaidAmount field");
+        dtoType.GetProperty("Currency")!.GetValue(dto).Should().Be("USD");
         paidAmountProp!.GetValue(dto).Should().Be(400m);
     }
 
@@ -1553,6 +1630,14 @@ public class FinanceV3ControllerTests
     {
         await using var db = CreateDb();
         var (branchId, userId) = SeedBranchAndUser(db);
+        var supplier = new Supplier
+        {
+            Id = Guid.NewGuid(),
+            Name = "مورد المصروف المباشر",
+            Type = SupplierType.MedicalVendor,
+            IsActive = true
+        };
+        db.Suppliers.Add(supplier);
 
         db.OperationalExpenses.Add(new OperationalExpense
         {
@@ -1565,6 +1650,7 @@ public class FinanceV3ControllerTests
             ExpenseDate = DateOnly.FromDateTime(DateTime.Today),
             PaidBy = userId,
             BranchId = branchId,
+            SupplierId = supplier.Id,
             ApprovalStatus = ApprovalStatus.NotRequired,
             IsActive = true
         });
@@ -1583,6 +1669,104 @@ public class FinanceV3ControllerTests
         items.Should().HaveCount(1);
         items[0].GetType().GetProperty("TreasuryId")!.GetValue(items[0])
             .Should().BeNull("legacy expenses without JournalEntry must not resolve Guid.Empty as a treasury");
+        items[0].GetType().GetProperty("SupplierName")!.GetValue(items[0])
+            .Should().Be(supplier.Name, "a direct expense linked to a supplier must identify that supplier in the expenses screen");
+        items[0].GetType().GetProperty("Currency")!.GetValue(items[0])
+            .Should().Be("YER");
+    }
+
+    [Fact]
+    public async Task FinanceV3_SupplierStatement_IncludesDirectPaidExpensesWithoutChangingPayableBalance()
+    {
+        await using var db = CreateDb();
+        var (branchId, userId) = SeedBranchAndUser(db);
+        var supplier = new Supplier
+        {
+            Id = Guid.NewGuid(),
+            Name = "مورد المواد",
+            Type = SupplierType.MedicalVendor,
+            IsActive = true
+        };
+        db.Suppliers.Add(supplier);
+        db.OperationalExpenses.Add(new OperationalExpense
+        {
+            Id = Guid.NewGuid(),
+            ExpenseNumber = "EXP-SUP-001",
+            Title = "مواد مدفوعة مباشرة",
+            Category = ExpenseCategory.ClinicSupplies,
+            Amount = 5_000m,
+            PaymentMethod = "cash",
+            ExpenseDate = DateOnly.FromDateTime(DateTime.Today),
+            SupplierId = supplier.Id,
+            PaidBy = userId,
+            BranchId = branchId,
+            ApprovalStatus = ApprovalStatus.NotRequired,
+            IsPostedToLedger = true,
+            IsActive = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = new FinanceV3SuppliersController(
+            db,
+            new Mock<ISupplierRefundService>().Object,
+            CreateAdminUser(branchId),
+            new Mock<IAuditService>().Object);
+        var result = await controller.GetSupplierBills(supplier.Id);
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var directExpensesProperty = ok.Value!.GetType().GetProperty("DirectExpenses");
+        directExpensesProperty.Should().NotBeNull();
+        var directExpenses = ((System.Collections.IEnumerable)directExpensesProperty!.GetValue(ok.Value)!)
+            .Cast<object>()
+            .ToList();
+        directExpenses.Should().ContainSingle();
+        directExpenses[0].GetType().GetProperty("Amount")!.GetValue(directExpenses[0]).Should().Be(5_000m);
+
+        var balancesProperty = ok.Value.GetType().GetProperty("CurrencyBalances");
+        var balances = ((System.Collections.IEnumerable)balancesProperty!.GetValue(ok.Value)!).Cast<object>().ToList();
+        balances.Should().BeEmpty("directly paid supplier expenses are history, not unpaid supplier debt");
+    }
+
+    [Fact]
+    public async Task FinanceV3_GetSupplierBills_ExposesCurrencyAndBillDateForExpensesScreen()
+    {
+        await using var db = CreateDb();
+        var (branchId, userId) = SeedBranchAndUser(db);
+        var supplier = new Supplier
+        {
+            Id = Guid.NewGuid(),
+            Name = "مورد سعودي",
+            Type = SupplierType.MedicalVendor,
+            IsActive = true
+        };
+        db.Suppliers.Add(supplier);
+        db.SupplierBills.Add(new SupplierBill
+        {
+            Id = Guid.NewGuid(),
+            BillNumber = "BILL-SAR-001",
+            SupplierId = supplier.Id,
+            Description = "مواد عيادة",
+            TotalAmount = 250m,
+            Currency = "SAR",
+            ExchangeRateToYer = 140m,
+            BillDate = DateOnly.FromDateTime(DateTime.Today),
+            Status = BillStatus.Unpaid,
+            BranchId = branchId,
+            CreatedBy = userId,
+            IsActive = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildFinanceV3Controller(db, CreateAdminUser(branchId));
+        var result = await controller.GetSupplierBills();
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var dataProperty = ok.Value!.GetType().GetProperty("data");
+        var rows = ((System.Collections.IEnumerable)dataProperty!.GetValue(ok.Value)!).Cast<object>().ToList();
+        rows.Should().ContainSingle();
+        rows[0].GetType().GetProperty("Currency")!.GetValue(rows[0]).Should().Be("SAR");
+        rows[0].GetType().GetProperty("BillDate")!.GetValue(rows[0]).Should().Be(DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd"));
+        rows[0].GetType().GetProperty("IsOpeningBalance")!.GetValue(rows[0]).Should().Be(false);
     }
 
     [Fact]

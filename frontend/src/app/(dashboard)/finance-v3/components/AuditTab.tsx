@@ -21,7 +21,7 @@ import { toast } from "@/stores/toastStore";
 import type { ProfitLossData, DailyCashSummary, AccountBalancesData } from "./types";
 import { PAYMENT_METHODS } from "./types";
 import { KpiCard, LoadingSkeleton, EmptyState, tokens, inputStyle, labelStyle, btnPrimary } from "./FinanceSharedUI";
-import { formatYER, formatNumber } from "./FinanceHelpers";
+import { formatMoney, formatYER, formatNumber } from "./FinanceHelpers";
 
 /* ── P&L Sub-tab ── */
 function PLSubTab() {
@@ -268,7 +268,7 @@ function AccountBalancesSubTab() {
                       <span className="text-sm font-medium" style={{ color: tokens.textPrimary }}>{t.name}</span>
                       <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ backgroundColor: tokens.brandLight, color: tokens.brand }}>{t.type}</span>
                     </div>
-                    <p className="text-base font-bold" style={{ color: tokens.successBorder }}>{formatYER(t.balance)}</p>
+                    <p className="text-base font-bold" style={{ color: tokens.successBorder }}>{formatMoney(t.balance, t.currency)}</p>
                   </div>
                 ))}
               </div>

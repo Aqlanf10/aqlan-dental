@@ -118,7 +118,7 @@ public partial class FinanceV3Controller
         await audit.LogAsync(AuditAction.Create, "Treasury", treasury.Id,
             details: $"Created treasury '{treasury.Name}' (type={treasury.Type}, balance={treasury.Balance:N0}, branch={branchId})");
 
-        return Ok(new { treasury.Id, treasury.Name, Type = treasury.Type.ToString(), treasury.Balance, message = "تم إنشاء الخزنة/الحساب المالي بنجاح" });
+        return Ok(new { treasury.Id, treasury.Name, Type = treasury.Type.ToString(), treasury.Currency, treasury.Balance, message = "تم إنشاء الخزنة/الحساب المالي بنجاح" });
     }
     /// <summary>
     /// POST /api/finance-v3/vault-transfers — Create a vault transfer.

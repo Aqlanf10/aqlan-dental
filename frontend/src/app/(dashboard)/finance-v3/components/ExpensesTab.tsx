@@ -113,7 +113,7 @@ export function ExpensesTab() {
             { key: "title", label: "العنوان" },
             { key: "category", label: "الفئة", render: (r) => EXPENSE_CATEGORIES.find((c) => c.value === r.category)?.label ?? r.category },
             { key: "amount", label: "المبلغ", render: (r) => formatYER(r.amount) },
-            { key: "paymentMethod", label: "طريقة الدفع", render: (r) => PAYMENT_METHODS.find((m) => m.value === r.paymentMethod)?.label ?? r.paymentMethod },
+            { key: "paymentMethod", label: "طريقة الدفع", render: (r) => PAYMENT_METHODS.find((m) => m.value === r.paymentMethod?.toLowerCase())?.label ?? r.paymentMethod },
             { key: "expenseDate", label: "التاريخ", render: (r) => safeFormatDate(r.expenseDate) },
             { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
             { key: "actions", label: "إجراءات", render: (r) => (

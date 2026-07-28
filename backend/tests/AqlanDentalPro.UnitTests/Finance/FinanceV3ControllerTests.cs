@@ -1523,7 +1523,7 @@ public class FinanceV3ControllerTests
         db.Treasuries.Add(new Treasury
         {
             Id = Guid.NewGuid(), Name = "خزنة", Type = TreasuryType.Vault,
-            Balance = 100_000m, BranchId = branchId, IsActive = true
+            Currency = "SAR", Balance = 100_000m, BranchId = branchId, IsActive = true
         });
         await db.SaveChangesAsync();
 
@@ -1537,6 +1537,11 @@ public class FinanceV3ControllerTests
 
         var dataProp = responseType.GetProperty("data");
         dataProp.Should().NotBeNull("FinanceV3 treasuries must return { data: [...] }");
+
+        var rows = ((System.Collections.IEnumerable)dataProp!.GetValue(response)!).Cast<object>().ToList();
+        rows.Should().ContainSingle();
+        rows[0].GetType().GetProperty("Currency")!.GetValue(rows[0]).Should().Be("SAR",
+            "treasury currency must be returned so the UI never labels SAR or USD balances as YER");
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

@@ -1198,6 +1198,7 @@ public partial class FinanceV3Controller
                 t.Id,
                 t.Name,
                 Type = t.Type.ToString(),
+                t.Currency,
                 t.Balance,
                 t.BranchId,
                 LastUpdated = t.UpdatedAt

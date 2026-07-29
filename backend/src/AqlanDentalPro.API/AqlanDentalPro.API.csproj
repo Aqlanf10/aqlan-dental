@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="AqlanDentalPro.UnitTests" />
+    <InternalsVisibleTo Include="AqlanDentalPro.IntegrationTests" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\AqlanDentalPro.Infrastructure\AqlanDentalPro.Infrastructure.csproj" />

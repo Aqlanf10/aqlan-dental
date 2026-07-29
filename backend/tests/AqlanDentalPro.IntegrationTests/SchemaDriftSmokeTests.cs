@@ -1,5 +1,6 @@
 using System.Data;
 using System.Text;
+using AqlanDentalPro.API.Configuration;
 using AqlanDentalPro.Infrastructure.Data;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -185,6 +186,59 @@ public class SchemaDriftSmokeTests : IClassFixture<TestWebAppFactory>, IAsyncLif
         count.Should().BeGreaterThan(0,
             "__EFMigrationsHistory must contain at least one row — proves the " +
             "fresh-DB bootstrap path recorded its baseline");
+    }
+
+    [Fact]
+    public async Task TreatmentPlanSchemaHotfixRepairsMissingProductionTableIdempotently()
+    {
+        await using var conn = new NpgsqlConnection(_factory.ConnectionString);
+        await conn.OpenAsync();
+
+        await using (var simulateDrift = conn.CreateCommand())
+        {
+            simulateDrift.CommandText = """
+                DROP TABLE IF EXISTS "PatientTreatmentPlanSteps" CASCADE;
+                DELETE FROM "__EFMigrationsHistory"
+                WHERE "MigrationId" = '20260530000000_AddPatientTreatmentPlanSteps';
+                """;
+            await simulateDrift.ExecuteNonQueryAsync();
+        }
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            await using var repair = conn.CreateCommand();
+            repair.CommandText =
+                StartupDatabaseMaintenance.PatientTreatmentPlanStepsSchemaSql;
+            await repair.ExecuteNonQueryAsync();
+        }
+
+        await using var verify = conn.CreateCommand();
+        verify.CommandText = """
+            SELECT
+                to_regclass('public."PatientTreatmentPlanSteps"') IS NOT NULL,
+                (
+                    SELECT COUNT(*)
+                    FROM pg_constraint
+                    WHERE conname IN (
+                        'FK_PatientTreatmentPlanSteps_Patients_PatientId',
+                        'FK_PatientTreatmentPlanSteps_ClinicServices_ServiceId',
+                        'FK_PatientTreatmentPlanSteps_Doctors_ResponsibleDoctorId',
+                        'FK_PatientTreatmentPlanSteps_Appointments_RelatedAppointmentId',
+                        'FK_PatientTreatmentPlanSteps_Visits_RelatedVisitId',
+                        'FK_InvoiceLineItems_PatientTreatmentPlanSteps_RelatedTreatmentPlanStepId'
+                    )
+                ),
+                EXISTS (
+                    SELECT 1 FROM "__EFMigrationsHistory"
+                    WHERE "MigrationId" = '20260530000000_AddPatientTreatmentPlanSteps'
+                );
+            """;
+
+        await using var reader = await verify.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetBoolean(0).Should().BeTrue();
+        reader.GetInt64(1).Should().Be(6);
+        reader.GetBoolean(2).Should().BeTrue();
     }
 
     // ───────────────────────────────────────────────────────────────────────

@@ -95,6 +95,10 @@ internal static class LabOrdersTestData
         // is the "journal disabled" configuration the service already tolerates.
         var financeSync = new LabOrderFinanceSyncService(db, journalEntryService: null);
 
+        // CORE-FIN-LAB — invoice-line linking is now a constructor dependency. Built
+        // against the same in-memory db; it only reads, so it is safe on every path.
+        var invoiceLink = new LabOrderInvoiceLinkService(db);
+
         return new LabOrdersController(
             db,
             currentUserMock.Object,
@@ -103,7 +107,8 @@ internal static class LabOrdersTestData
             patientAccessMock.Object,
             auditMock.Object,
             queryService,
-            financeSync);
+            financeSync,
+            invoiceLink);
     }
 
     /// <summary>

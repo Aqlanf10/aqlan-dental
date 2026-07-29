@@ -33,6 +33,45 @@ public sealed class LabOrderFinanceSyncService(AppDbContext db, IJournalEntrySer
     }
 
     /// <summary>
+    /// CORE-FIN-LAB: the financial recognition boundary of a lab order, named ONCE so
+    /// finance and commission can never drift onto two different definitions.
+    /// <para>
+    /// The boundary is "sent", and it is the one the callers of this service already
+    /// apply: <c>LabOrdersController.Create</c> builds the supplier bill only when the
+    /// new order is already <c>sent</c>; <c>Update</c> syncs only while the order is
+    /// <c>sent</c>; <c>UpdateStatus</c> syncs on the transition INTO <c>sent</c>, which
+    /// <c>ValidateReadyToSend</c> refuses until the order actually has a lab and a cost
+    /// greater than zero. <c>Cancel</c> and <c>Delete</c> unwind that trail through
+    /// <see cref="CancelAsync"/>.
+    /// </para>
+    /// <para>
+    /// So an order is recognised once it has left <c>draft</c> and has neither been
+    /// cancelled nor soft-deleted. Every state after <c>sent</c> (manufacturing, tryIn,
+    /// ready, received, delivered, returned, remake) still owes the lab its cost, so all
+    /// of them stay recognised — only <c>draft</c> (no commitment yet) and
+    /// <c>cancelled</c> (commitment withdrawn) are not.
+    /// </para>
+    /// <para>
+    /// Why the commission cares: a draft is what the create modal saves with a
+    /// provisional, often wrong, cost. Deducting that from the doctor's commission would
+    /// underpay them for a lab bill the clinic has not committed to and may never owe.
+    /// </para>
+    /// </summary>
+    public static bool IsFinanciallyRecognised(LabOrder order)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+
+        // A soft-deleted order was unwound by CancelAsync exactly like a cancelled one.
+        if (!order.IsActive) return false;
+
+        var status = (order.Status ?? string.Empty).Trim();
+        if (status.Length == 0) return false;
+
+        return !status.Equals("draft", StringComparison.OrdinalIgnoreCase)
+            && !status.Equals("cancelled", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Creates or updates the supplier bill, payable and journal entry for a
     /// financially recognised <paramref name="order"/>. The caller deliberately
     /// skips drafts and invokes this at the transition to sent and on later edits.

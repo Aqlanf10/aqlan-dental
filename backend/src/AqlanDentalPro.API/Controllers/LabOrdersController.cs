@@ -177,6 +177,10 @@ public class LabOrdersController(
     // CORE-LAB-001 — supplier bill + payable + journal linkage, shared by create and
     // update so attaching a lab/cost after the fact still reaches the books.
     LabOrderFinanceSyncService financeSync,
+    // CORE-FIN-LAB — resolves the invoice line this order's cost belongs to, so the
+    // doctor's commission deducts the REAL lab cost instead of the service default.
+    // Links only when the answer is unambiguous; see LabOrderInvoiceLinkService.
+    LabOrderInvoiceLinkService invoiceLink,
     IJournalEntryService? journalEntryService = null) : ControllerBase
 {
     /// <summary>
@@ -378,6 +382,168 @@ public class LabOrdersController(
         return Ok(new { data = orders, count = orders.Count });
     }
 
+    // ─── CORE-FIN-LAB — admin fix-up list: orders with no invoice line ──────
+    /// <summary>Row of <c>GET /api/lab-orders/unlinked</c>.</summary>
+    public sealed record UnlinkedLabOrderDto
+    {
+        public Guid Id { get; init; }
+        public string? OrderNumber { get; init; }
+        public Guid PatientId { get; init; }
+        public string PatientName { get; init; } = string.Empty;
+        public string? PatientNumber { get; init; }
+        public Guid? VisitId { get; init; }
+        public string? VisitDate { get; init; }
+        public string? DoctorName { get; init; }
+        /// <summary>TotalCost when present, else the Cost snapshot (CLIN-08 ordering).</summary>
+        public decimal? Cost { get; init; }
+        /// <summary>Never sum these across rows — YER/SAR/USD are different money.</summary>
+        public string Currency { get; init; } = "YER";
+        public string Status { get; init; } = string.Empty;
+        /// <summary>Stable machine code for the reason (see <c>Reason</c> for the Arabic text).</summary>
+        public string ReasonCode { get; init; } = string.Empty;
+        public string Reason { get; init; } = string.Empty;
+        /// <summary>How many invoice lines were plausible — only meaningful when ambiguous.</summary>
+        public int CandidateCount { get; init; }
+    }
+
+    /// <summary>
+    /// Lists lab orders that carry NO invoice line link, with the reason each one could
+    /// not be resolved automatically, so staff can repair them by hand.
+    /// <para>
+    /// This list is the deliberate other half of "link only when unambiguous". The
+    /// resolver refuses to guess, because attaching a lab cost to the wrong invoice line
+    /// silently corrupts a DIFFERENT doctor's commission. The cost of that refusal is
+    /// orders that stay unlinked — and an unlinked order that nobody can see is a silent
+    /// gap in the commission figures, which is what this endpoint exists to prevent.
+    /// </para>
+    /// <para>
+    /// The reason is produced by calling the SAME resolver the create path uses, once per
+    /// row, instead of re-deriving the rule here. A second implementation would drift and
+    /// then explain outcomes that never happened. It costs a couple of queries per row,
+    /// bounded by the page size — acceptable for an admin screen, and the alternative is
+    /// a list that lies.
+    /// </para>
+    /// </summary>
+    [HttpGet("unlinked")]
+    // Administrative fix-up over commission-affecting financial data — Admin only, using
+    // the existing AdminOnly policy (the class-level StaffOnly still applies on top).
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> GetUnlinked([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    {
+        // Kept alongside the policy, exactly like every other action here: if the policy
+        // is ever widened beyond Admin, the per-resource permission still gates this.
+        if (!await CanAsync("view")) return Forbid();
+
+        // Clamp both: a page below 1 would produce a negative Skip and throw.
+        page = Math.Max(1, page);
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
+
+        var query = db.LabOrders
+            .Include(l => l.Patient)
+            .Include(l => l.Doctor)
+            .Include(l => l.Visit)
+            // A cancelled order owes the lab nothing and deducts nothing from any
+            // commission, so linking it would fix nothing — it is not a fix-up item.
+            .Where(l => l.Status != "cancelled"
+                     && !db.InvoiceLineItems.Any(line => line.LabOrderId == l.Id));
+
+        // PHI SURFACE: these rows carry patient names and file numbers. The class-level
+        // PatientAccessFilter only fires on a route/query value named "patientId", which
+        // this endpoint has none of, so the doctor filter must be explicit — same pattern
+        // as RadiologyOrdersController/PatientsController, fail-closed on error rather
+        // than returning an unfiltered page. Unreachable while the policy is Admin-only;
+        // it is here so widening the policy cannot silently open a cross-patient read.
+        if (patientAccess.IsDoctor)
+        {
+            HashSet<Guid> accessible;
+            try
+            {
+                accessible = await patientAccess.GetAccessiblePatientIdsAsync() ?? [];
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "[LabOrders] Accessible-patient set failed for unlinked list, user {UserId}", currentUser.UserId);
+                return StatusCode(500, new { message = "تعذر تحميل طلبات المختبر غير المرتبطة حالياً" });
+            }
+            query = query.Where(l => accessible.Contains(l.PatientId));
+        }
+
+        var total = await query.CountAsync();
+        var orders = await query
+            .OrderByDescending(l => l.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .AsNoTracking()
+            .ToListAsync();
+
+        var rows = new List<UnlinkedLabOrderDto>(orders.Count);
+        foreach (var order in orders)
+        {
+            LabOrderInvoiceLinkStatus? linkStatus = null;
+            var candidateCount = 0;
+            try
+            {
+                var link = await invoiceLink.ResolveAsync(order);
+                linkStatus = link.Status;
+                candidateCount = link.CandidateCount;
+            }
+            catch (Exception ex)
+            {
+                // One unreadable row must not take down the whole fix-up list; it is
+                // reported with an explicit "unknown" reason instead of being dropped.
+                logger.LogWarning(ex,
+                    "[LabOrders] Could not determine unlink reason for {OrderNumber}", order.OrderNumber);
+            }
+
+            var (reasonCode, reason) = DescribeUnlinkReason(linkStatus, candidateCount);
+
+            rows.Add(new UnlinkedLabOrderDto
+            {
+                Id = order.Id,
+                OrderNumber = order.OrderNumber,
+                PatientId = order.PatientId,
+                PatientName = order.Patient != null
+                    ? $"{order.Patient.FirstName} {order.Patient.LastName}".Trim()
+                    : string.Empty,
+                PatientNumber = order.Patient?.PatientNumber,
+                VisitId = order.VisitId,
+                VisitDate = order.Visit?.VisitDate.ToString("yyyy-MM-dd"),
+                DoctorName = order.Doctor?.Name,
+                Cost = order.TotalCost ?? order.Cost,
+                Currency = order.Currency,
+                Status = order.Status,
+                ReasonCode = reasonCode,
+                Reason = reason,
+                CandidateCount = candidateCount,
+            });
+        }
+
+        return Ok(new { data = rows, total, page, pageSize });
+    }
+
+    /// <summary>
+    /// Turns a resolver outcome into a stable code plus the Arabic sentence shown to
+    /// staff. <c>Resolved</c> appears here too: the order is linkable but was created
+    /// before automatic linking existed, which is a different (and easier) repair than
+    /// an ambiguous one — reporting it as "no candidate" would be a lie.
+    /// </summary>
+    private static (string Code, string Text) DescribeUnlinkReason(
+        LabOrderInvoiceLinkStatus? status, int candidateCount) => status switch
+    {
+        LabOrderInvoiceLinkStatus.NoVisit =>
+            ("no_visit", "الطلب غير مرتبط بزيارة، ولا توجد وسيلة لتحديد بند الفاتورة تلقائياً. اربطه ببند الفاتورة يدوياً."),
+        LabOrderInvoiceLinkStatus.NoCandidate =>
+            ("no_candidate", "لا يوجد بند فاتورة متاح على زيارة الطلب. تأكد من إصدار فاتورة الخدمة لهذه الزيارة."),
+        LabOrderInvoiceLinkStatus.Ambiguous =>
+            ("ambiguous", $"زيارة الطلب تحمل {candidateCount} بنود فاتورة محتملة، ولم يُربط تلقائياً تفادياً لتحميل التكلفة على خدمة أخرى. حدّد البند الصحيح يدوياً."),
+        LabOrderInvoiceLinkStatus.PatientMismatch =>
+            ("patient_mismatch", "بند الفاتورة المرشح يخص مريضاً آخر، لذلك رُفض الربط. راجع بيانات الزيارة والفاتورة."),
+        LabOrderInvoiceLinkStatus.Resolved =>
+            ("resolvable", "يوجد بند فاتورة واحد مطابق ويمكن ربط الطلب به. الطلب أُنشئ قبل تفعيل الربط التلقائي."),
+        _ =>
+            ("unknown", "تعذر تحديد سبب عدم الربط. راجع سجل النظام."),
+    };
+
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
@@ -443,6 +609,10 @@ public class LabOrdersController(
         {
             var useTx = db.Database.IsRelational();
             var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+            // CORE-FIN-LAB — the invoice line this attempt linked (if any). Kept out of
+            // the try so the unique-violation retry can undo the link before building a
+            // brand-new order with a different Id.
+            InvoiceLineItem? linkedLineItem = null;
             try
             {
                 // Acquire advisory lock for lab order number generation
@@ -559,6 +729,44 @@ public class LabOrdersController(
 
                 db.LabOrders.Add(order);
 
+                // ── CORE-FIN-LAB — link the order to the invoice line it pays for ────
+                // InvoiceLineItem.LabOrderId is the source of truth (the only side EF
+                // configures and the only side CommissionService reads); LabOrder
+                // .InvoiceLineItemId is an abandoned column and stays untouched.
+                //
+                // The assignment happens INSIDE this transaction and before SaveChanges,
+                // so the order and its link commit together — a committed order with a
+                // dangling link (or the reverse) would be worse than no link at all.
+                //
+                // Not resolving is NORMAL, never an error: without a visit, without a
+                // matching invoice line, or with several plausible lines on the same
+                // visit, the order stays unlinked and surfaces in the admin fix-up list.
+                // Guessing would attach this patient's lab cost to another service and
+                // silently corrupt a DIFFERENT doctor's commission.
+                try
+                {
+                    var link = await invoiceLink.ResolveAsync(order);
+                    if (link.IsResolved)
+                    {
+                        link.LineItem!.LabOrderId = order.Id;
+                        linkedLineItem = link.LineItem;
+                    }
+                    else
+                    {
+                        logger.LogInformation(
+                            "[LabOrders] Lab order {OrderNumber} left unlinked to an invoice line ({LinkStatus}, candidates={CandidateCount})",
+                            order.OrderNumber, link.Status, link.CandidateCount);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // The link is an optimisation of the commission figure, not part of
+                    // the order itself — a failure here must never block creating it.
+                    logger.LogWarning(ex,
+                        "[LabOrders] Invoice-line resolution failed for {OrderNumber}; order created unlinked",
+                        order.OrderNumber);
+                }
+
                 // A draft is not yet a commitment to the lab. Build the payable only
                 // when the order is actually sent; UpdateStatus owns the same boundary.
                 if (order.Status == "sent"
@@ -668,6 +876,10 @@ public class LabOrdersController(
                     // CON-02 FIX: Unique constraint on OrderNumber caught a duplicate.
                     // Roll back and retry with a fresh count.
                     if (useTx) await tx!.RollbackAsync();
+                    // CORE-FIN-LAB: the rolled-back order Id must not stay on the line —
+                    // the next attempt builds a NEW order, and a leftover link would point
+                    // at a row that was never committed.
+                    if (linkedLineItem is not null) linkedLineItem.LabOrderId = null;
                     logger.LogWarning("CON-02: Lab order number collision on attempt {Attempt}, retrying", attempt + 1);
                     continue;
                 }

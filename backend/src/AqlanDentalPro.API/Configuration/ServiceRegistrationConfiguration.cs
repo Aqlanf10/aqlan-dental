@@ -101,6 +101,9 @@ public static class ServiceRegistrationConfiguration
         // CORE-LAB-001: shared, idempotent supplier-bill/payable/journal linkage for lab
         // orders — used by both create and update so a draft completed later still bills.
         services.AddScoped<LabOrderFinanceSyncService>();
+        // CORE-FIN-LAB: resolves the invoice line a lab order belongs to (unambiguous
+        // cases only) so the commission deducts the real lab cost, not the estimate.
+        services.AddScoped<LabOrderInvoiceLinkService>();
         // READ-side query service extracted from OrthoCasesController (LabOrderQueryService pattern).
         // Concrete class (no interface). Controller keeps permission checks + write endpoints;
         // GET endpoints delegate their EF queries here.

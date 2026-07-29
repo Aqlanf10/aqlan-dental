@@ -30,6 +30,9 @@ public class CommissionService(
             .Include(i => i.Invoice).ThenInclude(inv => inv.Patient)
             .Include(i => i.Service)
             .Include(i => i.Doctor)
+            // CORE-FIN-LAB: MapLineItem reports LabCostMissing from the linked order's
+            // recognition state, so the navigation must be loaded — see MapLineItem.
+            .Include(i => i.LabOrder)
             .Where(i => i.InvoiceId == invoiceId && i.IsActive)
             .OrderBy(i => i.SortOrder)
             .ToListAsync();
@@ -92,8 +95,12 @@ public class CommissionService(
         if (item.CommissionStatus == CommissionStatus.Paid)
             throw new InvalidOperationException("العمولة مدفوعة بالفعل");
 
-        // Warn if lab order linked but lab cost is zero
-        if (item.LabOrderId.HasValue && item.LabCost == 0)
+        // CORE-FIN-LAB: refuse to approve a commission that deducts nothing while a
+        // financially recognised lab order is attached — the real cost is still unknown
+        // to this line and approving would lock in an inflated commission. A draft or a
+        // cancelled order deducts nothing by design and must NOT block the approval;
+        // before links existed this guard could never fire at all.
+        if (IsLabCostMissing(item))
             throw new InvalidOperationException("يوجد طلب معمل مرتبط ولكن تكلفة المعمل = 0. يرجى تحديث التكلفة قبل الاعتماد");
 
         ApplyCalculation(item);
@@ -501,18 +508,30 @@ public class CommissionService(
                 .GetDecimalAsync(FinanceSettingsKeys.CommissionDefaultDoctorPercentage);
         }
 
-        // If linked lab order exists, pull actual lab cost
+        // ── CORE-FIN-LAB — the REAL lab cost replaces the estimate ────────────────
+        // A linked lab order knows what the lab actually charges; DefaultLabCost above
+        // is only an estimate per service. This path existed but was dead until lab
+        // orders started carrying a link (LabOrderInvoiceLinkService), so it now fires
+        // for the first time and must be conservative:
+        //
+        //   • Only a FINANCIALLY RECOGNISED order may overwrite the estimate. A draft is
+        //     not a commitment to the lab — its provisional cost must not be deducted
+        //     from the doctor's commission — and a cancelled or deleted order's cost was
+        //     unwound from the books by LabOrderFinanceSyncService.CancelAsync.
+        //   • When the order is not recognised, or no order is linked at all, the line
+        //     keeps exactly what it has today (DefaultLabCost or a manual entry). This
+        //     path can only ever replace an estimate with a real figure — never zero out
+        //     a deduction the clinic still owes.
         if (item.LabOrderId.HasValue)
         {
-            var labOrder = await db.LabOrders.FindAsync(item.LabOrderId.Value);
-            // CLIN-08 FIX: Prefer TotalCost (includes items + remake) over Cost (snapshot that may be stale).
-            // Previously read only Cost, which LabOrdersController.Update never re-syncs — so a lab order
-            // whose TotalCost grew via remakes would still report the old Cost to commission calculations,
-            // inflating the doctor's commission (lab cost is a deduction from NetCommissionableAmount).
-            if (labOrder != null)
-            {
-                item.LabCost = labOrder.TotalCost ?? labOrder.Cost ?? 0;
-            }
+            // Use the navigation loaded by LoadLineItemAsync; fall back to an explicit
+            // query (which applies the soft-delete filter) if it was not loaded.
+            var labOrder = item.LabOrder
+                ?? await db.LabOrders.FirstOrDefaultAsync(l => l.Id == item.LabOrderId.Value);
+
+            var realLabCost = RecognisedLabCost(labOrder);
+            if (realLabCost.HasValue)
+                item.LabCost = realLabCost.Value;
         }
 
         ApplyCalculation(item);
@@ -526,7 +545,48 @@ public class CommissionService(
             .Include(i => i.Invoice).ThenInclude(inv => inv.Patient)
             .Include(i => i.Service)
             .Include(i => i.Doctor)
+            // CORE-FIN-LAB: the linked lab order decides both the REAL lab cost
+            // (AutoFillFromServiceAsync) and the LabCostMissing flag (MapLineItem).
+            // The global soft-delete filter applies to the include, so a deleted order
+            // arrives as null — which is exactly how it must be treated.
+            .Include(i => i.LabOrder)
             .FirstOrDefaultAsync(i => i.Id == id && i.IsActive);
+
+    /// <summary>
+    /// CORE-FIN-LAB: the lab cost that may legitimately be deducted from this line's
+    /// commission, or <c>null</c> when there is none to take.
+    /// <para>
+    /// Null means "keep whatever the line already has" — the service's estimated
+    /// <c>DefaultLabCost</c> or a manual entry. That covers an unlinked line, a line
+    /// whose lab order is still a draft or has been cancelled/deleted, and a line whose
+    /// <c>LabOrder</c> navigation was simply not loaded. All of those keep today's
+    /// behaviour; only a financially recognised order may overwrite the estimate.
+    /// </para>
+    /// <para>
+    /// CLIN-08: prefer <c>TotalCost</c> (items + remakes) over <c>Cost</c>, which is a
+    /// snapshot that later edits do not always re-sync — reading the stale <c>Cost</c>
+    /// would understate the deduction and inflate the doctor's commission.
+    /// </para>
+    /// </summary>
+    private static decimal? RecognisedLabCost(LabOrder? labOrder)
+    {
+        if (labOrder is null || !LabOrderFinanceSyncService.IsFinanciallyRecognised(labOrder))
+            return null;
+
+        return labOrder.TotalCost ?? labOrder.Cost ?? 0m;
+    }
+
+    /// <summary>
+    /// CORE-FIN-LAB: true when this line deducts NO lab cost although a financially
+    /// recognised lab order is attached to it — the gap the "missing lab cost" warning
+    /// exists to expose. Both causes it covers are real: a recognised order that itself
+    /// carries no cost, and a line that was never re-synced with its order's cost.
+    /// A draft or cancelled order deducts nothing by design, so it is not a gap.
+    /// </summary>
+    private static bool IsLabCostMissing(InvoiceLineItem item) =>
+        item.LabOrderId.HasValue
+        && item.LabCost == 0m
+        && RecognisedLabCost(item.LabOrder).HasValue;
 
     private static void ApplyCalculation(InvoiceLineItem item)
     {
@@ -562,6 +622,12 @@ public class CommissionService(
             item.CommissionStatus = CommissionStatus.Calculated;
     }
 
+    /// <summary>
+    /// CORE-FIN-LAB: <c>LabCostMissing</c> is read from the <c>LabOrder</c> navigation,
+    /// so every query feeding this mapper must Include it. When it is not loaded the flag
+    /// degrades to false (no warning) rather than to a false alarm — under-reporting a
+    /// gap is recoverable, crying wolf on every line is not.
+    /// </summary>
     private static LineItemCommissionDto MapLineItem(InvoiceLineItem i) => new(
         LineItemId:                i.Id,
         InvoiceId:                 i.InvoiceId,
@@ -583,8 +649,14 @@ public class CommissionService(
         CenterShareAmount:         i.CenterShareAmount,
         CommissionStatus:          i.CommissionStatus.ToString(),
         CommissionNotes:           i.CommissionNotes,
+        // "A lab order is attached to this line." Permanently false before CORE-FIN-LAB
+        // (nothing ever assigned LabOrderId); now genuinely informative.
         HasLabOrder:               i.LabOrderId.HasValue,
-        LabCostMissing:            i.LabOrderId.HasValue && i.LabCost == 0,
+        // "This line deducts no lab cost even though a recognised lab order is attached."
+        // The old form was `LabOrderId.HasValue && LabCost == 0`, which could never fire —
+        // the report reassured the user instead of exposing the gap. It now also excludes
+        // drafts and cancelled orders, which are not supposed to deduct anything.
+        LabCostMissing:            IsLabCostMissing(i),
         IsApproved:                i.CommissionStatus == CommissionStatus.Approved || i.CommissionStatus == CommissionStatus.Paid,
         CommissionApprovedAt:      i.CommissionApprovedAt,
         CreatedAt:                 i.CreatedAt);
@@ -658,6 +730,9 @@ public class CommissionService(
             .Include(i => i.Invoice).ThenInclude(inv => inv.Patient)
             .Include(i => i.Service)
             .Include(i => i.Doctor)
+            // CORE-FIN-LAB: this preview is mapped through MapLineItem, which reads the
+            // linked lab order to decide LabCostMissing — see MapLineItem.
+            .Include(i => i.LabOrder)
             .Where(i => i.IsActive
                      && i.Invoice.IsActive
                      && i.Invoice.CreatedAt >= DateTime.SpecifyKind(from.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc)

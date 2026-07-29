@@ -59,7 +59,13 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var totalAppointments = await db.Appointments.CountAsync(a => a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate && (!branchId.HasValue || a.BranchId == branchId.Value));
         var completedAppointments = await db.Appointments.CountAsync(a => a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate && a.Status == Domain.Enums.AppointmentStatus.Completed && (!branchId.HasValue || a.BranchId == branchId.Value));
         var activeOrthoCases = await db.OrthoCases.CountAsync(c => c.Status == OrthoCaseStatus.Active && (!branchId.HasValue || c.BranchId == branchId.Value));
-        var totalRevenue = await db.Payments.Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate && (!branchId.HasValue || p.BranchId == branchId.Value)).SumAsync(p => (decimal?)p.Amount) ?? 0;
+        // Legacy scalar is explicitly YER-only. Use the detailed income report
+        // for the complete YER/SAR/USD breakdown.
+        var totalRevenue = await db.Payments
+            .Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate
+                && (p.Currency == null || p.Currency == "" || p.Currency.ToUpper() == "YER")
+                && (!branchId.HasValue || p.BranchId == branchId.Value))
+            .SumAsync(p => (decimal?)p.Amount) ?? 0;
 
         return Ok(new
         {
@@ -112,6 +118,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
 
         var revenueStats = await db.Payments
             .Where(p => p.DoctorId != null && doctorIds.Contains(p.DoctorId.Value) && p.PaymentDate >= fromDate && p.PaymentDate <= toDate
+                && (p.Currency == null || p.Currency == "" || p.Currency.ToUpper() == "YER")
                 && (!branchId.HasValue || p.BranchId == branchId.Value))
             .GroupBy(p => p.DoctorId!.Value)
             .Select(g => new { DoctorId = g.Key, Revenue = g.Sum(p => p.Amount) })
@@ -147,67 +154,128 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         // QA-595: Branch isolation — previously `branchId` was computed but never applied (dead code).
         if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
 
-        // Fetch raw groups then format DateOnly in memory (EF can't translate DateOnly.ToString)
-        var paymentsRaw = await db.Payments
+        // Keep physical currencies separate. Adding YER, SAR and USD together produces
+        // a number with no accounting meaning and was the source of the misleading
+        // "everything is YER" report.
+        var paymentRows = await db.Payments
             .Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate
                 && (!branchId.HasValue || p.BranchId == branchId.Value))
-            .GroupBy(p => p.PaymentDate)
-            .Select(g => new { date = g.Key, total = g.Sum(p => p.Amount), count = g.Count() })
+            .Select(p => new
+            {
+                p.PaymentDate,
+                p.Amount,
+                p.Currency,
+                p.Specialty,
+                p.PaymentMethod
+            })
+            .ToListAsync();
+
+        var payments = paymentRows
+            .GroupBy(p => new
+            {
+                p.PaymentDate,
+                Currency = string.IsNullOrWhiteSpace(p.Currency) ? "YER" : p.Currency.Trim().ToUpperInvariant()
+            })
+            .Select(g => new
+            {
+                date = g.Key.PaymentDate.ToString("yyyy-MM-dd"),
+                currency = g.Key.Currency,
+                total = g.Sum(p => p.Amount),
+                count = g.Count()
+            })
             .OrderBy(x => x.date)
-            .ToListAsync();
-        var payments = paymentsRaw.Select(x => new { date = x.date.ToString("yyyy-MM-dd"), x.total, x.count }).ToList();
+            .ThenBy(x => x.currency)
+            .ToList();
 
-        var bySpecialty = await db.Payments
-            .Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate
-                && (!branchId.HasValue || p.BranchId == branchId.Value))
-            .GroupBy(p => p.Specialty ?? "other")
-            .Select(g => new { specialty = g.Key, total = g.Sum(p => p.Amount), count = g.Count() })
-            .ToListAsync();
+        var bySpecialty = paymentRows
+            .GroupBy(p => new
+            {
+                Specialty = p.Specialty ?? "other",
+                Currency = string.IsNullOrWhiteSpace(p.Currency) ? "YER" : p.Currency.Trim().ToUpperInvariant()
+            })
+            .Select(g => new
+            {
+                specialty = g.Key.Specialty,
+                currency = g.Key.Currency,
+                total = g.Sum(p => p.Amount),
+                count = g.Count()
+            })
+            .ToList();
 
-        var byMethod = await db.Payments
-            .Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate
-                && (!branchId.HasValue || p.BranchId == branchId.Value))
-            // QA-597: normalize to lowercase so "Cash" and "cash" group together
-            .GroupBy(p => (p.PaymentMethod ?? "cash").ToLower())
-            .Select(g => new { method = g.Key, total = g.Sum(p => p.Amount) })
-            .ToListAsync();
-
-        var totalCollected = payments.Sum(p => p.total);
+        var byMethod = paymentRows
+            .GroupBy(p => new
+            {
+                Method = (p.PaymentMethod ?? "cash").ToLowerInvariant(),
+                Currency = string.IsNullOrWhiteSpace(p.Currency) ? "YER" : p.Currency.Trim().ToUpperInvariant()
+            })
+            .Select(g => new
+            {
+                method = g.Key.Method,
+                currency = g.Key.Currency,
+                total = g.Sum(p => p.Amount)
+            })
+            .ToList();
 
         // Phase 0B: Include CashFlowTransaction-based expenses, refunds, and supplier payments
         // for a complete financial picture (not just patient payments).
         // QA-595: `branchId` is now actually applied to these queries (was dead code before).
-        var totalExpenses = await db.CashFlowTransactions
+        var outflows = await db.CashFlowTransactions
             .Where(t => t.Type == TransactionType.Outflow && t.IsActive
                 && t.TransactionDate >= fromDate && t.TransactionDate <= toDate
-                && t.Category == FinancialCategory.OperationalExpense
                 && (!branchId.HasValue || t.BranchId == branchId.Value))
-            .SumAsync(t => (decimal?)t.Amount) ?? 0;
+            .Select(t => new { t.Amount, t.Currency, t.Category })
+            .ToListAsync();
 
-        var totalRefunds = await db.CashFlowTransactions
-            .Where(t => t.Type == TransactionType.Outflow && t.IsActive
-                && t.TransactionDate >= fromDate && t.TransactionDate <= toDate
-                && t.Category == FinancialCategory.Refund
-                && (!branchId.HasValue || t.BranchId == branchId.Value))
-            .SumAsync(t => (decimal?)t.Amount) ?? 0;
+        var currencies = paymentRows
+            .Select(p => string.IsNullOrWhiteSpace(p.Currency) ? "YER" : p.Currency.Trim().ToUpperInvariant())
+            .Concat(outflows.Select(t => string.IsNullOrWhiteSpace(t.Currency) ? "YER" : t.Currency.Trim().ToUpperInvariant()))
+            .Distinct()
+            .OrderBy(currency => currency)
+            .ToList();
 
-        var totalSupplierPayments = await db.CashFlowTransactions
-            .Where(t => t.Type == TransactionType.Outflow && t.IsActive
-                && t.TransactionDate >= fromDate && t.TransactionDate <= toDate
-                && t.Category == FinancialCategory.SupplierPayment
-                && (!branchId.HasValue || t.BranchId == branchId.Value))
-            .SumAsync(t => (decimal?)t.Amount) ?? 0;
+        var totalsByCurrency = currencies.Select(currency =>
+        {
+            var collected = paymentRows
+                .Where(p => (string.IsNullOrWhiteSpace(p.Currency) ? "YER" : p.Currency.Trim().ToUpperInvariant()) == currency)
+                .Sum(p => p.Amount);
+            decimal SumOutflow(FinancialCategory category) => outflows
+                .Where(t => t.Category == category
+                    && (string.IsNullOrWhiteSpace(t.Currency) ? "YER" : t.Currency.Trim().ToUpperInvariant()) == currency)
+                .Sum(t => t.Amount);
+            var expenses = SumOutflow(FinancialCategory.OperationalExpense);
+            var refunds = SumOutflow(FinancialCategory.Refund);
+            var supplierPayments = SumOutflow(FinancialCategory.SupplierPayment);
+            var salaryAdvances = SumOutflow(FinancialCategory.SalaryAdvance);
+            return new
+            {
+                currency,
+                collected,
+                expenses,
+                refunds,
+                supplierPayments,
+                salaryAdvances,
+                net = collected - expenses - refunds - supplierPayments - salaryAdvances
+            };
+        }).ToList();
 
-        var totalSalaryAdvances = await db.CashFlowTransactions
-            .Where(t => t.Type == TransactionType.Outflow && t.IsActive
-                && t.TransactionDate >= fromDate && t.TransactionDate <= toDate
-                && t.Category == FinancialCategory.SalaryAdvance
-                && (!branchId.HasValue || t.BranchId == branchId.Value))
-            .SumAsync(t => (decimal?)t.Amount) ?? 0;
-
-        var netProfit = totalCollected - totalExpenses - totalRefunds - totalSupplierPayments - totalSalaryAdvances;
-
-        return Ok(new { fromDate = fromDate.ToString("yyyy-MM-dd"), toDate = toDate.ToString("yyyy-MM-dd"), totalCollected, totalExpenses, totalRefunds, totalSupplierPayments, totalSalaryAdvances, netProfit, daily = payments, bySpecialty, byMethod });
+        // Legacy scalar fields remain YER-only for older clients. New clients must
+        // use totalsByCurrency and never infer a currency-less grand total.
+        var yer = totalsByCurrency.FirstOrDefault(total => total.currency == "YER");
+        return Ok(new
+        {
+            fromDate = fromDate.ToString("yyyy-MM-dd"),
+            toDate = toDate.ToString("yyyy-MM-dd"),
+            totalCollected = yer?.collected ?? 0,
+            totalExpenses = yer?.expenses ?? 0,
+            totalRefunds = yer?.refunds ?? 0,
+            totalSupplierPayments = yer?.supplierPayments ?? 0,
+            totalSalaryAdvances = yer?.salaryAdvances ?? 0,
+            netProfit = yer?.net ?? 0,
+            totalsByCurrency,
+            daily = payments,
+            bySpecialty,
+            byMethod
+        });
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -410,7 +478,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var contracts = await db.Contracts
             .Include(c => c.Patient)
             .Include(c => c.Payments)
-            .Where(c => c.IsActive && c.Status == ContractStatus.Active && c.TotalAmount > 0 && (!branchId.HasValue || c.Patient.BranchId == branchId.Value))
+            .Where(c => c.IsActive && c.Status == ContractStatus.Active && c.TotalAmount > 0
+                && (c.Currency == null || c.Currency == "" || c.Currency.ToUpper() == "YER")
+                && (!branchId.HasValue || c.Patient.BranchId == branchId.Value))
             .ToListAsync();
 
         var overdueList = new List<object>();
@@ -422,8 +492,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
 
         foreach (var c in contracts)
         {
-            var paid = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount);
-            var remaining = c.TotalAmount - paid;
+            var paid = c.Payments.Where(p => p.IsActive)
+                .Sum(p => p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount);
+            var remaining = c.TotalAmount - c.DiscountAmount - paid;
             if (remaining <= 0) continue;
 
             // Phase 0B: Calculate days overdue based on expected installment schedule.
@@ -533,7 +604,10 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
 
         // Revenue from ortho payments
         var orthoRevenue = await db.Payments
-            .Where(p => p.IsActive && p.Specialty == "Orthodontics" && p.PaymentDate >= fromDate && p.PaymentDate <= toDate && (!branchId.HasValue || p.BranchId == branchId.Value))
+            .Where(p => p.IsActive && p.Specialty == "Orthodontics"
+                && p.PaymentDate >= fromDate && p.PaymentDate <= toDate
+                && (p.Currency == null || p.Currency == "" || p.Currency.ToUpper() == "YER")
+                && (!branchId.HasValue || p.BranchId == branchId.Value))
             .SumAsync(p => (decimal?)p.Amount) ?? 0;
 
         return Ok(new
@@ -623,7 +697,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
 
         // Current period
         var currentTotal = await db.Payments
-            .Where(p => p.IsActive && p.PaymentDate >= fromDate && p.PaymentDate <= toDate && (!branchId.HasValue || p.BranchId == branchId.Value))
+            .Where(p => p.IsActive && p.PaymentDate >= fromDate && p.PaymentDate <= toDate
+                && (p.Currency == null || p.Currency == "" || p.Currency.ToUpper() == "YER")
+                && (!branchId.HasValue || p.BranchId == branchId.Value))
             .SumAsync(p => (decimal?)p.Amount) ?? 0;
 
         // Previous period (same duration before `from`)
@@ -633,7 +709,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var prevToDate = fromDate.AddDays(-1);
 
         var previousTotal = await db.Payments
-            .Where(p => p.IsActive && p.PaymentDate >= prevFromDate && p.PaymentDate <= prevToDate && (!branchId.HasValue || p.BranchId == branchId.Value))
+            .Where(p => p.IsActive && p.PaymentDate >= prevFromDate && p.PaymentDate <= prevToDate
+                && (p.Currency == null || p.Currency == "" || p.Currency.ToUpper() == "YER")
+                && (!branchId.HasValue || p.BranchId == branchId.Value))
             .SumAsync(p => (decimal?)p.Amount) ?? 0;
 
         var percentageChange = previousTotal > 0
@@ -642,13 +720,17 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
 
         // Month-over-month breakdown
         var currentMonthly = await db.Payments
-            .Where(p => p.IsActive && p.PaymentDate >= fromDate && p.PaymentDate <= toDate && (!branchId.HasValue || p.BranchId == branchId.Value))
+            .Where(p => p.IsActive && p.PaymentDate >= fromDate && p.PaymentDate <= toDate
+                && (p.Currency == null || p.Currency == "" || p.Currency.ToUpper() == "YER")
+                && (!branchId.HasValue || p.BranchId == branchId.Value))
             .GroupBy(p => new { p.PaymentDate.Year, p.PaymentDate.Month })
             .Select(g => new { g.Key.Year, g.Key.Month, total = g.Sum(p => p.Amount) })
             .ToListAsync();
 
         var previousMonthly = await db.Payments
-            .Where(p => p.IsActive && p.PaymentDate >= prevFromDate && p.PaymentDate <= prevToDate && (!branchId.HasValue || p.BranchId == branchId.Value))
+            .Where(p => p.IsActive && p.PaymentDate >= prevFromDate && p.PaymentDate <= prevToDate
+                && (p.Currency == null || p.Currency == "" || p.Currency.ToUpper() == "YER")
+                && (!branchId.HasValue || p.BranchId == branchId.Value))
             .GroupBy(p => new { p.PaymentDate.Year, p.PaymentDate.Month })
             .Select(g => new { g.Key.Year, g.Key.Month, total = g.Sum(p => p.Amount) })
             .ToListAsync();
@@ -665,13 +747,17 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
 
         // By specialty comparison
         var currentBySpecialty = await db.Payments
-            .Where(p => p.IsActive && p.PaymentDate >= fromDate && p.PaymentDate <= toDate && (!branchId.HasValue || p.BranchId == branchId.Value))
+            .Where(p => p.IsActive && p.PaymentDate >= fromDate && p.PaymentDate <= toDate
+                && (p.Currency == null || p.Currency == "" || p.Currency.ToUpper() == "YER")
+                && (!branchId.HasValue || p.BranchId == branchId.Value))
             .GroupBy(p => p.Specialty ?? "أخرى")
             .Select(g => new { specialty = g.Key, total = g.Sum(p => p.Amount) })
             .ToListAsync();
 
         var previousBySpecialty = await db.Payments
-            .Where(p => p.IsActive && p.PaymentDate >= prevFromDate && p.PaymentDate <= prevToDate && (!branchId.HasValue || p.BranchId == branchId.Value))
+            .Where(p => p.IsActive && p.PaymentDate >= prevFromDate && p.PaymentDate <= prevToDate
+                && (p.Currency == null || p.Currency == "" || p.Currency.ToUpper() == "YER")
+                && (!branchId.HasValue || p.BranchId == branchId.Value))
             .GroupBy(p => p.Specialty ?? "أخرى")
             .Select(g => new { specialty = g.Key, total = g.Sum(p => p.Amount) })
             .ToListAsync();
@@ -1160,6 +1246,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
                 LastName      = p.Patient.LastName,
                 PatientNumber = p.Patient.PatientNumber,
                 p.Amount,
+                p.Currency,
+                p.AppliedAmount,
+                p.AccountCurrency,
                 p.PaymentMethod,
                 p.PaymentDate,
                 p.ServiceDescription,
@@ -1169,11 +1258,14 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
             .ToListAsync();
 
         var csv = new System.Text.StringBuilder();
-        csv.AppendLine("رقم السند,المريض,رقم المريض,المبلغ,طريقة الدفع,التاريخ,الوصف,التخصص,ملاحظات");
+        csv.AppendLine("رقم السند,المريض,رقم المريض,المبلغ,عملة القبض,المبلغ المحتسب,عملة الحساب,طريقة الدفع,التاريخ,الوصف,التخصص,ملاحظات");
         foreach (var p in payments)
         {
             var patientName = $"{p.FirstName} {p.LastName}".Trim();
-            csv.AppendLine($"{Esc(p.ReceiptNumber ?? "")},{Esc(patientName)},{p.PatientNumber},{p.Amount},{p.PaymentMethod},{p.PaymentDate:yyyy-MM-dd},{Esc(p.ServiceDescription ?? "")},{Esc(p.Specialty ?? "")},{Esc(p.Notes ?? "")}");
+            var paymentCurrency = string.IsNullOrWhiteSpace(p.Currency) ? "YER" : p.Currency.Trim().ToUpperInvariant();
+            var accountCurrency = string.IsNullOrWhiteSpace(p.AccountCurrency) ? "YER" : p.AccountCurrency.Trim().ToUpperInvariant();
+            var appliedAmount = p.AppliedAmount == 0 ? p.Amount : p.AppliedAmount;
+            csv.AppendLine($"{Esc(p.ReceiptNumber ?? "")},{Esc(patientName)},{p.PatientNumber},{p.Amount},{paymentCurrency},{appliedAmount},{accountCurrency},{p.PaymentMethod},{p.PaymentDate:yyyy-MM-dd},{Esc(p.ServiceDescription ?? "")},{Esc(p.Specialty ?? "")},{Esc(p.Notes ?? "")}");
         }
 
         var bytes = System.Text.Encoding.UTF8.GetPreamble().Concat(System.Text.Encoding.UTF8.GetBytes(csv.ToString())).ToArray();

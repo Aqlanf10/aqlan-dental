@@ -48,9 +48,18 @@ interface FinancialReport {
   fromDate: string;
   toDate: string;
   totalCollected: number;
-  daily: { date: string; total: number; count: number }[];
-  bySpecialty: { specialty: string; total: number; count: number }[];
-  byMethod: { method: string; total: number }[];
+  totalsByCurrency: {
+    currency: string;
+    collected: number;
+    expenses: number;
+    refunds: number;
+    supplierPayments: number;
+    salaryAdvances: number;
+    net: number;
+  }[];
+  daily: { date: string; currency: string; total: number; count: number }[];
+  bySpecialty: { specialty: string; currency: string; total: number; count: number }[];
+  byMethod: { method: string; currency: string; total: number }[];
 }
 
 interface AppointmentAnalytics {
@@ -154,7 +163,6 @@ const STATUS_LABELS: Record<string, string> = {
   delivered: "تم التسليم", sent: "مرسل", draft: "مسودة",
 };
 const CHART_COLORS = ["#3d7ab5", "#f5922e", "#10b981", "#8b5cf6", "#ef4444", "#06b6d4", "#f97316", "#6366f1"];
-const SPECIALTY_COLORS = ["#3d7ab5", "#8b5cf6", "#ef4444", "#f97316"];
 
 type ReportKey =
   | "center-summary" | "appointment-analytics" | "patient-demographics"
@@ -534,101 +542,100 @@ function PatientDemographicsReport({ data }: { data: PatientDemographics }) {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 function FinancialReportView({ data }: { data: FinancialReport }) {
+  const totals = data.totalsByCurrency?.length
+    ? data.totalsByCurrency
+    : [{
+        currency: "YER",
+        collected: data.totalCollected,
+        expenses: 0,
+        refunds: 0,
+        supplierPayments: 0,
+        salaryAdvances: 0,
+        net: data.totalCollected,
+      }];
+  const money = (amount: number, currency: string) =>
+    `${amount.toLocaleString("ar-YE", { maximumFractionDigits: 2 })} ${currency}`;
+
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-500">إجمالي المحصّل في الفترة</p>
-            <p className="text-3xl font-extrabold text-emerald-700 font-mono mt-1">
-              {formatYemeniRiyal(data.totalCollected)}
-            </p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {totals.map((total) => (
+          <div key={total.currency} className="bg-white rounded-xl border border-emerald-200 shadow-sm p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">المحصّل بعملة {total.currency}</p>
+                <p className="text-2xl font-extrabold text-emerald-700 font-mono mt-1" dir="ltr">
+                  {money(total.collected, total.currency)}
+                </p>
+              </div>
+              <Wallet className="w-10 h-10 text-emerald-100" />
+            </div>
+            <div className="mt-4 pt-3 border-t border-gray-100 grid grid-cols-2 gap-2 text-xs">
+              <span className="text-gray-500">المصروفات</span>
+              <span className="font-mono text-end" dir="ltr">{money(total.expenses, total.currency)}</span>
+              <span className="text-gray-500">الموردون والمرتجعات</span>
+              <span className="font-mono text-end" dir="ltr">
+                {money(total.supplierPayments + total.refunds, total.currency)}
+              </span>
+              <span className="font-semibold text-gray-700">الصافي</span>
+              <span className={`font-bold font-mono text-end ${total.net >= 0 ? "text-emerald-700" : "text-red-600"}`} dir="ltr">
+                {money(total.net, total.currency)}
+              </span>
+            </div>
           </div>
-          <Wallet className="w-14 h-14 text-emerald-100" />
-        </div>
+        ))}
       </div>
 
       {data.daily.length > 0 && (
-        <ChartCard title="الإيرادات اليومية" icon={<TrendingUp className="w-4 h-4 text-clinic-blue" />}>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={data.daily} margin={{ top: 0, right: 10, left: -10, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
-              <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false}
-                interval={Math.ceil(data.daily.length / 8)} />
-              <YAxis tickFormatter={formatYER} tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
-              <Tooltip content={<TooltipRevenue />} />
-              <Bar dataKey="total" fill="#3d7ab5" radius={[3, 3, 0, 0]} maxBarSize={20} />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
-      )}
-
-      {data.daily.length > 0 && (
-        <ChartCard title="دفعات يومية (عدد)" icon={<Calendar className="w-4 h-4 text-purple-600" />}>
-          <ResponsiveContainer width="100%" height={140}>
-            <LineChart data={data.daily} margin={{ top: 0, right: 10, left: -10, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
-              <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false}
-                interval={Math.ceil(data.daily.length / 8)} />
-              <YAxis tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} allowDecimals={false} />
-              <Tooltip content={<TooltipCount unit="دفعة" />} />
-              <Line type="monotone" dataKey="count" stroke="#8b5cf6" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: "#8b5cf6" }} />
-            </LineChart>
-          </ResponsiveContainer>
+        <ChartCard title="التحصيل اليومي حسب العملة" icon={<TrendingUp className="w-4 h-4 text-clinic-blue" />}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-500">
+                <tr>
+                  <th className="px-3 py-2 text-start">التاريخ</th>
+                  <th className="px-3 py-2 text-start">العملة</th>
+                  <th className="px-3 py-2 text-end">المبلغ</th>
+                  <th className="px-3 py-2 text-end">عدد السندات</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {data.daily.map((item) => (
+                  <tr key={`${item.date}-${item.currency}`}>
+                    <td className="px-3 py-2">{item.date}</td>
+                    <td className="px-3 py-2 font-semibold">{item.currency}</td>
+                    <td className="px-3 py-2 text-end font-mono" dir="ltr">{money(item.total, item.currency)}</td>
+                    <td className="px-3 py-2 text-end">{item.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </ChartCard>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {data.bySpecialty.length > 0 && (
           <ChartCard title="حسب التخصص">
-            <ResponsiveContainer width="100%" height={140}>
-              <PieChart>
-                <Pie data={data.bySpecialty} cx="50%" cy="50%" innerRadius={40} outerRadius={65}
-                  paddingAngle={3} dataKey="total" nameKey="specialty">
-                  {data.bySpecialty.map((_, i) => (
-                    <Cell key={i} fill={SPECIALTY_COLORS[i % SPECIALTY_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(v) => [`${Number(v).toLocaleString()} ر.ي`, ""]} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="mt-3 space-y-2">
-              {data.bySpecialty.map((s, i) => {
-                const pct = data.totalCollected > 0 ? Math.round((s.total / data.totalCollected) * 100) : 0;
-                return (
-                  <div key={s.specialty} className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: SPECIALTY_COLORS[i % SPECIALTY_COLORS.length] }} />
-                      <span className="text-gray-600">{SPECIALTY_LABELS[s.specialty] ?? s.specialty}</span>
-                    </div>
-                    <span className="font-semibold text-gray-900">{formatYemeniRiyal(s.total)} ({pct}%)</span>
-                  </div>
-                );
-              })}
+            <div className="space-y-2">
+              {data.bySpecialty.map((item) => (
+                <div key={`${item.specialty}-${item.currency}`} className="flex items-center justify-between text-sm border-b border-gray-100 pb-2">
+                  <span className="text-gray-600">{SPECIALTY_LABELS[item.specialty] ?? item.specialty}</span>
+                  <span className="font-semibold font-mono" dir="ltr">{money(item.total, item.currency)}</span>
+                </div>
+              ))}
             </div>
           </ChartCard>
         )}
 
         {data.byMethod.length > 0 && (
           <ChartCard title="حسب طريقة الدفع">
-            <div className="space-y-3">
-              {data.byMethod.map((m) => {
-                const pct = data.totalCollected > 0 ? Math.round((m.total / data.totalCollected) * 100) : 0;
-                return (
-                  <div key={m.method}>
-                    <div className="flex items-center justify-between text-sm mb-1">
-                      <span className="text-gray-700 font-medium">{METHOD_LABELS[m.method] ?? m.method}</span>
-                      <span className="font-mono text-gray-900">
-                        {formatYemeniRiyal(m.total)}{" "}
-                        <span className="text-xs text-gray-400">({pct}%)</span>
-                      </span>
-                    </div>
-                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="space-y-2">
+              {data.byMethod.map((item) => (
+                <div key={`${item.method}-${item.currency}`} className="flex items-center justify-between text-sm border-b border-gray-100 pb-2">
+                  <span className="text-gray-700 font-medium">{METHOD_LABELS[item.method] ?? item.method}</span>
+                  <span className="font-mono text-gray-900" dir="ltr">{money(item.total, item.currency)}</span>
+                </div>
+              ))}
             </div>
           </ChartCard>
         )}
@@ -1341,28 +1348,32 @@ export default function ReportsPage() {
 
   /* ─── CSV Export ─────────────────────────────────────────────────────── */
   const handleExport = async () => {
+    const directEndpoints: Partial<Record<ReportKey, string>> = {
+      "appointment-analytics": "/api/reports/export/appointments",
+      "patient-demographics": "/api/reports/export/patients",
+      "financial": "/api/reports/export/payments",
+    };
+    const detailedTypes: Partial<Record<ReportKey, string>> = {
+      "overdue-contracts": "outstanding-balances",
+      "ortho-progress": "ortho-cases",
+      "treatment-plan-completion": "treatment-progress",
+      "patient-retention": "returning-patients",
+    };
+    const directEndpoint = directEndpoints[activeReport];
+    const detailedType = detailedTypes[activeReport];
+    if (!directEndpoint && !detailedType) {
+      toast.error("التصدير التفصيلي غير متاح لهذا الملخص حاليًا.");
+      return;
+    }
+
     setExporting(true);
     try {
       // FE-16: Use the downloadBlob helper instead of fetch() so the JWT is injected
       // automatically and the 401 refresh interceptor works (previously this used a
       // manual Authorization header that silently failed when the token expired).
-      const exportEndpoints: Record<ReportKey, string> = {
-        "center-summary": "/api/reports/export/center-summary",
-        "appointment-analytics": "/api/reports/export/appointment-analytics",
-        "patient-demographics": "/api/reports/export/patient-demographics",
-        "financial": "/api/reports/export/payments",
-        "revenue-comparison": "/api/reports/export/revenue-comparison",
-        "overdue-contracts": "/api/reports/export/overdue-contracts",
-        "doctor-performance": "/api/reports/export/doctor-performance",
-        "ortho-progress": "/api/reports/export/ortho-progress",
-        "surgery-stats": "/api/reports/export/surgery-stats",
-        "treatment-plan-completion": "/api/reports/export/treatment-plan-completion",
-        "lab-orders": "/api/reports/export/lab-orders",
-        "prescription-analytics": "/api/reports/export/prescription-analytics",
-        "patient-retention": "/api/reports/export/patient-retention",
-        "booking-funnel": "/api/reports/export/booking-funnel",
-      };
-      const blob = await downloadBlob(exportEndpoints[activeReport], { from, to });
+      const blob = detailedType
+        ? await downloadBlob("/api/reports/operations/export", { type: detailedType, from, to })
+        : await downloadBlob(directEndpoint!, { from, to });
       const blobUrl = URL.createObjectURL(blob);
       downloadCsv(blobUrl, `${activeReport}_${today}.csv`);
       URL.revokeObjectURL(blobUrl);
@@ -1377,6 +1388,15 @@ export default function ReportsPage() {
   const currentReportInfo = REPORT_CATEGORIES
     .flatMap((c) => c.reports)
     .find((r) => r.key === activeReport);
+  const canExport = [
+    "appointment-analytics",
+    "patient-demographics",
+    "financial",
+    "overdue-contracts",
+    "ortho-progress",
+    "treatment-plan-completion",
+    "patient-retention",
+  ].includes(activeReport);
 
   /* ─── Render content ─────────────────────────────────────────────────── */
   const renderReport = () => {
@@ -1527,7 +1547,8 @@ export default function ReportsPage() {
             {/* Export */}
             <button
               onClick={handleExport}
-              disabled={exporting}
+              disabled={exporting || !canExport}
+              title={canExport ? "تصدير CSV" : "لا توجد صفوف تفصيلية قابلة للتصدير لهذا الملخص"}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50 transition ms-1"
             >
               <Download className="w-3.5 h-3.5" />

@@ -1,32 +1,30 @@
 # 009 Reports Printing Tasks
 
-- `REP-TASK-001`: Audit PDF identity usage. Cheap model: read-only.
-- `REP-TASK-002`: Add Arabic PDF rendering regression test. Strong/medium depending report.
-- `REP-TASK-003`: Improve report UI copy/layout in existing files. Medium model.
-- `REP-TASK-004`: Runtime render and inspect changed PDF. Needs runtime verification.
+- `REP-TASK-001`: Audit PDF identity usage.
+- `REP-TASK-002`: Add Arabic PDF rendering regression test.
+- `REP-TASK-003`: Improve report UI copy/layout.
+- `REP-TASK-004`: Runtime render and inspect changed PDF.
 
 ---
 
-## REP-OPS — Operational Reports (owner directive 2026-07-28)
+## REP-OPS — Operational Reports
 
-Ordered by operational value. Each is its own PR with a patient-access test.
+Implemented under `/api/reports/operations/details?type=...`.
 
-- [ ] `REP-OPS-001` `GET /api/reports/operational/patients/outstanding` — debtor list
-      (patient, phone, total, paid, remaining, oldest debt, last payment).
-      **Highest value: this is the collections list the clinic cannot run today.**
-- [ ] `REP-OPS-002` `patients/treated` — who was actually treated in a period.
-- [ ] `REP-OPS-003` `patients/new` — new registrations, with contact columns.
-- [ ] `REP-OPS-004` `income/daily` — day-by-day revenue, split by currency and method.
-- [ ] `REP-OPS-005` `income/summary` — configurable daily/monthly/quarterly/yearly
-      with previous-period comparison.
-- [ ] `REP-OPS-006` `treatment-plans/progress` — per patient: done vs remaining.
-- [ ] `REP-OPS-007` `ortho/cases` — case, stage, doctor, last visit, balance.
-- [ ] `REP-OPS-008` `patients/returning` — returning patients with the absence gap in days.
-- [ ] `REP-OPS-009` CSV/PDF export — only AFTER the row shape is stable.
+- [x] `REP-OPS-001` `outstanding-balances` — patient/currency totals, paid and remaining.
+- [x] `REP-OPS-002` `treated-patients` — who was treated and what was done.
+- [x] `REP-OPS-003` `new-patients` — clinic-day-safe registrations and contact columns.
+- [x] `REP-OPS-004` `income` — receipt rows and summaries split by currency.
+- [ ] `REP-OPS-005` previous-period comparison (date presets and custom range are complete).
+- [x] `REP-OPS-006` `treatment-progress` — per patient completed vs remaining.
+- [x] `REP-OPS-007` `ortho-cases` — case, stage, doctor, visits and balance.
+- [x] `REP-OPS-008` `returning-patients` — configurable absence gap and treatment change.
+- [x] `REP-OPS-009A` CSV export after row shape stabilization.
+- [ ] `REP-OPS-009B` PDF export and visual verification.
 
-### Not yet examined (stated so the matrix is not mistaken for complete)
+### Verification
 
-- [ ] Deep read of `FinanceV3Controller.Reports.cs`, `LabReportsController.cs`,
-      `DashboardController.cs` outputs — some requests may be partly served there.
-- [ ] `frontend/src/app/(dashboard)/reports/operations/page.tsx` unread.
-
+- [x] Backend tests for branch scope, currencies, clinic-day boundaries, balances,
+      returning patients, treatment progress and CSV.
+- [x] Frontend contract tests for report types, routes, pagination and currency UI.
+- [ ] Preview runtime verification before merge.

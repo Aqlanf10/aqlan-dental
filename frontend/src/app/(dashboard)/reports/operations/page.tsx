@@ -4,395 +4,413 @@ import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from "recharts";
-import {
-  Activity, ArrowRight, Clock, Hourglass, RefreshCw, Stethoscope,
-  TrendingUp, UserX, Users,
+  Activity,
+  ArrowRight,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  Download,
+  Loader2,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Users,
+  Wallet,
 } from "lucide-react";
-import api from "@/lib/api";
+import api, { downloadBlob } from "@/lib/api";
 import { localDateString } from "@/lib/utils";
-import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "@/stores/toastStore";
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   TYPES — GET /api/clinic-queue/analytics?fromDate=&toDate=
-   ═══════════════════════════════════════════════════════════════════════════ */
+type ReportType =
+  | "new-patients"
+  | "treated-patients"
+  | "income"
+  | "outstanding-balances"
+  | "treatment-progress"
+  | "returning-patients"
+  | "ortho-cases";
 
-interface OpsDoctorStat {
-  doctorName: string;
-  totalPatients: number;
-  completed: number;
-  noShow: number;
-  avgServiceTime: number;
+interface ReportColumn {
+  key: string;
+  label: string;
+  kind: "text" | "date" | "number" | "money" | "currency" | "percent" | "boolean";
 }
 
-interface OpsAnalytics {
-  dateRange: { from: string; to: string };
-  totalItems: number;
-  completed: number;
-  noShow: number;
-  cancelled: number;
-  completionRate: number;
-  noShowRate: number;
-  avgServiceTimeMinutes: number;
-  avgWaitTimeMinutes: number;
-  avgCalledToInRoomMinutes: number;
-  avgInRoomToStartMinutes: number;
-  doctorStats: OpsDoctorStat[];
-  hourlyDistribution: { hour: number; count: number }[];
-  priorityDistribution: { priority: string; priorityArabic: string; count: number }[];
+interface ReportSummary {
+  label: string;
+  value: string | number;
+  currency?: string | null;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   HELPERS
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/** ساعة 24 → صيغة عربية 12 ساعة مثل: ٩ ص / ٣ م */
-function formatHourArabic(hour: number): string {
-  const suffix = hour < 12 ? "ص" : "م";
-  const h12 = hour % 12 === 0 ? 12 : hour % 12;
-  return `${h12.toLocaleString("ar-EG")} ${suffix}`;
+interface OperationalReport {
+  title: string;
+  fromDate: string;
+  toDate: string;
+  columns: ReportColumn[];
+  rows: Record<string, unknown>[];
+  summary: ReportSummary[];
+  totalRows: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
-function formatMinutes(val: number | null | undefined): string {
-  if (val == null) return "—";
-  return `${Math.round(val)} د`;
-}
-
-function formatPct(val: number | null | undefined): string {
-  if (val == null) return "—";
-  return `${Math.round(val)}%`;
-}
-
-type PresetKey = "today" | "week" | "month30" | "thisMonth";
-
-function presetRange(key: PresetKey): { from: string; to: string } {
-  const today = localDateString();
-  const d = new Date();
-  switch (key) {
-    case "today":
-      return { from: today, to: today };
-    case "week":
-      d.setDate(d.getDate() - 6);
-      return { from: localDateString(d), to: today };
-    case "month30":
-      d.setDate(d.getDate() - 29);
-      return { from: localDateString(d), to: today };
-    case "thisMonth":
-      return { from: localDateString(new Date(d.getFullYear(), d.getMonth(), 1)), to: today };
-  }
-}
-
-const PRESETS: { key: PresetKey; label: string }[] = [
-  { key: "today", label: "اليوم" },
-  { key: "week", label: "آخر 7 أيام" },
-  { key: "month30", label: "آخر 30 يوم" },
-  { key: "thisMonth", label: "هذا الشهر" },
+const REPORTS: {
+  type: ReportType;
+  label: string;
+  description: string;
+  icon: typeof Users;
+}[] = [
+  { type: "new-patients", label: "المرضى الجدد", description: "المسجلون خلال الفترة", icon: Users },
+  { type: "treated-patients", label: "من تم علاجهم", description: "تفاصيل الزيارات والعلاج", icon: Activity },
+  { type: "income", label: "الدخل والتحصيل", description: "كل سند بعملته الأصلية", icon: Wallet },
+  { type: "outstanding-balances", label: "الأرصدة المتبقية", description: "المطالب والمدفوع والمتبقي", icon: Wallet },
+  { type: "treatment-progress", label: "تقدم العلاج", description: "المكتمل والخطوات المتبقية", icon: ClipboardList },
+  { type: "returning-patients", label: "العائدون بعد انقطاع", description: "مدة الغياب وغرض العودة", icon: RotateCcw },
+  { type: "ortho-cases", label: "حالات التقويم", description: "المرحلة والزيارات والرصيد", icon: Activity },
 ];
 
-const PRIORITY_BADGE: Record<string, string> = {
-  Emergency: "bg-red-50 text-red-700 border-red-200",
-  Urgent: "bg-orange-50 text-orange-700 border-orange-200",
-  Appointment: "bg-blue-50 text-blue-700 border-blue-200",
-  Normal: "bg-gray-50 text-gray-600 border-gray-200",
-};
+type Preset = "today" | "month" | "year";
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   SMALL UI PIECES
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-function HeadlineCard({
-  label, value, icon: Icon, color, sub,
-}: {
-  label: string; value: string; icon: typeof Users; color: string; sub?: string;
-}) {
-  return (
-    <div className={`bg-white rounded-xl border shadow-sm p-4 ${color}`}>
-      <div className="flex items-center gap-2 text-xs font-medium opacity-80">
-        <Icon className="w-4 h-4" />
-        {label}
-      </div>
-      <p className="text-2xl font-extrabold mt-1.5">{value}</p>
-      {sub && <p className="text-[11px] opacity-70 mt-0.5">{sub}</p>}
-    </div>
-  );
+function getPresetRange(preset: Preset): { from: string; to: string } {
+  const today = localDateString();
+  const date = new Date(`${today}T12:00:00`);
+  if (preset === "today") return { from: today, to: today };
+  if (preset === "month") {
+    return {
+      from: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`,
+      to: today,
+    };
+  }
+  return { from: `${date.getFullYear()}-01-01`, to: today };
 }
 
-function HourTooltip({ active, payload, label }: { active?: boolean; payload?: { value: number }[]; label?: number }) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 text-xs">
-      <p className="text-gray-500 mb-1">{typeof label === "number" ? formatHourArabic(label) : label}</p>
-      <p className="font-bold text-clinic-blue">{payload[0].value} مريض</p>
-    </div>
-  );
+function formatCell(value: unknown, column: ReportColumn): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (column.kind === "boolean") return value ? "نعم" : "لا";
+  if (column.kind === "percent") return `${Number(value).toLocaleString("ar-YE", { maximumFractionDigits: 1 })}%`;
+  if (column.kind === "money" || column.kind === "number") {
+    return Number(value).toLocaleString("ar-YE", { maximumFractionDigits: 2 });
+  }
+  return String(value);
 }
 
-function PageSkeleton() {
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="h-24 rounded-xl" />
-        ))}
-      </div>
-      <Skeleton className="h-64 rounded-xl" />
-      <Skeleton className="h-48 rounded-xl" />
-    </div>
-  );
+function downloadFile(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   PAGE
-   ═══════════════════════════════════════════════════════════════════════════ */
+export default function DetailedOperationsReportsPage() {
+  const initialRange = getPresetRange("month");
+  const [reportType, setReportType] = useState<ReportType>("new-patients");
+  const [from, setFrom] = useState(initialRange.from);
+  const [to, setTo] = useState(initialRange.to);
+  const [absenceDays, setAbsenceDays] = useState(90);
+  const [page, setPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
 
-export default function OperationsReportPage() {
-  const initial = presetRange("week");
-  const [from, setFrom] = useState(initial.from);
-  const [to, setTo] = useState(initial.to);
-
-  const { data, isLoading, isError, refetch, isFetching } = useQuery<OpsAnalytics>({
-    queryKey: ["ops-analytics", from, to],
+  const reportQuery = useQuery<OperationalReport>({
+    queryKey: ["operational-report", reportType, from, to, absenceDays, page],
     queryFn: async () => {
-      const res = await api.get<OpsAnalytics>(
-        `/api/clinic-queue/analytics?fromDate=${from}&toDate=${to}`
-      );
-      return res.data;
+      const response = await api.get<OperationalReport>("/api/reports/operations/details", {
+        params: { type: reportType, from, to, absenceDays, page, pageSize: 50 },
+      });
+      return response.data;
     },
-    enabled: Boolean(from && to),
+    enabled: Boolean(from && to && from <= to),
   });
 
-  const applyPreset = (key: PresetKey) => {
-    const r = presetRange(key);
-    setFrom(r.from);
-    setTo(r.to);
+  const chooseReport = (type: ReportType) => {
+    setReportType(type);
+    setPage(1);
   };
 
-  const isPresetActive = (key: PresetKey) => {
-    const r = presetRange(key);
-    return r.from === from && r.to === to;
+  const applyPreset = (preset: Preset) => {
+    const range = getPresetRange(preset);
+    setFrom(range.from);
+    setTo(range.to);
+    setPage(1);
   };
 
-  const noShowHigh = (data?.noShowRate ?? 0) > 15;
-  const waitHigh = (data?.avgWaitTimeMinutes ?? 0) > 30;
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const blob = await downloadBlob("/api/reports/operations/export", {
+        type: reportType,
+        from,
+        to,
+        absenceDays,
+      });
+      downloadFile(blob, `${reportType}_${from}_${to}.csv`);
+      toast.success("تم تجهيز ملف التقرير");
+    } catch {
+      toast.error("تعذر تصدير التقرير. حاول مرة أخرى.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
-  const hourly = (data?.hourlyDistribution ?? [])
-    .slice()
-    .sort((a, b) => a.hour - b.hour);
+  const data = reportQuery.data;
+  const invalidRange = Boolean(from && to && from > to);
 
   return (
-    <div className="max-w-7xl space-y-4">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3 flex-wrap">
+    <div className="max-w-[1500px] space-y-5" dir="rtl">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-extrabold text-gray-900">تقرير العمليات والزحمة</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            تحليل قائمة الانتظار: الغياب، أوقات الانتظار، ساعات الذروة وأداء الأطباء
+          <Link href="/reports" className="inline-flex items-center gap-1 text-sm text-clinic-blue hover:underline">
+            <ArrowRight className="h-4 w-4" />
+            العودة إلى ملخص التقارير
+          </Link>
+          <h1 className="mt-2 text-2xl font-extrabold text-gray-900">التقارير التفصيلية</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            اختر نوع التقرير والفترة، ثم راجع الصفوف الفعلية أو صدّرها إلى CSV.
           </p>
         </div>
-        <Link
-          href="/reports"
-          className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg border border-gray-200 transition"
+        <button
+          type="button"
+          onClick={handleExport}
+          disabled={!data || data.totalRows === 0 || exporting || invalidRange}
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <ArrowRight className="w-4 h-4" />
-          كل التقارير
-        </Link>
-      </div>
+          {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          تصدير CSV
+        </button>
+      </header>
 
-      {/* Date range toolbar */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 flex items-center gap-2 flex-wrap">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {PRESETS.map((p) => (
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {REPORTS.map((report) => {
+          const Icon = report.icon;
+          const active = reportType === report.type;
+          return (
             <button
-              key={p.key}
-              onClick={() => applyPreset(p.key)}
-              className={`px-3 py-1.5 text-xs rounded-lg border transition ${
-                isPresetActive(p.key)
-                  ? "bg-clinic-blue-50 border-clinic-blue text-clinic-blue font-semibold"
-                  : "border-gray-200 text-gray-600 hover:bg-gray-50"
+              key={report.type}
+              type="button"
+              onClick={() => chooseReport(report.type)}
+              aria-pressed={active}
+              className={`rounded-xl border p-4 text-start transition ${
+                active
+                  ? "border-clinic-blue bg-clinic-blue-50 shadow-sm"
+                  : "border-gray-200 bg-white hover:border-clinic-blue-200 hover:bg-gray-50"
               }`}
             >
-              {p.label}
+              <Icon className={`mb-3 h-5 w-5 ${active ? "text-clinic-blue" : "text-gray-400"}`} />
+              <p className={`font-bold ${active ? "text-clinic-blue" : "text-gray-900"}`}>{report.label}</p>
+              <p className="mt-1 text-xs text-gray-500">{report.description}</p>
             </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2 md:ms-auto flex-wrap">
-          <input
-            type="date"
-            value={from}
-            max={to}
-            onChange={(e) => setFrom(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-clinic-blue"
-          />
-          <span className="text-gray-400">—</span>
-          <input
-            type="date"
-            value={to}
-            min={from}
-            onChange={(e) => setTo(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-clinic-blue"
-          />
+          );
+        })}
+      </section>
+
+      <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex gap-2" role="group" aria-label="فترات سريعة">
+            {([
+              ["today", "اليوم"],
+              ["month", "هذا الشهر"],
+              ["year", "هذه السنة"],
+            ] as const).map(([preset, label]) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => applyPreset(preset)}
+                className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:border-clinic-blue hover:text-clinic-blue"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <label className="text-xs font-medium text-gray-600">
+            من
+            <input
+              type="date"
+              value={from}
+              onChange={(event) => {
+                setFrom(event.target.value);
+                setPage(1);
+              }}
+              className="mt-1 block rounded-lg border border-gray-200 px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="text-xs font-medium text-gray-600">
+            إلى
+            <input
+              type="date"
+              value={to}
+              onChange={(event) => {
+                setTo(event.target.value);
+                setPage(1);
+              }}
+              className="mt-1 block rounded-lg border border-gray-200 px-3 py-2 text-sm"
+            />
+          </label>
+
+          {reportType === "returning-patients" ? (
+            <label className="text-xs font-medium text-gray-600">
+              أقل مدة انقطاع
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={3650}
+                  value={absenceDays}
+                  onChange={(event) => {
+                    setAbsenceDays(Math.max(1, Number(event.target.value) || 1));
+                    setPage(1);
+                  }}
+                  className="w-28 rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                />
+                <span className="text-sm text-gray-500">يومًا</span>
+              </div>
+            </label>
+          ) : null}
+
           <button
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50 transition"
+            type="button"
+            onClick={() => reportQuery.refetch()}
+            disabled={reportQuery.isFetching || invalidRange}
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`} />
+            <RefreshCw className={`h-4 w-4 ${reportQuery.isFetching ? "animate-spin" : ""}`} />
             تحديث
           </button>
         </div>
-      </div>
+        {invalidRange ? <p className="mt-3 text-sm text-red-600">تاريخ البداية يجب أن يسبق تاريخ النهاية.</p> : null}
+      </section>
 
-      {/* Content */}
-      {isLoading ? (
-        <PageSkeleton />
-      ) : isError ? (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
-          <p className="text-sm font-semibold text-red-700">تعذر تحميل بيانات التقرير</p>
-          <p className="text-xs text-red-500 mt-1">تحقق من الاتصال ثم أعد المحاولة</p>
-          <button
-            onClick={() => refetch()}
-            className="mt-3 px-4 py-2 text-sm rounded-lg bg-white border border-red-200 text-red-700 hover:bg-red-100 transition"
-          >
-            إعادة المحاولة
-          </button>
-        </div>
-      ) : !data || data.totalItems === 0 ? (
-        <div className="bg-white border border-gray-200 rounded-xl p-10 text-center">
-          <Activity className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-sm font-semibold text-gray-600">لا توجد بيانات في هذه الفترة</p>
-          <p className="text-xs text-gray-400 mt-1">جرّب توسيع نطاق التاريخ أعلاه</p>
-        </div>
-      ) : (
-        <>
-          {/* Headline cards */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <HeadlineCard
-              label="معدل الغياب"
-              value={formatPct(data.noShowRate)}
-              icon={UserX}
-              color={noShowHigh ? "border-red-300 bg-red-50 text-red-700" : "border-gray-200 text-gray-800"}
-              sub={`${data.noShow} لم يحضر`}
-            />
-            <HeadlineCard
-              label="متوسط الانتظار"
-              value={formatMinutes(data.avgWaitTimeMinutes)}
-              icon={Hourglass}
-              color={waitHigh ? "border-orange-300 bg-orange-50 text-orange-700" : "border-gray-200 text-gray-800"}
-            />
-            <HeadlineCard
-              label="متوسط مدة العلاج"
-              value={formatMinutes(data.avgServiceTimeMinutes)}
-              icon={Stethoscope}
-              color="border-gray-200 text-gray-800"
-            />
-            <HeadlineCard
-              label="نسبة الإكمال"
-              value={formatPct(data.completionRate)}
-              icon={TrendingUp}
-              color="border-gray-200 text-gray-800"
-              sub={`${data.completed} مكتمل`}
-            />
-            <HeadlineCard
-              label="إجمالي المرضى"
-              value={data.totalItems.toLocaleString("ar-EG")}
-              icon={Users}
-              color="border-gray-200 text-gray-800"
-              sub={data.cancelled > 0 ? `${data.cancelled} ملغي` : undefined}
-            />
-          </div>
-
-          {/* Peak hours */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Clock className="w-4 h-4 text-clinic-orange" />
-              <h2 className="text-sm font-bold text-gray-900">ساعات الذروة</h2>
+      {data?.summary.length ? (
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {data.summary.map((item) => (
+            <div key={`${item.label}-${item.currency ?? ""}`} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-medium text-gray-500">{item.label}</p>
+              <p className="mt-2 text-2xl font-extrabold text-gray-900 font-mono" dir="ltr">
+                {typeof item.value === "number"
+                  ? item.value.toLocaleString("ar-YE", { maximumFractionDigits: 2 })
+                  : item.value}
+                {item.currency ? ` ${item.currency}` : ""}
+              </p>
             </div>
-            {hourly.length === 0 ? (
-              <p className="text-xs text-gray-400 py-6 text-center">لا توجد بيانات ساعات لهذه الفترة</p>
-            ) : (
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={hourly} margin={{ top: 0, right: 10, left: -10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
-                  <XAxis
-                    dataKey="hour"
-                    tick={{ fontSize: 10, fill: "#9CA3AF" }}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(h: number) => formatHourArabic(h)}
-                  />
-                  <YAxis tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} allowDecimals={false} />
-                  <Tooltip content={<HourTooltip />} />
-                  <Bar dataKey="count" fill="#f5922e" radius={[4, 4, 0, 0]} maxBarSize={28} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
+          ))}
+        </section>
+      ) : null}
 
-          {/* Doctor stats */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Stethoscope className="w-4 h-4 text-clinic-blue" />
-              <h2 className="text-sm font-bold text-gray-900">أداء الأطباء</h2>
-            </div>
-            {data.doctorStats.length === 0 ? (
-              <p className="text-xs text-gray-400 py-6 text-center">لا توجد بيانات أطباء لهذه الفترة</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-xs text-gray-400 border-b border-gray-100">
-                      <th className="text-start font-medium py-2 px-2">الطبيب</th>
-                      <th className="text-center font-medium py-2 px-2">المرضى</th>
-                      <th className="text-center font-medium py-2 px-2">مكتمل</th>
-                      <th className="text-center font-medium py-2 px-2">غياب</th>
-                      <th className="text-center font-medium py-2 px-2">متوسط مدة العلاج (د)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.doctorStats.map((d) => (
-                      <tr key={d.doctorName} className="border-b border-gray-50 hover:bg-gray-50/60">
-                        <td className="py-2.5 px-2 font-semibold text-gray-800">{d.doctorName}</td>
-                        <td className="py-2.5 px-2 text-center text-gray-700">{d.totalPatients}</td>
-                        <td className="py-2.5 px-2 text-center text-green-600 font-medium">{d.completed}</td>
-                        <td className={`py-2.5 px-2 text-center font-medium ${d.noShow > 0 ? "text-red-600" : "text-gray-400"}`}>
-                          {d.noShow}
-                        </td>
-                        <td className="py-2.5 px-2 text-center text-gray-700">{Math.round(d.avgServiceTime)}</td>
-                      </tr>
+      <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+          <div>
+            <h2 className="font-bold text-gray-900">{data?.title ?? "تفاصيل التقرير"}</h2>
+            <p className="mt-0.5 text-xs text-gray-500">
+              {data ? `${data.totalRows.toLocaleString("ar-YE")} سجل` : "يتم تحميل البيانات"}
+            </p>
+          </div>
+          <CalendarDays className="h-5 w-5 text-gray-300" />
+        </div>
+
+        {reportQuery.isLoading ? (
+          <div className="flex min-h-64 items-center justify-center text-gray-500">
+            <Loader2 className="ms-2 h-5 w-5 animate-spin" />
+            جارٍ تجهيز التقرير...
+          </div>
+        ) : reportQuery.isError ? (
+          <div className="flex min-h-64 flex-col items-center justify-center gap-3 p-6 text-center">
+            <p className="font-semibold text-red-600">تعذر تحميل التقرير</p>
+            <p className="text-sm text-gray-500">تحقق من الاتصال ثم أعد المحاولة.</p>
+            <button
+              type="button"
+              onClick={() => reportQuery.refetch()}
+              className="rounded-lg bg-clinic-blue px-4 py-2 text-sm font-semibold text-white"
+            >
+              إعادة المحاولة
+            </button>
+          </div>
+        ) : data && data.rows.length > 0 ? (
+          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 text-xs text-gray-500">
+                  <tr>
+                    {data.columns.map((column) => (
+                      <th key={column.key} scope="col" className="whitespace-nowrap px-4 py-3 text-start font-semibold">
+                        {column.label}
+                      </th>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Priority distribution */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Activity className="w-4 h-4 text-purple-600" />
-              <h2 className="text-sm font-bold text-gray-900">توزيع الأولويات</h2>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {data.rows.map((row, rowIndex) => (
+                    <tr
+                      key={[
+                        row.visitId ?? row.paymentId ?? row.caseId ?? row.patientId ?? "row",
+                        row.currency ?? "",
+                        rowIndex,
+                      ].join("-")}
+                      className="hover:bg-gray-50"
+                    >
+                      {data.columns.map((column) => {
+                        const content = formatCell(row[column.key], column);
+                        const isNumber = ["money", "number", "percent"].includes(column.kind);
+                        return (
+                          <td
+                            key={column.key}
+                            className={`max-w-sm whitespace-nowrap px-4 py-3 text-gray-700 ${isNumber ? "font-mono" : ""}`}
+                            dir={isNumber ? "ltr" : undefined}
+                          >
+                            {column.key === "patientName" && row.patientId ? (
+                              <Link href={`/patients/${row.patientId}`} className="font-semibold text-clinic-blue hover:underline">
+                                {content}
+                              </Link>
+                            ) : (
+                              content
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            {data.priorityDistribution.length === 0 ? (
-              <p className="text-xs text-gray-400 py-4 text-center">لا توجد بيانات أولويات لهذه الفترة</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {data.priorityDistribution.map((p) => (
-                  <span
-                    key={p.priority}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full border ${
-                      PRIORITY_BADGE[p.priority] ?? "bg-gray-50 text-gray-600 border-gray-200"
-                    }`}
-                  >
-                    <span className="font-medium">{p.priorityArabic || p.priority}</span>
-                    <span className="font-bold">{p.count}</span>
-                  </span>
-                ))}
+
+            <div className="flex flex-col gap-3 border-t border-gray-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-gray-500">
+                صفحة {data.page.toLocaleString("ar-YE")} من {data.totalPages.toLocaleString("ar-YE")}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={data.page <= 1 || reportQuery.isFetching}
+                  aria-label="الصفحة السابقة"
+                  className="rounded-lg border border-gray-200 p-2 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.min(data.totalPages, current + 1))}
+                  disabled={data.page >= data.totalPages || reportQuery.isFetching}
+                  aria-label="الصفحة التالية"
+                  className="rounded-lg border border-gray-200 p-2 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
               </div>
-            )}
+            </div>
+          </>
+        ) : (
+          <div className="flex min-h-64 flex-col items-center justify-center gap-2 p-6 text-center">
+            <Search className="h-9 w-9 text-gray-200" />
+            <p className="font-semibold text-gray-700">لا توجد نتائج في هذه الفترة</p>
+            <p className="text-sm text-gray-500">جرّب فترة أخرى أو نوع تقرير مختلف.</p>
           </div>
-        </>
-      )}
+        )}
+      </section>
     </div>
   );
 }

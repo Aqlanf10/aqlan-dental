@@ -292,16 +292,36 @@ public static class StartupDatabaseMaintenance
                 if (!hasHistory)
                 {
                     logger.LogInformation("Empty database detected — creating full schema from the current EF model (baseline)");
+                    // FIX (Replit dev environment hardening, 2026-07-29): the generated
+                    // create script legitimately contains literal curly braces (Postgres
+                    // array/JSONB default literals like '{}'). EF's ExecuteSqlRawAsync(sql)
+                    // treats the string as a composite format string even with zero
+                    // parameters, so any literal '{' followed by non-digit text throws
+                    // "Input string was not in a correct format. Expected an ASCII digit."
+                    // This crashed the fresh-DB baseline path on every truly empty database
+                    // (never previously exercised end-to-end — only tested against DBs that
+                    // already had history/Users, which take the MigrateAsync branch below).
+                    // Run it through a raw ADO command instead, bypassing EF's format-string
+                    // handling entirely.
                     var createScript = db.Database.GenerateCreateScript();
-                    await db.Database.ExecuteSqlRawAsync(createScript);
+                    using (var createCmd = db.Database.GetDbConnection().CreateCommand())
+                    {
+                        createCmd.CommandText = createScript;
+                        createCmd.CommandTimeout = 120;
+                        await createCmd.ExecuteNonQueryAsync();
+                    }
 
-                    await db.Database.ExecuteSqlRawAsync("""
-                        CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
-                            "MigrationId" character varying(150) NOT NULL,
-                            "ProductVersion" character varying(32) NOT NULL,
-                            CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId")
-                        );
-                        """);
+                    using (var historyTableCmd = db.Database.GetDbConnection().CreateCommand())
+                    {
+                        historyTableCmd.CommandText = """
+                            CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
+                                "MigrationId" character varying(150) NOT NULL,
+                                "ProductVersion" character varying(32) NOT NULL,
+                                CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId")
+                            );
+                            """;
+                        await historyTableCmd.ExecuteNonQueryAsync();
+                    }
 
                     var productVersion = Microsoft.EntityFrameworkCore.Infrastructure.ProductInfo.GetVersion();
                     foreach (var migrationId in db.Database.GetMigrations())

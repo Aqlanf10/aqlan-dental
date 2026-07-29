@@ -27,8 +27,11 @@ describe("detailed reports contract", () => {
   it("loads paginated details and exports through authenticated API helpers", () => {
     expect(detailedSource).toContain('"/api/reports/operations/details"');
     expect(detailedSource).toContain('"/api/reports/operations/export"');
+    expect(detailedSource).toContain('"/api/reports/operations/export-pdf"');
+    expect(detailedSource).toContain("تحميل PDF");
     expect(detailedSource).toContain("pageSize: 50");
     expect(detailedSource).toContain("downloadBlob");
+    expect(summarySource).toContain('"/api/reports/operations/export-pdf"');
   });
 
   it("keeps currencies explicit instead of formatting all totals as YER", () => {

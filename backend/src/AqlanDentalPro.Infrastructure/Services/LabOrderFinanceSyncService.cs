@@ -33,8 +33,9 @@ public sealed class LabOrderFinanceSyncService(AppDbContext db, IJournalEntrySer
     }
 
     /// <summary>
-    /// Creates or updates the supplier bill, payable and journal entry for
-    /// <paramref name="order"/>. Safe to call on every write to the order.
+    /// Creates or updates the supplier bill, payable and journal entry for a
+    /// financially recognised <paramref name="order"/>. The caller deliberately
+    /// skips drafts and invokes this at the transition to sent and on later edits.
     /// </summary>
     /// <remarks>
     /// Does NOT call SaveChanges — the caller owns the transaction, exactly as the
@@ -48,8 +49,7 @@ public sealed class LabOrderFinanceSyncService(AppDbContext db, IJournalEntrySer
     {
         var amount = order.TotalCost ?? order.Cost ?? 0m;
 
-        // Nothing to post yet: a draft with no lab or no cost is a legitimate state,
-        // not an error. It simply has no financial trail until it acquires both.
+        // Nothing to post when the recognised order is still incomplete.
         if (!order.LabId.HasValue || amount <= 0m)
             return SyncResult.NoOp;
 
@@ -81,6 +81,62 @@ public sealed class LabOrderFinanceSyncService(AppDbContext db, IJournalEntrySer
         return existingBill is null
             ? await CreateTrailAsync(order, lab, amount, currency, rate, branchId, performedBy, ct)
             : await UpdateTrailAsync(order, lab, existingBill, amount, currency, rate, performedBy, ct);
+    }
+
+    /// <summary>
+    /// Cancels an unpaid financial trail when the owning lab order is cancelled or deleted.
+    /// Paid trails must be handled through the supplier refund/credit workflow instead.
+    /// </summary>
+    public async Task<SyncResult> CancelAsync(
+        LabOrder order,
+        Guid performedBy,
+        CancellationToken ct = default)
+    {
+        await AcquireOrderLockAsync(order.Id, ct);
+
+        var bill = await db.SupplierBills
+            .FirstOrDefaultAsync(b => b.LabOrderId == order.Id, ct);
+        if (bill is null)
+            return SyncResult.NoOp;
+
+        var payable = await db.LabPayables
+            .FirstOrDefaultAsync(p => p.LabOrderId == order.Id, ct);
+        var alreadyPaid = bill.PaidAmount > 0m
+            || bill.Status is BillStatus.PartiallyPaid or BillStatus.FullyPaid
+            || (payable?.PaidAmount ?? 0m) > 0m;
+        if (alreadyPaid)
+            return SyncResult.Failed("لا يمكن إلغاء طلب معمل له دفعات مسجلة. عالج الدفعة من وحدة الموردين أولاً.");
+
+        var supplier = await db.Suppliers.FirstOrDefaultAsync(s => s.Id == bill.SupplierId, ct);
+        if (supplier is not null
+            && string.Equals(bill.Currency, "YER", StringComparison.OrdinalIgnoreCase))
+        {
+            supplier.Balance -= bill.TotalAmount;
+        }
+
+        await ReverseExistingEntryAsync(
+            bill.Id,
+            performedBy,
+            $"إلغاء طلب معمل {order.OrderNumber}",
+            ct);
+
+        var deletedAt = DateTime.UtcNow;
+        bill.Status = BillStatus.Cancelled;
+        bill.IsActive = false;
+        bill.DeletedAt = deletedAt;
+        bill.DeletedBy = performedBy == Guid.Empty ? null : performedBy;
+        bill.UpdatedAt = deletedAt;
+
+        if (payable is not null)
+        {
+            payable.Status = "cancelled";
+            payable.IsActive = false;
+            payable.DeletedAt = deletedAt;
+            payable.DeletedBy = performedBy == Guid.Empty ? null : performedBy;
+            payable.UpdatedAt = deletedAt;
+        }
+
+        return new SyncResult(true, null, Created: false, Updated: true);
     }
 
     // ── First time this order becomes financially real ────────────────────────
@@ -140,21 +196,24 @@ public sealed class LabOrderFinanceSyncService(AppDbContext db, IJournalEntrySer
     {
         var payable = await db.LabPayables.FirstOrDefaultAsync(p => p.LabOrderId == order.Id, ct);
 
-        // Refuse rather than silently corrupt: once money has moved against this bill,
-        // rewriting the amount would desynchronise the supplier account and the ledger.
-        var alreadyPaid = bill.Status != BillStatus.Unpaid || (payable?.PaidAmount ?? 0m) > 0m;
-        if (alreadyPaid && (bill.TotalAmount != amount || !string.Equals(bill.Currency, currency, StringComparison.OrdinalIgnoreCase)))
-            return SyncResult.Failed("لا يمكن تعديل تكلفة أو عملة طلب معمل له دفعات مسجلة. أنشئ إشعارًا أو عدّل الفاتورة من وحدة الموردين.");
-
-        var supplier = await db.Suppliers.FirstOrDefaultAsync(s => s.Id == bill.SupplierId, ct);
-
-        // The lab itself may have been switched — move the bill to the new supplier.
+        // Resolve the target supplier before the paid guard so a lab change is detected
+        // even if a damaged historical trail is missing its LabPayable row.
         var targetSupplier = await ResolveSupplierAsync(lab, ct);
         var supplierChanged = targetSupplier.Id != bill.SupplierId;
 
+        // Refuse rather than silently corrupt: once money has moved against this bill,
+        // rewriting any financial identity would desynchronise the supplier payment,
+        // supplier account and ledger.
+        var alreadyPaid = bill.Status != BillStatus.Unpaid || (payable?.PaidAmount ?? 0m) > 0m;
         var amountChanged = bill.TotalAmount != amount;
         var currencyChanged = !string.Equals(bill.Currency, currency, StringComparison.OrdinalIgnoreCase);
         var rateChanged = bill.ExchangeRateToYer != rate;
+        var labChanged = supplierChanged || (payable is not null && payable.LabId != order.LabId);
+        if (alreadyPaid && (amountChanged || currencyChanged || rateChanged || labChanged))
+            return SyncResult.Failed("لا يمكن تعديل المعمل أو التكلفة أو العملة أو سعر الصرف لطلب له دفعات مسجلة. عالج الدفعة من وحدة الموردين أولاً.");
+
+        var supplier = await db.Suppliers.FirstOrDefaultAsync(s => s.Id == bill.SupplierId, ct);
+
         var dueChanged = bill.DueDate != order.ExpectedDate;
 
         if (!amountChanged && !currencyChanged && !rateChanged && !dueChanged && !supplierChanged)

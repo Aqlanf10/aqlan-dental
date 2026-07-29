@@ -28,7 +28,7 @@ which the create modal allows — could therefore never become financially real.
 
 ### Design
 
-`LabOrderFinanceSyncService` (Infrastructure/Services) owns the linkage:
+`LabOrderFinanceSyncService` (Infrastructure/Services) owns sent-order linkage:
 
 - **Idempotency key:** the single `SupplierBill` whose `LabOrderId` is this order.
   Absent → create trail. Present → reconcile it.
@@ -42,11 +42,15 @@ which the create modal allows — could therefore never become financially real.
   and re-posted, never mutated in place.
 - **Currency:** only a YER bill moves `Supplier.Balance`; changes apply the net
   delta by unwinding the old contribution first.
+- **Draft boundary:** filling or repeatedly saving a draft never posts finance.
+  The transition to `sent` is the accounting recognition point.
+- **Cancellation:** an unpaid trail is reversed and deactivated in the same
+  transaction as the order cancellation/deletion. A paid trail blocks the action.
 
-Callers: `LabOrdersController.Update` and the transition into `sent`. The `sent`
-call is a safety net — idempotent, so it is a no-op when the trail already exists.
+Callers: updates to an already-sent order and the transition into `sent`. The
+`sent` call is the creation point and remains idempotent.
 
-`Create` still holds its own inline copy. It works and is covered by tests, and
-consolidating it was judged unjustified risk without a local compiler. Tracked as
-follow-up; the two paths must not diverge.
+`Create` still holds its own inline copy for requests created directly as `sent`;
+draft creation deliberately skips it. Consolidating the remaining copy into the
+service is tracked as follow-up so the two sent-order paths cannot diverge.
 

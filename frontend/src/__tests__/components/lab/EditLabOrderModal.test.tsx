@@ -78,6 +78,38 @@ describe("EditLabOrderModal", () => {
     expect(screen.getByRole("button", { name: /إرسال/ })).toBeDisabled();
   });
 
+  it("preserves a foreign-currency draft when it is opened and saved", async () => {
+    renderWithQueryClient(
+      <EditLabOrderModal
+        order={buildOrder({
+          labId: "lab-1",
+          cost: 300,
+          totalCost: 300,
+          currency: "SAR",
+          exchangeRateToYer: 66,
+        })}
+        open
+        onClose={() => {}}
+      />,
+    );
+
+    await waitFor(() => expect(api.get).toHaveBeenCalled());
+    const save = document.querySelector<HTMLButtonElement>('button[type="submit"]');
+    expect(save).not.toBeNull();
+    fireEvent.click(save!);
+
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    expect(api.put).toHaveBeenCalledWith(
+      "/api/lab-orders/order-1",
+      expect.objectContaining({
+        labId: "lab-1",
+        cost: 300,
+        currency: "SAR",
+        exchangeRateToYer: 66,
+      }),
+    );
+  });
+
   it("saves the completed draft and then sends it, in that order", async () => {
     const onClose = vi.fn();
     renderWithQueryClient(

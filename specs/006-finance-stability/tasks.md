@@ -25,6 +25,10 @@
       endpoints that lacked it.
 - [x] `CORE-LAB-007` Read clinic identity from Settings in the PDF footer; use the clinic
       day, not the host day.
+- [x] `CORE-LAB-008` Keep completed drafts off the books until `sent`; cancel unpaid
+      sent-order trails atomically and block cancellation/deletion after payment.
+- [x] `CORE-LAB-009` Return currency/rate/total/lab fields in the list DTO so editing
+      a SAR/USD row cannot silently overwrite it as YER.
 - [ ] **Follow-up:** re-point `Create` at `LabOrderFinanceSyncService` so one code path
       owns the linkage.
 - [ ] **Follow-up:** verify `CORE-LAB-005` under real concurrency — the advisory lock is

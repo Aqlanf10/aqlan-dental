@@ -559,8 +559,11 @@ public class LabOrdersController(
 
                 db.LabOrders.Add(order);
 
-                // Lab Sprint 5 — Auto-create LabPayable if order has a lab and cost
-                if (order.LabId.HasValue && (order.TotalCost > 0 || order.Cost > 0))
+                // A draft is not yet a commitment to the lab. Build the payable only
+                // when the order is actually sent; UpdateStatus owns the same boundary.
+                if (order.Status == "sent"
+                    && order.LabId.HasValue
+                    && (order.TotalCost > 0 || order.Cost > 0))
                 {
                     var payableAmount = order.TotalCost ?? order.Cost ?? 0;
                     if (payableAmount > 0)
@@ -855,12 +858,17 @@ public class LabOrdersController(
         var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
         try
         {
-            var sync = await financeSync.SyncAsync(order, order.BranchId ?? currentUser.BranchId ?? Guid.Empty,
-                currentUser.UserId ?? Guid.Empty);
-            if (!sync.Ok)
+            // Saving a draft must not create an expense or supplier debt. "sent" is
+            // the financially recognised state that this edit endpoint still permits.
+            if (string.Equals(order.Status, "sent", StringComparison.OrdinalIgnoreCase))
             {
-                if (useTx) await tx!.RollbackAsync();
-                return BadRequest(new { message = sync.Error });
+                var sync = await financeSync.SyncAsync(order, order.BranchId ?? currentUser.BranchId ?? Guid.Empty,
+                    currentUser.UserId ?? Guid.Empty);
+                if (!sync.Ok)
+                {
+                    if (useTx) await tx!.RollbackAsync();
+                    return BadRequest(new { message = sync.Error });
+                }
             }
 
             await db.SaveChangesAsync();
@@ -1171,15 +1179,40 @@ public class LabOrdersController(
         if (order.Status == "delivered" || order.Status == "cancelled")
             return BadRequest(new { message = "لا يمكن إلغاء طلب مسلم أو ملغي" });
 
-        var oldStatus = order.Status;
-        order.Status = "cancelled";
-        order.CancellationReason = req.Reason;
-        db.LabOrderStatusHistories.Add(new LabOrderStatusHistory
+        var useTx = db.Database.IsRelational();
+        var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+        try
         {
-            LabOrderId = id, FromStatus = oldStatus, ToStatus = "cancelled",
-            ChangedByUserId = currentUser.UserId, Reason = req.Reason
-        });
-        await db.SaveChangesAsync();
+            var financeCancellation = await financeSync.CancelAsync(
+                order,
+                currentUser.UserId ?? Guid.Empty);
+            if (!financeCancellation.Ok)
+            {
+                if (useTx) await tx!.RollbackAsync();
+                return BadRequest(new { message = financeCancellation.Error });
+            }
+
+            var oldStatus = order.Status;
+            order.Status = "cancelled";
+            order.CancellationReason = req.Reason;
+            db.LabOrderStatusHistories.Add(new LabOrderStatusHistory
+            {
+                LabOrderId = id, FromStatus = oldStatus, ToStatus = "cancelled",
+                ChangedByUserId = currentUser.UserId, Reason = req.Reason
+            });
+            await db.SaveChangesAsync();
+            if (useTx) await tx!.CommitAsync();
+        }
+        catch
+        {
+            if (useTx) await tx!.RollbackAsync();
+            throw;
+        }
+        finally
+        {
+            if (tx is not null) await tx.DisposeAsync();
+        }
+
         return Ok(new { id, status = "cancelled" });
     }
 
@@ -1410,8 +1443,35 @@ public class LabOrdersController(
         var deniedAccess = await DenyIfDoctorCannotAccess(order.PatientId);
         if (deniedAccess is not null) return deniedAccess;
 
-        order.IsActive = false;
-        await db.SaveChangesAsync();
+        var useTx = db.Database.IsRelational();
+        var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            var financeCancellation = await financeSync.CancelAsync(
+                order,
+                currentUser.UserId ?? Guid.Empty);
+            if (!financeCancellation.Ok)
+            {
+                if (useTx) await tx!.RollbackAsync();
+                return BadRequest(new { message = financeCancellation.Error });
+            }
+
+            order.IsActive = false;
+            order.DeletedAt = DateTime.UtcNow;
+            order.DeletedBy = currentUser.UserId;
+            await db.SaveChangesAsync();
+            if (useTx) await tx!.CommitAsync();
+        }
+        catch
+        {
+            if (useTx) await tx!.RollbackAsync();
+            throw;
+        }
+        finally
+        {
+            if (tx is not null) await tx.DisposeAsync();
+        }
+
         return Ok(new { message = "تم حذف الطلب بنجاح" });
     }
 

@@ -63,12 +63,18 @@ public class LabDraftCompletionFinanceTests
         return (db, controller, patient, lab);
     }
 
-    private static async Task<LabOrder> SeedDraftAsync(AppDbContext db, Guid patientId, Guid? labId = null, decimal? cost = null)
+    private static async Task<LabOrder> SeedOrderAsync(
+        AppDbContext db,
+        Guid patientId,
+        Guid? labId = null,
+        decimal? cost = null,
+        string status = "draft")
     {
         var order = LabOrdersTestData.BuildLabOrder(patientId);
         order.LabId = labId;
         order.Cost = cost;
         order.TotalCost = cost;
+        order.Status = status;
         order.Currency = "YER";
         order.ExchangeRateToYer = 1m;
         db.LabOrders.Add(order);
@@ -90,7 +96,7 @@ public class LabDraftCompletionFinanceTests
     public async Task Draft_WithoutLab_CannotBeSent()
     {
         var (db, controller, patient, _) = await SetupAsync();
-        var order = await SeedDraftAsync(db, patient.Id, labId: null, cost: 5000m);
+        var order = await SeedOrderAsync(db, patient.Id, labId: null, cost: 5000m);
 
         var result = await controller.UpdateStatus(order.Id, new UpdateLabOrderStatusRequest { Status = "sent" });
 
@@ -102,7 +108,7 @@ public class LabDraftCompletionFinanceTests
     public async Task Draft_WithoutCost_CannotBeSent()
     {
         var (db, controller, patient, lab) = await SetupAsync();
-        var order = await SeedDraftAsync(db, patient.Id, labId: lab.Id, cost: null);
+        var order = await SeedOrderAsync(db, patient.Id, labId: lab.Id, cost: null);
 
         var result = await controller.UpdateStatus(order.Id, new UpdateLabOrderStatusRequest { Status = "sent" });
 
@@ -114,7 +120,7 @@ public class LabDraftCompletionFinanceTests
     public async Task Draft_WithLabAndCost_CanBeSent_AndBuildsTheFinancialTrail()
     {
         var (db, controller, patient, lab) = await SetupAsync();
-        var order = await SeedDraftAsync(db, patient.Id, labId: lab.Id, cost: 7500m);
+        var order = await SeedOrderAsync(db, patient.Id, labId: lab.Id, cost: 7500m);
 
         var result = await controller.UpdateStatus(order.Id, new UpdateLabOrderStatusRequest { Status = "sent" });
 
@@ -127,10 +133,10 @@ public class LabDraftCompletionFinanceTests
     // ── Completing the draft through Update (CORE-LAB-001) ────────────────────
 
     [Fact]
-    public async Task CompletingADraft_CreatesSupplierBillAndPayable_Once()
+    public async Task CompletingADraft_DoesNotPostFinance_UntilItIsSent()
     {
         var (db, controller, patient, lab) = await SetupAsync();
-        var order = await SeedDraftAsync(db, patient.Id);
+        var order = await SeedOrderAsync(db, patient.Id);
 
         // The order was created with neither lab nor cost — exactly the production case.
         (await db.SupplierBills.CountAsync(b => b.LabOrderId == order.Id)).Should().Be(0);
@@ -143,7 +149,11 @@ public class LabDraftCompletionFinanceTests
         });
 
         result.Should().BeOfType<OkObjectResult>();
+        (await db.SupplierBills.CountAsync(b => b.LabOrderId == order.Id)).Should().Be(0);
+        (await db.LabPayables.CountAsync(p => p.LabOrderId == order.Id)).Should().Be(0);
 
+        (await controller.UpdateStatus(order.Id, new UpdateLabOrderStatusRequest { Status = "sent" }))
+            .Should().BeOfType<OkObjectResult>();
         var bill = await db.SupplierBills.AsNoTracking().SingleAsync(b => b.LabOrderId == order.Id);
         bill.TotalAmount.Should().Be(12000m);
         bill.Currency.Should().Be("YER");
@@ -156,10 +166,10 @@ public class LabDraftCompletionFinanceTests
     }
 
     [Fact]
-    public async Task RepeatedUpdates_DoNotDuplicateTheBillOrPayable()
+    public async Task RepeatedDraftUpdates_DoNotPostFinance_AndSendBuildsOneTrail()
     {
         var (db, controller, patient, lab) = await SetupAsync();
-        var order = await SeedDraftAsync(db, patient.Id);
+        var order = await SeedOrderAsync(db, patient.Id);
 
         for (var i = 0; i < 3; i++)
         {
@@ -172,6 +182,10 @@ public class LabDraftCompletionFinanceTests
             res.Should().BeOfType<OkObjectResult>();
         }
 
+        (await db.SupplierBills.CountAsync(b => b.LabOrderId == order.Id)).Should().Be(0);
+        (await db.LabPayables.CountAsync(p => p.LabOrderId == order.Id)).Should().Be(0);
+
+        await controller.UpdateStatus(order.Id, new UpdateLabOrderStatusRequest { Status = "sent" });
         (await db.SupplierBills.CountAsync(b => b.LabOrderId == order.Id)).Should().Be(1);
         (await db.LabPayables.CountAsync(p => p.LabOrderId == order.Id)).Should().Be(1);
     }
@@ -180,7 +194,7 @@ public class LabDraftCompletionFinanceTests
     public async Task ChangingTheCost_UpdatesTheExistingBill_InsteadOfAddingAnother()
     {
         var (db, controller, patient, lab) = await SetupAsync();
-        var order = await SeedDraftAsync(db, patient.Id);
+        var order = await SeedOrderAsync(db, patient.Id, status: "sent");
 
         await controller.Update(order.Id, new UpdateLabOrderRequest { LabId = lab.Id, Cost = 5000m, Currency = "YER" });
         await controller.Update(order.Id, new UpdateLabOrderRequest { Cost = 8000m, Currency = "YER" });
@@ -196,7 +210,7 @@ public class LabDraftCompletionFinanceTests
     public async Task SupplierBalance_TracksTheNetChange_NotTheSumOfEveryEdit()
     {
         var (db, controller, patient, lab) = await SetupAsync(seedLabSupplier: true);
-        var order = await SeedDraftAsync(db, patient.Id);
+        var order = await SeedOrderAsync(db, patient.Id, status: "sent");
 
         await controller.Update(order.Id, new UpdateLabOrderRequest { LabId = lab.Id, Cost = 5000m, Currency = "YER" });
         await controller.Update(order.Id, new UpdateLabOrderRequest { Cost = 8000m, Currency = "YER" });
@@ -212,7 +226,7 @@ public class LabDraftCompletionFinanceTests
     public async Task ForeignCurrency_WithoutRate_IsRejected_WithArabicMessage()
     {
         var (db, controller, patient, lab) = await SetupAsync();
-        var order = await SeedDraftAsync(db, patient.Id);
+        var order = await SeedOrderAsync(db, patient.Id);
 
         var result = await controller.Update(order.Id, new UpdateLabOrderRequest
         {
@@ -229,7 +243,7 @@ public class LabDraftCompletionFinanceTests
     public async Task ForeignCurrency_WithRate_IsStoredOnTheBill_WithoutMixingCurrencies()
     {
         var (db, controller, patient, lab) = await SetupAsync(seedLabSupplier: true);
-        var order = await SeedDraftAsync(db, patient.Id);
+        var order = await SeedOrderAsync(db, patient.Id);
 
         var result = await controller.Update(order.Id, new UpdateLabOrderRequest
         {
@@ -240,6 +254,7 @@ public class LabDraftCompletionFinanceTests
         });
 
         result.Should().BeOfType<OkObjectResult>();
+        await controller.UpdateStatus(order.Id, new UpdateLabOrderStatusRequest { Status = "sent" });
 
         var bill = await db.SupplierBills.AsNoTracking().SingleAsync(b => b.LabOrderId == order.Id);
         bill.Currency.Should().Be("SAR");
@@ -254,7 +269,7 @@ public class LabDraftCompletionFinanceTests
     public async Task UnsupportedCurrency_IsRejected()
     {
         var (db, controller, patient, lab) = await SetupAsync();
-        var order = await SeedDraftAsync(db, patient.Id);
+        var order = await SeedOrderAsync(db, patient.Id);
 
         var result = await controller.Update(order.Id, new UpdateLabOrderRequest
         {
@@ -273,7 +288,7 @@ public class LabDraftCompletionFinanceTests
     public async Task ChangingCost_AfterAPaymentExists_IsRefused_NotSilentlyRewritten()
     {
         var (db, controller, patient, lab) = await SetupAsync(seedLabSupplier: true);
-        var order = await SeedDraftAsync(db, patient.Id);
+        var order = await SeedOrderAsync(db, patient.Id, status: "sent");
 
         await controller.Update(order.Id, new UpdateLabOrderRequest { LabId = lab.Id, Cost = 5000m, Currency = "YER" });
 
@@ -292,7 +307,117 @@ public class LabDraftCompletionFinanceTests
             .TotalAmount.Should().Be(5000m);
     }
 
+    [Fact]
+    public async Task ChangingLab_AfterAPaymentExists_IsRefused()
+    {
+        var (db, controller, patient, firstLab) = await SetupAsync(seedLabSupplier: true);
+        var secondLab = new LabEntity { Name = "معمل آخر", IsActive = true };
+        db.Labs.Add(secondLab);
+        await db.SaveChangesAsync();
+        var order = await SeedOrderAsync(db, patient.Id, status: "sent");
+
+        await controller.Update(order.Id, new UpdateLabOrderRequest
+        {
+            LabId = firstLab.Id,
+            Cost = 5000m,
+            Currency = "YER",
+        });
+        var payable = await db.LabPayables.FirstAsync(p => p.LabOrderId == order.Id);
+        payable.PaidAmount = 1000m;
+        payable.Status = "partial";
+        await db.SaveChangesAsync();
+
+        var result = await controller.Update(order.Id, new UpdateLabOrderRequest { LabId = secondLab.Id });
+
+        Message(result).Should().Contain("دفعات");
+        (await db.LabPayables.AsNoTracking().SingleAsync(p => p.LabOrderId == order.Id))
+            .LabId.Should().Be(firstLab.Id);
+    }
+
+    [Fact]
+    public async Task ChangingExchangeRate_AfterAPaymentExists_IsRefused()
+    {
+        var (db, controller, patient, lab) = await SetupAsync(seedLabSupplier: true);
+        var order = await SeedOrderAsync(db, patient.Id, status: "sent");
+
+        await controller.Update(order.Id, new UpdateLabOrderRequest
+        {
+            LabId = lab.Id,
+            Cost = 300m,
+            Currency = "SAR",
+            ExchangeRateToYer = 66m,
+        });
+        var payable = await db.LabPayables.FirstAsync(p => p.LabOrderId == order.Id);
+        payable.PaidAmount = 100m;
+        payable.Status = "partial";
+        await db.SaveChangesAsync();
+
+        var result = await controller.Update(order.Id, new UpdateLabOrderRequest
+        {
+            Currency = "SAR",
+            ExchangeRateToYer = 70m,
+        });
+
+        Message(result).Should().Contain("دفعات");
+        (await db.SupplierBills.AsNoTracking().SingleAsync(b => b.LabOrderId == order.Id))
+            .ExchangeRateToYer.Should().Be(66m);
+    }
+
+    [Fact]
+    public async Task CancellingUnpaidSentOrder_CancelsItsBillAndPayable()
+    {
+        var (db, controller, patient, lab) = await SetupAsync(seedLabSupplier: true);
+        var order = await SeedOrderAsync(db, patient.Id, status: "sent");
+        await controller.Update(order.Id, new UpdateLabOrderRequest
+        {
+            LabId = lab.Id,
+            Cost = 5000m,
+            Currency = "YER",
+        });
+
+        (await controller.Cancel(order.Id, new CancelLabOrderRequest { Reason = "لم يعد مطلوباً" }))
+            .Should().BeOfType<OkObjectResult>();
+
+        var bill = await db.SupplierBills.IgnoreQueryFilters().AsNoTracking()
+            .SingleAsync(b => b.LabOrderId == order.Id);
+        bill.Status.Should().Be(BillStatus.Cancelled);
+        bill.IsActive.Should().BeFalse();
+        (await db.LabPayables.IgnoreQueryFilters().AsNoTracking()
+            .SingleAsync(p => p.LabOrderId == order.Id)).IsActive.Should().BeFalse();
+        (await db.Suppliers.AsNoTracking().SingleAsync(s => s.Id == bill.SupplierId))
+            .Balance.Should().Be(0m);
+    }
+
     // ── CORE-LAB-004: never persist an unusable branch ────────────────────────
+
+    [Fact]
+    public async Task CancellingPaidSentOrder_IsRefused_AndKeepsTheFinancialTrail()
+    {
+        var (db, controller, patient, lab) = await SetupAsync(seedLabSupplier: true);
+        var order = await SeedOrderAsync(db, patient.Id, status: "sent");
+        await controller.Update(order.Id, new UpdateLabOrderRequest
+        {
+            LabId = lab.Id,
+            Cost = 5000m,
+            Currency = "YER",
+        });
+        var payable = await db.LabPayables.FirstAsync(p => p.LabOrderId == order.Id);
+        payable.PaidAmount = 1000m;
+        payable.Status = "partial";
+        await db.SaveChangesAsync();
+
+        var result = await controller.Cancel(
+            order.Id,
+            new CancelLabOrderRequest { Reason = "إلغاء بعد دفعة" });
+
+        Message(result).Should().Contain("دفعات");
+        (await db.LabOrders.AsNoTracking().SingleAsync(o => o.Id == order.Id))
+            .Status.Should().Be("sent");
+        (await db.SupplierBills.AsNoTracking().SingleAsync(b => b.LabOrderId == order.Id))
+            .IsActive.Should().BeTrue();
+        (await db.LabPayables.AsNoTracking().SingleAsync(p => p.LabOrderId == order.Id))
+            .IsActive.Should().BeTrue();
+    }
 
     [Fact]
     public async Task NoResolvableBranch_IsRefused_RatherThanWritingAnOrphanBill()
@@ -315,6 +440,7 @@ public class LabDraftCompletionFinanceTests
         var controller = LabOrdersTestData.BuildController(db, access, currentUser);
 
         var order = LabOrdersTestData.BuildLabOrder(patient.Id);
+        order.Status = "sent";
         order.BranchId = null;
         order.Currency = "YER";
         order.ExchangeRateToYer = 1m;

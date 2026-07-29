@@ -1348,7 +1348,7 @@ public static class StartupDatabaseMaintenance
                     DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260511000000_AddDoctorIdToBookingRequest'
                         AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'BookingRequests' AND column_name = 'DoctorId');
                     DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260512000000_AddRadiographFileMetadata'
-                        AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicalPhotos' AND column_name = 'FileType');
+                        AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Radiographs' AND column_name = 'FileName');
                     DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260513000000_AddDoctorCompensationFields'
                         AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'CompensationType');
                     DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260514000000_AddClinicQueueItem'
@@ -1372,7 +1372,7 @@ public static class StartupDatabaseMaintenance
                     DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260529000000_AddPatientJourneyFields'
                         AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Patients' AND column_name = 'ReferralSource');
                     DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260530000000_AddPatientTreatmentPlanSteps'
-                        AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'TreatmentPlanSteps');
+                        AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'PatientTreatmentPlanSteps');
                     DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260531000000_AddInvoicesAndInvoiceLineItems'
                         AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Invoices');
                     DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260601000000_AddInvoicePaymentLink'
@@ -1380,7 +1380,7 @@ public static class StartupDatabaseMaintenance
                     DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260602000000_AddMessageAttachments'
                         AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'MessageAttachments');
                     DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260603000000_AddOrthoDiagnosisRetentionPhotos'
-                        AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'OrthoDiagnoses' AND column_name = 'RetentionPhotoLeft');
+                        AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'OrthoDiagnoses');
                     DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260604000000_AddSuppliersAndPurchases'
                         AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Suppliers');
                     DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260606000000_AddDoctorCommissionSystem'
@@ -1404,6 +1404,24 @@ public static class StartupDatabaseMaintenance
                     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'DoctorCommissionPayments')
                         AND NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260606000000_AddDoctorCommissionSystem') THEN
                         INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260606000000_AddDoctorCommissionSystem', '8.0');
+                    END IF;
+                    -- FIX (Replit dev environment hardening, 2026-07-29): the DELETE checks above for
+                    -- these 3 migrations previously referenced the wrong table/column (copy-paste bug),
+                    -- so they were unconditionally deleted from history every startup even when their
+                    -- real schema effects were already present, causing MigrateAsync() to re-attempt
+                    -- them and crash on "already exists" errors. Re-insert once the corrected DELETE
+                    -- checks above confirm the real schema is present.
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Radiographs' AND column_name = 'FileName')
+                        AND NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260512000000_AddRadiographFileMetadata') THEN
+                        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260512000000_AddRadiographFileMetadata', '8.0');
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'PatientTreatmentPlanSteps')
+                        AND NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260530000000_AddPatientTreatmentPlanSteps') THEN
+                        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260530000000_AddPatientTreatmentPlanSteps', '8.0');
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'OrthoDiagnoses')
+                        AND NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260603000000_AddOrthoDiagnosisRetentionPhotos') THEN
+                        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260603000000_AddOrthoDiagnosisRetentionPhotos', '8.0');
                     END IF;
                 END $$;
             """);

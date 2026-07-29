@@ -10,7 +10,7 @@ name = "API Server"
 paths = ["/api"]
 
 [services.development]
-run = "pnpm --filter @workspace/api-server run dev"
+run = "bash -c 'set -a; source /home/runner/workspace/.local/aqlan-dev/backend.env; set +a; cd /home/runner/workspace/.migration-backup/backend && exec dotnet run --project src/AqlanDentalPro.API/AqlanDentalPro.API.csproj --no-launch-profile --urls http://0.0.0.0:'\"$PORT\"''"
 
 [services.production]
 

@@ -44,15 +44,26 @@ public class LabPayablesController(
         if (labId.HasValue) query = query.Where(p => p.LabId == labId.Value);
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(p => p.Status == status);
 
-        var total = await query.CountAsync();
-        var payables = await query
+        // CORE-LAB-008: this screen used to read LabPayables ONLY. A LabPayable row is
+        // created solely from a lab ORDER, so a debt entered as an opening balance —
+        // what the clinic owed a lab before it started using the system — produces a
+        // SupplierBill with LabOrderId == null and NO payable, and was therefore
+        // invisible here while showing correctly on the supplier account. The debt was
+        // not missing; the screen was reading the narrower of the two tables.
+        //
+        // Those orphan bills are appended below as read-only rows. They are NOT folded
+        // into the payable projection because RecordPayment takes a LabPayable id: an
+        // opening balance has none, so it is flagged HasPayable = false and must be
+        // settled from the suppliers module. Fabricating a payable row here would
+        // create a second, unreconciled record of the same debt.
+        var payableRows = await query
             .OrderByDescending(p => p.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
             .Select(p => new
             {
                 p.Id,
-                p.LabOrderId,
+                // Widened to Guid? so this projection matches the orphan-bill one below
+                // exactly — Concat of two anonymous types requires identical shapes.
+                LabOrderId = (Guid?)p.LabOrderId,
                 LabName = p.Lab != null ? p.Lab.Name : "",
                 OrderNumber = p.LabOrder != null ? p.LabOrder.OrderNumber : "",
                 PatientName = p.LabOrder != null && p.LabOrder.Patient != null
@@ -69,15 +80,78 @@ public class LabPayablesController(
                     : p.Status,
                 Currency = p.SupplierBill != null ? p.SupplierBill.Currency : "YER",
                 ExchangeRateToYer = p.SupplierBill != null ? p.SupplierBill.ExchangeRateToYer : 1m,
-                p.SupplierBillId,
+                SupplierBillId = p.SupplierBillId,
                 DueDate = p.DueDate != null ? p.DueDate.Value.ToString("yyyy-MM-dd") : null,
-                p.Notes,
+                Notes = p.Notes,
                 CreatedAt = p.CreatedAt.ToString("yyyy-MM-dd"),
-                UpdatedAt = p.UpdatedAt.ToString("yyyy-MM-dd")
+                UpdatedAt = p.UpdatedAt.ToString("yyyy-MM-dd"),
+                HasPayable = true,
+                IsOpeningBalance = false,
+                SortKey = p.CreatedAt
             })
             .ToListAsync();
 
-        return Ok(new { data = payables, total, page, pageSize });
+        // Lab supplier bills with no payable of their own: opening balances and any bill
+        // raised directly against a dental lab from the suppliers module.
+        var orphanQuery = db.SupplierBills
+            .Where(b => b.IsActive
+                     && db.Suppliers.Any(sup => sup.Id == b.SupplierId && sup.Type == SupplierType.DentalLab)
+                     && !db.LabPayables.Any(lp => lp.SupplierBillId == b.Id));
+
+        // A lab filter must not silently hide these: match through the lab that points at
+        // this supplier. An opening balance carries no LabId of its own.
+        if (labId.HasValue)
+            orphanQuery = orphanQuery.Where(b =>
+                db.Labs.Any(l => l.Id == labId.Value && l.SupplierId == b.SupplierId));
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var wanted = status.Trim().ToLowerInvariant();
+            orphanQuery = orphanQuery.Where(b =>
+                (wanted == "paid" && b.Status == BillStatus.FullyPaid)
+                || (wanted == "partial" && b.Status == BillStatus.PartiallyPaid)
+                || (wanted == "pending" && b.Status == BillStatus.Unpaid));
+        }
+
+        var orphanRows = await orphanQuery
+            .Select(b => new
+            {
+                Id = b.Id,
+                LabOrderId = (Guid?)null,
+                LabName = db.Labs.Where(l => l.SupplierId == b.SupplierId).Select(l => l.Name).FirstOrDefault()
+                          ?? db.Suppliers.Where(sup => sup.Id == b.SupplierId).Select(sup => sup.Name).FirstOrDefault()
+                          ?? "",
+                OrderNumber = "",
+                PatientName = "",
+                Amount = b.TotalAmount,
+                PaidAmount = b.PaidAmount,
+                Balance = b.TotalAmount - b.PaidAmount,
+                Status = b.Status == BillStatus.FullyPaid ? "paid"
+                       : b.Status == BillStatus.PartiallyPaid ? "partial" : "pending",
+                Currency = b.Currency,
+                ExchangeRateToYer = b.ExchangeRateToYer,
+                SupplierBillId = (Guid?)b.Id,
+                DueDate = b.DueDate != null ? b.DueDate.Value.ToString("yyyy-MM-dd") : null,
+                Notes = (string?)b.Description,
+                CreatedAt = b.BillDate.ToString("yyyy-MM-dd"),
+                UpdatedAt = b.UpdatedAt.ToString("yyyy-MM-dd"),
+                HasPayable = false,
+                IsOpeningBalance = b.IsOpeningBalance,
+                SortKey = b.UpdatedAt
+            })
+            .ToListAsync();
+
+        // Merged in memory because the two sources are shaped differently and a debt list
+        // for one clinic's labs is small. Paging AFTER the merge keeps the page numbers
+        // honest — paging each source separately would drop rows off the end of a page.
+        var merged = payableRows.Concat(orphanRows)
+            .OrderByDescending(row => row.SortKey)
+            .ToList();
+
+        var total = merged.Count;
+        var data = merged.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+        return Ok(new { data, total, page, pageSize });
     }
 
     [HttpGet("{id:guid}")]

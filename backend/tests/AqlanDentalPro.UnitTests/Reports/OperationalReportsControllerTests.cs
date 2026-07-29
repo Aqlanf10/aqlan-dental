@@ -141,7 +141,7 @@ public sealed class OperationalReportsControllerTests
     }
 
     [Fact]
-    public async Task TreatmentProgress_ReturnsCompletedAndRemainingPerPatient()
+    public async Task TreatmentProgress_UsesThePatientsFullPlanAfterPeriodSelection()
     {
         await using var db = CreateDb();
         var today = ClinicTimeProvider.ClinicToday();
@@ -166,6 +166,15 @@ public sealed class OperationalReportsControllerTests
                 Status = TreatmentStepStatus.InProgress,
                 PlannedDate = today,
                 CreatedAt = utcStart.AddHours(1)
+            },
+            new PatientTreatmentPlanStep
+            {
+                PatientId = patient.Id,
+                SequenceNumber = 3,
+                Title = "متابعة لاحقة",
+                Status = TreatmentStepStatus.Planned,
+                PlannedDate = today.AddDays(30),
+                CreatedAt = utcStart.AddDays(-30)
             });
         await db.SaveChangesAsync();
 
@@ -177,9 +186,10 @@ public sealed class OperationalReportsControllerTests
         using var json = ResultJson(result);
         var row = json.RootElement.GetProperty("rows").EnumerateArray().Single();
 
+        row.GetProperty("totalSteps").GetInt32().Should().Be(3);
         row.GetProperty("completedSteps").GetInt32().Should().Be(1);
-        row.GetProperty("remainingSteps").GetInt32().Should().Be(1);
-        row.GetProperty("completionRate").GetDecimal().Should().Be(50m);
+        row.GetProperty("remainingSteps").GetInt32().Should().Be(2);
+        row.GetProperty("completionRate").GetDecimal().Should().Be(33.3m);
         row.GetProperty("nextStep").GetString().Should().Be("علاج");
     }
 

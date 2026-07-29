@@ -407,11 +407,23 @@ public sealed class OperationalReportsController(
     {
         var (utcStart, _) = ClinicTimeProvider.ToUtcRange(from);
         var (_, utcEnd) = ClinicTimeProvider.ToUtcRange(to);
-        var steps = await db.PatientTreatmentPlanSteps
-            .Where(step =>
-                (step.CreatedAt >= utcStart && step.CreatedAt < utcEnd
+        var activePatientIds = await db.PatientTreatmentPlanSteps
+            .Where(step => step.IsActive
+                && (step.CreatedAt >= utcStart && step.CreatedAt < utcEnd
                     || step.PlannedDate >= from && step.PlannedDate <= to
                     || step.CompletedDate >= from && step.CompletedDate <= to)
+                && (!branchId.HasValue || step.Patient.BranchId == branchId.Value))
+            .Select(step => step.PatientId)
+            .Distinct()
+            .ToListAsync();
+
+        // The date range selects the patients whose plans were active in the
+        // period. Progress itself must use every active step in those plans;
+        // otherwise a single completed step in the period can falsely appear
+        // as a 100% completed treatment plan.
+        var steps = await db.PatientTreatmentPlanSteps
+            .Where(step => step.IsActive
+                && activePatientIds.Contains(step.PatientId)
                 && (!branchId.HasValue || step.Patient.BranchId == branchId.Value))
             .Select(step => new
             {

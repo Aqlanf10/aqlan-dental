@@ -22,8 +22,14 @@ public class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
             .AddEnvironmentVariables()
             .Build();
 
-        var connectionString = configuration.GetConnectionString("DefaultConnection")
-            ?? "Host=localhost;Database=aqlan_dental;Username=aqlan;Password=aqlan_dev_password";
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException(
+                "No connection string configured. Design-time EF tooling requires " +
+                "ConnectionStrings__DefaultConnection (env var) or ConnectionStrings:DefaultConnection " +
+                "(appsettings.json) to be set. Refusing to fall back to a hardcoded/insecure default.");
+        }
 
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
         optionsBuilder.UseNpgsql(connectionString);

@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -8,6 +11,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// This migration is safe only if no duplicate (OrthoCaseId, PlanLabel) pairs exist in production data.
 /// If duplicates exist, the migration will fail at runtime and manual deduplication will be required first.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260612000000_AddUniqueIndex_TreatmentPlan_OrthoCaseId_PlanLabel")]
 public partial class AddUniqueIndex_TreatmentPlan_OrthoCaseId_PlanLabel : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

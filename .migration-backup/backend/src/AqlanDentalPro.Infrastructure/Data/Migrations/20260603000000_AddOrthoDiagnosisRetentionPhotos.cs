@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -7,6 +10,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// diagnosis summary and clinical photos linking.
 /// Additive only — new tables, no destructive changes.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260603000000_AddOrthoDiagnosisRetentionPhotos")]
 public partial class AddOrthoDiagnosisRetentionPhotos : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

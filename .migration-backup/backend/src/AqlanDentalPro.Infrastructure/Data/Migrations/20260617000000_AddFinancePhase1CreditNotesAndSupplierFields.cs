@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 #nullable disable
 
@@ -8,6 +11,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// Finance Phase 1: Add CreditNotes table, Supplier.Type and Supplier.Balance columns.
 /// Uses raw SQL with IF NOT EXISTS for idempotent column additions.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260617000000_AddFinancePhase1CreditNotesAndSupplierFields")]
 public partial class AddFinancePhase1CreditNotesAndSupplierFields : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

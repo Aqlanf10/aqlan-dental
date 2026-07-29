@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 #nullable disable
 
@@ -8,6 +11,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// Add Invoices and InvoiceLineItems tables for draft invoice foundation.
 /// Additive only — new tables, no destructive changes.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260531000000_AddInvoicesAndInvoiceLineItems")]
 public partial class AddInvoicesAndInvoiceLineItems : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

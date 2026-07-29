@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -7,6 +10,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// Converted to idempotent raw SQL with IF NOT EXISTS guards.
 /// Backward compatible: existing single-attachment fields on Message are retained.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260602000000_AddMessageAttachments")]
 public partial class AddMessageAttachments : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

@@ -1,7 +1,11 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
+[DbContext(typeof(AppDbContext))]
 [Migration("20260430120000_AddPatientPortal")]
 public partial class AddPatientPortal : Migration
 {

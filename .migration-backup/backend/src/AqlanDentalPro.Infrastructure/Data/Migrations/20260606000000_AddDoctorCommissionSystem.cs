@@ -1,11 +1,16 @@
 using System;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 #nullable disable
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations
 {
     /// <inheritdoc />
+    [DbContext(typeof(AppDbContext))]
+    [Migration("20260606000000_AddDoctorCommissionSystem")]
     public partial class AddDoctorCommissionSystem : Migration
     {
         /// <inheritdoc />

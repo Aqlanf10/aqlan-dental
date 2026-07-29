@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -11,27 +11,28 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.CreateTable(
-                name: "BookingRequests",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    PatientName = table.Column<string>(type: "text", nullable: false),
-                    PhoneNumber = table.Column<string>(type: "text", nullable: false),
-                    Email = table.Column<string>(type: "text", nullable: true),
-                    ServiceType = table.Column<string>(type: "text", nullable: true),
-                    PreferredDate = table.Column<DateOnly>(type: "date", nullable: true),
-                    PreferredTime = table.Column<string>(type: "text", nullable: true),
-                    Notes = table.Column<string>(type: "text", nullable: true),
-                    Status = table.Column<string>(type: "text", nullable: false),
-                    StaffNotes = table.Column<string>(type: "text", nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_BookingRequests", x => x.Id);
-                });
+            // FIX (Replit migration recovery, 2026-07-29): the earlier migration
+            // AddBookingRequests already creates "BookingRequests" with this exact column set,
+            // so the original non-idempotent CreateTable here always failed with "relation
+            // already exists" on a fresh database. Converted to idempotent raw SQL with the same
+            // columns/types/constraint; no schema change from what this file originally specified.
+            migrationBuilder.Sql(@"
+                CREATE TABLE IF NOT EXISTS ""BookingRequests"" (
+                    ""Id"" uuid NOT NULL,
+                    ""PatientName"" text NOT NULL,
+                    ""PhoneNumber"" text NOT NULL,
+                    ""Email"" text NULL,
+                    ""ServiceType"" text NULL,
+                    ""PreferredDate"" date NULL,
+                    ""PreferredTime"" text NULL,
+                    ""Notes"" text NULL,
+                    ""Status"" text NOT NULL,
+                    ""StaffNotes"" text NULL,
+                    ""CreatedAt"" timestamp with time zone NOT NULL,
+                    ""UpdatedAt"" timestamp with time zone NULL,
+                    CONSTRAINT ""PK_BookingRequests"" PRIMARY KEY (""Id"")
+                );
+            ");
         }
 
         /// <inheritdoc />

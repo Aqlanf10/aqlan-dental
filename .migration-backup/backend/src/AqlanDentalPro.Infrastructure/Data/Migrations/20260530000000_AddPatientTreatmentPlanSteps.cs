@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 #nullable disable
 
@@ -8,6 +11,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// Add PatientTreatmentPlanSteps table for unified treatment plan inside patient file.
 /// Additive only — new table, no destructive changes.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260530000000_AddPatientTreatmentPlanSteps")]
 public partial class AddPatientTreatmentPlanSteps : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

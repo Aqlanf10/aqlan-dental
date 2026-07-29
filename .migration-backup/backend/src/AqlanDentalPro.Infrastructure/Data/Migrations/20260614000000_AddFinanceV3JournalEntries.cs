@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -21,6 +24,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// Preflight: Check how many CashFlowTransactions will have null TreasuryId after migration
 /// SELECT COUNT(*) FROM "CashFlowTransactions" WHERE "TreasuryId" IS NULL;
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260614000000_AddFinanceV3JournalEntries")]
 public partial class AddFinanceV3JournalEntries : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

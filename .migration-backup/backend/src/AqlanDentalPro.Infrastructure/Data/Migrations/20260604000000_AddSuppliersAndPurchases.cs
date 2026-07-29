@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 #nullable disable
 
@@ -9,6 +12,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// and add BatchNumber, ExpiryDate, DefaultSupplierId columns to Inventory table.
 /// Additive only — new tables and columns, no destructive changes.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260604000000_AddSuppliersAndPurchases")]
 public partial class AddSuppliersAndPurchases20260604000000 : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -9,6 +12,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// - H1: Add Reversal to FinancialCategory enum (no SQL change needed for PostgreSQL enums stored as strings)
 /// All ADD COLUMN statements use IF NOT EXISTS for idempotency on PostgreSQL.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260613000000_AddFinancialIntegrityAuditSprint")]
 public partial class AddFinancialIntegrityAuditSprint : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

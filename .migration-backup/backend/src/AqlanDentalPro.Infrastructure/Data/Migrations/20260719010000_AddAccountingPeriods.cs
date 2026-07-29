@@ -1,10 +1,15 @@
 using System;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 #nullable disable
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
+[DbContext(typeof(AppDbContext))]
+[Migration("20260719010000_AddAccountingPeriods")]
 public partial class AddAccountingPeriods : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

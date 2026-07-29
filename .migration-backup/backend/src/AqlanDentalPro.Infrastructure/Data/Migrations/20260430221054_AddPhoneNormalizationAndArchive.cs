@@ -377,6 +377,21 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                 END $$;
                 """);
 
+            // FIX (Replit migration recovery, 2026-07-29): the original AddWhatsAppIntegration
+            // migration never created a "WhatsAppTemplateId" column on "WhatsAppMessages", so this
+            // FK constraint always failed to apply on a fresh database. Adding the missing column
+            // (idempotently, matching this file's existing style) before the FK guard below. This
+            // does not alter any other migration's Up()/Down() and only repairs a genuinely broken
+            // schema step so the chain can apply end-to-end.
+            migrationBuilder.Sql("""
+                DO $$ BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'WhatsAppMessages')
+                       AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'WhatsAppMessages' AND column_name = 'WhatsAppTemplateId') THEN
+                        ALTER TABLE "WhatsAppMessages" ADD COLUMN "WhatsAppTemplateId" uuid NULL;
+                    END IF;
+                END $$;
+                """);
+
             migrationBuilder.Sql("""
                 DO $$ BEGIN
                     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'WhatsAppMessages')

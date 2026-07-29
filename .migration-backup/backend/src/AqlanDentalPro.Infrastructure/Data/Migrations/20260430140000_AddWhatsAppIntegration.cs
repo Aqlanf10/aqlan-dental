@@ -1,7 +1,11 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
+[DbContext(typeof(AppDbContext))]
 [Migration("20260430140000_AddWhatsAppIntegration")]
 public partial class AddWhatsAppIntegration : Migration
 {
@@ -87,19 +91,30 @@ public partial class AddWhatsAppIntegration : Migration
         var templateId5 = Guid.NewGuid();
         var now = DateTime.UtcNow;
 
-        migrationBuilder.InsertData("WhatsAppTemplates", new[] { "Id", "TemplateKey", "NameAr", "ContentTemplate", "IsActive", "Category", "CreatedAt", "UpdatedAt" },
+        // NOTE (Replit migration recovery, 2026-07-29): explicit `columnTypes` added below so
+        // EF Core's SQL generator does not need to resolve column types via the current DbContext
+        // model (this migration originally had no Designer.cs/TargetModel). No values or row data
+        // were changed — this only annotates the existing InsertData calls with their column types,
+        // per Microsoft's own recommended practice for InsertData in migrations.
+        var whatsAppTemplateColumns = new[] { "Id", "TemplateKey", "NameAr", "ContentTemplate", "IsActive", "Category", "CreatedAt", "UpdatedAt" };
+        // Types match the columns' current, final mapping in AppDbContextModelSnapshot.cs
+        // (WhatsAppTemplate entity: TemplateKey/NameAr/ContentTemplate/Category are "text",
+        // CreatedAt/UpdatedAt are "timestamp with time zone").
+        var whatsAppTemplateColumnTypes = new[] { "uuid", "text", "text", "text", "boolean", "text", "timestamp with time zone", "timestamp with time zone" };
+
+        migrationBuilder.InsertData("WhatsAppTemplates", whatsAppTemplateColumns, whatsAppTemplateColumnTypes,
             new object[] { templateId1, "appointment_reminder", "تذكير موعد", "مرحباً {{patient_name}}\n\nنذكركم بموعدكم في مركز د. عقلان الكامل:\n📅 التاريخ: {{date}}\n🕐 الوقت: {{time}}\n🦷 نوع الموعد: {{appointment_type}}\n👨‍⚕️ الطبيب: {{doctor_name}}\n\nيرجى الحضور قبل الموعد بـ10 دقائق.\nلإلغاء أو تعديل الموعد، تواصلوا معنا على: 04-253028", true, "appointment", now, now });
 
-        migrationBuilder.InsertData("WhatsAppTemplates", new[] { "Id", "TemplateKey", "NameAr", "ContentTemplate", "IsActive", "Category", "CreatedAt", "UpdatedAt" },
+        migrationBuilder.InsertData("WhatsAppTemplates", whatsAppTemplateColumns, whatsAppTemplateColumnTypes,
             new object[] { templateId2, "appointment_confirmation", "تأكيد موعد", "تم تأكيد موعدكم بنجاح ✅\n\n{{patient_name}}\n📅 {{date}} at {{time}}\n🦷 {{appointment_type}}\n👨‍⚕️ {{doctor_name}}\n\nنتطلع لرؤيتكم!", true, "appointment", now, now });
 
-        migrationBuilder.InsertData("WhatsAppTemplates", new[] { "Id", "TemplateKey", "NameAr", "ContentTemplate", "IsActive", "Category", "CreatedAt", "UpdatedAt" },
+        migrationBuilder.InsertData("WhatsAppTemplates", whatsAppTemplateColumns, whatsAppTemplateColumnTypes,
             new object[] { templateId3, "payment_reminder", "تذكير دفع", "مرحباً {{patient_name}}\n\nنود تذكيركم بأن لديكم رصيد مستحق بقيمة {{amount}} في مركز د. عقلان الكامل.\n\nللاستفسار، تواصلوا معنا على: 04-253028", true, "payment", now, now });
 
-        migrationBuilder.InsertData("WhatsAppTemplates", new[] { "Id", "TemplateKey", "NameAr", "ContentTemplate", "IsActive", "Category", "CreatedAt", "UpdatedAt" },
+        migrationBuilder.InsertData("WhatsAppTemplates", whatsAppTemplateColumns, whatsAppTemplateColumnTypes,
             new object[] { templateId4, "payment_confirmation", "تأكيد دفع", "تم استلام الدفعة بنجاح ✅\n\n{{patient_name}}\nالمبلغ: {{amount}}\nرقم الإيصال: {{receipt_number}}\n\nشكراً لكم!", true, "payment", now, now });
 
-        migrationBuilder.InsertData("WhatsAppTemplates", new[] { "Id", "TemplateKey", "NameAr", "ContentTemplate", "IsActive", "Category", "CreatedAt", "UpdatedAt" },
+        migrationBuilder.InsertData("WhatsAppTemplates", whatsAppTemplateColumns, whatsAppTemplateColumnTypes,
             new object[] { templateId5, "welcome", "ترحيب بمريض جديد", "أهلاً وسهلاً {{patient_name}} في مركز د. عقلان الكامل لطب وتقويم الأسنان 🦷\n\nرقم ملفكم: {{patient_number}}\nالطبيب المخصص: {{doctor_name}}\n\nساعات العمل:\nالسبت - الأربعاء: 9 ص - 9 م\nالخميس: 9 ص - 5 م\nالجمعة: مغلق\n\nللحجز والاستفسار: 04-253028", true, "general", now, now });
     }
 

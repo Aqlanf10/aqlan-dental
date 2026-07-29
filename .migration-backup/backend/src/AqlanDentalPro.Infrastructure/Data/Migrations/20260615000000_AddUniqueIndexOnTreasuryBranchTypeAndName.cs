@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -23,6 +26,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 ///
 /// If any rows are returned, deduplicate them manually before applying this migration.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260615000000_AddUniqueIndexOnTreasuryBranchTypeAndName")]
 public partial class AddUniqueIndexOnTreasuryBranchTypeAndName : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

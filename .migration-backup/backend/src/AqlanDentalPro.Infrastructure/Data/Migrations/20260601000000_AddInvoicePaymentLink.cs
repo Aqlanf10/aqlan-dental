@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -6,6 +9,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// Adds InvoiceId FK to Payments table, linking payments to invoices.
 /// Enables the Invoice → Payment connection for the Draft → Issued → Paid lifecycle.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260601000000_AddInvoicePaymentLink")]
 public partial class AddInvoicePaymentLink : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

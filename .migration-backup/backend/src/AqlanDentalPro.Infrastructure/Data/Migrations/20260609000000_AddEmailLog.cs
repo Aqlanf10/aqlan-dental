@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -19,6 +22,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// (IF NOT EXISTS). Rolling back this migration while Finance V2 is still applied would
 /// incorrectly remove the table if we dropped it here. The no-op Down avoids this risk.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260609000000_AddEmailLog")]
 public partial class AddEmailLog : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

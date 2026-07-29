@@ -1,7 +1,11 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
+[DbContext(typeof(AppDbContext))]
 [Migration("20260512000000_AddRadiographFileMetadata")]
 public partial class AddRadiographFileMetadata : Migration
 {

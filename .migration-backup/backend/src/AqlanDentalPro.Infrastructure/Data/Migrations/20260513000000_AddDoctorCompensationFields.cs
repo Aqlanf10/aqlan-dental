@@ -1,7 +1,11 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
+[DbContext(typeof(AppDbContext))]
 [Migration("20260513000000_AddDoctorCompensationFields")]
 public partial class AddDoctorCompensationFields : Migration
 {

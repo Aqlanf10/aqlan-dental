@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 #nullable disable
 
@@ -24,6 +27,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
     /// bypassed by revoking permissions on the function. Idempotent: re-running the Up
     /// drops the trigger and function first if they exist.
     /// </summary>
+    [DbContext(typeof(AppDbContext))]
+    [Migration("20260707000000_AddAuditLogsAppendOnlyTrigger")]
     public partial class AddAuditLogsAppendOnlyTrigger : Migration
     {
         // Use string.Concat / string.Join to avoid verbatim-string issues with PostgreSQL

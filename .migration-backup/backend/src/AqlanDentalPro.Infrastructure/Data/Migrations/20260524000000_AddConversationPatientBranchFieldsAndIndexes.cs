@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -10,6 +12,7 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// creates the corresponding indexes, and adds the PatientId foreign key —
 /// safely guarded so that it is a no-op on any database where these already exist.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
 [Migration("20260524000000_AddConversationPatientBranchFieldsAndIndexes")]
 public partial class AddConversationPatientBranchFieldsAndIndexes : Migration
 {

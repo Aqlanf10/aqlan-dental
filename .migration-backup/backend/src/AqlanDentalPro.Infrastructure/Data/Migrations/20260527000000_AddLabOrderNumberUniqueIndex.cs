@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -10,6 +13,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 ///
 /// Strategy: advisory lock (serializes generation) + unique constraint (safety net) + retry.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260527000000_AddLabOrderNumberUniqueIndex")]
 public partial class AddLabOrderNumberUniqueIndex : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

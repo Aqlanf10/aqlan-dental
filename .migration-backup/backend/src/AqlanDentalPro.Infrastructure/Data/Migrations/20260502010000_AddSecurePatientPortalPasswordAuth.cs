@@ -1,7 +1,12 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
+[DbContext(typeof(AppDbContext))]
+[Migration("20260502010000_AddSecurePatientPortalPasswordAuth")]
 public partial class AddSecurePatientPortalPasswordAuth : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
@@ -24,17 +29,25 @@ public partial class AddSecurePatientPortalPasswordAuth : Migration
             table: "PatientAccounts",
             nullable: true);
 
-        // Backfill: set MustChangePassword for existing accounts that have InitialPassword
+        // FIX (Replit migration recovery, 2026-07-29): no migration in this history ever creates
+        // an "InitialPassword" column on "PatientAccounts" (AddPatientPortal's CreateTable never
+        // included it), so on a fresh database the original backfill/DropColumn always failed
+        // with "column does not exist". Guarded both statements to only run when the column is
+        // actually present (e.g. on a database created before this gap existed); when absent,
+        // PortalAccountActive is still backfilled to true so the column's intended default holds.
         migrationBuilder.Sql(@"
-            UPDATE ""PatientAccounts""
-            SET ""MustChangePassword"" = CASE WHEN ""InitialPassword"" IS NOT NULL AND ""InitialPassword"" != '' THEN true ELSE false END,
-                ""PortalAccountActive"" = true
+            DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'PatientAccounts' AND column_name = 'InitialPassword') THEN
+                    UPDATE ""PatientAccounts""
+                    SET ""MustChangePassword"" = CASE WHEN ""InitialPassword"" IS NOT NULL AND ""InitialPassword"" != '' THEN true ELSE false END,
+                        ""PortalAccountActive"" = true;
+                    ALTER TABLE ""PatientAccounts"" DROP COLUMN ""InitialPassword"";
+                ELSE
+                    UPDATE ""PatientAccounts"" SET ""PortalAccountActive"" = true;
+                END IF;
+            END $$;
         ");
-
-        // Drop the insecure InitialPassword column (no longer storing plain-text passwords)
-        migrationBuilder.DropColumn(
-            name: "InitialPassword",
-            table: "PatientAccounts");
 
         // Create index on LinkedUserId
         migrationBuilder.CreateIndex(

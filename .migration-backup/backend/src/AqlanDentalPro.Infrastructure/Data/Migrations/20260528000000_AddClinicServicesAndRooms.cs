@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 #nullable disable
 
@@ -8,6 +11,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// Add ClinicServices and ClinicRooms tables for configurable services catalog and room management.
 /// Additive only — no drops, no destructive changes.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260528000000_AddClinicServicesAndRooms")]
 public partial class AddClinicServicesAndRooms : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

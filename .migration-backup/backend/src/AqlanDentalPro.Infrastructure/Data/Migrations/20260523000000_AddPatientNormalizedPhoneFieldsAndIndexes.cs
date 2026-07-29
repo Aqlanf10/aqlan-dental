@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -13,6 +15,7 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// NOTE: Data backfill (B4/B5) and deduplication (B6/B7) remain in Program.cs
 /// and are out of scope for this migration.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
 [Migration("20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes")]
 public partial class AddPatientNormalizedPhoneFieldsAndIndexes : Migration
 {

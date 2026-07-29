@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 #nullable disable
 
@@ -8,6 +11,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// Add ServiceId and ClinicRoomId columns to ClinicQueueItems with FK constraints.
 /// Additive only — no drops, no destructive changes.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260605000000_AddClinicQueueItemServiceAndRoom")]
 public partial class AddClinicQueueItemServiceAndRoom : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

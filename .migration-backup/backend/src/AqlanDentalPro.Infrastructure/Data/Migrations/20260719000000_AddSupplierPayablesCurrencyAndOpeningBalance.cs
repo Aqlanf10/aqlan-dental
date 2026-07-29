@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 #nullable disable
 
@@ -9,6 +12,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// rows are backfilled as YER at rate 1, while every new payable and disbursement
 /// retains its source currency and the rate used at posting time.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260719000000_AddSupplierPayablesCurrencyAndOpeningBalance")]
 public partial class AddSupplierPayablesCurrencyAndOpeningBalance : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

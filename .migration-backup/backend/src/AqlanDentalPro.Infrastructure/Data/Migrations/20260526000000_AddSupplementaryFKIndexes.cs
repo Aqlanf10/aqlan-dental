@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 /// <summary>
 /// DB-01 FIX (Phase 2): Add supplementary FK indexes for frequently queried columns
@@ -15,6 +18,8 @@ using Microsoft.EntityFrameworkCore.Migrations;
 /// - LabOrders.OrthoCaseId    (lab orders by ortho case)
 /// - ClinicQueueItems.DoctorId (queue items by doctor)
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260526000000_AddSupplementaryFKIndexes")]
 public partial class AddSupplementaryFKIndexes : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

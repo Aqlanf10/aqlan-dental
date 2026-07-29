@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -32,6 +35,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// Down: drops both tables. Safe to roll back because no production data
 /// dependencies yet (custom segments are user-created, can be recreated).
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260715000000_AddPatientSegments")]
 public partial class AddPatientSegments : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

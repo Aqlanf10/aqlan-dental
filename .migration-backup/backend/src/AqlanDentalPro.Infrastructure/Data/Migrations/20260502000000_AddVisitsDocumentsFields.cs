@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -6,6 +9,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// Adds Diagnosis and NextVisitPlan to Visits table,
 /// and FileName, FileSize, MimeType, Notes, UploadedBy to Documents table.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260502000000_AddVisitsDocumentsFields")]
 public partial class AddVisitsDocumentsFields : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
@@ -59,26 +64,15 @@ public partial class AddVisitsDocumentsFields : Migration
             type: "uuid",
             nullable: true);
 
-        // Add indexes for performance
-        migrationBuilder.CreateIndex(
-            name: "IX_Visits_PatientId",
-            table: "Visits",
-            column: "PatientId");
-
-        migrationBuilder.CreateIndex(
-            name: "IX_Visits_VisitDate",
-            table: "Visits",
-            column: "VisitDate");
-
-        migrationBuilder.CreateIndex(
-            name: "IX_Documents_PatientId",
-            table: "Documents",
-            column: "PatientId");
-
-        migrationBuilder.CreateIndex(
-            name: "IX_Documents_DocumentType",
-            table: "Documents",
-            column: "DocumentType");
+        // FIX (Replit migration recovery, 2026-07-29): "IX_Visits_PatientId" is already created by
+        // InitialCreate, so the original non-idempotent CreateIndex here always failed with
+        // "relation already exists" on a fresh database. Converted the four indexes below to
+        // idempotent raw SQL (matching this codebase's established pattern); no index definitions
+        // were changed.
+        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_Visits_PatientId"" ON ""Visits"" (""PatientId"");");
+        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_Visits_VisitDate"" ON ""Visits"" (""VisitDate"");");
+        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_Documents_PatientId"" ON ""Documents"" (""PatientId"");");
+        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_Documents_DocumentType"" ON ""Documents"" (""DocumentType"");");
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)

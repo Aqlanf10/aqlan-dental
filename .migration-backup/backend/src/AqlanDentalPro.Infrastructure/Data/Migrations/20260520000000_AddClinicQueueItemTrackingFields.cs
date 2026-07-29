@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -7,6 +10,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// Also renames the old "CalledBy" column to "CalledByUserId".
 /// Non-destructive: only adds new nullable columns and renames.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260520000000_AddClinicQueueItemTrackingFields")]
 public partial class AddClinicQueueItemTrackingFields : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

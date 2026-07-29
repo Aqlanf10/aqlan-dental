@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -6,6 +9,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// إضافة دعم محادثات المرضى: ConversationType, PatientId, BranchId
 /// Converted to idempotent raw SQL with IF NOT EXISTS guards.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260501010000_AddPatientConversationSupport")]
 public partial class AddPatientConversationSupport : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -13,6 +16,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// After this migration, the 4 ExecuteSqlRawAsync calls in DbSeeder.cs are
 /// redundant and have been removed.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260521000000_AddPasswordSaltAndPatientPhoneIndexes")]
 public partial class AddPasswordSaltAndPatientPhoneIndexes : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

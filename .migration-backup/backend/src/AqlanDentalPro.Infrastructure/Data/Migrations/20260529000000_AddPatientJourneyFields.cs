@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 #nullable disable
 
@@ -8,6 +11,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// Add nullable Patient Journey fields to Appointments and Visits tables.
 /// Additive only — no drops, no destructive changes.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260529000000_AddPatientJourneyFields")]
 public partial class AddPatientJourneyFields : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

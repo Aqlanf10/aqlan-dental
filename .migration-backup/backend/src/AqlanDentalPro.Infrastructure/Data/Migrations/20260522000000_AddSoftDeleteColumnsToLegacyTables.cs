@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore.Migrations;
 
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -23,6 +25,7 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// After this migration, the B2 raw SQL block in Program.cs is redundant and
 /// has been removed.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
 [Migration("20260522000000_AddSoftDeleteColumnsToLegacyTables")]
 public partial class AddSoftDeleteColumnsToLegacyTables : Migration
 {

@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -6,6 +9,7 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// Adds RecipientType and RecipientUserId columns to Conversations.
 /// Converted to idempotent raw SQL with IF NOT EXISTS guards.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
 [Migration("20260503000000_AddConversationRecipientType")]
 public partial class AddConversationRecipientType : Migration
 {

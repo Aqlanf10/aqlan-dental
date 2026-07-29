@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -22,6 +25,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// Down: drops the FK + index + columns + table. Safe to roll back because all
 /// new fields are optional and have no production data dependencies yet.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260712000000_AddAppointmentEnhancements")]
 public partial class AddAppointmentEnhancements : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

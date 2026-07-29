@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -6,6 +9,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// Additive migration: adds RecordsChecklists table, new fields to OrthoDiagnoses,
 /// and PlanLabel to TreatmentPlans. Does NOT drop or modify existing columns.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260611000000_AddOrthoRecordsChecklistAndDiagnosisFields")]
 public partial class AddOrthoRecordsChecklistAndDiagnosisFields : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

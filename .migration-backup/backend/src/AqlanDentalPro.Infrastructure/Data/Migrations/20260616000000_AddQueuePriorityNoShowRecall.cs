@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -23,6 +26,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// that also excludes 'NoShow' status, allowing a patient who was marked NoShow
 /// to be re-added to the queue on the same day.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260616000000_AddQueuePriorityNoShowRecall")]
 public partial class AddQueuePriorityNoShowRecall : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
@@ -65,9 +70,13 @@ public partial class AddQueuePriorityNoShowRecall : Migration
             table: "ClinicQueueItems",
             columns: new[] { "QueueDate", "Priority", "SortOrder" });
 
-        // Drop old unique index and recreate with updated filter (include NoShow in exclusion)
+        // FIX (Replit migration recovery, 2026-07-29): AddClinicQueueItem actually named this
+        // index "IX_ClinicQueueItems_PatientId_QueueDate_Active" (with an "_Active" suffix), not
+        // "IX_ClinicQueueItems_PatientId_QueueDate" as referenced here, so the original DropIndex
+        // always failed with "index does not exist" on a fresh database. Targeting the real name;
+        // the replacement index below keeps the shorter name exactly as this migration intended.
         migrationBuilder.DropIndex(
-            name: "IX_ClinicQueueItems_PatientId_QueueDate",
+            name: "IX_ClinicQueueItems_PatientId_QueueDate_Active",
             table: "ClinicQueueItems");
 
         migrationBuilder.CreateIndex(
@@ -85,13 +94,13 @@ public partial class AddQueuePriorityNoShowRecall : Migration
             name: "IX_ClinicQueueItems_QueueDate_Priority_SortOrder",
             table: "ClinicQueueItems");
 
-        // Revert unique index to original filter
+        // Revert unique index to original name/filter used by AddClinicQueueItem
         migrationBuilder.DropIndex(
             name: "IX_ClinicQueueItems_PatientId_QueueDate",
             table: "ClinicQueueItems");
 
         migrationBuilder.CreateIndex(
-            name: "IX_ClinicQueueItems_PatientId_QueueDate",
+            name: "IX_ClinicQueueItems_PatientId_QueueDate_Active",
             table: "ClinicQueueItems",
             columns: new[] { "PatientId", "QueueDate" },
             unique: true,

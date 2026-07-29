@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -23,6 +26,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// Down: drops the FKs + tables + columns. Safe to roll back because all new fields
 /// are optional and have no production data dependencies yet.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260713000000_AddServicePackagesConsumables")]
 public partial class AddServicePackagesConsumables : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

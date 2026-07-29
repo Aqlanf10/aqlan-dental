@@ -1,4 +1,7 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -6,7 +9,10 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// Adds the core messaging system tables: Conversations, ConversationParticipants, Messages, MessageReads.
 /// Converted to idempotent raw SQL so it can be re-run safely if objects already exist
 /// (e.g., created by Program.cs HOTFIX blocks before MigrateAsync).
+/// EXPERIMENTAL TEST: [DbContext] attribute added directly here (no Designer.cs) to verify
+/// whether EF Core's migration discovery only needs this attribute, not a full snapshot.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
 [Migration("20260430000000_AddMessagingSystem")]
 public partial class AddMessagingSystem : Migration
 {

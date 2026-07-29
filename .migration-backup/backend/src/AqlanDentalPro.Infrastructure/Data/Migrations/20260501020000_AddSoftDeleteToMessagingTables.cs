@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -7,6 +10,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// Migration 20260501020000
 /// Fixed: converted from non-standard $soft_delete_{tableName}$ dollar-quoting to standard $$.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260501020000_AddSoftDeleteToMessagingTables")]
 public partial class AddSoftDeleteToMessagingTables : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

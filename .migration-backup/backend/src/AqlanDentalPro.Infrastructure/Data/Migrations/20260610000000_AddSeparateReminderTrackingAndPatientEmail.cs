@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -29,6 +32,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// migration while Finance V2 is still applied would incorrectly remove the columns
 /// if we dropped them here. The no-op Down avoids this risk.
 /// </summary>
+[DbContext(typeof(AppDbContext))]
+[Migration("20260610000000_AddSeparateReminderTrackingAndPatientEmail")]
 public partial class AddSeparateReminderTrackingAndPatientEmail : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

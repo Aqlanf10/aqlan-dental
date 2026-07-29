@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using AqlanDentalPro.Infrastructure.Data;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
@@ -6,25 +9,35 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// إضافة حقول NormalizedPhone و NormalizedWhatsApp مع unique indexes
 /// وتعبئة البيانات الموجودة بالقيم الموحدة
 /// </summary>
+[DbContext(typeof(AppDbContext))]
 [Migration("20260501000000_AddNormalizedPhoneFields")]
 public partial class AddNormalizedPhoneFields : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
     {
-        // Add columns
-        migrationBuilder.AddColumn<string>(
-            name: "NormalizedPhone",
-            table: "Patients",
-            type: "character varying(20)",
-            maxLength: 20,
-            nullable: true);
+        // FIX (Replit migration recovery, 2026-07-29): the earlier migration
+        // AddPhoneNormalizationAndArchive already adds "NormalizedPhone" (idempotently) to
+        // "Patients", so the original non-idempotent AddColumn calls here always failed with
+        // "column already exists" on a fresh database. Made idempotent via raw SQL guards,
+        // matching this codebase's own established pattern; no columns, types, or later logic
+        // in this migration were changed.
+        migrationBuilder.Sql(@"
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'Patients' AND column_name = 'NormalizedPhone') THEN
+                    ALTER TABLE ""Patients"" ADD COLUMN ""NormalizedPhone"" character varying(20) NULL;
+                END IF;
+            END $$;
+        ");
 
-        migrationBuilder.AddColumn<string>(
-            name: "NormalizedWhatsApp",
-            table: "Patients",
-            type: "character varying(20)",
-            maxLength: 20,
-            nullable: true);
+        migrationBuilder.Sql(@"
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'Patients' AND column_name = 'NormalizedWhatsApp') THEN
+                    ALTER TABLE ""Patients"" ADD COLUMN ""NormalizedWhatsApp"" character varying(20) NULL;
+                END IF;
+            END $$;
+        ");
 
         // Backfill existing data: normalize existing phone numbers
         // Yemen numbers: strip spaces/dashes, remove leading +/00, add 967 prefix
@@ -96,20 +109,21 @@ public partial class AddNormalizedPhoneFields : Migration
             WHERE ""Patients"".""Id"" = duplicates.""Id"" AND duplicates.rn > 1;
         ");
 
-        // Create unique indexes with filter
-        migrationBuilder.CreateIndex(
-            name: "IX_Patients_NormalizedPhone",
-            table: "Patients",
-            column: "NormalizedPhone",
-            unique: true,
-            filter: "\"NormalizedPhone\" IS NOT NULL AND \"NormalizedPhone\" != ''");
+        // FIX (Replit migration recovery, 2026-07-29): AddPhoneNormalizationAndArchive already
+        // creates "IX_Patients_NormalizedPhone" idempotently (CREATE UNIQUE INDEX IF NOT EXISTS),
+        // so the original non-idempotent CreateIndex calls here always failed with
+        // "relation already exists" on a fresh database. Converted to idempotent raw SQL.
+        migrationBuilder.Sql(@"
+            CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Patients_NormalizedPhone""
+                ON ""Patients"" (""NormalizedPhone"")
+                WHERE ""NormalizedPhone"" IS NOT NULL AND ""NormalizedPhone"" != '';
+        ");
 
-        migrationBuilder.CreateIndex(
-            name: "IX_Patients_NormalizedWhatsApp",
-            table: "Patients",
-            column: "NormalizedWhatsApp",
-            unique: true,
-            filter: "\"NormalizedWhatsApp\" IS NOT NULL AND \"NormalizedWhatsApp\" != ''");
+        migrationBuilder.Sql(@"
+            CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Patients_NormalizedWhatsApp""
+                ON ""Patients"" (""NormalizedWhatsApp"")
+                WHERE ""NormalizedWhatsApp"" IS NOT NULL AND ""NormalizedWhatsApp"" != '';
+        ");
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)

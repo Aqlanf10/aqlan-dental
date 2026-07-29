@@ -10,7 +10,14 @@ const nextConfig = {
     ],
   },
   async rewrites() {
-    const backendUrl = process.env.BACKEND_URL ?? "http://localhost:5000";
+    // Vercel cannot resolve Railway's private *.railway.internal host. Prefer
+    // the public API URL for server-side rewrites when it is configured; local
+    // development still falls back to BACKEND_URL / localhost.
+    const backendUrl = (
+      process.env.NEXT_PUBLIC_API_URL ??
+      process.env.BACKEND_URL ??
+      "http://localhost:5000"
+    ).replace(/\/+$/, "");
     return [
       { source: "/api/:path*", destination: `${backendUrl}/api/:path*` },
       // SignalR WebSocket hub proxy — required for real-time messaging

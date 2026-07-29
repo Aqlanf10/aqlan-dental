@@ -22,7 +22,6 @@ timeoutMs = 20000
 [userenv]
 
 [userenv.shared]
-AQLAN_DEV_JWT_SECRET = "EpXq4HLYi35msX8J8YZkyUFkxmjxsbXqU0zNrvLubXBu8Qkat03xAHnhBMlM9KCP"
 ASPNETCORE_ENVIRONMENT = "Development"
 
 [nix]

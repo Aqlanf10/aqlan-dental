@@ -2,6 +2,7 @@ using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Infrastructure.Services;
 
 namespace AqlanDentalPro.API.Services;
 
@@ -35,7 +36,7 @@ public static class LabOrderPdfGenerator
 
                 page.Header().Element(compose => ComposeHeader(compose, order, clinicName, clinicPhone, clinicAddress));
                 page.Content().Element(compose => ComposeContent(compose, order, items));
-                page.Footer().Element(ComposeFooter);
+                page.Footer().Element(compose => ComposeFooter(compose, clinicName));
             });
         });
 
@@ -67,7 +68,7 @@ public static class LabOrderPdfGenerator
                 {
                     col.Item().Text("أمر عمل معمل").Bold().FontSize(16).FontFamily(FontName);
                     col.Item().Text($"رقم الطلب: {order.OrderNumber}").FontSize(10).FontFamily(FontName);
-                    col.Item().Text($"التاريخ: {order.SentDate?.ToString("yyyy-MM-dd") ?? DateTime.Today.ToString("yyyy-MM-dd")}").FontSize(9).FontFamily(FontName);
+                    col.Item().Text($"التاريخ: {order.SentDate?.ToString("yyyy-MM-dd") ?? ClinicTimeProvider.ClinicToday().ToString("yyyy-MM-dd")}").FontSize(9).FontFamily(FontName);
                     col.Item().Text($"الأولوية: {order.Priority}").FontSize(9).FontFamily(FontName);
                 });
             });
@@ -197,11 +198,11 @@ public static class LabOrderPdfGenerator
         });
     }
 
-    private static void ComposeFooter(IContainer container)
+    private static void ComposeFooter(IContainer container, string clinicName)
     {
         container.AlignCenter().Text(x =>
         {
-            x.Span("تم إنشاؤه آلياً بواسطة نظام عقلان لطب الأسنان").FontSize(8).FontColor(Colors.Grey.Medium).FontFamily(FontName);
+            x.Span($"تم إنشاؤه آلياً بواسطة نظام {clinicName}").FontSize(8).FontColor(Colors.Grey.Medium).FontFamily(FontName);
         });
     }
 

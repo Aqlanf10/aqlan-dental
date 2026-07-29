@@ -7,6 +7,7 @@ import { Plus, FlaskConical, Clock, CheckCircle2, XCircle, Package, Search, File
 import api from "@/lib/api";
 import { downloadPdfFromApi, printPdfFromApi } from "@/lib/pdfDownload";
 import { toast } from "@/stores/toastStore";
+import { EditLabOrderModal } from "@/components/lab/EditLabOrderModal";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import type { LabOrder, LabOrderStatus } from "@/types/lab";
@@ -77,6 +78,9 @@ export default function LabPage() {
   const [search, setSearch] = useState("");
   const [page, setPage]     = useState(1);
   const [showNew, setShowNew] = useState(false);
+  // CORE-LAB-003: /lab could advance a draft's status but never edit it, so a draft
+  // missing its lab/cost had no way to become complete.
+  const [editOrder, setEditOrder] = useState<LabOrder | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -233,6 +237,15 @@ export default function LabPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
+                          {order.status === "draft" && (
+                            <button
+                              type="button"
+                              onClick={() => setEditOrder(order)}
+                              className="text-xs text-cyan-800 hover:text-cyan-900 font-bold"
+                            >
+                              إكمال
+                            </button>
+                          )}
                           {nextStatus && (
                             <button
                               onClick={() => advanceMutation.mutate({ id: order.id, status: nextStatus })}
@@ -316,6 +329,11 @@ export default function LabPage() {
       </div>
 
       {showNew && <NewLabOrderModal onClose={() => setShowNew(false)} />}
+
+      {/* CORE-LAB-003: complete an incomplete draft (lab + cost) and send it. */}
+      {editOrder && (
+        <EditLabOrderModal order={editOrder} open onClose={() => setEditOrder(null)} />
+      )}
     </ErrorBoundary>
   );
 }

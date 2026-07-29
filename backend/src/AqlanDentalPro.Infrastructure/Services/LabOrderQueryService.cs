@@ -96,6 +96,9 @@ public class LabOrderQueryService
                 Status = l.Status,
                 Priority = l.Priority,
                 Cost = l.Cost,
+                TotalCost = l.TotalCost,
+                Currency = l.Currency,
+                ExchangeRateToYer = l.ExchangeRateToYer,
                 DoctorName = l.Doctor != null ? l.Doctor.Name : null,
                 Shade = l.Shade,
                 RestorationType = l.RestorationType,
@@ -446,10 +449,13 @@ public class LabOrderQueryService
 
 // ─── DTOs ────────────────────────────────────────────────────────────────────
 // Property names match the original controller's anonymous-type projections
-// exactly, so the JSON response shape (camelCase via System.Text.Json default)
-// is unchanged. Each DTO corresponds to one endpoint's response shape.
+// using the API's camelCase JSON naming. Each DTO corresponds to one endpoint's
+// response shape.
 
-/// <summary>GET /api/lab-orders — list item shape (with OrthoCaseNumber, Lab, VisitId, CancellationReason; no TotalCost).</summary>
+/// <summary>
+/// GET /api/lab-orders — list item shape. Financial fields are included so an
+/// edit form can round-trip SAR/USD orders without silently defaulting to YER.
+/// </summary>
 public sealed record LabOrderListItemDto
 {
     public Guid Id { get; init; }
@@ -469,6 +475,9 @@ public sealed record LabOrderListItemDto
     public string Status { get; init; } = string.Empty;
     public string Priority { get; init; } = string.Empty;
     public decimal? Cost { get; init; }
+    public decimal? TotalCost { get; init; }
+    public string Currency { get; init; } = "YER";
+    public decimal ExchangeRateToYer { get; init; } = 1m;
     public string? DoctorName { get; init; }
     public string? Shade { get; init; }
     public string? RestorationType { get; init; }

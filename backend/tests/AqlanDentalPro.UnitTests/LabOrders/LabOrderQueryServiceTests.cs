@@ -466,6 +466,35 @@ public class LabOrderQueryServiceTests
     }
 
     [Fact]
+    public async Task GetAllAsync_ReturnsFinancialFields_WithoutDefaultingForeignCurrencyToYer()
+    {
+        await using var db = CreateDbContext();
+        var patientId = Guid.NewGuid();
+        var labId = Guid.NewGuid();
+        db.Patients.Add(CreatePatient(patientId));
+        db.Labs.Add(CreateLab(labId));
+
+        var order = CreateLabOrder(Guid.NewGuid(), patientId, "draft", labId, cost: 300m);
+        order.TotalCost = 325m;
+        order.Currency = "SAR";
+        order.ExchangeRateToYer = 66m;
+        db.LabOrders.Add(order);
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+        var (orders, total) = await service.GetAllAsync(
+            patientId: patientId, status: null, page: 1, pageSize: 20);
+
+        total.Should().Be(1);
+        orders.Should().ContainSingle();
+        orders[0].LabId.Should().Be(labId);
+        orders[0].Cost.Should().Be(300m);
+        orders[0].TotalCost.Should().Be(325m);
+        orders[0].Currency.Should().Be("SAR");
+        orders[0].ExchangeRateToYer.Should().Be(66m);
+    }
+
+    [Fact]
     public async Task GetAllAsync_AppliesPatientFilter()
     {
         // Arrange

@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { NAVY, BLUE, fmtRial, fmtDate } from "../_lib/constants";
 import { NewLabOrderModal } from "@/components/lab/NewLabOrderModal";
+import { EditLabOrderModal } from "@/components/lab/EditLabOrderModal";
+import type { LabOrder } from "@/types/lab";
 
 // Status labels and colors — all 10 LabOrderStatus values
 const LAB_STATUS_MAP: Record<string, { label: string; color: string; bgColor: string; borderColor: string; icon: React.ElementType }> = {
@@ -44,6 +46,8 @@ export default function LabView() {
   const [cancelOrderId, setCancelOrderId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [newOrderModalOpen, setNewOrderModalOpen] = useState(false);
+  // CORE-LAB-003: a draft used to expose only "إلغاء" here — no way to complete or send it.
+  const [editOrder, setEditOrder] = useState<LabOrder | null>(null);
 
   // Fetch lab orders
   const { data, isLoading, isError } = useLabOrders({
@@ -218,6 +222,14 @@ export default function LabView() {
                             تسليم للمريض
                           </button>
                         )}
+                        {c.status === "draft" && (
+                          <button
+                            onClick={() => setEditOrder(c as unknown as LabOrder)}
+                            className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-white bg-cyan-700 hover:bg-cyan-800 transition"
+                          >
+                            إكمال وإرسال
+                          </button>
+                        )}
                         {c.status !== "delivered" && c.status !== "cancelled" && (
                           <button
                             onClick={() => { setCancelOrderId(c.id); setCancelModalOpen(true); }}
@@ -310,6 +322,15 @@ export default function LabView() {
       {/* New Lab Order Modal — uses full-featured NewLabOrderModal */}
       {newOrderModalOpen && (
         <NewLabOrderModal onClose={() => setNewOrderModalOpen(false)} />
+      )}
+
+      {/* CORE-LAB-003: complete + send an incomplete draft. */}
+      {editOrder && (
+        <EditLabOrderModal
+          order={editOrder}
+          open
+          onClose={() => setEditOrder(null)}
+        />
       )}
     </div>
   );

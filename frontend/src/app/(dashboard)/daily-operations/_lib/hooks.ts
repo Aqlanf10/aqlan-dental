@@ -742,12 +742,16 @@ export interface LabOrderRow {
   orthoCaseNumber?: string | null;
   applianceType: string;
   labName: string | null;
+  labId?: string | null;
   sentDate: string | null;
   expectedDate: string | null;
   receivedDate: string | null;
   status: string;
   priority: string;
   cost: number | null;
+  totalCost?: number | null;
+  currency: "YER" | "SAR" | "USD";
+  exchangeRateToYer: number;
   doctorName: string | null;
   createdAt: string;
 }

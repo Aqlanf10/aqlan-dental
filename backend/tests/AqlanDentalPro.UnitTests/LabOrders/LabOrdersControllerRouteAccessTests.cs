@@ -238,6 +238,160 @@ public class LabOrdersControllerRouteAccessTests : IDisposable
 
     // ── Helpers ──────────────────────────────────────────────────────────────────
 
+
+    // ── CORE-LAB-006: history + attachments were NOT gated at all ────────────────
+    // These routes carry only {id:guid}, so the class-level PatientAccessFilter (which
+    // matches a route/query value literally named "patientId") never fires on them.
+    // Unlike Update/UpdateStatus/Cancel they also had no explicit check, so a doctor
+    // with no access to the patient could read another patient's lab history and
+    // DOWNLOAD their attachments — clinical images and scans, i.e. PHI.
+
+    private (Mock<IPatientAccessService> access, Mock<ICurrentUserService> user, Mock<IAuditService> audit)
+        BuildDeniedDoctor()
+    {
+        var accessMock = new Mock<IPatientAccessService>();
+        LabOrdersTestData.SetupDoctorWithAccess(accessMock); // no accessible patients
+        var currentUserMock = new Mock<ICurrentUserService>();
+        currentUserMock.SetupGet(c => c.UserId).Returns(Guid.NewGuid());
+        currentUserMock.SetupGet(c => c.Role).Returns(UserRole.Admin); // bypasses PermissionGuard only
+        return (accessMock, currentUserMock, new Mock<IAuditService>());
+    }
+
+    [Fact]
+    public async Task GetHistory_ByDoctorWithoutAccess_Returns403()
+    {
+        var seeded = await SeedLabOrderAsync();
+        var (access, user, audit) = BuildDeniedDoctor();
+        var controller = LabOrdersTestData.BuildController(_db, access, user, audit);
+
+        var result = await controller.GetHistory(seeded.LabOrderId);
+
+        var status = result.Should().BeOfType<ObjectResult>().Subject;
+        status.StatusCode.Should().Be(403);
+        ExtractMessage(status.Value).Should().Be("غير مصرح لك بعرض بيانات هذا المريض");
+        access.Verify(p => p.CanAccessPatientAsync(seeded.PatientId), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetAttachments_ByDoctorWithoutAccess_Returns403()
+    {
+        var seeded = await SeedLabOrderAsync();
+        var (access, user, audit) = BuildDeniedDoctor();
+        var controller = LabOrdersTestData.BuildController(_db, access, user, audit);
+
+        var result = await controller.GetAttachments(seeded.LabOrderId);
+
+        var status = result.Should().BeOfType<ObjectResult>().Subject;
+        status.StatusCode.Should().Be(403);
+        access.Verify(p => p.CanAccessPatientAsync(seeded.PatientId), Times.Once);
+    }
+
+    [Fact]
+    public async Task DownloadAttachment_ByDoctorWithoutAccess_Returns403_AndNeverStreamsTheFile()
+    {
+        var seeded = await SeedLabOrderAsync();
+        var attachment = new LabOrderAttachment
+        {
+            LabOrderId = seeded.LabOrderId,
+            FileName = "scan.stl",
+            StoragePath = "/does/not/exist/scan.stl",
+            ContentType = "application/octet-stream",
+            Category = "stl",
+        };
+        _db.LabOrderAttachments.Add(attachment);
+        await _db.SaveChangesAsync();
+
+        var (access, user, audit) = BuildDeniedDoctor();
+        var controller = LabOrdersTestData.BuildController(_db, access, user, audit);
+
+        var result = await controller.DownloadAttachment(seeded.LabOrderId, attachment.Id);
+
+        // Must be 403 — NOT a FileResult, and not the 404 the missing file would give.
+        var status = result.Should().BeOfType<ObjectResult>().Subject;
+        status.StatusCode.Should().Be(403);
+        result.Should().NotBeOfType<FileStreamResult>();
+    }
+
+    [Fact]
+    public async Task DeleteAttachment_ByDoctorWithoutAccess_Returns403_AndKeepsTheRow()
+    {
+        var seeded = await SeedLabOrderAsync();
+        var attachment = new LabOrderAttachment
+        {
+            LabOrderId = seeded.LabOrderId,
+            FileName = "photo.jpg",
+            StoragePath = "/does/not/exist/photo.jpg",
+            ContentType = "image/jpeg",
+            Category = "photo",
+        };
+        _db.LabOrderAttachments.Add(attachment);
+        await _db.SaveChangesAsync();
+
+        var (access, user, audit) = BuildDeniedDoctor();
+        var controller = LabOrdersTestData.BuildController(_db, access, user, audit);
+
+        var result = await controller.DeleteAttachment(seeded.LabOrderId, attachment.Id);
+
+        var status = result.Should().BeOfType<ObjectResult>().Subject;
+        status.StatusCode.Should().Be(403);
+
+        _db.ChangeTracker.Clear();
+        (await _db.LabOrderAttachments.CountAsync(a => a.Id == attachment.Id))
+            .Should().Be(1, "a 403 denial must not delete the attachment");
+    }
+
+    [Fact]
+    public async Task GetHistory_ByDoctorWithAccess_IsAllowed()
+    {
+        var seeded = await SeedLabOrderAsync();
+        var accessMock = new Mock<IPatientAccessService>();
+        LabOrdersTestData.SetupDoctorWithAccess(accessMock, seeded.PatientId);
+        var currentUserMock = new Mock<ICurrentUserService>();
+        currentUserMock.SetupGet(c => c.UserId).Returns(Guid.NewGuid());
+        currentUserMock.SetupGet(c => c.Role).Returns(UserRole.Admin);
+        var controller = LabOrdersTestData.BuildController(_db, accessMock, currentUserMock, new Mock<IAuditService>());
+
+        var result = await controller.GetHistory(seeded.LabOrderId);
+
+        // The guard must not block the doctor who DOES own the patient.
+        result.Should().BeOfType<OkObjectResult>();
+    }
+
+
+    [Fact]
+    public async Task PrintPdf_ByDoctorWithoutAccess_Returns403_AndNeverGeneratesTheFile()
+    {
+        // The PDF carries the patient's name, file number, treating doctor and clinical
+        // details — exporting it is a read of that patient's record.
+        var seeded = await SeedLabOrderAsync();
+        var (access, user, audit) = BuildDeniedDoctor();
+        var controller = LabOrdersTestData.BuildController(_db, access, user, audit);
+
+        var result = await controller.PrintPdf(seeded.LabOrderId);
+
+        var status = result.Should().BeOfType<ObjectResult>().Subject;
+        status.StatusCode.Should().Be(403);
+        result.Should().NotBeOfType<FileContentResult>("a denied export must not produce a PDF");
+        access.Verify(p => p.CanAccessPatientAsync(seeded.PatientId), Times.Once);
+    }
+
+    [Fact]
+    public async Task Delete_ByDoctorWithoutAccess_Returns403_AndKeepsTheOrderActive()
+    {
+        var seeded = await SeedLabOrderAsync();
+        var (access, user, audit) = BuildDeniedDoctor();
+        var controller = LabOrdersTestData.BuildController(_db, access, user, audit);
+
+        var result = await controller.Delete(seeded.LabOrderId);
+
+        var status = result.Should().BeOfType<ObjectResult>().Subject;
+        status.StatusCode.Should().Be(403);
+
+        _db.ChangeTracker.Clear();
+        var stored = await _db.LabOrders.FindAsync(seeded.LabOrderId);
+        stored!.IsActive.Should().BeTrue("a 403 denial must not soft-delete the order");
+    }
+
     private async Task<(Guid LabOrderId, Guid PatientId)> SeedLabOrderAsync(string status = "draft")
     {
         var patient = LabOrdersTestData.BuildPatient();

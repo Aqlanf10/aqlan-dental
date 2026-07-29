@@ -2,3 +2,5 @@
 - [Parenthesized dir dynamic imports](parenthesized-dir-imports.md) — lazy() breaks on paths with (parens); use re-export shims with clean paths
 - [Scaffold vs ported file conflicts](scaffold-vs-ported-file-conflicts.md) — never delete/rename either side of a name collision without grepping real usage first
 - [Aqlan DB bootstrap quirks](aqlan-startup-db-bootstrap.md) — startup migration/reconciliation bugs only surface when tested against a truly empty DB
+- [EF InMemory drops rows on required Include](ef-inmemory-required-include-drop.md) — dangling FK on a required nav makes Include(...).ThenInclude(...) return null; Postgres would LEFT JOIN fine
+- [Enum column DB-default drift](enum-column-db-default-drift.md) — type-changing migrations on HasConversion<string> enum columns can silently drop the DB-level DEFAULT

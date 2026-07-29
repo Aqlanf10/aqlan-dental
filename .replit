@@ -1,4 +1,4 @@
-modules = ["nodejs-24"]
+modules = ["nodejs-24", "dotnet-8.0", "postgresql-16"]
 
 [deployment]
 router = "application"
@@ -18,3 +18,12 @@ expertMode = true
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
+
+[userenv]
+
+[userenv.shared]
+AQLAN_DEV_JWT_SECRET = "EpXq4HLYi35msX8J8YZkyUFkxmjxsbXqU0zNrvLubXBu8Qkat03xAHnhBMlM9KCP"
+ASPNETCORE_ENVIRONMENT = "Development"
+
+[nix]
+channel = "stable-25_05"

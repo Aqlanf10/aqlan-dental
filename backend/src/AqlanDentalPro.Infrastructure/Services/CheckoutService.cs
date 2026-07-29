@@ -1107,12 +1107,25 @@ public class CheckoutService(
             .Where(i => i.PatientId == patientId && i.IsActive && i.Status != InvoiceStatus.Cancelled)
             .ToListAsync();
 
-        var totalInvoiced = invoices.Sum(i => i.TotalAmount);
-        var totalPaid = invoices.Sum(i => i.Payments.Sum(p => p.Amount));
+        // DAILY-OPS-AUDIT FIX: A Draft invoice is a work-in-progress document with no
+        // financial commitment yet (mirrors the Lab module's "sent = commitment, draft = no
+        // commitment" rule, and matches how FinanceReadService/PatientSegmentsController already
+        // exclude Draft invoices from debt totals). Only Issued/Paid invoices represent a real
+        // obligation. Previously ALL non-cancelled invoices (including Draft) counted toward
+        // totalInvoiced here, so an in-progress draft could block a patient's checkout with a
+        // phantom "outstanding balance" for an amount nobody has actually been billed yet.
+        var committedInvoices = invoices.Where(i => i.Status != InvoiceStatus.Draft).ToList();
+
+        var totalInvoiced = committedInvoices.Sum(i => i.TotalAmount);
+        var totalPaid = committedInvoices.Sum(i => i.Payments.Sum(p => p.Amount));
         // QA-594: also include performed-but-unbilled visits. Without this, a
         // patient who had a 50k root-canal session and paid 20k (no invoice)
         // would pass closure with "الرصيد متساوي" while still owing 30k.
-        var billedVisitIdsSet = invoices
+        // NOTE: billedVisitIdsSet must also come from committedInvoices only — if a visit is
+        // only covered by a Draft invoice (no real commitment), it must still fall through to
+        // the unbilledVisitsAmount branch below via AmountDueReference, otherwise the draft
+        // would silently hide real outstanding debt from the closure check.
+        var billedVisitIdsSet = committedInvoices
             .Where(i => i.VisitId.HasValue)
             .Select(i => i.VisitId!.Value)
             .ToHashSet();

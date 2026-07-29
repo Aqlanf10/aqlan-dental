@@ -33,8 +33,15 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
                 ? ClinicTimeProvider.ClinicToday()
                 : DateOnly.Parse(date);
 
-            var todayStart = DateTime.SpecifyKind(reportDate.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
-            var todayEnd = DateTime.SpecifyKind(reportDate.ToDateTime(TimeOnly.MaxValue), DateTimeKind.Utc);
+            // DAILY-OPS-AUDIT FIX: previously built the UTC boundary by treating clinic-local
+            // midnight AS IF it were UTC midnight (DateTime.SpecifyKind), which is wrong by the
+            // clinic's UTC offset (+3h for Asia/Aden). CreatedAt-range filters below (invoices,
+            // audit logs) are stored in real UTC, so activity between local 00:00–03:00 on
+            // `reportDate` was silently attributed to the PREVIOUS day's report instead. Use the
+            // same ClinicTimeProvider.ToUtcRange helper the rest of the codebase relies on for
+            // clinic-day boundaries (e.g. CashierSessionsController.GetDailySummary).
+            var (todayStart, todayEndExclusive) = ClinicTimeProvider.ToUtcRange(reportDate);
+            var todayEnd = todayEndExclusive.AddTicks(-1);
 
             // CLIN-21: Partial data warning — set when a sub-query fails so the frontend can show a banner.
             string? partialDataWarning = null;
@@ -206,6 +213,28 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
                     && a.CreatedAt >= todayStart
                     && a.CreatedAt <= todayEnd);
 
+            // DAILY-OPS-AUDIT FIX: TotalCollected/ByPaymentMethod previously summed
+            // payments.Sum(p => p.Amount) across ALL currencies as one number, ignoring
+            // p.Currency entirely — e.g. a $100 USD payment recorded alongside 1000 YER
+            // would report "التحصيل" as 1100, a meaningless mixed-currency total (the
+            // frontend renders it with fmtRial, i.e. as Yemeni Rial). CashierSessionsController's
+            // reconciliation already keeps foreign-currency activity separate instead of summing
+            // it in; do the same here: restrict the headline YER figures to YER payments and
+            // surface any excluded foreign-currency collections separately + via the existing
+            // partial-data warning mechanism so staff aren't misled into thinking they're missing
+            // cash.
+            var yerPayments = payments.Where(p => string.IsNullOrWhiteSpace(p.Currency) || p.Currency == "YER").ToList();
+            var foreignCurrencyCollections = payments
+                .Where(p => !string.IsNullOrWhiteSpace(p.Currency) && p.Currency != "YER")
+                .GroupBy(p => p.Currency!)
+                .Select(g => new { Currency = g.Key, Amount = g.Sum(p => p.Amount), Count = g.Count() })
+                .ToList();
+            if (foreignCurrencyCollections.Count > 0)
+            {
+                var foreignWarning = "تم استبعاد تحصيلات بعملات أجنبية من إجمالي التحصيل بالريال — راجع تفاصيل العملات الأجنبية";
+                partialDataWarning = partialDataWarning == null ? foreignWarning : $"{partialDataWarning} | {foreignWarning}";
+            }
+
             // Build report
             var report = new
             {
@@ -223,9 +252,10 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
                 },
                 Financial = new
                 {
-                    TotalCollected = payments.Sum(p => p.Amount),
-                    ByPaymentMethod = payments.GroupBy(p => p.PaymentMethod ?? "other")
+                    TotalCollected = yerPayments.Sum(p => p.Amount),
+                    ByPaymentMethod = yerPayments.GroupBy(p => p.PaymentMethod ?? "other")
                         .Select(g => new { Method = g.Key, Amount = g.Sum(p => p.Amount), Count = g.Count() }),
+                    ForeignCurrencyCollections = foreignCurrencyCollections,
                     NewDebts = newDebts,
                     PartialPayments = partialPayments,
                     DraftInvoices = invoices.Count(i => i.Status == InvoiceStatus.Draft),

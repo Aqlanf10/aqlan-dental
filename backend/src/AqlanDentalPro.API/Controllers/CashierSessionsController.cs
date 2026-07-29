@@ -279,43 +279,28 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
             session.Status = SessionStatus.Closed; // Locked!
             session.Notes = req.Notes?.Trim();
 
-            // Backwards-compatibility pass: link any unlinked cashflow transactions
-            // created during the session window that were not linked at creation time.
-            // (New transactions should already be linked at creation time, but older
-            // data or race conditions may leave some unlinked.)
-            var unlinkedTransactions = await db.CashFlowTransactions
+            // Sanity check: every CashFlowTransaction created by a cashier operation must already
+            // be linked to its session at creation time. Heuristic back-attribution based on
+            // PerformedBy + timestamp has been removed because it can misattribute a transaction
+            // in edge cases (e.g. a staff member holding concurrent roles/sessions in the same
+            // window). If orphans appear here it indicates a gap in a creation call site that
+            // should be fixed in the responsible controller/service — not papered over at close time.
+            var orphanedTransactionIds = await db.CashFlowTransactions
                 .Where(t => t.CashierSessionId == null
                          && t.PerformedBy == userId
                          && t.CreatedAt >= session.OpeningTime
                          && t.IsActive)
+                .Select(t => t.Id)
                 .ToListAsync();
 
-            foreach (var t in unlinkedTransactions)
+            if (orphanedTransactionIds.Count > 0)
             {
-                t.CashierSessionId = session.Id;
-                // Phase 0B: Log warning for heuristically-linked transactions.
-                // This linking is based on PerformedBy + CreatedAt matching, which is
-                // imprecise — transactions created by another user on behalf of this
-                // cashier, or system-generated transactions, may be missed or incorrectly linked.
-                logger.LogWarning("Phase 0B: Heuristically linking unlinked CashFlowTransaction {TxId} to session {SessionId}. " +
-                    "This transaction was not linked at creation time — investigate if this occurs frequently.",
-                    t.Id, session.Id);
-            }
-
-            if (unlinkedTransactions.Count > 0)
-            {
-                sessionTransactions = await db.CashFlowTransactions
-                    .Where(t => t.CashierSessionId == session.Id && t.IsActive)
-                    .ToListAsync();
-
-                expected = CalculateExpectedAmounts(session.OpeningBalance, sessionTransactions);
-                session.ExpectedClosingCash = expected.Cash;
-                session.ExpectedClosingCard = expected.Card;
-                session.ExpectedClosingBank = expected.Bank;
-
-                expectedTotal = session.ExpectedClosingCash + session.ExpectedClosingCard + session.ExpectedClosingBank;
-                actualTotal = req.ActualClosingCash + req.ActualClosingCard + req.ActualClosingBank;
-                session.ShortageOrSurplus = actualTotal - expectedTotal;
+                logger.LogWarning(
+                    "CloseSession: {Count} CashFlowTransaction(s) found for cashier {UserId} in session window " +
+                    "[{OpeningTime:O}, now] that have no CashierSessionId. They will NOT be attributed to session " +
+                    "{SessionId}. Transaction IDs: {TxIds}. Investigate the creation-time call site for this gap.",
+                    orphanedTransactionIds.Count, userId, session.OpeningTime, session.Id,
+                    string.Join(", ", orphanedTransactionIds));
             }
 
             var foreignCurrencyActivity = CalculateForeignCurrencyActivity(

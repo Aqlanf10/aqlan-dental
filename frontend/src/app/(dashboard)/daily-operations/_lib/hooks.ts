@@ -21,6 +21,23 @@ import type { FinanceSummaryData } from "./constants";
 import type { DailyJourneySummary } from "@/types/journey";
 import type { DashboardStats } from "@/types/dashboard";
 
+// Mirrors splitPatientName in booking-requests/page.tsx — CreatePatientRequest
+// requires separate firstName/lastName, never a single fullName field.
+function splitPatientName(fullName: string): { firstName: string; middleName?: string; lastName: string } {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return { firstName: "مريض", lastName: "غير محدد" };
+  }
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: "غير محدد" };
+  }
+  return {
+    firstName: parts[0],
+    middleName: parts.length > 2 ? parts.slice(1, -1).join(" ") : undefined,
+    lastName: parts[parts.length - 1],
+  };
+}
+
 function formatLocalDate(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -557,8 +574,11 @@ export function useWalkInPatient() {
 
       // Step 2: Create new patient only if no existing one was found
       if (!patientId) {
+        const { firstName, middleName, lastName } = splitPatientName(params.patientName);
         const patientRes = await api.post("/api/patients", {
-          fullName: params.patientName,
+          firstName,
+          middleName,
+          lastName,
           phone: params.patientPhone,
           branchId: params.branchId || undefined,
         });

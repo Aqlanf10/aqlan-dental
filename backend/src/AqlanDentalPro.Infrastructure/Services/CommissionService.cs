@@ -501,6 +501,25 @@ public class CommissionService(
                 .GetDecimalAsync(FinanceSettingsKeys.CommissionDefaultDoctorPercentage);
         }
 
+        // LAB-FINANCE-ROOT-CAUSE-2: nothing in the codebase ever set InvoiceLineItem.LabOrderId —
+        // the field existed and the "pull actual lab cost" block below was already written to use
+        // it, but every draft/manual invoice line item was created without it, so commission always
+        // fell back to the service's DefaultLabCost instead of what the lab actually charged for
+        // THIS order (e.g. a discounted or renegotiated cost). Resolve it here from the line item's
+        // visit: a visit normally has exactly one non-cancelled lab order, so that's the one whose
+        // cost belongs to this line item. Multiple candidates means the line item's single LabCost
+        // field cannot unambiguously represent all of them, so it is deliberately left unlinked
+        // rather than guessing — the resolver only fills the field when the match is exact.
+        if (!item.LabOrderId.HasValue && item.RelatedVisitId.HasValue)
+        {
+            var candidateLabOrderIds = await db.LabOrders
+                .Where(lo => lo.VisitId == item.RelatedVisitId.Value && lo.IsActive && lo.Status != "cancelled")
+                .Select(lo => lo.Id)
+                .ToListAsync();
+            if (candidateLabOrderIds.Count == 1)
+                item.LabOrderId = candidateLabOrderIds[0];
+        }
+
         // If linked lab order exists, pull actual lab cost
         if (item.LabOrderId.HasValue)
         {

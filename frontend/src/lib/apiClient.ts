@@ -44,7 +44,30 @@ import axios, { type AxiosInstance } from "axios";
  *   - The request-queue-during-refresh logic (each client implements its own).
  */
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+const PRODUCTION_VERCEL_HOSTS = new Set([
+  "aqlan-dental.vercel.app",
+  "aqlan-dental-pro.vercel.app",
+]);
+
+/**
+ * Preview deployments are intentionally absent from the backend CORS allowlist.
+ * Route them through Next.js' same-origin /api rewrite instead of weakening CORS
+ * for every generated *.vercel.app hostname.
+ */
+export function resolveApiBaseUrl(
+  configuredBaseUrl: string,
+  hostname?: string
+): string {
+  const isVercelPreview =
+    hostname?.endsWith(".vercel.app") === true &&
+    !PRODUCTION_VERCEL_HOSTS.has(hostname);
+  return isVercelPreview ? "" : configuredBaseUrl;
+}
+
+export const API_BASE_URL = resolveApiBaseUrl(
+  process.env.NEXT_PUBLIC_API_URL ?? "",
+  typeof window === "undefined" ? undefined : window.location.hostname
+);
 
 export const DEFAULT_API_HEADERS = {
   "Content-Type": "application/json",

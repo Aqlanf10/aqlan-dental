@@ -145,6 +145,7 @@ public static class StartupDatabaseMaintenance
         await EnsureDoctorCommissionSchemaAsync(app);
         await EnsureInvoiceLineItemDoctorAttributionAsync(app);
         await EnsureClinicServicesAndRoomsSchemaAsync(app);
+        await EnsurePatientTreatmentPlanStepsSchemaAsync(app);
         await EnsureDoctorDefaultRoomColumnAsync(app);
         await EnsurePasswordResetSchemaAsync(app);
         await EnsureEmailLogsSchemaAsync(app);
@@ -971,6 +972,150 @@ public static class StartupDatabaseMaintenance
 
     }
 
+    internal const string PatientTreatmentPlanStepsSchemaSql = """
+        CREATE TABLE IF NOT EXISTS "PatientTreatmentPlanSteps" (
+            "Id" uuid NOT NULL,
+            "PatientId" uuid NOT NULL,
+            "SequenceNumber" integer NOT NULL,
+            "ServiceId" uuid NULL,
+            "ServiceNameSnapshot" character varying(200) NULL,
+            "Department" character varying(50) NULL,
+            "ToothNumber" character varying(10) NULL,
+            "ToothArea" character varying(100) NULL,
+            "Title" character varying(300) NOT NULL,
+            "Description" text NULL,
+            "Priority" character varying(20) NOT NULL,
+            "Status" character varying(20) NOT NULL,
+            "ResponsibleDoctorId" uuid NULL,
+            "PlannedDate" date NULL,
+            "CompletedDate" date NULL,
+            "EstimatedCost" numeric(12,2) NULL,
+            "RelatedAppointmentId" uuid NULL,
+            "RelatedVisitId" uuid NULL,
+            "Notes" text NULL,
+            "CreatedBy" uuid NULL,
+            "UpdatedBy" uuid NULL,
+            "CreatedAt" timestamp with time zone NOT NULL,
+            "UpdatedAt" timestamp with time zone NOT NULL,
+            "IsActive" boolean NOT NULL,
+            "DeletedAt" timestamp with time zone NULL,
+            "DeletedBy" uuid NULL,
+            CONSTRAINT "PK_PatientTreatmentPlanSteps" PRIMARY KEY ("Id")
+        );
+
+        CREATE INDEX IF NOT EXISTS "IX_PatientTreatmentPlanSteps_PatientId"
+            ON "PatientTreatmentPlanSteps" ("PatientId");
+        CREATE INDEX IF NOT EXISTS "IX_PatientTreatmentPlanSteps_ServiceId"
+            ON "PatientTreatmentPlanSteps" ("ServiceId");
+        CREATE INDEX IF NOT EXISTS "IX_PatientTreatmentPlanSteps_Status"
+            ON "PatientTreatmentPlanSteps" ("Status");
+        CREATE INDEX IF NOT EXISTS "IX_PatientTreatmentPlanSteps_ResponsibleDoctorId"
+            ON "PatientTreatmentPlanSteps" ("ResponsibleDoctorId");
+        CREATE INDEX IF NOT EXISTS "IX_PatientTreatmentPlanSteps_RelatedAppointmentId"
+            ON "PatientTreatmentPlanSteps" ("RelatedAppointmentId");
+        CREATE INDEX IF NOT EXISTS "IX_PatientTreatmentPlanSteps_RelatedVisitId"
+            ON "PatientTreatmentPlanSteps" ("RelatedVisitId");
+        CREATE INDEX IF NOT EXISTS "IX_PatientTreatmentPlanSteps_SequenceNumber"
+            ON "PatientTreatmentPlanSteps" ("SequenceNumber");
+
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'FK_PatientTreatmentPlanSteps_Patients_PatientId'
+            ) THEN
+                ALTER TABLE "PatientTreatmentPlanSteps"
+                    ADD CONSTRAINT "FK_PatientTreatmentPlanSteps_Patients_PatientId"
+                    FOREIGN KEY ("PatientId") REFERENCES "Patients" ("Id") ON DELETE RESTRICT;
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'FK_PatientTreatmentPlanSteps_ClinicServices_ServiceId'
+            ) THEN
+                ALTER TABLE "PatientTreatmentPlanSteps"
+                    ADD CONSTRAINT "FK_PatientTreatmentPlanSteps_ClinicServices_ServiceId"
+                    FOREIGN KEY ("ServiceId") REFERENCES "ClinicServices" ("Id") ON DELETE SET NULL;
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'FK_PatientTreatmentPlanSteps_Doctors_ResponsibleDoctorId'
+            ) THEN
+                ALTER TABLE "PatientTreatmentPlanSteps"
+                    ADD CONSTRAINT "FK_PatientTreatmentPlanSteps_Doctors_ResponsibleDoctorId"
+                    FOREIGN KEY ("ResponsibleDoctorId") REFERENCES "Doctors" ("Id") ON DELETE SET NULL;
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'FK_PatientTreatmentPlanSteps_Appointments_RelatedAppointmentId'
+            ) THEN
+                ALTER TABLE "PatientTreatmentPlanSteps"
+                    ADD CONSTRAINT "FK_PatientTreatmentPlanSteps_Appointments_RelatedAppointmentId"
+                    FOREIGN KEY ("RelatedAppointmentId") REFERENCES "Appointments" ("Id") ON DELETE SET NULL;
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'FK_PatientTreatmentPlanSteps_Visits_RelatedVisitId'
+            ) THEN
+                ALTER TABLE "PatientTreatmentPlanSteps"
+                    ADD CONSTRAINT "FK_PatientTreatmentPlanSteps_Visits_RelatedVisitId"
+                    FOREIGN KEY ("RelatedVisitId") REFERENCES "Visits" ("Id") ON DELETE SET NULL;
+            END IF;
+
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'InvoiceLineItems'
+                  AND column_name = 'RelatedTreatmentPlanStepId'
+            ) AND NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'FK_InvoiceLineItems_PatientTreatmentPlanSteps_RelatedTreatmentPlanStepId'
+            ) THEN
+                CREATE INDEX IF NOT EXISTS "IX_InvoiceLineItems_RelatedTreatmentPlanStepId"
+                    ON "InvoiceLineItems" ("RelatedTreatmentPlanStepId");
+                ALTER TABLE "InvoiceLineItems"
+                    ADD CONSTRAINT "FK_InvoiceLineItems_PatientTreatmentPlanSteps_RelatedTreatmentPlanStepId"
+                    FOREIGN KEY ("RelatedTreatmentPlanStepId")
+                    REFERENCES "PatientTreatmentPlanSteps" ("Id") ON DELETE SET NULL;
+            END IF;
+
+            IF EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = '__EFMigrationsHistory'
+            ) AND NOT EXISTS (
+                SELECT 1 FROM "__EFMigrationsHistory"
+                WHERE "MigrationId" = '20260530000000_AddPatientTreatmentPlanSteps'
+            ) THEN
+                INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+                VALUES ('20260530000000_AddPatientTreatmentPlanSteps', '8.0');
+            END IF;
+        END $$;
+        """;
+
+    /// <summary>
+    /// Repairs production databases where the treatment-plan migration was
+    /// marked as applied even though its table was missing.
+    /// </summary>
+    private static async Task EnsurePatientTreatmentPlanStepsSchemaAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await db.Database.ExecuteSqlRawAsync(PatientTreatmentPlanStepsSchemaSql);
+            app.Logger.LogInformation(
+                "HOTFIX: PatientTreatmentPlanSteps schema and migration history ensured (idempotent)");
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogError(
+                ex,
+                "HOTFIX: Failed to ensure PatientTreatmentPlanSteps schema. Treatment-plan endpoints may return 500!");
+        }
+    }
+
     /// <summary>
     /// PasswordResetTokens and PasswordResetRequests tables + indexes + FKs + Users.EmailConfirmed column.
     /// </summary>
@@ -1372,7 +1517,7 @@ public static class StartupDatabaseMaintenance
                     DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260529000000_AddPatientJourneyFields'
                         AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Patients' AND column_name = 'ReferralSource');
                     DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260530000000_AddPatientTreatmentPlanSteps'
-                        AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'TreatmentPlanSteps');
+                        AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'PatientTreatmentPlanSteps');
                     DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260531000000_AddInvoicesAndInvoiceLineItems'
                         AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Invoices');
                     DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260601000000_AddInvoicePaymentLink'
@@ -4111,7 +4256,7 @@ public static class StartupDatabaseMaintenance
                             AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicServices');
 
                         DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260530000000_AddPatientTreatmentPlanSteps'
-                            AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'TreatmentPlanSteps');
+                            AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'PatientTreatmentPlanSteps');
 
                         DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260602000000_AddMessageAttachments'
                             AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'MessageAttachments');

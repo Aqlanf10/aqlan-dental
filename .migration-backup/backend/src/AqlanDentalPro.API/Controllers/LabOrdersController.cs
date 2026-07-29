@@ -783,6 +783,14 @@ public class LabOrdersController(
         if (!editableStatuses.Contains(order.Status))
             return BadRequest(new { message = "لا يمكن تعديل الطلب بعد بدء التصنيع" });
 
+        // Rule #10: any lab-cost edit on an already-sent (financially recognised) order
+        // must leave an audit trail. Snapshot before the field mutations below so the
+        // audit entry after SaveChanges can tell whether anything money-relevant moved.
+        var wasSent = string.Equals(order.Status, "sent", StringComparison.OrdinalIgnoreCase);
+        var costBeforeEdit = order.TotalCost ?? order.Cost ?? 0m;
+        var currencyBeforeEdit = order.Currency;
+        var labIdBeforeEdit = order.LabId;
+
         // Apply updates only for fields that are provided (non-null)
         if (req.ApplianceType is not null)
             order.ApplianceType = req.ApplianceType;
@@ -882,6 +890,20 @@ public class LabOrdersController(
         finally
         {
             if (tx is not null) await tx.DisposeAsync();
+        }
+
+        // Rule #10: log once the change is actually committed. Only fires when the order
+        // was already "sent" (a real financial commitment) and something money-relevant
+        // moved — editing a still-draft order is normal data entry, not a post-approval change.
+        var costAfterEdit = order.TotalCost ?? order.Cost ?? 0m;
+        if (wasSent && (costAfterEdit != costBeforeEdit
+                        || !string.Equals(currencyBeforeEdit, order.Currency, StringComparison.OrdinalIgnoreCase)
+                        || labIdBeforeEdit != order.LabId))
+        {
+            await audit.LogAsync(AuditAction.Update, "LabOrder", order.Id,
+                oldData: new { cost = costBeforeEdit, currency = currencyBeforeEdit, labId = labIdBeforeEdit },
+                newData: new { cost = costAfterEdit, currency = order.Currency, labId = order.LabId },
+                details: $"تعديل تكلفة/معمل طلب معمل مُرسَل {order.OrderNumber} بعد الاعتماد");
         }
 
         // Re-fetch navigation properties that may have changed (Lab)
@@ -1276,13 +1298,30 @@ public class LabOrdersController(
         if (order.Status != "returned")
             return BadRequest(new { message = "لا يمكن إعادة الصنع إلا للطلبات المرتجعة" });
 
+        if (!req.IsFreeRemake && (!req.RemakeCost.HasValue || req.RemakeCost.Value <= 0m))
+            return BadRequest(new { message = "يجب إدخال تكلفة إضافية أكبر من صفر لإعادة الصنع غير المجانية، أو تحديدها كإعادة مجانية" });
+
+        // CORE-LAB-007: a paid remake used to record RemakeCost on the order without ever
+        // adding it to TotalCost/Cost — the field that LabOrderFinanceSyncService.SyncAsync
+        // reads when the remake is re-sent to the lab. The extra cost was captured but never
+        // billed: no additional supplier debt, no extra expense, and no larger deduction from
+        // the doctor's commission. A free remake must add nothing; folding the cost in here
+        // (once, guarded by the "returned" status check above) keeps it correct either way.
         var oldStatus = order.Status;
+        var costBefore = order.TotalCost ?? order.Cost ?? 0m;
         order.Status = "remake";
         order.RemakeReason = req.Reason;
         order.IsFreeRemake = req.IsFreeRemake;
-        order.RemakeCost = req.RemakeCost;
+        order.RemakeCost = req.IsFreeRemake ? null : req.RemakeCost;
         order.RemakeCount += 1;
         order.SentDate = ClinicTimeProvider.ClinicToday();
+
+        if (!req.IsFreeRemake && req.RemakeCost is > 0m)
+        {
+            var newTotal = costBefore + req.RemakeCost.Value;
+            order.TotalCost = newTotal;
+            order.Cost = newTotal;
+        }
 
         db.LabOrderStatusHistories.Add(new LabOrderStatusHistory
         {
@@ -1290,7 +1329,18 @@ public class LabOrdersController(
             ChangedByUserId = currentUser.UserId, Reason = req.Reason
         });
         await db.SaveChangesAsync();
-        return Ok(new { id, status = "remake", order.RemakeCount });
+
+        // CORE-LAB-007 / rule #10: any lab-cost change after the order was first sent
+        // to the lab (which "returned" implies) must leave an audit trail, not just a
+        // silent field update — this is money moving, not a cosmetic edit.
+        await audit.LogAsync(AuditAction.Update, "LabOrder", id,
+            oldData: new { status = oldStatus, cost = costBefore },
+            newData: new { status = "remake", cost = order.TotalCost, order.IsFreeRemake, order.RemakeCost, order.RemakeCount },
+            details: req.IsFreeRemake
+                ? $"إعادة صناعة مجانية للطلب {order.OrderNumber} — السبب: {req.Reason}"
+                : $"إعادة صناعة بتكلفة إضافية {req.RemakeCost:N0} للطلب {order.OrderNumber} — السبب: {req.Reason}");
+
+        return Ok(new { id, status = "remake", order.RemakeCount, order.TotalCost });
     }
 
     // ─── Lab Sprint 4 — Status history ───────────────────────────────────────

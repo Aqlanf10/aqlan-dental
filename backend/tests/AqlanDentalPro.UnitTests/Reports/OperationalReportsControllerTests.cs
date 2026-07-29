@@ -92,6 +92,16 @@ public sealed class OperationalReportsControllerTests
             Status = ContractStatus.Active
         };
         db.Contracts.AddRange(sarContract, usdContract);
+        db.Invoices.Add(new Invoice
+        {
+            PatientId = patient.Id,
+            InvoiceNumber = "OPEN-001",
+            Currency = "SAR",
+            Status = InvoiceStatus.Issued,
+            Subtotal = 300m,
+            TotalAmount = 300m,
+            IsOpeningBalance = true
+        });
         db.Payments.Add(NewPayment(patient.Id, branch.Id, ClinicTimeProvider.ClinicToday(), 200m, "SAR", "R-1", sarContract.Id));
         await db.SaveChangesAsync();
 
@@ -102,7 +112,7 @@ public sealed class OperationalReportsControllerTests
 
         rows.Should().HaveCount(2);
         rows.Single(row => row.GetProperty("currency").GetString() == "SAR")
-            .GetProperty("remaining").GetDecimal().Should().Be(700m);
+            .GetProperty("remaining").GetDecimal().Should().Be(1_000m);
         rows.Single(row => row.GetProperty("currency").GetString() == "USD")
             .GetProperty("remaining").GetDecimal().Should().Be(500m);
     }

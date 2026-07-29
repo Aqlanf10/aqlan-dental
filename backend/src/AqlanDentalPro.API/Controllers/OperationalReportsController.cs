@@ -329,7 +329,6 @@ public sealed class OperationalReportsController(
                 && invoice.Patient.IsActive
                 && invoice.Status != InvoiceStatus.Draft
                 && invoice.Status != InvoiceStatus.Cancelled
-                && !invoice.IsOpeningBalance
                 && (!branchId.HasValue || invoice.Patient.BranchId == branchId.Value))
             .Select(invoice => new BalancePart(
                 invoice.PatientId,

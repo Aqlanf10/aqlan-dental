@@ -1,0 +1,471 @@
+import Link from "@/lib/nextLinkCompat";
+import { usePathname } from "@/lib/nextNavCompat";
+import {
+  LayoutDashboard, Users, GitBranch, Activity,
+  Stethoscope, Scissors, ArrowLeftRight, Wallet,
+  BarChart2, Package, FlaskConical, Settings, LogOut,
+  Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Clock,
+  UserRound, Building2, UserCog,
+  Truck, ShoppingCart, ChevronDown,
+  Smartphone, Banknote, CalendarDays, CalendarOff, DollarSign,
+  BellRing, CalendarPlus, Layers,
+} from "lucide-react";
+import Image from "@/lib/nextImageCompat";
+import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/stores/authStore";
+import { useRouter } from "@/lib/nextNavCompat";
+import { useState, useCallback, useEffect } from "react";
+import { useUnreadCount } from "@/hooks/useMessaging";
+import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
+import { getNavigationGroupRoles, getNavigationRoles } from "@/lib/routePermissions";
+import type { UserDto } from "@/types/auth";
+
+/* ─── Brand colors ──────────────────────────────────────────────────────────── */
+// FE-34 (technical debt): These hex constants are hardcoded for inline `style` props used
+// throughout this Sidebar (gradients, hover backgrounds, active states). The rest of the app
+// uses Tailwind utility classes / CSS variables. They should eventually be replaced with
+// Tailwind design tokens (e.g. a `brand` color registered in the Tailwind config) so the
+// sidebar respects theming (light/dark) and stays consistent with the rest of the UI.
+// Leaving the values as-is in this PR — a full inline-style → Tailwind migration is too large
+// to bundle here and would conflict with the ongoing layout work.
+const BRAND_PRIMARY       = "#1a3a5c";
+const BRAND_PRIMARY_LIGHT = "#244b73";
+const BRAND_ORANGE        = "#f5922e";
+
+/* ─── Types ─────────────────────────────────────────────────────────────────── */
+type NavLeaf = {
+  href: string;
+  label: string;
+  icon: React.ElementType;
+  roles: readonly string[];
+  permission?: string;
+  badge?: string;
+};
+
+type NavGroup = {
+  kind: "group";
+  label: string;
+  icon: React.ElementType;
+  roles: readonly string[];
+  permission?: string;
+  badge?: string;
+  children: NavLeaf[];
+};
+
+type NavItem = NavLeaf & { section?: string };
+type NavEntry = (NavItem & { kind?: "leaf" }) | (NavGroup & { section?: string });
+
+/* ─── Navigation definition ─────────────────────────────────────────────────── */
+export const NAV: NavEntry[] = [
+  // ── رئيسي ────────────────────────────────────────────────────────────────
+  { href: "/",               label: "لوحة التحكم",     icon: LayoutDashboard, roles: getNavigationRoles("/"),                                                             section: "رئيسي" },
+  { href: "/daily-operations", label: "التشغيل اليومي", icon: ClipboardList, roles: getNavigationRoles("/daily-operations"), permission: PERMISSION_KEYS.DAILY_OPERATIONS_VIEW, badge: "⭐" },
+  { href: "/patients",       label: "المرضى",           icon: Users,           roles: getNavigationRoles("/patients"), permission: PERMISSION_KEYS.PATIENTS_VIEW },
+  // YOLO-S5: Patient segments — pre-built dynamic (overdue ortho, outstanding balance,
+  // no-show 90d, lab ready) + admin-managed custom segments. Admin-only — backed by
+  // PatientSegmentsController [Authorize(Policy = "AdminOnly")] + routePermissions.ts.
+  { href: "/patient-segments", label: "مجموعات المرضى", icon: Layers,          roles: getNavigationRoles("/patient-segments") },
+
+  // ── العيادة ───────────────────────────────────────────────────────────────
+  { href: "/appointments",   label: "المواعيد",        icon: CalendarDays,    roles: getNavigationRoles("/appointments"), permission: PERMISSION_KEYS.APPOINTMENTS_VIEW, section: "العيادة" },
+  { href: "/appointments/recall", label: "قائمة الاستدعاء", icon: BellRing,   roles: getNavigationRoles("/appointments/recall"), permission: PERMISSION_KEYS.APPOINTMENTS_VIEW },
+  // NAV-CEPH-FIX (audit §4 — Reception workflow): /clinic-queue and /patient-journey
+  // index pages are now thin redirect stubs to /daily-operations — the canonical workspace.
+  // The sidebar entries are removed to avoid three parallel "today's patients" screens.
+  // Routes themselves are preserved (redirect stubs) so direct URLs still resolve cleanly.
+  { href: "/booking-requests", label: "طلبات الحجز", icon: CalendarPlus, roles: getNavigationRoles("/booking-requests"), permission: PERMISSION_KEYS.BOOKING_REQUESTS_VIEW },
+  { href: "/schedule",       label: "جداول الأطباء",   icon: Clock,           roles: getNavigationRoles("/schedule") },
+  { href: "/doctor-clinic",  label: "عيادة الطبيب",    icon: Stethoscope,     roles: getNavigationRoles("/doctor-clinic") },
+  { href: "/prescriptions",  label: "الوصفات الطبية",  icon: Pill,            roles: getNavigationRoles("/prescriptions") },
+
+  // ── تخصصات ───────────────────────────────────────────────────────────────
+  { href: "/ortho",          label: "التقويم",          icon: GitBranch,       roles: getNavigationRoles("/ortho"),                                       section: "تخصصات", badge: "محدّث" },
+  { href: "/ceph",           label: "السيفالومتري",     icon: Activity,        roles: getNavigationRoles("/ceph") },
+  { href: "/general",        label: "طب الأسنان العام", icon: Stethoscope,     roles: getNavigationRoles("/general") },
+  { href: "/surgery",        label: "الجراحة",          icon: Scissors,        roles: getNavigationRoles("/surgery") },
+
+  // ── التواصل ───────────────────────────────────────────────────────────────
+  // NAV-CEPH-FIX (audit §4 — Referrals): Reception is not in routePermissions for /referrals
+  // (routePermissions.ts:26 is Admin + doctors only) → the link was a click→redirect dead-end.
+  // Backend already blocks Reception; only hides a confusing link.
+  { href: "/referrals",      label: "الإحالات",         icon: ArrowLeftRight,  roles: getNavigationRoles("/referrals"),                                         section: "التواصل" },
+  { href: "/messages",       label: "الرسائل",          icon: MessageCircle,   roles: getNavigationRoles("/messages") },
+  { href: "/whatsapp",       label: "واتساب",           icon: MessageSquare,   roles: getNavigationRoles("/whatsapp") },
+  { href: "/sms",            label: "رسائل SMS",        icon: Smartphone,      roles: getNavigationRoles("/sms") },
+
+  // ── المالية ───────────────────────────────────────────────────────────────
+  // NAV-CEPH-FIX (audit §4 — Finance): Reception is removed from /finance-v3 roles so the
+  // sidebar no longer advertises a link the route guard + page guard both deny (C-10 residual
+  // dead-end loop: click → AccessDenied → redirect to /daily-operations). Backend already
+  // blocks Reception from finance APIs.
+  // /finance-v3?tab=commissions entry deleted — same page, different starting tab; users pick
+  // the Commissions tab inside /finance-v3. Direct URL still works.
+  { href: "/finance-v3",  label: "المالية",  icon: Wallet,  roles: getNavigationRoles("/finance-v3"),  section: "المالية" },
+  {
+    kind: "group",
+    label: "المخزون", icon: Package,
+    roles: getNavigationGroupRoles(
+      "/inventory",
+      "/inventory/suppliers",
+      "/inventory/purchases",
+    ),
+    children: [
+      { href: "/inventory",           label: "المخزون",      icon: Package,      roles: getNavigationRoles("/inventory") },
+      { href: "/inventory/suppliers", label: "الموردون",     icon: Truck,        roles: getNavigationRoles("/inventory/suppliers") },
+      { href: "/inventory/purchases", label: "أوامر الشراء", icon: ShoppingCart, roles: getNavigationRoles("/inventory/purchases") },
+    ],
+  },
+  {
+    kind: "group",
+    label: "المعامل",
+    icon: FlaskConical,
+    roles: getNavigationGroupRoles(
+      "/lab",
+      "/lab/dashboard",
+      "/lab/overdue",
+      "/lab/reports",
+      "/lab/payables",
+    ),
+    children: [
+      { href: "/lab", label: "طلبات المعمل", icon: FlaskConical, roles: getNavigationRoles("/lab"), permission: PERMISSION_KEYS.LAB_ORDERS_VIEW },
+      { href: "/lab/dashboard", label: "ملخص المعامل", icon: BarChart2, roles: getNavigationRoles("/lab/dashboard"), permission: PERMISSION_KEYS.LAB_REPORTS_VIEW },
+      { href: "/lab/overdue", label: "طلبات متأخرة", icon: Clock, roles: getNavigationRoles("/lab/overdue"), permission: PERMISSION_KEYS.LAB_ORDERS_VIEW },
+      { href: "/lab/reports", label: "تقارير المعامل", icon: BarChart2, roles: getNavigationRoles("/lab/reports"), permission: PERMISSION_KEYS.LAB_REPORTS_VIEW },
+      { href: "/lab/payables", label: "مستحقات المعامل", icon: DollarSign, roles: getNavigationRoles("/lab/payables"), permission: PERMISSION_KEYS.LAB_PAYABLES_VIEW },
+    ],
+  },
+
+  // ── تقارير ───────────────────────────────────────────────────────────────
+  { href: "/reports",        label: "التقارير",         icon: BarChart2,       roles: getNavigationRoles("/reports"),                                         section: "تقارير" },
+
+  // ── الإدارة ───────────────────────────────────────────────────────────────
+  { href: "/doctors",        label: "إدارة الأطباء",     icon: UserRound,       roles: getNavigationRoles("/doctors"),                                                      section: "الإدارة" },
+  { href: "/employees",      label: "الموظفين",         icon: UserCog,         roles: getNavigationRoles("/employees") },
+  {
+    kind: "group",
+    label: "الموارد البشرية", icon: UserCog,
+    roles: getNavigationGroupRoles(
+      "/hr/attendance",
+      "/hr/salaries",
+      "/hr/advances",
+      "/hr/leaves",
+    ),
+    children: [
+      { href: "/hr/attendance", label: "الحضور والانصراف", icon: Clock,       roles: getNavigationRoles("/hr/attendance") },
+      { href: "/hr/salaries",   label: "الرواتب",         icon: Banknote,    roles: getNavigationRoles("/hr/salaries") },
+      { href: "/hr/advances",   label: "السلف",           icon: Wallet,      roles: getNavigationRoles("/hr/advances") },
+      { href: "/hr/leaves",     label: "الإجازات",        icon: CalendarOff, roles: getNavigationRoles("/hr/leaves") },
+    ],
+  },
+  { href: "/branches",       label: "الفروع",           icon: Building2,       roles: getNavigationRoles("/branches") },
+
+  // ── النظام ───────────────────────────────────────────────────────────────
+  // NAV-CEPH-FIX (audit §4 — Settings): /settings/services and /settings/backup entries
+  // deleted — they are sub-pages of /settings (already reachable via the settings hub).
+  // Direct URLs still work; cleaner sidebar (no duplicated shortcuts).
+  { href: "/settings",       label: "الإعدادات",        icon: Settings,        roles: getNavigationRoles("/settings"),                                                      section: "النظام" },
+];
+
+const ROLE_LABELS: Record<string, string> = {
+  Admin:         "مدير النظام",
+  Orthodontist:  "أخصائي تقويم",
+  GeneralDentist:"طبيب أسنان",
+  OralSurgeon:   "جراح وجه وفكين",
+  Reception:     "استقبال",
+  Accountant:    "محاسب",
+  Assistant:     "مساعد",
+  BranchManager: "مدير فرع",
+};
+
+/* ─── Section label ─────────────────────────────────────────────────────────── */
+function SectionLabel({ label }: { label: string }) {
+  return (
+    <div
+      className="px-[18px] pt-3.5 pb-1 text-[10px] font-bold uppercase tracking-wider"
+      style={{ color: "rgba(255,255,255,0.35)" }}
+    >
+      {label}
+    </div>
+  );
+}
+
+/* ─── Leaf link ─────────────────────────────────────────────────────────────── */
+function NavLink({
+  href, label, icon: Icon, isCurrent, indent = false, unreadCount, badge,
+}: {
+  href: string; label: string; icon: React.ElementType;
+  isCurrent: boolean; indent?: boolean; unreadCount?: number; badge?: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "flex items-center gap-2.5 py-2.5 text-sm font-medium transition-all relative",
+        indent ? "pr-9 pl-[18px]" : "px-[18px]",
+        isCurrent ? "text-white font-bold" : "hover:text-white",
+      )}
+      style={isCurrent ? {
+        background: "rgba(245,146,46,0.18)",
+        borderRight: `3px solid ${BRAND_ORANGE}`,
+      } : {
+        color: "rgba(255,255,255,0.65)",
+        borderRight: "3px solid transparent",
+      }}
+      onMouseEnter={(e) => { if (!isCurrent) e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
+      onMouseLeave={(e) => { if (!isCurrent) e.currentTarget.style.background = "transparent"; }}
+    >
+      <Icon
+        className="w-[18px] h-[18px] flex-shrink-0"
+        style={{ color: isCurrent ? BRAND_ORANGE : "rgba(255,255,255,0.65)" }}
+      />
+      <span className="flex-1 text-right">{label}</span>
+      {badge && (
+        <span
+          className="text-[9px] font-bold rounded-full px-1.5 py-0.5 ml-1 flex-shrink-0"
+          style={{ background: BRAND_ORANGE, color: "#fff" }}
+        >
+          {badge}
+        </span>
+      )}
+      {unreadCount && unreadCount > 0 && (
+        <span
+          className="text-[10px] font-extrabold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5"
+          style={{ background: "#ef4444", color: "#fff" }}
+        >
+          {unreadCount > 99 ? "99+" : unreadCount}
+        </span>
+      )}
+    </Link>
+  );
+}
+
+/* ─── Visibility check ─────────────────────────────────────────────────────── */
+function isVisible(entry: { roles: readonly string[]; permission?: string }, userRole: string, user: UserDto | null): boolean {
+  // 1. If the entry lists specific roles, the user's active role must be included
+  if (entry.roles && entry.roles.length > 0 && !entry.roles.includes(userRole)) {
+    return false;
+  }
+  
+  // 2. If the entry requires a permission, verify that the user has it
+  if (entry.permission) {
+    return hasPermission(user, entry.permission);
+  }
+  
+  return true;
+}
+
+function isActiveRoute(pathname: string, href: string): boolean {
+  return pathname === href || (href !== "/" && pathname.startsWith(`${href}/`));
+}
+
+/* ─── Collapsible group ─────────────────────────────────────────────────────── */
+function NavGroupItem({
+  group, userRole, pathname, user,
+}: {
+  group: NavGroup; userRole: string; pathname: string; user: UserDto | null;
+}) {
+  const visibleChildren = group.children.filter(
+    (c) => isVisible(c, userRole, user),
+  );
+  const isChildActive = visibleChildren.some((c) => isActiveRoute(pathname, c.href));
+  const [open, setOpen] = useState(isChildActive);
+
+  if (visibleChildren.length === 0) return null;
+
+  return (
+    <div>
+      {/* Group header button */}
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2.5 px-[18px] py-2.5 text-sm font-medium transition-all"
+        style={{
+          color: isChildActive ? "#fff" : "rgba(255,255,255,0.65)",
+          borderRight: "3px solid transparent",
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+      >
+        <group.icon
+          className="w-[18px] h-[18px] flex-shrink-0"
+          style={{ color: isChildActive ? BRAND_ORANGE : "rgba(255,255,255,0.65)" }}
+        />
+        <span className="flex-1 text-right">{group.label}</span>
+        <ChevronDown
+          className="w-3.5 h-3.5 transition-transform duration-200 flex-shrink-0"
+          style={{
+            color: "rgba(255,255,255,0.4)",
+            transform: open ? "rotate(180deg)" : "rotate(0deg)",
+          }}
+        />
+      </button>
+
+      {/* Children */}
+      {open && (
+        <div style={{ background: "rgba(0,0,0,0.15)" }}>
+          {visibleChildren.map((child) => (
+            <NavLink
+              key={child.href}
+              href={child.href}
+              label={child.label}
+              icon={child.icon}
+              isCurrent={isActiveRoute(pathname, child.href)}
+              indent
+              badge={child.badge}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Sidebar ───────────────────────────────────────────────────────────────── */
+export function Sidebar() {
+  const pathname  = usePathname();
+  const router    = useRouter();
+  const { user, logout } = useAuthStore();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const { data: unreadData } = useUnreadCount();
+
+  const userRole = user?.role ?? "";
+
+  const handleLogout = useCallback(async () => {
+    await logout();
+    router.push("/login");
+  }, [logout, router]);
+
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
+
+  useEffect(() => {
+    document.body.style.overflow = mobileOpen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [mobileOpen]);
+
+  return (
+    <>
+      {/* Mobile hamburger */}
+      <button
+        onClick={() => setMobileOpen(true)}
+        className="lg:hidden fixed top-3.5 right-3 z-50 w-10 h-10 rounded-lg border flex items-center justify-center text-white hover:opacity-90"
+        style={{ backgroundColor: BRAND_PRIMARY, borderColor: BRAND_PRIMARY_LIGHT }}
+        aria-label="فتح القائمة"
+      >
+        <Menu className="w-5 h-5" />
+      </button>
+
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/50 z-40 backdrop-blur-sm"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        className={cn(
+          "w-64 flex flex-col h-full fixed top-0 right-0 z-40 transition-transform duration-300",
+          "lg:translate-x-0",
+          mobileOpen ? "translate-x-0" : "translate-x-full lg:translate-x-0",
+        )}
+        style={{ backgroundColor: BRAND_PRIMARY }}
+      >
+        {/* Logo */}
+        <div className="border-b min-h-[72px] flex items-center px-4 py-4" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+          <div className="flex items-center gap-2.5 flex-1">
+            <div className="w-[38px] h-[38px] rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden" style={{ background: "#fff", padding: 2 }}>
+              <Image src="/logo.png" alt="Aqlan Dental Pro" width={34} height={34} className="w-[34px] h-[34px] object-contain" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-extrabold text-white text-sm leading-tight">Aqlan Dental Pro</p>
+              <p className="text-[11px] mt-0.5 truncate" style={{ color: "rgba(255,255,255,0.55)" }}>مركز د. عقلان الكامل</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setMobileOpen(false)}
+            className="lg:hidden w-8 h-8 rounded-lg flex items-center justify-center"
+            style={{ color: "rgba(255,255,255,0.5)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.1)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+            aria-label="إغلاق القائمة"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto py-2">
+          {NAV.map((entry, idx) => {
+            // Group visibility check
+            if (entry.kind === "group") {
+              const visible = isVisible(entry, userRole, user);
+              if (!visible) return null;
+              return (
+                <div key={`group-${idx}`}>
+                  {entry.section && <SectionLabel label={entry.section} />}
+                  <NavGroupItem group={entry} userRole={userRole} pathname={pathname} user={user} />
+                </div>
+              );
+            }
+
+            // Leaf item
+            const leaf = entry as NavItem;
+            const visible = isVisible(leaf, userRole, user);
+            if (!visible) return null;
+
+            const isCurrent = isActiveRoute(pathname, leaf.href);
+            const unreadCount = leaf.href === "/messages" ? unreadData?.totalUnread : undefined;
+
+            // Dynamically customize labels for Doctor roles
+            let label = leaf.label;
+            if (leaf.href === "/schedule" && ["GeneralDentist", "OralSurgeon", "Orthodontist"].includes(userRole)) {
+              label = "مواعيدي";
+            } else if (leaf.href === "/patients" && ["GeneralDentist", "OralSurgeon", "Orthodontist"].includes(userRole)) {
+              label = "مرضاي";
+            }
+
+            return (
+              <div key={leaf.href}>
+                {leaf.section && <SectionLabel label={leaf.section} />}
+                <NavLink
+                  href={leaf.href}
+                  label={label}
+                  icon={leaf.icon}
+                  isCurrent={isCurrent}
+                  unreadCount={unreadCount}
+                  badge={leaf.badge}
+                />
+              </div>
+            );
+          })}
+        </nav>
+
+        {/* User footer */}
+        <div className="px-4 py-3 border-t flex items-center gap-2.5" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+          <div
+            className="w-[34px] h-[34px] rounded-full flex items-center justify-center text-white text-[13px] font-bold flex-shrink-0"
+            style={{ backgroundColor: BRAND_ORANGE }}
+          >
+            {user?.doctorInitials ?? user?.username?.charAt(0).toUpperCase() ?? "م"}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-bold text-white truncate">{user?.doctorName ?? user?.username}</p>
+            <p className="text-[11px] truncate" style={{ color: "rgba(255,255,255,0.5)" }}>
+              {ROLE_LABELS[user?.role ?? ""] ?? user?.role ?? "موظف"}
+            </p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+            style={{ color: "rgba(255,255,255,0.5)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(239,68,68,0.15)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+            title="تسجيل الخروج"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
+      </aside>
+    </>
+  );
+}

@@ -1,0 +1,1152 @@
+
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { useParams, useRouter, useSearchParams } from "@/lib/nextNavCompat";
+import Link from "@/lib/nextLinkCompat";
+import {
+  User, Stethoscope, Phone, MapPin, Pencil,
+  Activity, Wallet, Pill, Scissors, Image as ImageIcon,
+  MessageCircle, Archive, RotateCcw, ClipboardList,
+  FileSignature, ScanLine, FolderOpen, FlaskConical,
+  KeyRound, Copy, Check, Mail,
+  AlertTriangle, Shield, Receipt, ChevronRight,
+  MoreHorizontal, Bell,
+  ChevronDown, ChevronUp, Eye, Coins,
+  Stethoscope as TreatmentIcon, ArrowLeftRight, Printer, CalendarPlus
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import type { PatientProfile } from "@/types/patient";
+import type { PatientSummary } from "@/types/patientSummary";
+import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
+import { patientBalanceView } from "@/lib/patientSummary";
+import { cn, GENDER_LABELS, formatArabicDate, formatPhoneForWhatsApp } from "@/lib/utils";
+import { isClinicalRole, isAccountantRole, canViewPatientFinance } from "@/lib/roles";
+import { financeV3ContractsUrl } from "@/lib/financeRoutes";
+import { rtlArrowBack as RtlArrowBack } from "@/lib/rtlIcons";
+import { isGuid } from "@/lib/patientRouting";
+import { toast } from "@/stores/toastStore";
+import { useAuthStore } from "@/stores/authStore";
+
+// Tab components
+import { OverviewTab }         from "@/components/patient/tabs/OverviewTab";
+import { BasicInfoTab }        from "@/components/patient/tabs/BasicInfoTab";
+import { MedicalHistoryTab }   from "@/components/patient/tabs/MedicalHistoryTab";
+import { DentalHistoryTab }    from "@/components/patient/tabs/DentalHistoryTab";
+import { AppointmentsTab }     from "@/components/patient/tabs/AppointmentsTab";
+import { VisitsTab }           from "@/components/patient/tabs/VisitsTab";
+import { FinanceTab }          from "@/components/patient/tabs/FinanceTab";
+import { ContractsTab }        from "@/components/patient/tabs/ContractsTab";
+import { PaymentsTab }         from "@/components/patient/tabs/PaymentsTab";
+import { MessagesTab }         from "@/components/patient/tabs/MessagesTab";
+import { OrthodonticsTab }     from "@/components/patient/tabs/OrthodonticsTab";
+import { GeneralDentistryTab } from "@/components/patient/tabs/GeneralDentistryTab";
+import { SurgeryTab }          from "@/components/patient/tabs/SurgeryTab";
+import { OrthoSurgicalTab }    from "@/components/patient/tabs/OrthoSurgicalTab";
+import { PhotosTab }           from "@/components/patient/tabs/PhotosTab";
+import { RadiographsTab }      from "@/components/patient/tabs/RadiographsTab";
+import { PrescriptionsTab }    from "@/components/patient/tabs/PrescriptionsTab";
+import { DocumentsTab }        from "@/components/patient/tabs/DocumentsTab";
+import { LabOrdersTab }        from "@/components/patient/tabs/LabOrdersTab";
+import { TimelineTab }         from "@/components/patient/tabs/TimelineTab";
+import { PortalAccessTab }     from "@/components/patient/tabs/PortalAccessTab";
+import { TreatmentPlanTab }    from "@/components/patient/tabs/TreatmentPlanTab";
+import { ReferralsTab }        from "@/components/patient/tabs/ReferralsTab";
+
+// ─── Types ──────────────────────────────────────────────────────────────────────
+
+
+interface OrthoCase   { id: string; caseNumber: string; applianceType?: string; status: string; stagePercentage: number; doctorName?: string; }
+interface SurgeryCase { id: string; caseNumber: string; surgeryType: string;   status: string; doctorName?: string; }
+
+type Tab =
+  | "overview" | "info" | "medical-history" | "clinical-notes"
+  | "appointments" | "visits" | "treatments"
+  | "finance" | "documents" | "activity-log";
+
+interface PivotTabDef {
+  key: Tab;
+  label: string;
+}
+
+const ALL_PIVOT_TABS: PivotTabDef[] = [
+  { key: "overview",        label: "نظرة عامة" },
+  { key: "info",            label: "المعلومات الشخصية" },
+  { key: "medical-history", label: "التاريخ الطبي" },
+  { key: "clinical-notes",  label: "الملاحظات السريرية" },
+  { key: "appointments",    label: "المواعيد" },
+  { key: "visits",          label: "الزيارات" },
+  { key: "treatments",      label: "العمليات والعلاجات" },
+  { key: "finance",         label: "الفواتير والمدفوعات" },
+  { key: "documents",       label: "الصور والمستندات" },
+  { key: "activity-log",    label: "سجل النشاط" },
+];
+
+// ─── Ribbon Group Definitions ──────────────────────────────────────────────
+
+interface RibbonItem {
+  icon: LucideIcon;
+  label: string;
+  color: string;
+  bgColor: string;
+  action: () => void;
+}
+
+interface RibbonGroup {
+  label: string;
+  items: RibbonItem[];
+}
+
+// ─── Page Component ──────────────────────────────────────────────────────────────
+
+export default function PatientProfilePage() {
+  const { id }  = useParams<{ id: string }>();
+  const router   = useRouter();
+  const { user } = useAuthStore();
+  const patientIdentifier = typeof id === "string" ? id : "";
+  const hasGuidPatientId = isGuid(patientIdentifier);
+  // isClinicalRole covers: Doctor, Orthodontist, GeneralDentist, OralSurgeon
+  const isDoctor       = isClinicalRole(user?.role);
+  const isAccountant   = isAccountantRole(user?.role);
+  const canViewFinance = canViewPatientFinance(user?.role);
+
+  const [patient,      setPatient]      = useState<PatientProfile | null>(null);
+  const [summary,      setSummary]      = useState<PatientSummary | null>(null);
+  // CORE-PAT-001: a failed summary must never render as real data — the balance
+  // card used to fall back to 0, so a patient WITH debt looked fully paid.
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const retrySummary = () => setFinanceRefreshKey(k => k + 1);
+  const [orthoCases,   setOrthoCases]   = useState<OrthoCase[]>([]);
+  const [surgeryCases, setSurgeryCases] = useState<SurgeryCase[]>([]);
+  const [orthoCasesError, setOrthoCasesError] = useState<string | null>(null);
+  const [surgeryCasesError, setSurgeryCasesError] = useState<string | null>(null);
+  const [relatedCasesLoading, setRelatedCasesLoading] = useState(true);
+  const [relatedCasesRetryKey, setRelatedCasesRetryKey] = useState(0);
+  const retryRelatedCases = () => setRelatedCasesRetryKey(key => key + 1);
+  const relatedCasesError = [
+    orthoCasesError ? `حالات التقويم: ${orthoCasesError}` : null,
+    surgeryCasesError ? `الحالات الجراحية: ${surgeryCasesError}` : null,
+  ].filter(Boolean).join(" — ");
+  // Sprint Patient-Finance-Ledger: financeRefreshKey triggers re-fetch of summary & finance tab
+  const [financeRefreshKey, setFinanceRefreshKey] = useState(0);
+  const [loading,      setLoading]      = useState(true);
+  const [error,        setError]        = useState<string | null>(null);
+  const [resolutionRetryable, setResolutionRetryable] = useState(false);
+  const [resolutionRetryKey, setResolutionRetryKey] = useState(0);
+  const [profileRetryKey, setProfileRetryKey] = useState(0);
+  const [activeTab,    setActiveTab]    = useState<Tab>("overview");
+  const [phoneCopied,  setPhoneCopied]  = useState(false);
+  const [openAddVisitModal, setOpenAddVisitModal] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ type: "archive" | "restore"; id: string; name: string } | null>(null);
+  const [moreMenuOpen,  setMoreMenuOpen]  = useState(false);
+  const [isRibbonCollapsed, setIsRibbonCollapsed] = useState(false);
+  const [isBannerHovered, setIsBannerHovered] = useState(false);
+  const [ribbonActiveAction, setRibbonActiveAction] = useState<string | null>(null);
+  const [hoveredTab, setHoveredTab] = useState<string | null>(null);
+
+  // Consolidated Sub-tabs states
+  const [medicalSubTab, setMedicalSubTab] = useState<"medical" | "dental">("medical");
+  const [clinicalSubTab, setClinicalSubTab] = useState<"treatment-plan" | "prescriptions" | "referrals">("treatment-plan");
+  const [treatmentSubTab, setTreatmentSubTab] = useState<"general" | "orthodontics" | "surgery" | "ortho-surgical">("general");
+  const [financeSubTab, setFinanceSubTab] = useState<"finance" | "contracts" | "payments">("finance");
+  const [documentsSubTab, setDocumentsSubTab] = useState<"photos" | "radiographs" | "documents" | "lab-orders">("photos");
+  const [activitySubTab, setActivitySubTab] = useState<"timeline" | "portal" | "messages">("timeline");
+
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+
+  // ─── Tab switch ───────────────────────────────────────────────────────────
+  const switchTab = useCallback((key: Tab) => {
+    setActiveTab(key);
+  }, []);
+
+  // ─── Ribbon action groups (built after patient data is available) ─────────
+  const patientName = patient
+    ? `${patient.firstName} ${patient.middleName ?? ""} ${patient.lastName}`.replace(/\s+/g, " ").trim()
+    : "";
+
+  const limited = patient?.isLimitedView === true;
+
+  const ribbonGroups: RibbonGroup[] = [
+    {
+      label: "إجراءات العيادة",
+      items: [
+        { icon: TreatmentIcon, label: "جلسة علاج", color: "text-emerald-600", bgColor: "hover:bg-emerald-50",
+          action: () => { switchTab("visits"); setOpenAddVisitModal(true); } },
+        { icon: ClipboardList, label: "خطة علاج", color: "text-sky-600", bgColor: "hover:bg-sky-50",
+          action: () => { switchTab("clinical-notes"); setClinicalSubTab("treatment-plan"); } },
+        { icon: CalendarPlus, label: "موعد جديد", color: "text-violet-600", bgColor: "hover:bg-violet-50",
+          action: () => { /* handled via Link */ } },
+        { icon: Pill, label: "وصفة طبية", color: "text-pink-600", bgColor: "hover:bg-pink-50",
+          action: () => router.push(`/prescriptions/new?patientId=${id}`) },
+        { icon: ScanLine, label: "طلب أشعة", color: "text-cyan-600", bgColor: "hover:bg-cyan-50",
+          action: () => router.push(`/radiology-orders/new?patientId=${id}`) },
+      ],
+    },
+    {
+      label: "المالية V3",
+      items: [
+        { icon: Receipt, label: "قبض دفعة", color: "text-emerald-600", bgColor: "hover:bg-emerald-50",
+          action: () => { switchTab("finance"); setFinanceSubTab("payments"); } },
+        { icon: ArrowLeftRight, label: "مرتجع", color: "text-red-500", bgColor: "hover:bg-red-50",
+          action: () => { switchTab("finance"); setFinanceSubTab("finance"); } },
+        { icon: FileSignature, label: "عقد جديد", color: "text-amber-600", bgColor: "hover:bg-amber-50",
+          action: () => { /* handled via Link */ } },
+        { icon: Wallet, label: "كشف حساب", color: "text-sky-600", bgColor: "hover:bg-sky-50",
+          action: () => { switchTab("finance"); setFinanceSubTab("finance"); } },
+      ],
+    },
+    {
+      label: "الحالات السريرية",
+      items: [
+        { icon: Activity, label: "حالة تقويم", color: "text-violet-600", bgColor: "hover:bg-violet-50",
+          action: () => router.push(`/ortho/new?patientId=${id}`) },
+        { icon: Scissors, label: "حالة جراحة", color: "text-rose-600", bgColor: "hover:bg-rose-50",
+          action: () => { switchTab("treatments"); setTreatmentSubTab("surgery"); } },
+        { icon: Eye, label: "طب أسنان عام", color: "text-sky-600", bgColor: "hover:bg-sky-50",
+          action: () => { switchTab("treatments"); setTreatmentSubTab("general"); } },
+      ],
+    },
+    {
+      label: "المرفقات والسجلات",
+      items: [
+        { icon: ImageIcon, label: "صور", color: "text-teal-600", bgColor: "hover:bg-teal-50",
+          action: () => { switchTab("documents"); setDocumentsSubTab("photos"); } },
+        { icon: ScanLine, label: "أشعة", color: "text-indigo-600", bgColor: "hover:bg-indigo-50",
+          action: () => { switchTab("documents"); setDocumentsSubTab("radiographs"); } },
+        { icon: FolderOpen, label: "مستندات", color: "text-amber-600", bgColor: "hover:bg-amber-50",
+          action: () => { switchTab("documents"); setDocumentsSubTab("documents"); } },
+        { icon: FlaskConical, label: "مختبر", color: "text-cyan-600", bgColor: "hover:bg-cyan-50",
+          action: () => { switchTab("documents"); setDocumentsSubTab("lab-orders"); } },
+      ],
+    },
+    {
+      label: "طباعة وتواصل",
+      items: [
+        { icon: Printer, label: "طباعة", color: "text-slate-600", bgColor: "hover:bg-slate-100",
+          action: () => { /* handled via Link */ } },
+        { icon: MessageCircle, label: "رسالة", color: "text-green-600", bgColor: "hover:bg-green-50",
+          action: () => { switchTab("activity-log"); setActivitySubTab("messages"); } },
+        { icon: KeyRound, label: "بوابة المريض", color: "text-orange-600", bgColor: "hover:bg-orange-50",
+          action: () => { switchTab("activity-log"); setActivitySubTab("portal"); } },
+      ],
+    },
+  ];
+
+  // Filter ribbon groups for limited view and Doctor / Accountant roles
+  const visibleRibbonGroups = ribbonGroups.filter(g => {
+    if ((limited || !canViewFinance) && g.label === "المالية V3") return false;
+    if (isAccountant && ["إجراءات العيادة", "الحالات السريرية", "المرفقات والسجلات"].includes(g.label)) return false;
+    return true;
+  });
+
+  // ─── Handlers ───────────────────────────────────────────────────────────
+
+  const handleArchive = (pid: string, name: string) => setConfirmAction({ type: "archive",  id: pid, name });
+  const handleRestore = (pid: string, name: string) => setConfirmAction({ type: "restore", id: pid, name });
+
+  const executeConfirm = async () => {
+    if (!confirmAction) return;
+    try {
+      if (confirmAction.type === "archive") {
+        await api.put(`/api/patients/${confirmAction.id}/archive`);
+        toast.success(`تم أرشفة المريض ${confirmAction.name}`);
+      } else {
+        await api.put(`/api/patients/${confirmAction.id}/restore`);
+        toast.success(`تم استعادة المريض ${confirmAction.name}`);
+      }
+      const { data } = await api.get<PatientProfile>(`/api/patients/${id}`);
+      setPatient(data);
+    } catch (err: unknown) {
+      toast.error(extractErrorMessage(err, "حدث خطأ"));
+    } finally {
+      setConfirmAction(null);
+    }
+  };
+
+  const handleRibbonAction = (label: string, action: () => void) => {
+    setRibbonActiveAction(label);
+    action();
+    setTimeout(() => setRibbonActiveAction(null), 600);
+  };
+
+  // ─── Patient Number Resolution ────────────────────────────────────────
+  // If the URL param is a patient number (e.g., GM-2026-025) instead of a GUID,
+  // resolve it to the patient's GUID and redirect.
+  useEffect(() => {
+    const patientId = patientIdentifier;
+    if (!patientId || hasGuidPatientId) {
+      setResolutionRetryable(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setResolutionRetryable(false);
+
+    api.get(`/api/patients/by-number/${encodeURIComponent(patientId)}`)
+      .then(({ data }) => {
+        if (cancelled) return;
+        if (data?.id) {
+          router.replace(`/patients/${data.id}`);
+          return;
+        }
+        setError(`لا يوجد مريض برقم الملف ${patientId}`);
+        setLoading(false);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        if (status === 404) {
+          setError(`لا يوجد مريض برقم الملف ${patientId}`);
+          setResolutionRetryable(false);
+        } else {
+          setError(extractErrorMessage(
+            err,
+            "تعذر البحث عن المريض برقم الملف — تحقق من الاتصال وحاول مجدداً"
+          ));
+          setResolutionRetryable(true);
+        }
+        setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [patientIdentifier, hasGuidPatientId, router, resolutionRetryKey]);
+
+  // ─── FE-06: ?focus=journey deep-link ──────────────────────────────────
+  // When the URL carries ?focus=journey (e.g., redirected from the old
+  // /patient-journey/[patientId] page), activate the most journey-relevant
+  // tab on first mount. For roles that can see the activity-log (Admin /
+  // Reception / Accountant) that is the Timeline sub-tab. For clinical
+  // roles (Doctor / Orthodontist / GeneralDentist / OralSurgeon) the
+  // activity-log tab is hidden, so fall back to the Visits tab (the
+  // closest journey-relevant content).
+  const searchParams = useSearchParams();
+  const hasAppliedFocusRef = useRef(false);
+  useEffect(() => {
+    if (hasAppliedFocusRef.current) return;
+    const focus = searchParams?.get("focus");
+    if (!focus) return;
+    hasAppliedFocusRef.current = true;
+    if (focus === "journey") {
+      // activity-log is hidden for clinical roles (visibleTabs filter above);
+      // use the same predicate to decide the deep-link target.
+      const canSeeActivityLog = !isDoctor;
+      if (canSeeActivityLog) {
+        setActiveTab("activity-log");
+        setActivitySubTab("timeline");
+      } else {
+        setActiveTab("visits");
+      }
+    }
+  }, [searchParams, isDoctor]);
+
+  // ─── Data Fetching ──────────────────────────────────────────────────────
+
+  useEffect(() => {
+    // CORE-PAT-032: GUID-only endpoints must never receive a patient number.
+    // Resolve the number first, then let the redirected GUID route load the file.
+    if (!patientIdentifier || !hasGuidPatientId) return;
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setResolutionRetryable(false);
+
+    api.get<PatientProfile>(`/api/patients/${patientIdentifier}`)
+      .then(r => { if (!cancelled) setPatient(r.data); })
+      .catch(err => {
+        if (!cancelled) {
+          setPatient(null);
+          setError(extractErrorMessage(err, "فشل تحميل بيانات المريض"));
+        }
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    setSummaryError(null);
+    api.get<PatientSummary>(`/api/patients/${patientIdentifier}/summary`)
+      .then(r => {
+        if (!cancelled) {
+          setSummary(r.data);
+          setSummaryError(null);
+        }
+      })
+      .catch(err => {
+        if (!cancelled) {
+          setSummary(null);
+          setSummaryError(extractErrorMessage(err, "تعذر تحميل ملخص المريض"));
+        }
+      });
+
+    return () => { cancelled = true; };
+  }, [patientIdentifier, hasGuidPatientId, financeRefreshKey, profileRetryKey]);
+
+  useEffect(() => {
+    if (!patientIdentifier || !hasGuidPatientId) return;
+
+    let cancelled = false;
+    setRelatedCasesLoading(true);
+
+    Promise.allSettled([
+      api.get<OrthoCase[]>(`/api/ortho-cases?patientId=${patientIdentifier}&pageSize=10`),
+      api.get<{ data: SurgeryCase[] }>(`/api/surgery-cases?patientId=${patientIdentifier}&pageSize=10`),
+    ]).then(([orthoResult, surgeryResult]) => {
+      if (cancelled) return;
+
+      if (orthoResult.status === "fulfilled") {
+        setOrthoCases(orthoResult.value.data);
+        setOrthoCasesError(null);
+      } else {
+        setOrthoCases([]);
+        setOrthoCasesError(extractErrorMessage(orthoResult.reason, "تعذر تحميل حالات التقويم"));
+      }
+
+      if (surgeryResult.status === "fulfilled") {
+        setSurgeryCases(surgeryResult.value.data.data ?? []);
+        setSurgeryCasesError(null);
+      } else {
+        setSurgeryCases([]);
+        setSurgeryCasesError(extractErrorMessage(surgeryResult.reason, "تعذر تحميل الحالات الجراحية"));
+      }
+
+      setRelatedCasesLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [patientIdentifier, hasGuidPatientId, relatedCasesRetryKey]);
+
+  useEffect(() => {
+    const close = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node))
+        setMoreMenuOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+
+  // Helper render wrapper for sub-tabs to provide beautiful Fluent styling
+  function renderSubTabs<T extends string>(
+    tabs: { key: T; label: string }[],
+    current: T,
+    setTab: (k: T) => void
+  ) {
+    return (
+      <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg w-fit mb-4">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={cn(
+              "px-3 py-1.5 text-xs font-bold rounded-md transition duration-200",
+              current === t.key
+                ? "bg-white text-sky-600 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  // ─── Consolidated Tab Content Renderer ───────────────────────────────────
+
+  const renderTabContent = () => {
+    if (!patient) return null;
+    const pn = `${patient.firstName} ${patient.lastName}`;
+    
+    switch (activeTab) {
+      case "overview":
+        return (
+          <OverviewTab
+            patientId={id}
+            summary={summary}
+            patient={patient}
+            canViewFinance={canViewFinance}
+            onAddVisit={() => { switchTab("visits"); setOpenAddVisitModal(true); }}
+          />
+        );
+
+      case "info":
+        return (
+          <>
+            {relatedCasesLoading ? (
+              <div role="status" className="mb-3 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700">
+                جارٍ تحميل الحالات المرتبطة…
+              </div>
+            ) : relatedCasesError ? (
+              <div role="alert" className="mb-3 flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+                <span>{relatedCasesError}</span>
+                <button type="button" onClick={retryRelatedCases} className="underline decoration-dotted">إعادة المحاولة</button>
+              </div>
+            ) : null}
+            <BasicInfoTab
+              patient={patient}
+              orthoCases={orthoCases}
+              surgeryCases={surgeryCases}
+            />
+          </>
+        );
+
+      case "medical-history":
+        return (
+          <div className="space-y-4">
+            {renderSubTabs<"medical" | "dental">(
+              [
+                { key: "medical", label: "التاريخ الطبي العام" },
+                { key: "dental", label: "التاريخ السني" }
+              ],
+              medicalSubTab,
+              setMedicalSubTab
+            )}
+            {medicalSubTab === "medical" ? (
+              <MedicalHistoryTab patientId={id} />
+            ) : (
+              <DentalHistoryTab patientId={id} />
+            )}
+          </div>
+        );
+
+      case "clinical-notes":
+        return (
+          <div className="space-y-4">
+            {renderSubTabs<"treatment-plan" | "prescriptions" | "referrals">(
+              [
+                { key: "treatment-plan", label: "خطة العلاج" },
+                { key: "prescriptions", label: "الوصفات الطبية" },
+                { key: "referrals", label: "الإحالات" }
+              ],
+              clinicalSubTab,
+              setClinicalSubTab
+            )}
+            {clinicalSubTab === "treatment-plan" && <TreatmentPlanTab patientId={id} />}
+            {clinicalSubTab === "prescriptions" && <PrescriptionsTab patientId={id} />}
+            {clinicalSubTab === "referrals" && <ReferralsTab patientId={id} />}
+          </div>
+        );
+
+      case "appointments":
+        return <AppointmentsTab patientId={id} patientName={pn} />;
+
+      case "visits":
+        return (
+          <VisitsTab
+            patientId={id}
+            openAddModal={openAddVisitModal}
+            onModalOpened={() => setOpenAddVisitModal(false)}
+          />
+        );
+
+      case "treatments":
+        return (
+          <div className="space-y-4">
+            {renderSubTabs<"general" | "orthodontics" | "surgery" | "ortho-surgical">(
+              [
+                { key: "general", label: "طب الأسنان العام" },
+                { key: "orthodontics", label: "علاجات التقويم" },
+                { key: "surgery", label: "العمليات الجراحية والزراعة" },
+                { key: "ortho-surgical", label: "التقويم الجراحي" }
+              ],
+              treatmentSubTab,
+              setTreatmentSubTab
+            )}
+            {treatmentSubTab === "general" && <GeneralDentistryTab patientId={id} />}
+            {treatmentSubTab === "orthodontics" && <OrthodonticsTab patientId={id} />}
+            {treatmentSubTab === "surgery" && <SurgeryTab patientId={id} />}
+            {treatmentSubTab === "ortho-surgical" && <OrthoSurgicalTab patientId={id} />}
+          </div>
+        );
+
+      case "finance":
+        if (!canViewFinance) return null;
+        return (
+          <div className="space-y-4">
+            {renderSubTabs<"finance" | "contracts" | "payments">(
+              [
+                { key: "finance", label: "كشف الحساب المالي" },
+                { key: "contracts", label: "العقود" },
+                { key: "payments", label: "سندات القبض" }
+              ],
+              financeSubTab,
+              setFinanceSubTab
+            )}
+            {financeSubTab === "finance" && <FinanceTab patientId={id} refreshKey={financeRefreshKey} />}
+            {financeSubTab === "contracts" && <ContractsTab patientId={id} />}
+            {financeSubTab === "payments" && <PaymentsTab patientId={id} onPaymentChanged={() => setFinanceRefreshKey(k => k + 1)} />}
+          </div>
+        );
+
+      case "documents":
+        return (
+          <div className="space-y-4">
+            {renderSubTabs<"photos" | "radiographs" | "documents" | "lab-orders">(
+              [
+                { key: "photos", label: "الصور السريرية" },
+                { key: "radiographs", label: "الأشعة" },
+                { key: "documents", label: "المستندات والتقارير" },
+                { key: "lab-orders", label: "طلبات المختبر" }
+              ],
+              documentsSubTab,
+              setDocumentsSubTab
+            )}
+            {documentsSubTab === "photos" && <PhotosTab patientId={id} />}
+            {documentsSubTab === "radiographs" && <RadiographsTab patientId={id} />}
+            {documentsSubTab === "documents" && <DocumentsTab patientId={id} />}
+            {documentsSubTab === "lab-orders" && <LabOrdersTab patientId={id} />}
+          </div>
+        );
+
+      case "activity-log":
+        return (
+          <div className="space-y-4">
+            {renderSubTabs<"timeline" | "portal" | "messages">(
+              [
+                { key: "timeline", label: "السجل الزمني" },
+                { key: "portal", label: "بوابة المريض الإلكترونية" },
+                { key: "messages", label: "الرسائل والتنبيهات" }
+              ],
+              activitySubTab,
+              setActivitySubTab
+            )}
+            {activitySubTab === "timeline" && <TimelineTab patientId={id} />}
+            {activitySubTab === "portal" && <PortalAccessTab patientId={id} patientNumber={patient.patientNumber ?? ''} />}
+            {activitySubTab === "messages" && <MessagesTab patientId={id} />}
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  // Enforce Dynamic Role visibility on tabs
+  const visibleTabs = ALL_PIVOT_TABS.filter((tab) => {
+    // Finance tab: Admin and Accountant only
+    if (!canViewFinance && tab.key === "finance") return false;
+    // Clinical roles: no activity-log (portal/messages are admin/reception workflows)
+    if (isDoctor && tab.key === "activity-log")  return false;
+    // Accountant: no clinical tabs
+    if (isAccountant && ["medical-history", "clinical-notes", "treatments"].includes(tab.key)) return false;
+    return true;
+  });
+
+  // ─── Loading / Error States ─────────────────────────────────────────────
+
+  if (loading) return (
+    <div className="h-full flex flex-col animate-pulse bg-slate-50">
+      <div className="h-1 bg-gradient-to-l from-sky-500 via-blue-600 to-indigo-600" />
+      <div className="h-[100px] bg-white border-b border-slate-200 flex items-center gap-4 px-6">
+        <div className="w-14 h-14 rounded-2xl bg-slate-200 flex-shrink-0" />
+        <div className="flex-1 space-y-2">
+          <div className="h-5 bg-slate-200 rounded w-48" />
+          <div className="h-3 bg-slate-100 rounded w-64" />
+        </div>
+      </div>
+      <div className="h-10 bg-white border-b border-slate-200" />
+      <div className="h-11 bg-white border-b border-slate-200" />
+      <div className="flex-1 p-6 space-y-4">
+        <div className="h-32 bg-white rounded-xl border border-slate-100" />
+        <div className="h-24 bg-white rounded-xl border border-slate-100" />
+      </div>
+    </div>
+  );
+
+  if (error || !patient) return (
+    <div className="h-full flex items-center justify-center">
+      <div role="alert" className="text-center space-y-3">
+        <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto">
+          <AlertTriangle className="w-8 h-8 text-red-400" />
+        </div>
+        <p className="text-slate-600 font-medium">{error ?? "المريض غير موجود"}</p>
+        <div className="flex items-center justify-center gap-3 flex-wrap">
+          {(hasGuidPatientId || resolutionRetryable) && (
+            <button
+              type="button"
+              onClick={() => {
+                if (hasGuidPatientId) setProfileRetryKey(k => k + 1);
+                else setResolutionRetryKey(k => k + 1);
+              }}
+              className="text-sm font-semibold text-blue-600 underline decoration-dotted"
+            >
+              إعادة المحاولة
+            </button>
+          )}
+          {/* Sprint 17 — RTL icon: back arrow points RIGHT in Arabic RTL. The old
+              `←` Unicode glyph pointed left (LTR convention) — wrong direction. */}
+          <Link href="/patients" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline">
+            <RtlArrowBack className="w-4 h-4" /> العودة للمرضى
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+
+  const initials    = (patient.firstName[0] ?? "") + (patient.lastName[0] ?? "");
+  // CORE-PAT-001: unknown balance is NOT a zero balance (see lib/patientSummary).
+  const balance     = patientBalanceView(summary, summaryError);
+  const summaryLoaded = balance.state === "loaded";
+  const outstanding = balance.outstanding ?? 0;
+  const hasDebt     = balance.hasDebt;
+
+  // ─── Render ──────────────────────────────────────────────────────────────
+
+  return (
+    <div className="h-full flex flex-col bg-slate-50 overflow-hidden">
+
+      {/* ══════════════════════════════════════════════════════
+          LAYER 1 — Patient Banner
+          ══════════════════════════════════════════════════════ */}
+      <div
+        className="flex-shrink-0 bg-white border-b border-slate-200 transition-all duration-300"
+        onMouseEnter={() => setIsBannerHovered(true)}
+        onMouseLeave={() => setIsBannerHovered(false)}
+      >
+        {/* Top Fluent accent line */}
+        <div className="h-1 bg-gradient-to-l from-sky-500 via-blue-600 to-indigo-600" />
+
+        <div className="px-6 py-4 flex flex-col md:flex-row justify-between items-start gap-4">
+          {/* Right side - Alerts & Balance */}
+          <div className="flex items-center gap-3 order-2 md:order-1">
+            {/* Financial Balance Card (Doctors cannot see) */}
+            {canViewFinance && !limited && (
+              <div
+                className="group relative bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-3 text-center min-w-[140px] shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer hover:scale-[1.02]"
+                onClick={() => switchTab("finance")}
+              >
+                <span className="block text-[10px] text-orange-600 font-bold uppercase mb-1 tracking-wider">
+                  <Coins className="inline w-3 h-3 ml-1" /> الرصيد المالي
+                </span>
+                {summaryLoaded ? (
+                  <span className="text-lg font-black text-orange-700" dir="ltr">
+                    {outstanding.toLocaleString()} ر.ي
+                  </span>
+                ) : summaryError ? (
+                  <button
+                    type="button"
+                    title={summaryError}
+                    onClick={(e) => { e.stopPropagation(); retrySummary(); }}
+                    className="block w-full text-[11px] font-bold text-orange-700 underline decoration-dotted"
+                  >
+                    تعذر تحميل الرصيد — إعادة المحاولة
+                  </button>
+                ) : (
+                  <span className="text-lg font-black text-orange-300" dir="ltr">…</span>
+                )}
+                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-3 h-3 bg-orange-200 rotate-45 border-b border-r border-orange-300" />
+              </div>
+            )}
+
+            {/* Medical Alerts Card (Accountants cannot see) */}
+            {!isAccountant && patient.medicalHistory?.chronicDiseases && (
+              <div className="bg-gradient-to-br from-red-50 to-rose-50 border border-red-100 p-2.5 rounded-xl min-w-[160px] hover:shadow-md transition-all duration-300 cursor-pointer hover:scale-[1.02]"
+                onClick={() => switchTab("medical-history")}>
+                <span className="block text-[10px] text-red-500 font-bold mb-1.5 tracking-wider">
+                  <AlertTriangle className="inline w-3 h-3 ml-1" /> تنبيهات طبية
+                </span>
+                <div className="flex flex-wrap gap-1">
+                  <span className="bg-red-500 text-white text-[11px] font-bold px-2 py-0.5 rounded-md">
+                    <Shield className="inline w-2.5 h-2.5 ml-0.5" /> {patient.medicalHistory.chronicDiseases}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Left side - Patient Info */}
+          <div className="flex items-center gap-5 mr-auto order-1 md:order-2">
+            <div className="text-right">
+              {/* Breadcrumb */}
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1.5">
+                <Link href="/patients" className="hover:text-blue-600 transition-colors">المرضى</Link>
+                <ChevronRight className="w-3 h-3 rotate-180" />
+                <span className="text-slate-700 font-medium">{patientName}</span>
+                <span className="mx-1 text-slate-200">|</span>
+                <span className="font-mono text-slate-400">{patient.patientNumber}</span>
+              </div>
+
+              {/* Name + Status */}
+              <div className="flex items-center justify-end gap-2 mb-1">
+                {patient.isActive && (
+                  <span className="bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">
+                    نشط
+                  </span>
+                )}
+                {!patient.isActive && (
+                  <span className="bg-slate-400 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">
+                    مؤرشف
+                  </span>
+                )}
+                {hasDebt && canViewFinance && !limited && (
+                  <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100">
+                    <Receipt className="w-2.5 h-2.5" />{outstanding.toLocaleString()} ر.ي متبقي
+                  </span>
+                )}
+                <h1 className="text-2xl font-black text-slate-800 tracking-tight">{patientName}</h1>
+              </div>
+
+              {/* Meta information */}
+              <div className="text-xs text-slate-500 font-bold flex items-center gap-2 mt-1.5 justify-end flex-wrap">
+                {patient.gender && (
+                  <span className="flex items-center gap-1">
+                    <User className="w-3 h-3" />
+                    {GENDER_LABELS[patient.gender as keyof typeof GENDER_LABELS]}{patient.age ? ` · ${patient.age} سنة` : ""}
+                  </span>
+                )}
+                {patient.phone && (
+                  <span className="flex items-center gap-1 font-mono" dir="ltr">
+                    <Phone className="w-3 h-3" />{patient.phone}
+                    <a href={`https://wa.me/${formatPhoneForWhatsApp(patient.phone)}`} target="_blank" rel="noopener noreferrer"
+                      className="w-5 h-5 rounded flex items-center justify-center hover:bg-green-50 transition" style={{ color: "#22c55e" }}>
+                      <MessageCircle className="w-3 h-3" />
+                    </a>
+                    <button type="button" onClick={async () => {
+                        await navigator.clipboard.writeText(patient.phone ?? "");
+                        setPhoneCopied(true); toast.success("تم نسخ الرقم");
+                        setTimeout(() => setPhoneCopied(false), 2000);
+                      }}
+                      className="w-5 h-5 rounded flex items-center justify-center hover:bg-slate-100 transition" style={{ color: "#64748b" }}>
+                      {phoneCopied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                    </button>
+                  </span>
+                )}
+                {patient.email && (
+                  <span className="flex items-center gap-1 font-mono" dir="ltr">
+                    <Mail className="w-3 h-3" />{patient.email}
+                  </span>
+                )}
+                {patient.primaryDoctorName && (
+                  <span className="flex items-center gap-1">
+                    <Stethoscope className="w-3 h-3" />{patient.primaryDoctorName}
+                  </span>
+                )}
+                {patient.address && (
+                  <span className="flex items-center gap-1">
+                    <MapPin className="w-3 h-3" />{patient.address}
+                  </span>
+                )}
+                <span className="text-[11px] text-slate-400">منذ {formatArabicDate(patient.createdAt)}</span>
+              </div>
+            </div>
+
+            {/* Avatar */}
+            <div className="relative flex-shrink-0">
+              <div
+                className="w-14 h-14 bg-gradient-to-br from-sky-500 to-indigo-600 rounded-2xl flex items-center justify-center font-black text-white text-lg shadow-lg shadow-sky-200/50"
+              >
+                {initials}
+              </div>
+              <span
+                className="absolute -bottom-0.5 -left-0.5 w-4 h-4 border-2 border-white rounded-full"
+                style={{ background: patient.isActive ? "#22c55e" : "#94a3b8" }}
+              />
+            </div>
+
+            {/* Right-side quick action buttons */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {!isAccountant && patient.isActive && (
+                <Link href={`/patients/${id}/edit`}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 transition">
+                  <Pencil className="w-3.5 h-3.5" />تعديل
+                </Link>
+              )}
+              {user?.role === "Admin" && patient.isActive && (
+                <button onClick={() => handleArchive(id, patientName)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition">
+                  <Archive className="w-3.5 h-3.5" />أرشفة
+                </button>
+              )}
+              {user?.role === "Admin" && !patient.isActive && (
+                <button onClick={() => handleRestore(id, patientName)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-green-200 text-green-600 hover:bg-green-50 transition">
+                  <RotateCcw className="w-3.5 h-3.5" />استعادة
+                </button>
+              )}
+              <div className="relative" ref={moreMenuRef}>
+                <button onClick={() => setMoreMenuOpen(!moreMenuOpen)}
+                  className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition text-slate-500">
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+                {moreMenuOpen && (
+                  <div className="absolute top-full left-0 mt-1 z-30 py-1 min-w-[160px] rounded-xl bg-white shadow-xl border border-slate-200">
+                    {[
+                      { icon: Scissors,      label: "حالة جراحية", href: `/surgery/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}` },
+                      { icon: MessageCircle, label: "راسل المريض", href: `/messages?patientId=${id}` },
+                      { icon: Bell,          label: "إرسال تذكير",  href: "#" },
+                    ].map(({ icon: Icon, label, href }) => (
+                      <Link key={label} href={href} onClick={() => setMoreMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition">
+                        <Icon className="w-3.5 h-3.5 text-slate-400" />{label}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Stats Grid */}
+        <div className={`overflow-hidden transition-all duration-500 ${isBannerHovered ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0'}`}>
+          {summaryError && (
+            <div role="alert" className="mx-6 mb-2 flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-bold text-amber-800">
+              <span>{summaryError}</span>
+              <button type="button" onClick={retrySummary} className="underline decoration-dotted">إعادة المحاولة</button>
+            </div>
+          )}
+          <div className="px-6 pb-3 grid grid-cols-6 gap-2">
+            {[
+              { label: 'المواعيد', value: summary?.totalAppointments ?? '—', bgClass: 'bg-sky-50 border-sky-100', textClass: 'text-sky-700' },
+              { label: 'المكتملة', value: summary?.completedAppointments ?? '—', bgClass: 'bg-emerald-50 border-emerald-100', textClass: 'text-emerald-700' },
+              { label: 'التقويم النشط', value: summary?.activeOrthoCases ?? '—', bgClass: 'bg-violet-50 border-violet-100', textClass: 'text-violet-700' },
+              { label: 'المدفوع', value: summary?.totalPaid != null ? summary.totalPaid.toLocaleString() : '—', bgClass: 'bg-green-50 border-green-100', textClass: 'text-green-700' },
+              { label: 'المستحق', value: summary?.totalOutstanding != null ? summary.totalOutstanding.toLocaleString() : '—', bgClass: 'bg-orange-50 border-orange-100', textClass: 'text-orange-700' },
+              { label: 'الوصفات', value: summary?.prescriptionsCount ?? '—', bgClass: 'bg-blue-50 border-blue-100', textClass: 'text-blue-700' },
+            ].map((stat, i) => {
+              if (!canViewFinance && (stat.label === 'المدفوع' || stat.label === 'المستحق')) return null;
+              return (
+                <div key={i} className={`${stat.bgClass} rounded-lg px-3 py-1.5 text-center border`}>
+                  <div className={`${stat.textClass} text-sm font-black`}>{stat.value}</div>
+                  <div className="text-[9px] text-slate-500 font-bold">{stat.label}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════
+          LAYER 2 — Ribbon Command Bar
+          ══════════════════════════════════════════════════════ */}
+      <div className="flex-shrink-0 bg-white border-b border-slate-200 shadow-sm">
+        <div className="flex items-center justify-between px-4 py-1 bg-slate-50 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-ping" />
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">شريط الأوامر السريع</span>
+          </div>
+          <button
+            onClick={() => setIsRibbonCollapsed(!isRibbonCollapsed)}
+            className="text-slate-400 hover:text-slate-600 transition-colors p-1 rounded hover:bg-slate-200"
+          >
+            {isRibbonCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+
+        <div className={`overflow-hidden transition-all duration-400 ${isRibbonCollapsed ? 'max-h-0' : 'max-h-[200px]'}`}>
+          <div className="p-2 overflow-x-auto flex gap-0.5">
+            {visibleRibbonGroups.map((group, gi) => (
+              <React.Fragment key={gi}>
+                <div className="relative border-l border-slate-200 pr-1 pl-2 pt-5 pb-1 min-w-fit">
+                  <span className="absolute top-1 right-2 text-[9px] text-slate-400 font-bold tracking-wider">
+                    {group.label}
+                  </span>
+                  <div className="flex gap-0.5">
+                    {group.items.map((item, ii) => {
+                      const Icon = item.icon;
+                      const isActive = ribbonActiveAction === item.label;
+
+                      if (item.label === "موعد جديد") {
+                        return (
+                          <Link
+                            key={ii}
+                            href={`/appointments/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
+                            onClick={() => setRibbonActiveAction(item.label)}
+                            className={`
+                              flex flex-col items-center w-[68px] p-1.5 rounded-lg transition-all duration-200
+                              ${item.bgColor}
+                              ${isActive ? 'ring-2 ring-sky-400 ring-offset-1 scale-95 bg-sky-50' : 'hover:scale-105'}
+                              active:scale-95
+                            `}
+                          >
+                            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white shadow-sm border border-slate-100 mb-0.5">
+                              <Icon className={`w-4 h-4 ${item.color}`} />
+                            </div>
+                            <span className="text-[9px] font-bold text-slate-600 whitespace-nowrap">{item.label}</span>
+                          </Link>
+                        );
+                      }
+
+                      if (item.label === "عقد جديد") {
+                        return (
+                          <Link
+                            key={ii}
+                            href={financeV3ContractsUrl(id, { patientName })}
+                            onClick={() => setRibbonActiveAction(item.label)}
+                            className={`
+                              flex flex-col items-center w-[68px] p-1.5 rounded-lg transition-all duration-200
+                              ${item.bgColor}
+                              ${isActive ? 'ring-2 ring-sky-400 ring-offset-1 scale-95 bg-sky-50' : 'hover:scale-105'}
+                              active:scale-95
+                            `}
+                          >
+                            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white shadow-sm border border-slate-100 mb-0.5">
+                              <Icon className={`w-4 h-4 ${item.color}`} />
+                            </div>
+                            <span className="text-[9px] font-bold text-slate-600 whitespace-nowrap">{item.label}</span>
+                          </Link>
+                        );
+                      }
+
+                      if (item.label === "حالة جراحة") {
+                        return (
+                          <Link
+                            key={ii}
+                            href={`/surgery/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
+                            onClick={() => setRibbonActiveAction(item.label)}
+                            className={`
+                              flex flex-col items-center w-[68px] p-1.5 rounded-lg transition-all duration-200
+                              ${item.bgColor}
+                              ${isActive ? 'ring-2 ring-sky-400 ring-offset-1 scale-95 bg-sky-50' : 'hover:scale-105'}
+                              active:scale-95
+                            `}
+                          >
+                            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white shadow-sm border border-slate-100 mb-0.5">
+                              <Icon className={`w-4 h-4 ${item.color}`} />
+                            </div>
+                            <span className="text-[9px] font-bold text-slate-600 whitespace-nowrap">{item.label}</span>
+                          </Link>
+                        );
+                      }
+
+                      if (item.label === "طباعة") {
+                        return (
+                          <Link
+                            key={ii}
+                            href={`/patients/${id}/print/summary`}
+                            onClick={() => setRibbonActiveAction(item.label)}
+                            className={`
+                              flex flex-col items-center w-[68px] p-1.5 rounded-lg transition-all duration-200
+                              ${item.bgColor}
+                              ${isActive ? 'ring-2 ring-sky-400 ring-offset-1 scale-95 bg-sky-50' : 'hover:scale-105'}
+                              active:scale-95
+                            `}
+                          >
+                            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white shadow-sm border border-slate-100 mb-0.5">
+                              <Icon className={`w-4 h-4 ${item.color}`} />
+                            </div>
+                            <span className="text-[9px] font-bold text-slate-600 whitespace-nowrap">{item.label}</span>
+                          </Link>
+                        );
+                      }
+
+                      return (
+                        <button
+                          key={ii}
+                          onClick={() => handleRibbonAction(item.label, item.action)}
+                          className={`
+                            flex flex-col items-center w-[68px] p-1.5 rounded-lg transition-all duration-200
+                            ${item.bgColor}
+                            ${isActive ? 'ring-2 ring-sky-400 ring-offset-1 scale-95 bg-sky-50' : 'hover:scale-105'}
+                            active:scale-95
+                          `}
+                        >
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white shadow-sm border border-slate-100 mb-0.5">
+                            <Icon className={`w-4 h-4 ${item.color}`} />
+                          </div>
+                          <span className="text-[9px] font-bold text-slate-600 whitespace-nowrap">{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                {gi < visibleRibbonGroups.length - 1 && (
+                  <div className="w-px bg-slate-200 self-stretch my-2" />
+                )}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════
+          LAYER 3 — Pivot Tabs
+          ══════════════════════════════════════════════════════ */}
+      <div className="flex-shrink-0 bg-white border-b border-slate-200">
+        <div className="px-4 overflow-x-auto">
+          <div className="flex items-end gap-0 min-w-fit">
+            {visibleTabs.map((tab) => {
+              const isActive = activeTab === tab.key;
+              const isHovered = hoveredTab === tab.key;
+
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => switchTab(tab.key)}
+                  onMouseEnter={() => setHoveredTab(tab.key)}
+                  onMouseLeave={() => setHoveredTab(null)}
+                  className={`
+                    relative px-4 py-3 text-sm font-bold whitespace-nowrap transition-all duration-200
+                    ${isActive
+                      ? 'text-sky-600'
+                      : isHovered
+                        ? 'text-slate-700 bg-slate-50'
+                        : 'text-slate-400 hover:text-slate-600'
+                    }
+                  `}
+                >
+                  {tab.label}
+                  {isActive && (
+                    <div className="absolute bottom-0 left-2 right-2 h-[3px] bg-sky-500 rounded-t-full" />
+                  )}
+                  {isHovered && !isActive && (
+                    <div className="absolute bottom-0 left-2 right-2 h-[2px] bg-slate-200 rounded-t-full" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════
+          LAYER 4 — Content Area
+          ══════════════════════════════════════════════════════ */}
+      <div className="flex-1 overflow-auto bg-slate-50/50">
+        {limited && (
+          <div className="mx-4 mt-3 flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium"
+            style={{ background: "#fef9c3", border: "1px solid #fde047", color: "#854d0e" }}>
+            <AlertTriangle className="w-4 h-4 flex-shrink-0 animate-pulse" />
+            عرض سريري محدود — بيانات الاتصال والمالية محجوبة لحماية خصوصية المريض
+          </div>
+        )}
+        <div className="p-4 sm:p-6">{renderTabContent()}</div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════
+          Confirm Dialog
+          ══════════════════════════════════════════════════════ */}
+      {confirmAction && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
+            <div className="text-center">
+              <div className={cn("w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-3",
+                confirmAction.type === "archive" ? "bg-amber-50" : "bg-green-50")}>
+                {confirmAction.type === "archive"
+                  ? <Archive className="w-7 h-7 text-amber-500" />
+                  : <RotateCcw className="w-7 h-7 text-green-500" />}
+              </div>
+              <h3 className="text-lg font-bold text-slate-900">
+                {confirmAction.type === "archive" ? "أرشفة المريض" : "استعادة المريض"}
+              </h3>
+              <p className="text-sm text-slate-500 mt-2">
+                {confirmAction.type === "archive"
+                  ? `هل تريد أرشفة "${confirmAction.name}"؟`
+                  : `هل تريد استعادة "${confirmAction.name}"؟`}
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmAction(null)}
+                className="flex-1 py-2.5 text-sm font-medium rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 transition">
+                إلغاء
+              </button>
+              <button onClick={executeConfirm}
+                className={cn("flex-1 py-2.5 text-sm font-medium rounded-xl text-white transition",
+                  confirmAction.type === "archive" ? "bg-amber-500 hover:bg-amber-600" : "bg-green-500 hover:bg-green-600")}>
+                {confirmAction.type === "archive" ? "أرشفة" : "استعادة"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

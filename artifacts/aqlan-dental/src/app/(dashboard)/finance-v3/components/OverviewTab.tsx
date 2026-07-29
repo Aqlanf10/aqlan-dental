@@ -1,0 +1,279 @@
+
+import { useState, useEffect, useCallback } from "react";
+import {
+  Receipt,
+  TrendingDown,
+  Vault,
+  HandCoins,
+  RefreshCw,
+  CheckCircle2,
+  Clock,
+  BarChart3,
+  ArrowDown,
+  ArrowUp,
+  Minus,
+} from "lucide-react";
+import { api } from "@/lib/api";
+import { buildMonthToDateComparisonRanges, calculatePercentageChange } from "@/lib/financePeriodComparison";
+import type { DashboardData, ProfitLossData } from "./types";
+import { KpiCard, tokens } from "./FinanceSharedUI";
+import { formatCurrencyAmounts, formatYER } from "./FinanceHelpers";
+
+function formatChange(change: number | null): string {
+  if (change === null) return "فترة جديدة";
+  if (change === 0) return "بدون تغير";
+  return `${change > 0 ? "+" : ""}${change.toFixed(1)}%`;
+}
+
+function PeriodComparisonMetric({
+  label,
+  current,
+  previous,
+  lowerIsBetter = false,
+}: {
+  label: string;
+  current: number;
+  previous: number;
+  lowerIsBetter?: boolean;
+}) {
+  const change = calculatePercentageChange(current, previous);
+  const isUp = change !== null && change > 0;
+  const isDown = change !== null && change < 0;
+  const Icon = isUp ? ArrowUp : isDown ? ArrowDown : Minus;
+  const isFavorable = lowerIsBetter ? isDown : isUp;
+  const isUnfavorable = lowerIsBetter ? isUp : isDown;
+  const changeColor = isFavorable ? tokens.successBorder : isUnfavorable ? tokens.dangerBorder : tokens.textTertiary;
+
+  return (
+    <div className="rounded-md border p-3" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px]" style={{ color: tokens.textTertiary }}>{label}</p>
+        <span className="inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: changeColor }}>
+          <Icon className="h-3 w-3" />
+          {formatChange(change)}
+        </span>
+      </div>
+      <p className="mt-2 text-sm font-bold" style={{ color: tokens.textPrimary }}>{formatYER(current)}</p>
+      <p className="mt-1 text-[11px]" style={{ color: tokens.textTertiary }}>
+        الفترة السابقة: {formatYER(previous)}
+      </p>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Tab 1: Overview
+   ═══════════════════════════════════════════════════════════════════════════════ */
+export function OverviewTab() {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [plData, setPlData] = useState<ProfitLossData | null>(null);
+  const [previousPlData, setPreviousPlData] = useState<ProfitLossData | null>(null);
+  const [plLoading, setPlLoading] = useState(false);
+
+  const fetchDashboard = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const { data } = await api.get<DashboardData>("/api/finance-v3/dashboard");
+      setData(data);
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "response" in err) {
+        const status = (err as { response?: { status?: number } }).response?.status;
+        if (status === 401 || status === 403) {
+          setError("ليس لديك صلاحية الوصول. يرجى تسجيل الدخول مجدداً أو التواصل مع المسؤول.");
+        } else {
+          setError("فشل في تحميل البيانات. يرجى المحاولة لاحقاً.");
+        }
+      } else {
+        setError("فشل في الاتصال بالخادم. تحقق من اتصال الإنترنت وحاول مجدداً.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const fetchPL = useCallback(async () => {
+    try {
+      setPlLoading(true);
+      const ranges = buildMonthToDateComparisonRanges();
+      const [currentResponse, previousResponse] = await Promise.all([
+        api.get<ProfitLossData>("/api/finance-v3/profit-loss", { params: ranges.current }),
+        api.get<ProfitLossData>("/api/finance-v3/profit-loss", { params: ranges.previous }),
+      ]);
+      setPlData(currentResponse.data);
+      setPreviousPlData(previousResponse.data);
+    } catch {
+      // P&L is supplementary — don't block the page
+    } finally {
+      setPlLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchDashboard(); fetchPL(); }, [fetchDashboard, fetchPL]);
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Header with refresh */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-semibold mb-1" style={{ color: tokens.textPrimary }}>المركز المالي</h2>
+          <p className="text-sm leading-relaxed" style={{ color: tokens.textSecondary }}>
+            مرحباً بك في المركز المالي. يتم تسجيل تحصيل المرضى من شاشة التشغيل اليومي، بينما هذه الشاشة مخصصة للمراجعة والتسوية والتقارير.
+          </p>
+        </div>
+        <button
+          onClick={() => { fetchDashboard(); fetchPL(); }}
+          className="w-8 h-8 rounded-md flex items-center justify-center transition-colors"
+          style={{ color: tokens.brand, border: `1px solid ${tokens.border}` }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = tokens.brandLight; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
+          title="تحديث البيانات"
+        >
+          <RefreshCw className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Live KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {loading ? (
+          Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="rounded-lg border p-4 animate-pulse" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
+              <div className="h-3 w-20 rounded mb-2" style={{ backgroundColor: tokens.cardHover }} />
+              <div className="h-6 w-32 rounded" style={{ backgroundColor: tokens.cardHover }} />
+            </div>
+          ))
+        ) : error ? (
+          <div className="col-span-full rounded-lg border p-4" style={{ backgroundColor: tokens.dangerBg, borderColor: tokens.dangerBorder }}>
+            <p className="text-sm" style={{ color: tokens.dangerText }}>{error}</p>
+            <button onClick={fetchDashboard} className="text-xs font-medium mt-2 underline" style={{ color: tokens.brand }}>إعادة المحاولة</button>
+          </div>
+        ) : data ? (
+          <>
+            <KpiCard label="إيراد اليوم (مستحق)" value={formatYER(data.todayAccruedRevenue)} sublabel={`التدفقات الداخلة: ${formatYER(data.todayInflow)}`} color={tokens.successBorder} icon={<Receipt className="w-4 h-4" />} />
+            <KpiCard label="التدفقات الخارجة اليوم" value={formatYER(data.todayOutflow)} sublabel={`شهري: ${formatYER(data.monthOutflow)}`} color={tokens.dangerBorder} icon={<TrendingDown className="w-4 h-4" />} />
+            <KpiCard label="رصيد الخزائن حسب العملة" value={formatCurrencyAmounts(data.treasuryBalancesByCurrency ?? [{ currency: "YER", amount: data.totalTreasuryBalance }])} sublabel={`${data.journalEntryCount} قيد محاسبي — دون جمع العملات`} color={tokens.brand} icon={<Vault className="w-4 h-4" />} />
+            <KpiCard label="المستحقات المعلقة" value={formatYER(data.totalOutstanding)} sublabel={`عقود: ${formatYER(data.contractOutstanding)}`} color={tokens.warningBorder} icon={<HandCoins className="w-4 h-4" />} />
+          </>
+        ) : null}
+      </div>
+
+      {/* Consolidated view indicator */}
+      {data?.isConsolidated && (
+        <div className="rounded-md px-3 py-2 text-xs" style={{ backgroundColor: tokens.infoBg, border: `1px solid ${tokens.infoBorder}`, color: tokens.infoText }}>
+          📊 عرض مُجمّع — يجمع بيانات جميع الفروع
+        </div>
+      )}
+
+      {/* Dual-write health + Pending actions */}
+      {data && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
+            <div className="flex items-center gap-2 mb-3">
+              <CheckCircle2 className="w-4 h-4" style={{ color: tokens.successBorder }} />
+              <h4 className="text-sm font-semibold" style={{ color: tokens.textPrimary }}>حالة الكتابة المزدوجة</h4>
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>إجمالي القيود</span><span className="font-bold" style={{ color: tokens.textPrimary }}>{data.journalEntryCount}</span></div>
+              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>قيود مرحّلة</span><span className="font-bold" style={{ color: tokens.successBorder }}>{data.postedEntryCount}</span></div>
+              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>قيود عكسية</span><span className="font-bold" style={{ color: tokens.warningText }}>{data.reversalEntryCount}</span></div>
+              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>نسبة التغطية</span><span className="font-bold" style={{ color: tokens.brand }}>{data.dualWriteCoverage}</span></div>
+            </div>
+          </div>
+          <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
+            <div className="flex items-center gap-2 mb-3">
+              <Clock className="w-4 h-4" style={{ color: tokens.warningBorder }} />
+              <h4 className="text-sm font-semibold" style={{ color: tokens.textPrimary }}>إجراءات معلقة</h4>
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>مصروفات بانتظار الاعتماد</span><span className="font-bold" style={{ color: data.pendingExpenses > 0 ? tokens.warningText : tokens.textPrimary }}>{data.pendingExpenses}</span></div>
+              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>تحويلات معلقة</span><span className="font-bold" style={{ color: data.pendingTransfers > 0 ? tokens.warningText : tokens.textPrimary }}>{data.pendingTransfers}</span></div>
+              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>فواتير غير مدفوعة</span><span className="font-bold" style={{ color: tokens.textPrimary }}>{formatYER(data.invoiceOutstanding)}</span></div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* P&L Summary */}
+      <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
+        <div className="flex items-center gap-2 mb-3">
+          <BarChart3 className="w-4 h-4" style={{ color: tokens.brand }} />
+          <h4 className="text-sm font-semibold" style={{ color: tokens.textPrimary }}>ملخص الأرباح والخسائر (الشهر الحالي)</h4>
+        </div>
+        {plLoading ? (
+          <div className="animate-pulse space-y-2">
+            <div className="h-4 w-40 rounded" style={{ backgroundColor: tokens.cardHover }} />
+            <div className="h-4 w-60 rounded" style={{ backgroundColor: tokens.cardHover }} />
+          </div>
+        ) : plData ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الإيرادات المستحقة</p><p className="text-sm font-bold" style={{ color: tokens.successBorder }}>{formatYER(plData.accruedRevenue)}</p></div>
+            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المصروفات المستحقة</p><p className="text-sm font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(plData.accruedExpenses)}</p></div>
+            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>صافي الربح المستحق</p><p className="text-sm font-bold" style={{ color: plData.accruedNetProfit >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{formatYER(plData.accruedNetProfit)}</p></div>
+            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>صافي الربح النقدي</p><p className="text-sm font-bold" style={{ color: plData.cashNetProfit >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{formatYER(plData.cashNetProfit)}</p></div>
+            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>التحصيلات النقدية</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{formatYER(plData.cashCollections)}</p></div>
+            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المرتجعات النقدية</p><p className="text-sm font-bold" style={{ color: tokens.warningText }}>{formatYER(plData.cashRefunds)}</p></div>
+            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>إجمالي التكاليف</p><p className="text-sm font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(plData.totalCosts)}</p></div>
+            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>هامش الربح</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{(plData.profitMargin ?? 0).toFixed(1)}%</p></div>
+          </div>
+        ) : (
+          <p className="text-xs" style={{ color: tokens.textTertiary }}>لم يتم تحميل بيانات الأرباح والخسائر</p>
+        )}
+      </div>
+
+      {/* Period comparison */}
+      <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
+        <div className="flex items-center gap-2 mb-3">
+          <BarChart3 className="w-4 h-4" style={{ color: tokens.brand }} />
+          <div>
+            <h4 className="text-sm font-semibold" style={{ color: tokens.textPrimary }}>مقارنة الفترة</h4>
+            <p className="text-[11px]" style={{ color: tokens.textTertiary }}>
+              الشهر الحالي حتى اليوم مقارنة بنفس المدة من الشهر السابق
+            </p>
+          </div>
+        </div>
+        {plLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-24 rounded-md animate-pulse" style={{ backgroundColor: tokens.cardHover }} />
+            ))}
+          </div>
+        ) : plData && previousPlData ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <PeriodComparisonMetric
+              label="صافي التحصيل"
+              current={plData.netCashCollections}
+              previous={previousPlData.netCashCollections}
+            />
+            <PeriodComparisonMetric
+              label="إجمالي المصروفات"
+              current={plData.totalCosts}
+              previous={previousPlData.totalCosts}
+              lowerIsBetter
+            />
+            <PeriodComparisonMetric
+              label="صافي الربح النقدي"
+              current={plData.cashNetProfit}
+              previous={previousPlData.cashNetProfit}
+            />
+          </div>
+        ) : (
+          <p className="text-xs" style={{ color: tokens.textTertiary }}>لم يتم تحميل بيانات المقارنة</p>
+        )}
+      </div>
+
+      {/* Monthly summary */}
+      {data && (
+        <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
+          <h4 className="text-sm font-semibold mb-3" style={{ color: tokens.textPrimary }}>ملخص الشهر</h4>
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div><p className="text-xs" style={{ color: tokens.textTertiary }}>الإيرادات المستحقة</p><p className="text-lg font-bold" style={{ color: tokens.successBorder }}>{formatYER(data.monthAccruedRevenue)}</p></div>
+            <div><p className="text-xs" style={{ color: tokens.textTertiary }}>التدفقات الخارجة</p><p className="text-lg font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(data.monthOutflow)}</p></div>
+            <div><p className="text-xs" style={{ color: tokens.textTertiary }}>صافي التدفق</p><p className="text-lg font-bold" style={{ color: data.monthNet >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{formatYER(data.monthNet)}</p></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

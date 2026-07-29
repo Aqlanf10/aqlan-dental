@@ -1,0 +1,190 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Aqlan Dental Pro — Global Styles
+ *
+ * Brand colors:
+ *   --clinic-primary:  #1a3a5c  (dark sky — sidebar, headers, primary text)
+ *   --clinic-blue:     #3d7ab5  (sky blue — links, accents)
+ *   --clinic-orange:   #f5922e  (orange — CTA, active states)
+ */
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 213 56% 23%;        /* #1a3a5c */
+    --card: 0 0% 100%;
+    --card-foreground: 213 56% 23%;
+    --primary: 209 48% 48%;            /* #3d7ab5 */
+    --primary-foreground: 210 40% 98%;
+    --secondary: 212 33% 95%;
+    --secondary-foreground: 213 56% 23%;
+    --muted: 212 33% 95%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 27 91% 57%;              /* #f5922e */
+    --accent-foreground: 213 56% 23%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 212 44% 90%;
+    --input: 212 44% 90%;
+    --ring: 27 91% 57%;                /* orange focus ring */
+    --radius: 0.5rem;
+    --font-tajawal: 'Tajawal', sans-serif;
+
+    /* Brand color tokens (use these in inline styles) */
+    --clinic-primary: #1a3a5c;
+    --clinic-primary-700: #244b73;
+    --clinic-blue: #3d7ab5;
+    --clinic-blue-dark: #2d5e8e;
+    --clinic-orange: #f5922e;
+    --clinic-orange-dark: #c47022;
+  }
+
+  * {
+    @apply border-border box-border;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    @apply text-foreground;
+    font-family: var(--font-tajawal), sans-serif;
+    background: #f0f5fb;
+    color: #1a3a5c;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c8d8ea; border-radius: 99px; }
+  ::-webkit-scrollbar-thumb:hover { background: #a8c0d6; }
+
+  input::placeholder { color: #94a3b8 !important; }
+}
+
+@layer utilities {
+  /* Brand-aligned gradients */
+  .clinic-gradient { background: linear-gradient(135deg, #1a3a5c 0%, #244b73 55%, #2e4a6f 100%); }
+  .navy-gradient   { background: linear-gradient(135deg, #1a3a5c 0%, #2e4a6f 100%); }
+  .orange-gradient { background: linear-gradient(135deg, #f5922e 0%, #f7a44f 100%); }
+  .blue-gradient   { background: linear-gradient(135deg, #3d7ab5 0%, #5a94c9 100%); }
+  .text-balance    { text-wrap: balance; }
+
+  /* Page content fade-in */
+  .page-content { animation: fadeIn 0.2s ease; }
+  .card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 24px rgba(26,58,92,0.1);
+    transition: all 0.2s;
+  }
+}
+
+/* ─── Print styles ──────────────────────────────────────────────────────────── */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  aside, header, nav { display: none !important; }
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+  body {
+    background: white !important;
+    font-size: 12px;
+  }
+  * { box-shadow: none !important; }
+
+  main {
+    overflow: visible !important;
+    padding: 0 !important;
+    margin-right: 0 !important;
+    margin-left: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .lg\:mr-64 { margin-right: 0 !important; }
+
+  .print-page {
+    min-height: 270mm;
+    display: flex !important;
+    flex-direction: column;
+  }
+
+  .print-content {
+    flex: 1;
+  }
+
+  .print-footer {
+    margin-top: auto;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 8px;
+    font-size: 11px;
+    color: #475569;
+  }
+
+  .appointment-card,
+  .avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  table { border-collapse: collapse; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; page-break-inside: avoid; }
+
+  button:not(.print-allow),
+  .print:hidden { display: none !important; }
+
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+@layer utilities {
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  @keyframes slideInRTL {
+    from { transform: translateX(100%); opacity: 0; }
+    to   { transform: translateX(0);    opacity: 1; }
+  }
+  @keyframes hide {
+    from { opacity: 1; }
+    to   { opacity: 0; }
+  }
+  .animate-slideIn { animation: slideInRTL 0.2s ease-out; }
+  .animate-hide    { animation: hide   0.2s ease-in;  }
+}
+
+/* FE-27: Print styles — hide dashboard chrome when printing */
+@media print {
+  /* Hide everything by default when body has 'printing' class */
+  body.printing nav,
+  body.printing aside,
+  body.printing header,
+  body.printing [data-print-hidden] {
+    display: none !important;
+  }
+
+  /* Show print-only elements */
+  .print-only {
+    display: block !important;
+  }
+
+  /* Ensure content fills the page */
+  body.printing main {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+}
+
+/* Hide print-only elements on screen */
+.print-only {
+  display: none;
+}

@@ -1,0 +1,172 @@
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "@/lib/nextNavCompat";
+import Link from "@/lib/nextLinkCompat";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Save } from "lucide-react";
+import type { PatientListItem } from "@/types/patient";
+import type { CreateOrthoCaseRequest } from "@/types/ortho";
+import { PatientCombobox } from "@/components/shared/PatientCombobox";
+import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
+import { useDoctors } from "@/hooks/useDoctors";
+import { cn, localDateString } from "@/lib/utils";
+import { rtlArrowBack as RtlArrowBack } from "@/lib/rtlIcons";
+
+interface Doctor { id: string; name: string; color?: string; }
+
+const schema = z.object({
+  patientId:              z.string().min(1, "اختر مريضاً"),
+  doctorId:               z.string().optional(),
+  applianceType:          z.string().optional(),
+  startDate:              z.string().optional(),
+  expectedDurationMonths: z.number().optional(),
+  totalFee:               z.number().optional(),
+  notes:                  z.string().optional(),
+});
+type FormData = z.infer<typeof schema>;
+
+const inputCls = (err?: string) => cn(
+  "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue",
+  err ? "border-red-400" : "border-gray-300"
+);
+
+const APPLIANCE_TYPES = ["MBT 0.022", "MBT 0.018", "Damon", "Invisalign", "Removable", "Functional"];
+
+function NewOrthoContent() {
+  const router = useRouter();
+  const params = useSearchParams();
+  const defaultPatientId   = params.get("patientId")   ?? undefined;
+  const defaultPatientName = params.get("patientName")  ?? undefined;
+
+  const [saving, setSaving] = useState(false);
+  const [serverError, setServerError] = useState("");
+  // FE-13: useDoctors() replaces useState + useEffect + api.get.
+  const { data: doctors = [] } = useDoctors();
+
+  const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormData>({
+    resolver: zodResolver(schema),
+    defaultValues: { startDate: localDateString(), patientId: defaultPatientId ?? "" }
+  });
+
+  const onSubmit = async (data: FormData) => {
+    setSaving(true);
+    setServerError("");
+    try {
+      const req: CreateOrthoCaseRequest = {
+        patientId: data.patientId,
+        doctorId: data.doctorId,
+        applianceType: data.applianceType,
+        startDate: data.startDate,
+        expectedDurationMonths: data.expectedDurationMonths,
+        totalFee: data.totalFee,
+        notes: data.notes,
+      };
+      const { data: created } = await api.post<{ id: string }>("/api/ortho-cases", req);
+      router.push(`/ortho/${created.id}`);
+    } catch (err: unknown) {
+      setServerError(extractErrorMessage(err, "حدث خطأ أثناء الحفظ"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-5 max-w-3xl">
+      <div className="flex items-center gap-2 text-sm text-gray-500">
+        <Link href="/ortho" className="hover:text-clinic-blue transition">التقويم</Link>
+        <span>/</span>
+        <span className="text-gray-900 font-medium">حالة جديدة</span>
+      </div>
+      <div className="flex items-center gap-3">
+        <Link href="/ortho" className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500">
+          <RtlArrowBack className="w-4 h-4" />
+        </Link>
+        <h1 className="text-2xl font-extrabold text-gray-900">إنشاء حالة تقويمية جديدة</h1>
+      </div>
+
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        {serverError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">{serverError}</div>
+        )}
+
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Patient */}
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">المريض <span className="text-red-500">*</span></label>
+            <PatientCombobox
+              defaultDisplayValue={defaultPatientName ?? ""}
+              onSelect={(p: PatientListItem) => setValue("patientId", p.id)}
+              error={errors.patientId?.message}
+            />
+            <input type="hidden" {...register("patientId")} />
+            {errors.patientId && <p className="mt-1 text-xs text-red-600">{errors.patientId.message}</p>}
+          </div>
+
+          {/* Doctor */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">الطبيب المسؤول</label>
+            <select {...register("doctorId")} className={inputCls()}>
+              <option value="">اختر الطبيب...</option>
+              {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </div>
+
+          {/* Appliance type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">نوع الجهاز</label>
+            <select {...register("applianceType")} className={inputCls()}>
+              <option value="">اختر...</option>
+              {APPLIANCE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+
+          {/* Start date */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">تاريخ البداية</label>
+            <input {...register("startDate")} type="date" className={inputCls()} />
+          </div>
+
+          {/* Duration */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">المدة المتوقعة (أشهر)</label>
+            <input {...register("expectedDurationMonths", { valueAsNumber: true })} type="number" min={1} max={60} className={inputCls()} placeholder="18" />
+          </div>
+
+          {/* Total fee */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">الرسوم الإجمالية (ريال)</label>
+            <input {...register("totalFee", { valueAsNumber: true })} type="number" min={0} className={inputCls()} placeholder="0" dir="ltr" />
+          </div>
+
+          {/* Notes */}
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">ملاحظات</label>
+            <textarea {...register("notes")} rows={2} className={inputCls()} />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 pb-4">
+          <Link href="/ortho" className="px-5 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition">
+            إلغاء
+          </Link>
+          <button type="submit" disabled={saving}
+            className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
+          >
+            <Save className="w-4 h-4" />
+            {saving ? "جارٍ الإنشاء..." : "إنشاء الحالة"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+export default function NewOrthoPage() {
+  return (
+    <Suspense>
+      <NewOrthoContent />
+    </Suspense>
+  );
+}

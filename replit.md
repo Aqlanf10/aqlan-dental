@@ -1,45 +1,36 @@
-# [Project name]
+# Aqlan Dental Pro
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A full-featured dental clinic management system for Dr. Aqlan's dental & orthodontics center (مركز د. عقلان الكامل), Taiz, Yemen.
 
-## Run & Operate
+## Architecture
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- **Frontend**: `artifacts/aqlan-dental/` — React + Vite (ported from Next.js). RTL Arabic UI using Tajawal font. Serves at `/`.
+- **API Server**: `artifacts/api-server/` — Express.js backend serving at `/api`. Originally a .NET backend; the Express stub is the Replit-side API layer.
+- **Database**: Pre-configured PostgreSQL via `lib/db/` (Drizzle ORM). The original app used a .NET + PostgreSQL backend.
 
-## Stack
+## Key Features
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+The app is a multi-module clinic management SaaS:
+- Staff login + patient portal (dual login on `/login`)
+- Daily operations, appointments, patient records
+- Orthodontics, cephalometry (ceph), surgery modules
+- Finance, HR, inventory, lab modules
+- Messaging (WhatsApp, SMS, internal), radiology
+- Clinic queue display (kiosk screen at `/clinic-display`)
+- Patient portal at `/portal/*`
 
-## Where things live
+## Porting Notes
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- Ported from Next.js App Router → Vite + React + wouter
+- `src/lib/nextNavCompat.ts` — shim for `next/navigation` (useRouter, usePathname, useSearchParams, useParams, redirect)
+- `src/lib/nextLinkCompat.tsx` — shim for `next/link`
+- `src/lib/nextImageCompat.tsx` — shim for `next/image`
+- Tailwind v3 (not v4) — uses `postcss.config.cjs` + `tailwind.config.ts`
+- Font: Tajawal woff2 files in `src/app/fonts/`, loaded via @font-face in `src/index.css`
+- `NEXT_PUBLIC_*` env vars → `VITE_*` env vars
+- The original .NET backend is in `.migration-backup/backend/` — the app communicates with it via `VITE_API_URL`
 
-## Architecture decisions
+## User Preferences
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
-
-## Product
-
-_Describe the high-level user-facing capabilities of this app once they exist._
-
-## User preferences
-
-_Populate as you build — explicit user instructions worth remembering across sessions._
-
-## Gotchas
-
-_Populate as you build — sharp edges, "always run X before Y" rules._
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- Preserve Arabic RTL layout throughout
+- Brand colors: `#1a3a5c` (dark sky), `#3d7ab5` (sky blue), `#f5922e` (orange)

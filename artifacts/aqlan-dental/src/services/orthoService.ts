@@ -1,0 +1,131 @@
+import api from "@/lib/api";
+import type {
+  ClinicalExam,
+  CreateOrthoVisitRequest,
+  ExtractionDecision,
+  OrthoCase,
+  OrthoDiagnosis,
+  OrthoImagePreparation,
+  OrthoOverview,
+  OrthoPhoto,
+  OrthoVisit,
+  PhotoAnalysisListItem,
+  ProblemListItem,
+  RecordsChecklist,
+  RetentionRecord,
+  RetentionVisit,
+  SaveOrthoImagePreparationRequest,
+  TreatmentPlan,
+  TreatmentStage,
+  UpdateOrthoPhotoRequest,
+} from "@/types/ortho";
+import type { CephAnalysis, CephAnalysisList } from "@/types/ceph";
+
+const BASE = "/api/ortho-cases";
+
+export const orthoService = {
+  getCase: (caseId: string) => api.get<OrthoCase>(`${BASE}/${caseId}`),
+  getOverview: (caseId: string) => api.get<OrthoOverview>(`${BASE}/${caseId}/overview`),
+
+  getClinicalExam: (caseId: string) => api.get<ClinicalExam | null>(`${BASE}/${caseId}/clinical-exam`),
+  saveClinicalExam: (caseId: string, data: Partial<ClinicalExam>) =>
+    api.put(`${BASE}/${caseId}/clinical-exam`, data),
+
+  getProblems: (caseId: string) => api.get<ProblemListItem[]>(`${BASE}/${caseId}/problem-list`),
+  addProblem: (caseId: string, data: Partial<ProblemListItem>) =>
+    api.post<ProblemListItem>(`${BASE}/${caseId}/problem-list`, data),
+  deleteProblem: (caseId: string, problemId: string) =>
+    api.delete(`${BASE}/${caseId}/problem-list/${problemId}`),
+
+  getDiagnosis: (caseId: string) => api.get<OrthoDiagnosis | null>(`${BASE}/${caseId}/diagnosis`),
+  saveDiagnosis: (caseId: string, data: Partial<OrthoDiagnosis>) =>
+    api.put(`${BASE}/${caseId}/diagnosis`, data),
+  approveDiagnosis: (caseId: string) =>
+    api.patch(`${BASE}/${caseId}/diagnosis/approve`),
+  getCephAnalyses: (caseId: string) =>
+    api.get<CephAnalysisList[]>(`/api/ceph?orthoCaseId=${encodeURIComponent(caseId)}`),
+  getCephAnalysis: (analysisId: string) =>
+    api.get<CephAnalysis>(`/api/ceph/${analysisId}`),
+  getPhotoAnalyses: (caseId: string) =>
+    api.get<PhotoAnalysisListItem[]>(`/api/photo-analysis?orthoCaseId=${encodeURIComponent(caseId)}`),
+
+  getTreatmentPlan: (caseId: string) => api.get<TreatmentPlan | null>(`${BASE}/${caseId}/treatment-plan`),
+  getTreatmentPlans: (caseId: string) => api.get<TreatmentPlan[]>(`${BASE}/${caseId}/treatment-plans`),
+  saveTreatmentPlan: (caseId: string, data: Partial<TreatmentPlan>) =>
+    api.put(`${BASE}/${caseId}/treatment-plan`, data),
+  createTreatmentPlan: (caseId: string, data: Partial<TreatmentPlan>) =>
+    api.post<TreatmentPlan>(`${BASE}/${caseId}/treatment-plans`, data),
+  updateTreatmentPlan: (caseId: string, planId: string, data: Partial<TreatmentPlan>) =>
+    api.put(`${BASE}/${caseId}/treatment-plans/${planId}`, data),
+  approveTreatmentPlan: (caseId: string) =>
+    api.patch<TreatmentPlan>(`${BASE}/${caseId}/treatment-plan/approve`),
+  approveSpecificTreatmentPlan: (caseId: string, planId: string) =>
+    api.patch<TreatmentPlan>(`${BASE}/${caseId}/treatment-plans/${planId}/approve`),
+  // Sprint 3 — soft-delete a non-approved treatment plan (approved plans are rejected by the API).
+  deleteTreatmentPlan: (caseId: string, planId: string) =>
+    api.delete(`${BASE}/${caseId}/treatment-plans/${planId}`),
+
+  getStages: (caseId: string) => api.get<TreatmentStage[]>(`${BASE}/${caseId}/stages`),
+  updateStage: (caseId: string, stageId: string, status: string) =>
+    api.put<TreatmentStage>(`${BASE}/${caseId}/stages/${stageId}`, { status }),
+
+  getVisits: (caseId: string) => api.get<OrthoVisit[]>(`${BASE}/${caseId}/visits`),
+  addVisit: (caseId: string, data: CreateOrthoVisitRequest) =>
+    api.post<OrthoVisit>(`${BASE}/${caseId}/visits`, data),
+  // Sprint 3 — edit an existing ortho visit (syncs the linked daily-operations Visit per CLIN-05).
+  updateVisit: (caseId: string, visitId: string, data: CreateOrthoVisitRequest) =>
+    api.put<OrthoVisit>(`${BASE}/${caseId}/visits/${visitId}`, data),
+  // Sprint 3 — soft-delete an ortho visit (unlinks the linked Visit row; preserves payments).
+  deleteVisit: (caseId: string, visitId: string) =>
+    api.delete(`${BASE}/${caseId}/visits/${visitId}`),
+
+  getExtractionDecision: (caseId: string) =>
+    api.get<ExtractionDecision | null>(`${BASE}/${caseId}/extraction-decision`),
+  saveExtractionDecision: (caseId: string, data: Partial<ExtractionDecision>) =>
+    api.put(`${BASE}/${caseId}/extraction-decision`, data),
+
+  getRetention: (caseId: string) => api.get<RetentionRecord | null>(`${BASE}/${caseId}/retention`),
+  saveRetention: (caseId: string, data: Partial<RetentionRecord>) =>
+    api.put(`${BASE}/${caseId}/retention`, data),
+  addRetentionVisit: (caseId: string, data: Partial<RetentionVisit>) =>
+    api.post<RetentionVisit>(`${BASE}/${caseId}/retention/visits`, data),
+
+  getPhotos: (caseId: string) => api.get<OrthoPhoto[]>(`${BASE}/${caseId}/photos`),
+  addPhoto: (caseId: string, data: Partial<OrthoPhoto>) =>
+    api.post<OrthoPhoto>(`${BASE}/${caseId}/photos`, data),
+  updatePhoto: (caseId: string, photoId: string, data: UpdateOrthoPhotoRequest) =>
+    api.patch<OrthoPhoto>(`${BASE}/${caseId}/photos/${photoId}`, data),
+  getImagePreparation: (caseId: string, photoId: string) =>
+    api.get<OrthoImagePreparation>(`${BASE}/${caseId}/photos/${photoId}/preparation`),
+  saveImagePreparation: (
+    caseId: string,
+    photoId: string,
+    data: SaveOrthoImagePreparationRequest
+  ) => api.put<OrthoImagePreparation>(`${BASE}/${caseId}/photos/${photoId}/preparation`, data),
+  resetImagePreparation: (caseId: string, photoId: string) =>
+    api.delete<OrthoImagePreparation>(`${BASE}/${caseId}/photos/${photoId}/preparation`),
+  deletePhoto: (caseId: string, photoId: string) =>
+    api.delete(`${BASE}/${caseId}/photos/${photoId}`),
+
+  getChecklist: (caseId: string) => api.get<RecordsChecklist>(`${BASE}/${caseId}/checklist`),
+  saveChecklist: (caseId: string, data: Partial<RecordsChecklist>) =>
+    api.put(`${BASE}/${caseId}/checklist`, data),
+
+  getCasePresentationDefinition: (caseId: string) =>
+    api.get<OrthoPresentationDefinition>(`${BASE}/${caseId}/case-presentation/definition`),
+};
+
+export interface OrthoPresentationDefinitionSlide {
+  order: number;
+  type: string;
+  title: string;
+  required: boolean;
+  hasData: boolean;
+}
+
+export interface OrthoPresentationDefinition {
+  template: string;
+  totalSlides: number;
+  readySlides: number;
+  slides: OrthoPresentationDefinitionSlide[];
+}

@@ -1,0 +1,642 @@
+import { useEffect, useRef, useState } from "react";
+import Link from "@/lib/nextLinkCompat";
+import { Activity, MoreVertical, Pencil, Stethoscope, Send, Trash2, Plus, UserX, Mail } from "lucide-react";
+import type { Appointment } from "@/types/appointment";
+import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
+import { cn, APPOINTMENT_STATUS_LABELS, formatTime } from "@/lib/utils";
+import { toast } from "@/stores/toastStore";
+import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
+import { useAuthStore } from "@/stores/authStore";
+// FE-09: centralized appointment status colors
+import { APPOINTMENT_STATUS_COLORS as STATUS_COLORS } from "@/lib/statusStyles";
+// YOLO-S1: resolve appointment color (explicit pick → package color → doctor color)
+import { resolveAppointmentColor } from "@/lib/appointmentColors";
+
+const HOURS = Array.from({ length: 13 }, (_, i) => i + 8); // 8:00 – 20:00
+
+const STATUS_TRANSITIONS: Record<string, { value: string; label: string }[]> = {
+  Scheduled:  [{ value: "Confirmed", label: "تأكيد" }, { value: "Arrived", label: "وصل" }, { value: "Cancelled", label: "إلغاء" }],
+  Confirmed:  [{ value: "Arrived",    label: "وصل" },   { value: "Cancelled", label: "إلغاء" }],
+  Arrived:    [{ value: "Waiting", label: "في الانتظار" }, { value: "NoShow", label: "غياب" }],
+  Waiting:    [{ value: "Called", label: "تم النداء" }, { value: "NoShow", label: "غياب" }],
+  Called:     [{ value: "InRoom", label: "داخل الغرفة" }, { value: "NoShow", label: "غياب" }],
+  InRoom:     [{ value: "InProgress", label: "بدأ" }, { value: "Cancelled", label: "إلغاء" }],
+  InProgress: [{ value: "Completed",  label: "اكتمل" }, { value: "Cancelled", label: "إلغاء" }],
+  Completed:  [],
+  Cancelled:  [{ value: "Scheduled",  label: "إعادة جدولة" }],
+  NoShow:     [{ value: "Scheduled",  label: "إعادة جدولة" }],
+};
+
+interface Props {
+  date: string;
+  doctorId?: string;
+}
+
+type VisitCheckState = "loading" | "ready" | "error";
+
+function newApptUrl(date: string, hour: number, doctorId?: string): string {
+  const h = String(hour).padStart(2, "0");
+  let url = `/appointments/new?date=${date}&startTime=${h}:00`;
+  if (doctorId) url += `&doctorId=${doctorId}`;
+  return url;
+}
+
+export function DaySchedule({ date, doctorId }: Props) {
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [noShowLoading, setNoShowLoading] = useState(false);
+
+  // NOTE: This component uses direct api.get() with from/to params instead of useAppointments hook.
+  // The useAppointments hook uses startDate/endDate query params, while the backend expects from/to for date-range queries.
+  // Until the hook is updated to support from/to params, direct API calls are the correct approach here.
+  // CORE-APPT-014: stepping quickly between days fires overlapping requests with no
+  // ordering guarantee, so a slower earlier response could land last and paint a
+  // different day than the header shows. Only the newest request may write state.
+  // (The visit-existence check further down this file already guards itself with an
+  // `active` flag — the schedule fetch was simply missing the same protection.)
+  const reqSeq = useRef(0);
+
+  const reload = () => {
+    const seq = ++reqSeq.current;
+    setLoading(true);
+    setLoadError(false);
+    const q = doctorId ? `&doctorId=${doctorId}` : "";
+    api
+      .get<Appointment[]>(`/api/appointments?from=${date}&to=${date}${q}`)
+      .then((r) => { if (seq === reqSeq.current) setAppointments(r.data); })
+      // A failed fetch must not render as an empty (appointment-free) day.
+      // A STALE failure must not blank out the day that is actually displayed.
+      .catch(() => { if (seq === reqSeq.current) { setAppointments([]); setLoadError(true); } })
+      .finally(() => { if (seq === reqSeq.current) setLoading(false); });
+  };
+
+  // The cleanup bump invalidates the in-flight request when the day/doctor changes
+  // or the component unmounts, so a late reply can never apply.
+  useEffect(() => { reload(); return () => { reqSeq.current++; }; }, [date, doctorId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const updateStatus = async (id: string, status: string) => {
+    try {
+      await api.put(`/api/appointments/${id}/status`, { status });
+      // Flip the card ONLY after the server accepted the change — a local
+      // flip on failure showed a false "مكتمل/ملغي" until reload.
+      setAppointments((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, status } : a))
+      );
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل تحديث حالة الموعد"));
+    }
+  };
+
+  // Local-only sync — for card actions whose own endpoint already changed the
+  // server state (mark-arrival, send-to-queue, start-visit). Re-issuing a
+  // PUT /status here would be redundant, and after a delete it 404s (Codex P2
+  // on #646): the appointment is soft-deleted and hidden by the IsActive filter.
+  const syncLocalStatus = (id: string, status: string) => {
+    setAppointments((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, status } : a))
+    );
+  };
+
+  const removeLocally = (id: string) => {
+    setAppointments((prev) => prev.filter((a) => a.id !== id));
+  };
+
+  const handleNoShowAll = async () => {
+    const remaining = appointments.filter(
+      (a) => a.status === "Scheduled" || a.status === "Confirmed"
+    );
+    if (remaining.length === 0) {
+      toast.info("لا توجد مواعيد مجدولة أو مؤكدة لتحويلها");
+      return;
+    }
+    if (!confirm(`هل أنت متأكد من تسجيل غياب ${remaining.length} موعد؟`)) return;
+    setNoShowLoading(true);
+    try {
+      await api.post("/api/appointments/batch-status", {
+        appointmentIds: remaining.map((a) => a.id),
+        status: "NoShow",
+      });
+      setAppointments((prev) =>
+        prev.map((a) =>
+          a.status === "Scheduled" || a.status === "Confirmed"
+            ? { ...a, status: "NoShow" }
+            : a
+        )
+      );
+      toast.success(`تم تسجيل غياب ${remaining.length} موعد`);
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل تسجيل الغياب الجماعي"));
+    } finally {
+      setNoShowLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-2 animate-pulse">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="h-16 bg-gray-100 rounded-xl" />
+        ))}
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="rounded-xl border border-red-200 py-10 text-center" style={{ background: "#fef2f2" }}>
+        <p className="text-sm font-medium" style={{ color: "#b91c1c" }}>
+          تعذر تحميل مواعيد هذا اليوم — تحقق من الاتصال وحاول مجددًا
+        </p>
+        <button
+          type="button"
+          onClick={reload}
+          className="mt-3 rounded-lg border border-red-300 px-4 py-1.5 text-sm font-medium text-red-700 transition hover:bg-red-100"
+        >
+          إعادة المحاولة
+        </button>
+      </div>
+    );
+  }
+
+  if (!appointments.length) {
+    return (
+      <div className="text-center py-16 text-gray-400">
+        <p className="text-sm">لا توجد مواعيد في هذا اليوم</p>
+        <Link
+          href="/appointments/new"
+          className="mt-3 inline-block text-xs text-clinic-blue hover:underline"
+        >
+          + إضافة موعد
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {/* No-show all button */}
+      {appointments.some((a) => a.status === "Scheduled" || a.status === "Confirmed") && (
+        <div className="flex justify-start mb-3">
+          <button
+            onClick={handleNoShowAll}
+            disabled={noShowLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition disabled:opacity-50"
+          >
+            <UserX className="w-3.5 h-3.5" />
+            {noShowLoading ? "جارٍ التحديث..." : "تسجيل غياب الباقين"}
+          </button>
+        </div>
+      )}
+      {HOURS.map((h) => {
+        const slotAppts = appointments.filter((a) =>
+          a.startTime.startsWith(String(h).padStart(2, "0"))
+        );
+
+        return (
+          <div key={h} className="flex items-start gap-3 min-h-[52px]">
+            <span className="text-xs text-gray-400 w-12 flex-shrink-0 pt-2 font-mono">
+              {formatTime(`${String(h).padStart(2, "0")}:00`)}
+            </span>
+            <div className="flex-1 space-y-1.5">
+              {slotAppts.map((a) => (
+                <AppointmentCard
+                  key={a.id}
+                  appointment={a}
+                  onStatusChange={updateStatus}
+                  onLocalStatus={syncLocalStatus}
+                  onDeleted={removeLocally}
+                />
+              ))}
+              {!slotAppts.length && (
+                <Link
+                  href={newApptUrl(date, h, doctorId)}
+                  className="flex items-center gap-1.5 h-10 px-2 border-b border-dashed border-gray-100 text-transparent hover:text-clinic-blue hover:border-clinic-blue/30 hover:bg-clinic-blue/5 rounded group transition-colors"
+                >
+                  <Plus className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <span className="text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                    موعد جديد
+                  </span>
+                </Link>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AppointmentCard({
+  appointment: a,
+  onStatusChange,
+  onLocalStatus,
+  onDeleted,
+}: {
+  appointment: Appointment;
+  /** Menu transitions: sends PUT /status to the server, flips on success. */
+  onStatusChange: (id: string, status: string) => void;
+  /** Local sync only — the action's own endpoint already changed the server. */
+  onLocalStatus: (id: string, status: string) => void;
+  onDeleted: (id: string) => void;
+}) {
+  const { user } = useAuthStore();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [visitExists, setVisitExists] = useState(false);
+  const [visitCheckState, setVisitCheckState] = useState<VisitCheckState>("loading");
+  const [visitCheckAttempt, setVisitCheckAttempt] = useState(0);
+  const [startingVisit, setStartingVisit] = useState(false);
+  const [arrivalLoading, setArrivalLoading] = useState(false);
+  const [queueLoading, setQueueLoading] = useState(false);
+  const [reminderSending, setReminderSending] = useState(false);
+  const [hasEmail, setHasEmail] = useState<boolean | null>(null);
+  // CORE-APPT-016: distinguishes "patient has no email" from "the check failed".
+  const [emailCheckFailed, setEmailCheckFailed] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const transitions = STATUS_TRANSITIONS[a.status] ?? [];
+
+  // The start-visit action remains blocked until the server explicitly confirms
+  // whether a visit already exists. A failed check must never mean "no visit".
+  useEffect(() => {
+    let active = true;
+    setVisitCheckState("loading");
+
+    api.get<{ data: { appointmentId?: string }[] }>(`/api/visits?patientId=${a.patientId}`)
+      .then((r) => {
+        if (!active) return;
+        const hasVisit = (r.data.data ?? []).some(
+          (v: { appointmentId?: string }) => v.appointmentId === a.id,
+        );
+        setVisitExists(hasVisit);
+        setVisitCheckState("ready");
+      })
+      .catch(() => {
+        if (!active) return;
+        setVisitCheckState("error");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [a.patientId, a.id, visitCheckAttempt]);
+
+  // Check if patient has email for email reminder button state.
+  // CORE-APPT-016: a failed check used to collapse into setHasEmail(false), which
+  // renders the disabled button whose tooltip asserts "لا يوجد بريد إلكتروني لهذا
+  // المريض" — a claim about the patient's record that the failed request never
+  // established. Track the failure separately so the tooltip stays truthful.
+  useEffect(() => {
+    let active = true;
+    setEmailCheckFailed(false);
+    api.get<{ hasEmail: boolean }>(`/api/appointments/${a.id}/email-available`)
+      .then((r) => { if (active) setHasEmail(r.data.hasEmail); })
+      .catch(() => { if (active) { setHasEmail(false); setEmailCheckFailed(true); } });
+    return () => { active = false; };
+  }, [a.id]);
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
+
+  const visitEligible = ["Scheduled", "Confirmed", "Arrived", "Waiting", "Called", "InRoom", "InProgress"].includes(a.status);
+  const canStartVisit = visitEligible && visitCheckState === "ready" && !visitExists;
+
+  const handleStartVisit = async () => {
+    if (!canStartVisit || startingVisit) return;
+
+    setStartingVisit(true);
+    try {
+      const { data } = await api.post(`/api/appointments/${a.id}/start-visit`);
+      toast.success(data.message ?? "تم إنشاء الزيارة بنجاح");
+      setVisitExists(true);
+      setVisitCheckState("ready");
+      // Update status locally to InProgress
+      onLocalStatus(a.id, "InProgress");
+      setMenuOpen(false);
+    } catch (err: unknown) {
+      toast.error(extractErrorMessage(err, "فشل إنشاء الزيارة"));
+    } finally {
+      setStartingVisit(false);
+    }
+  };
+
+  const canDelete = !["InProgress", "Completed"].includes(a.status);
+
+  const canArrive = ["Scheduled", "Confirmed"].includes(a.status) && hasPermission(user, PERMISSION_KEYS.PATIENT_JOURNEY_EDIT);
+  const canSendToQueue = a.status === "Arrived" && hasPermission(user, PERMISSION_KEYS.CLINIC_QUEUE_CREATE);
+
+  const handleArrival = async () => {
+    setArrivalLoading(true);
+    try {
+      await api.post(`/api/patient-journey/${a.id}/intake`, {});
+      toast.success("تم تسجيل حضور المريض بنجاح");
+      onLocalStatus(a.id, "Arrived");
+      setMenuOpen(false);
+    } catch (err: unknown) {
+      toast.error(extractErrorMessage(err, "فشل تسجيل الحضور"));
+    } finally {
+      setArrivalLoading(false);
+    }
+  };
+
+  const handleSendToQueue = async () => {
+    setQueueLoading(true);
+    try {
+      await api.post(`/api/patient-journey/${a.id}/send-to-queue`, {});
+      toast.success("تم إرسال المريض إلى الانتظار");
+      onLocalStatus(a.id, "Waiting");
+    } catch (err: unknown) {
+      toast.error(extractErrorMessage(err, "فشل إرسال المريض للانتظار"));
+    } finally {
+      setQueueLoading(false);
+    }
+  };
+
+  // In-flight guard: a rapid double-click must not send duplicate reminders.
+  const handleSendReminder = async () => {
+    if (reminderSending) return;
+    setReminderSending(true);
+    try {
+      const { data } = await api.post(`/api/appointments/${a.id}/send-reminder`);
+      toast.success(data.message ?? "تم إرسال التذكير");
+      setMenuOpen(false);
+    } catch (err: unknown) {
+      toast.error(extractErrorMessage(err, "فشل إرسال التذكير"));
+    } finally {
+      setReminderSending(false);
+    }
+  };
+
+  const handleSendEmailReminder = async () => {
+    if (reminderSending) return;
+    setReminderSending(true);
+    try {
+      const { data } = await api.post(`/api/appointments/${a.id}/send-email-reminder`);
+      toast.success(data.message ?? "تم إرسال تذكير الموعد بنجاح");
+      setMenuOpen(false);
+    } catch (err: unknown) {
+      toast.error(extractErrorMessage(err, "تعذر إرسال التذكير، حاول مرة أخرى"));
+    } finally {
+      setReminderSending(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm("هل أنت متأكد من حذف هذا الموعد؟")) return;
+    try {
+      await api.delete(`/api/appointments/${a.id}`);
+      toast.success("تم حذف الموعد");
+      onDeleted(a.id); // soft-deleted server-side; drop it from the list like a reload would
+      setMenuOpen(false);
+    } catch (err: unknown) {
+      toast.error(extractErrorMessage(err, "فشل حذف الموعد"));
+    }
+  };
+
+  return (
+    <div
+      className={cn(
+        "rounded-lg border px-3 py-2 flex items-center gap-3",
+        STATUS_COLORS[a.status] ?? "bg-gray-50 border-gray-200"
+      )}
+      // YOLO-S1: subtle background tint (8% opacity) when an explicit appointment
+      // color is set, so the card visually groups with the calendar entry.
+      style={
+        resolveAppointmentColor(a.appointmentColor, a.packageColor, a.doctorColor)
+          ? {
+              backgroundColor: `${resolveAppointmentColor(a.appointmentColor, a.packageColor, a.doctorColor)}14`,
+            }
+          : undefined
+      }
+    >
+      {/* YOLO-S1: appointment color left border (4px). Falls back to doctor color
+          (existing behavior) when no explicit appointment color is set. */}
+      <div
+        className="w-1 self-stretch rounded-full flex-shrink-0"
+        style={{
+          backgroundColor:
+            resolveAppointmentColor(a.appointmentColor, a.packageColor, a.doctorColor) ?? "#2563EB",
+          width: "4px",
+        }}
+      />
+
+      {/* Info */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link
+            href={`/patients/${a.patientId}`}
+            className="font-semibold text-sm hover:underline"
+          >
+            {a.patientName}
+          </Link>
+          <span className="text-xs opacity-60 font-mono">{a.patientNumber}</span>
+        </div>
+        <div className="text-xs opacity-70 flex items-center gap-2 mt-0.5 flex-wrap">
+          <span>{a.doctorName}</span>
+          <span>·</span>
+          <span>{a.appointmentType}</span>
+          {a.serviceName && (
+            <>
+              <span>·</span>
+              <span className="text-[#3d7ab5]">{a.serviceName}</span>
+            </>
+          )}
+          <span>·</span>
+          <span className="font-mono">{formatTime(a.startTime)} – {formatTime(a.endTime)}</span>
+          {a.roomName && (
+            <>
+              <span>·</span>
+              <span className="flex items-center gap-0.5 text-purple-600">📍 {a.roomName}</span>
+            </>
+          )}
+          {/* YOLO-S1: companion badge — show name + relationship for children/ortho patients */}
+          {a.companionName && (
+            <>
+              <span>·</span>
+              <span className="flex items-center gap-0.5 text-emerald-700 bg-emerald-50 rounded-full px-1.5 py-0.5" title={a.companionPhone ?? undefined}>
+                👤 {a.companionName}
+                {a.companionRelationship && <span className="text-emerald-500">({a.companionRelationship})</span>}
+              </span>
+            </>
+          )}
+          {/* YOLO-S1: package badge — show linked package name if set */}
+          {a.packageName && (
+            <>
+              <span>·</span>
+              <span
+                className="flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                style={{
+                  backgroundColor: (a.packageColor ?? "#6b7280") + "20",
+                  color: a.packageColor ?? "#6b7280",
+                }}
+              >
+                📦 {a.packageName}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Status badge + quick arrival action */}
+      <div className="flex items-center gap-1.5 flex-shrink-0">
+        <span className="text-xs px-2 py-0.5 rounded-full bg-white/60 font-medium">
+          {APPOINTMENT_STATUS_LABELS[a.status] ?? a.status}
+        </span>
+        {canArrive && (
+          <button
+            onClick={handleArrival}
+            disabled={arrivalLoading}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 transition disabled:opacity-60"
+          >
+            {arrivalLoading ? <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : null}
+            تسجيل حضور
+          </button>
+        )}
+        {canSendToQueue && (
+          <button
+            onClick={handleSendToQueue}
+            disabled={queueLoading}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold bg-blue-500 text-white hover:bg-blue-600 transition disabled:opacity-60"
+          >
+            {queueLoading ? <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : null}
+            إرسال إلى الانتظار
+          </button>
+        )}
+      </div>
+
+      {/* Quick actions menu */}
+      <div className="relative flex-shrink-0" ref={menuRef}>
+        <button
+          onClick={() => setMenuOpen(!menuOpen)}
+          className="p-1 rounded hover:bg-black/10 transition"
+          aria-label="خيارات"
+        >
+          <MoreVertical className="w-4 h-4" />
+        </button>
+        {menuOpen && (
+          <div className="absolute left-0 top-7 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[190px]">
+            <Link
+              href={`/appointments/${a.id}/edit`}
+              onClick={() => setMenuOpen(false)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-gray-700"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              تعديل الموعد
+            </Link>
+            <Link
+              href={`/daily-operations?patientId=${a.patientId}&appointmentId=${a.id}`}
+              onClick={() => setMenuOpen(false)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-[#1a3a5c] font-medium"
+            >
+              <Activity className="w-3.5 h-3.5" />
+              عرض رحلة المريض
+            </Link>
+            {visitEligible && visitCheckState === "loading" && (
+              <button
+                type="button"
+                disabled
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-400 cursor-wait"
+              >
+                <Stethoscope className="w-3.5 h-3.5" />
+                جارٍ التحقق من وجود زيارة...
+              </button>
+            )}
+            {visitEligible && visitCheckState === "error" && (
+              <button
+                type="button"
+                onClick={() => setVisitCheckAttempt((attempt) => attempt + 1)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-red-50 transition text-red-700 font-medium"
+              >
+                <Stethoscope className="w-3.5 h-3.5" />
+                تعذر التحقق من الزيارة — إعادة المحاولة
+              </button>
+            )}
+            {canStartVisit && (
+              <button
+                onClick={handleStartVisit}
+                disabled={startingVisit}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-green-700 font-medium disabled:opacity-50"
+              >
+                <Stethoscope className="w-3.5 h-3.5" />
+                {startingVisit ? "جاري الإنشاء..." : "بدء الزيارة"}
+              </button>
+            )}
+            <button
+              onClick={handleSendReminder}
+              disabled={reminderSending}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-[#f5922e] disabled:opacity-50"
+            >
+              <Send className="w-3.5 h-3.5" />
+              إرسال تذكير واتساب
+            </button>
+            {hasEmail ? (
+              <button
+                onClick={handleSendEmailReminder}
+                disabled={reminderSending}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-[#0E7490] disabled:opacity-50"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                إرسال تذكير بالإيميل
+              </button>
+            ) : (
+              <button
+                disabled
+                title={emailCheckFailed
+                  ? "تعذر التحقق من البريد الإلكتروني — تحقق من الاتصال"
+                  : "لا يوجد بريد إلكتروني لهذا المريض"}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-400 cursor-not-allowed"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                {emailCheckFailed ? "تعذر التحقق من الإيميل" : "إرسال تذكير بالإيميل"}
+              </button>
+            )}
+            {canDelete && (
+              <button
+                onClick={handleDelete}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-red-600"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                حذف الموعد
+              </button>
+            )}
+            {visitExists && (
+              <Link
+                href={`/patients/${a.patientId}`}
+                onClick={() => setMenuOpen(false)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-[#3d7ab5]"
+              >
+                <Stethoscope className="w-3.5 h-3.5" />
+                فتح ملف المريض
+              </Link>
+            )}
+            {transitions.length > 0 && (
+              <div className="border-t border-gray-100 mt-1 pt-1">
+                {transitions.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    onClick={() => {
+                      onStatusChange(a.id, value);
+                      setMenuOpen(false);
+                    }}
+                    className="w-full text-start px-3 py-2 text-sm hover:bg-gray-50 transition text-gray-700"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

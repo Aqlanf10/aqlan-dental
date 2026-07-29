@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "Aqlan Dental Pro"
+version = "1.0.0"
+id = "artifacts/aqlan-dental"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23506
+
+[services.development]
+run = "pnpm --filter @workspace/aqlan-dental run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/aqlan-dental", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/aqlan-dental/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23506"
+BASE_PATH = "/"

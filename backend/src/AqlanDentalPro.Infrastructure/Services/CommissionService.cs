@@ -513,7 +513,13 @@ public class CommissionService(
         if (!item.LabOrderId.HasValue && item.RelatedVisitId.HasValue)
         {
             var candidateLabOrderIds = await db.LabOrders
-                .Where(lo => lo.VisitId == item.RelatedVisitId.Value && lo.IsActive && lo.Status != "cancelled")
+                // CORE-FIN-LAB-DRAFT: "draft" must be excluded alongside "cancelled" — see
+                // IsCommissionDeductibleLabOrder. A draft is a provisional cost the clinic has
+                // not committed to; linking it would deduct a bill that may never be owed.
+                .Where(lo => lo.VisitId == item.RelatedVisitId.Value
+                          && lo.IsActive
+                          && lo.Status != "cancelled"
+                          && lo.Status != "draft")
                 .Select(lo => lo.Id)
                 .ToListAsync();
             if (candidateLabOrderIds.Count == 1)
@@ -528,7 +534,10 @@ public class CommissionService(
             // Previously read only Cost, which LabOrdersController.Update never re-syncs — so a lab order
             // whose TotalCost grew via remakes would still report the old Cost to commission calculations,
             // inflating the doctor's commission (lab cost is a deduction from NetCommissionableAmount).
-            if (labOrder != null)
+            // CORE-FIN-LAB-DRAFT: guard the DEDUCTION, not only the resolver above — a line can
+            // carry a LabOrderId set by another path, or its order can be reverted to draft
+            // after linking. The rule must hold however the link arrived.
+            if (labOrder != null && IsCommissionDeductibleLabOrder(labOrder))
             {
                 item.LabCost = labOrder.TotalCost ?? labOrder.Cost ?? 0;
             }
@@ -546,6 +555,27 @@ public class CommissionService(
             .Include(i => i.Service)
             .Include(i => i.Doctor)
             .FirstOrDefaultAsync(i => i.Id == id && i.IsActive);
+
+    /// <summary>
+    /// CORE-FIN-LAB-DRAFT: one definition of "the clinic actually owes this lab cost", so the
+    /// auto-link resolver and the deduction itself can never drift apart.
+    /// <para>
+    /// Mirrors the boundary the finance side already enforces: a supplier bill is posted only
+    /// from "sent" onwards, never for a draft — and <c>ValidateReadyToSend</c> refuses to send
+    /// an order until it actually has a lab and a cost greater than zero. A draft therefore
+    /// carries a PROVISIONAL cost the clinic has not committed to, and deducting it would
+    /// UNDERPAY the doctor for a bill that may never exist. A cancelled order is not owed either.
+    /// </para>
+    /// </summary>
+    private static bool IsCommissionDeductibleLabOrder(LabOrder labOrder)
+    {
+        if (!labOrder.IsActive) return false;
+
+        var status = (labOrder.Status ?? string.Empty).Trim();
+        return status.Length > 0
+            && !status.Equals("draft", StringComparison.OrdinalIgnoreCase)
+            && !status.Equals("cancelled", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static void ApplyCalculation(InvoiceLineItem item)
     {

@@ -8,6 +8,7 @@ import api from "@/lib/api";
 import { downloadPdfFromApi, printPdfFromApi } from "@/lib/pdfDownload";
 import { toast } from "@/stores/toastStore";
 import { EditLabOrderModal } from "@/components/lab/EditLabOrderModal";
+import { RemakeLabOrderModal } from "@/components/lab/RemakeLabOrderModal";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import type { LabOrder, LabOrderStatus } from "@/types/lab";
@@ -81,6 +82,10 @@ export default function LabPage() {
   // CORE-LAB-003: /lab could advance a draft's status but never edit it, so a draft
   // missing its lab/cost had no way to become complete.
   const [editOrder, setEditOrder] = useState<LabOrder | null>(null);
+  // CORE-LAB-007: "returned → remake" needs its own dialog (reason + free/paid + cost)
+  // instead of the generic status-advance button, so the /remake endpoint actually
+  // receives the data it's built to accept.
+  const [remakeOrder, setRemakeOrder] = useState<LabOrder | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -246,7 +251,14 @@ export default function LabPage() {
                               إكمال
                             </button>
                           )}
-                          {nextStatus && (
+                          {nextStatus && nextStatus === "remake" ? (
+                            <button
+                              onClick={() => setRemakeOrder(order)}
+                              className="text-xs text-purple-700 hover:text-purple-800 font-medium"
+                            >
+                              {NEXT_STATUS_LABELS[nextStatus] ?? "تقدّم"} ←
+                            </button>
+                          ) : nextStatus && (
                             <button
                               onClick={() => advanceMutation.mutate({ id: order.id, status: nextStatus })}
                               disabled={advanceMutation.isPending}
@@ -333,6 +345,10 @@ export default function LabPage() {
       {/* CORE-LAB-003: complete an incomplete draft (lab + cost) and send it. */}
       {editOrder && (
         <EditLabOrderModal order={editOrder} open onClose={() => setEditOrder(null)} />
+      )}
+
+      {remakeOrder && (
+        <RemakeLabOrderModal order={remakeOrder} onClose={() => setRemakeOrder(null)} />
       )}
     </ErrorBoundary>
   );

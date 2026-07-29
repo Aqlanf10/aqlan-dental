@@ -76,11 +76,22 @@ public static class DbSeeder
             // Lab Sprint 2: Always upsert lab work types — safe to run every startup
             await SeedLabWorkTypesAsync(context);
 
+            // Lab-Finance module: demo labs so the lab → finance scenario has something
+            // to select. Upsert-by-Name, safe to run every startup.
+            await SeedLabsAsync(context);
+
             await context.SaveChangesAsync();
 
             // Test data (patients, appointments, ortho, finance)
             if (!await context.Patients.AnyAsync())
                 await SeedTestDataAsync(context);
+
+            // Lab-Finance module: doctors need a working schedule or the appointment/visit
+            // step of the lab scenario has nothing to book against. Upsert-by
+            // (DoctorId, DayOfWeek), safe to run every startup — depends on doctors existing,
+            // so it runs after SeedUsersAndDoctorsAsync/SeedTestDataAsync above.
+            await SeedDoctorSchedulesAsync(context);
+            await context.SaveChangesAsync();
 
             // ── Post-seeding admin rescue pass ──
             // On a fresh database the admin user does not exist before MigrateAsync,
@@ -1023,6 +1034,92 @@ public static class DbSeeder
                     NameAr = c.NameAr,
                     Category = c.Category,
                     SortOrder = c.SortOrder,
+                });
+            }
+        }
+    }
+
+    /// <summary>
+    /// Lab-Finance module: seeds demo dental-lab vendors so the lab → finance scenario
+    /// (create order → select lab → send → payable/expense) has real labs to pick from.
+    /// Upsert-by-Name — inserts missing labs, leaves existing ones untouched so any
+    /// manual edits (contact info, SupplierId link created by
+    /// <see cref="AqlanDentalPro.Infrastructure.Services.LabOrderFinanceSyncService"/>)
+    /// are never overwritten. Safe to run every startup; contains no patient data.
+    /// </summary>
+    private static async Task SeedLabsAsync(AppDbContext context)
+    {
+        var branchId = new Guid("10000000-0000-0000-0000-000000000001");
+        // Names match the two demo labs already used by an earlier manual QA pass
+        // (aqlan_dental_replit_dev_clean) so this upsert adopts those rows as proper
+        // seed data instead of leaving them as untracked manual inserts, with no delete
+        // needed and no risk to the LabOrders that already reference them.
+        var canonical = new[]
+        {
+            new { Name = "مختبر الأسنان المتقدم",   Phone = "777123456", ContactPerson = "المهندس سامي عبدالله", Address = "صنعاء - شارع الزبيري" },
+            new { Name = "مختبر الابتسامة الذهبية", Phone = "777987654", ContactPerson = "المهندسة ريم الحداد",  Address = "صنعاء - شارع حدة" },
+        };
+
+        var existing = await context.Labs
+            .IgnoreQueryFilters()
+            .ToDictionaryAsync(l => l.Name);
+
+        foreach (var c in canonical)
+        {
+            if (existing.ContainsKey(c.Name))
+                continue;
+
+            await context.Labs.AddAsync(new Lab
+            {
+                Name = c.Name,
+                Phone = c.Phone,
+                ContactPerson = c.ContactPerson,
+                Address = c.Address,
+                BranchId = branchId,
+                IsActive = true,
+            });
+        }
+    }
+
+    /// <summary>
+    /// Lab-Finance module: seeds a standard Sun–Thu 09:00–17:00 working schedule for every
+    /// doctor that has none yet, so the lab scenario's visit/appointment step has a
+    /// bookable schedule to work against. Upsert-by (DoctorId, DayOfWeek) — a doctor that
+    /// already has ANY schedule rows is left alone entirely, so admin-customised hours are
+    /// never overwritten. Safe to run every startup.
+    /// </summary>
+    private static async Task SeedDoctorSchedulesAsync(AppDbContext context)
+    {
+        var doctorIdsWithSchedule = await context.DoctorSchedules
+            .IgnoreQueryFilters()
+            .Select(s => s.DoctorId)
+            .Distinct()
+            .ToListAsync();
+        var doctorsNeedingSchedule = await context.Doctors
+            .Where(d => d.IsActive && !doctorIdsWithSchedule.Contains(d.Id))
+            .Select(d => d.Id)
+            .ToListAsync();
+
+        if (doctorsNeedingSchedule.Count == 0)
+            return;
+
+        // 0=Sunday .. 6=Saturday. Working Sun–Thu; Fri/Sat off (regional work week).
+        var workingDays = new[] { 0, 1, 2, 3, 4 };
+        var start = new TimeOnly(9, 0);
+        var end = new TimeOnly(17, 0);
+
+        foreach (var doctorId in doctorsNeedingSchedule)
+        {
+            foreach (var day in workingDays)
+            {
+                await context.DoctorSchedules.AddAsync(new DoctorSchedule
+                {
+                    DoctorId = doctorId,
+                    DayOfWeek = day,
+                    StartTime = start,
+                    EndTime = end,
+                    IsWorking = true,
+                    SlotDurationMinutes = 30,
                 });
             }
         }

@@ -38,11 +38,14 @@ public sealed class OperationalReportsControllerTests
         var branchB = AddBranch(db, "B");
         var patientA = AddPatient(db, branchA, "P-A");
         var patientB = AddPatient(db, branchB, "P-B");
+        var inactive = NewPayment(patientA.Id, branchA.Id, today, 777m, "YER", "R-INACTIVE");
+        inactive.IsActive = false;
         db.Payments.AddRange(
             NewPayment(patientA.Id, branchA.Id, today, 10_000m, "YER", "R-YER"),
             NewPayment(patientA.Id, branchA.Id, today, 100m, "SAR", "R-SAR"),
             NewPayment(patientA.Id, branchA.Id, today, 20m, "USD", "R-USD"),
-            NewPayment(patientB.Id, branchB.Id, today, 999m, "SAR", "R-OTHER"));
+            NewPayment(patientB.Id, branchB.Id, today, 999m, "SAR", "R-OTHER"),
+            inactive);
         await db.SaveChangesAsync();
 
         var controller = BuildController(db, branchA.Id);
@@ -64,6 +67,7 @@ public sealed class OperationalReportsControllerTests
         var serialized = json.RootElement.GetRawText();
         serialized.Should().Contain("R-SAR");
         serialized.Should().NotContain("R-OTHER");
+        serialized.Should().NotContain("R-INACTIVE");
     }
 
     [Fact]
@@ -254,9 +258,12 @@ public sealed class OperationalReportsControllerTests
         var today = ClinicTimeProvider.ClinicToday();
         var branch = AddBranch(db, "A");
         var patient = AddPatient(db, branch, "P-001");
+        var inactive = NewPayment(patient.Id, branch.Id, today, 999m, "YER", "R-INACTIVE");
+        inactive.IsActive = false;
         db.Payments.AddRange(
             NewPayment(patient.Id, branch.Id, today, 5_000m, "YER", "R-YER"),
-            NewPayment(patient.Id, branch.Id, today, 50m, "SAR", "R-SAR"));
+            NewPayment(patient.Id, branch.Id, today, 50m, "SAR", "R-SAR"),
+            inactive);
         db.CashFlowTransactions.Add(new CashFlowTransaction
         {
             Type = TransactionType.Outflow,
@@ -297,9 +304,12 @@ public sealed class OperationalReportsControllerTests
         var today = ClinicTimeProvider.ClinicToday();
         var branch = AddBranch(db, "A");
         var patient = AddPatient(db, branch, "P-001");
+        var inactive = NewPayment(patient.Id, branch.Id, today, 999m, "YER", "R-INACTIVE");
+        inactive.IsActive = false;
         db.Payments.AddRange(
             NewPayment(patient.Id, branch.Id, today, 5_000m, "YER", "R-YER"),
-            NewPayment(patient.Id, branch.Id, today, 500m, "SAR", "R-SAR"));
+            NewPayment(patient.Id, branch.Id, today, 500m, "SAR", "R-SAR"),
+            inactive);
         await db.SaveChangesAsync();
 
         var controller = new ReportsController(

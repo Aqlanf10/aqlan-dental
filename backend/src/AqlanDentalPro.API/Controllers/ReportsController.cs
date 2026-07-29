@@ -62,7 +62,8 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         // Legacy scalar is explicitly YER-only. Use the detailed income report
         // for the complete YER/SAR/USD breakdown.
         var totalRevenue = await db.Payments
-            .Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate
+            .Where(p => p.IsActive
+                && p.PaymentDate >= fromDate && p.PaymentDate <= toDate
                 && (p.Currency == null || p.Currency == "" || p.Currency.ToUpper() == "YER")
                 && (!branchId.HasValue || p.BranchId == branchId.Value))
             .SumAsync(p => (decimal?)p.Amount) ?? 0;
@@ -117,7 +118,8 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
             .ToListAsync();
 
         var revenueStats = await db.Payments
-            .Where(p => p.DoctorId != null && doctorIds.Contains(p.DoctorId.Value) && p.PaymentDate >= fromDate && p.PaymentDate <= toDate
+            .Where(p => p.IsActive
+                && p.DoctorId != null && doctorIds.Contains(p.DoctorId.Value) && p.PaymentDate >= fromDate && p.PaymentDate <= toDate
                 && (p.Currency == null || p.Currency == "" || p.Currency.ToUpper() == "YER")
                 && (!branchId.HasValue || p.BranchId == branchId.Value))
             .GroupBy(p => p.DoctorId!.Value)
@@ -158,7 +160,8 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         // a number with no accounting meaning and was the source of the misleading
         // "everything is YER" report.
         var paymentRows = await db.Payments
-            .Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate
+            .Where(p => p.IsActive
+                && p.PaymentDate >= fromDate && p.PaymentDate <= toDate
                 && (!branchId.HasValue || p.BranchId == branchId.Value))
             .Select(p => new
             {
@@ -1236,7 +1239,8 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
 
         var payments = await db.Payments
             .Include(p => p.Patient)
-            .Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate
+            .Where(p => p.IsActive
+                && p.PaymentDate >= fromDate && p.PaymentDate <= toDate
                 && (!branchId.HasValue || p.BranchId == branchId.Value))
             .OrderByDescending(p => p.PaymentDate)
             .Select(p => new

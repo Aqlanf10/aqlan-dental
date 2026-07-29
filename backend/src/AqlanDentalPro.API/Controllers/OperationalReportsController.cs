@@ -113,7 +113,8 @@ public sealed class OperationalReportsController(
         var (_, utcEnd) = ClinicTimeProvider.ToUtcRange(to);
 
         var patients = await db.Patients
-            .Where(patient => patient.CreatedAt >= utcStart && patient.CreatedAt < utcEnd
+            .Where(patient => patient.IsActive
+                && patient.CreatedAt >= utcStart && patient.CreatedAt < utcEnd
                 && (!branchId.HasValue || patient.BranchId == branchId.Value))
             .OrderByDescending(patient => patient.CreatedAt)
             .Select(patient => new
@@ -124,8 +125,10 @@ public sealed class OperationalReportsController(
                 patient.Phone,
                 patient.CreatedAt,
                 DoctorName = patient.PrimaryDoctor != null ? patient.PrimaryDoctor.Name : "",
-                VisitsCount = patient.Visits.Count(),
-                LastVisit = patient.Visits.Max(visit => (DateOnly?)visit.VisitDate)
+                VisitsCount = patient.Visits.Count(visit => visit.IsActive),
+                LastVisit = patient.Visits
+                    .Where(visit => visit.IsActive)
+                    .Max(visit => (DateOnly?)visit.VisitDate)
             })
             .ToListAsync();
 
@@ -162,7 +165,9 @@ public sealed class OperationalReportsController(
         Guid? branchId)
     {
         var visits = await db.Visits
-            .Where(visit => visit.VisitDate >= from && visit.VisitDate <= to
+            .Where(visit => visit.IsActive
+                && visit.Patient.IsActive
+                && visit.VisitDate >= from && visit.VisitDate <= to
                 && (!branchId.HasValue || visit.Patient.BranchId == branchId.Value))
             .OrderByDescending(visit => visit.VisitDate)
             .ThenBy(visit => visit.Patient.PatientNumber)
@@ -223,7 +228,9 @@ public sealed class OperationalReportsController(
         Guid? branchId)
     {
         var payments = await db.Payments
-            .Where(payment => payment.PaymentDate >= from && payment.PaymentDate <= to
+            .Where(payment => payment.IsActive
+                && payment.Patient.IsActive
+                && payment.PaymentDate >= from && payment.PaymentDate <= to
                 && payment.Amount > 0
                 && (!branchId.HasValue || payment.BranchId == branchId.Value))
             .OrderByDescending(payment => payment.PaymentDate)
@@ -301,6 +308,7 @@ public sealed class OperationalReportsController(
     {
         var contracts = await db.Contracts
             .Where(contract => contract.IsActive
+                && contract.Patient.IsActive
                 && contract.Status != ContractStatus.Cancelled
                 && (!branchId.HasValue || contract.Patient.BranchId == branchId.Value))
             .Select(contract => new BalancePart(
@@ -318,6 +326,7 @@ public sealed class OperationalReportsController(
 
         var invoices = await db.Invoices
             .Where(invoice => invoice.IsActive
+                && invoice.Patient.IsActive
                 && invoice.Status != InvoiceStatus.Draft
                 && invoice.Status != InvoiceStatus.Cancelled
                 && !invoice.IsOpeningBalance
@@ -509,7 +518,9 @@ public sealed class OperationalReportsController(
         int absenceDays)
     {
         var visits = await db.Visits
-            .Where(visit => visit.VisitDate <= to
+            .Where(visit => visit.IsActive
+                && visit.Patient.IsActive
+                && visit.VisitDate <= to
                 && (!branchId.HasValue || visit.Patient.BranchId == branchId.Value))
             .OrderBy(visit => visit.PatientId)
             .ThenBy(visit => visit.VisitDate)
@@ -587,10 +598,11 @@ public sealed class OperationalReportsController(
         Guid? branchId)
     {
         var cases = await db.OrthoCases
-            .Where(orthoCase =>
-                (orthoCase.Status == OrthoCaseStatus.Active
+            .Where(orthoCase => orthoCase.IsActive
+                && orthoCase.Patient.IsActive
+                && (orthoCase.Status == OrthoCaseStatus.Active
                     || orthoCase.StartDate >= from && orthoCase.StartDate <= to
-                    || orthoCase.Visits.Any(visit => visit.VisitDate >= from && visit.VisitDate <= to))
+                    || orthoCase.Visits.Any(visit => visit.IsActive && visit.VisitDate >= from && visit.VisitDate <= to))
                 && (!branchId.HasValue || orthoCase.BranchId == branchId.Value))
             .Select(orthoCase => new
             {
@@ -606,12 +618,16 @@ public sealed class OperationalReportsController(
                 orthoCase.CurrentStage,
                 orthoCase.StagePercentage,
                 orthoCase.ExpectedDurationMonths,
-                LastVisit = orthoCase.Visits.Max(visit => (DateOnly?)visit.VisitDate),
+                LastVisit = orthoCase.Visits
+                    .Where(visit => visit.IsActive)
+                    .Max(visit => (DateOnly?)visit.VisitDate),
                 NextVisit = orthoCase.Visits
+                    .Where(visit => visit.IsActive)
                     .OrderByDescending(visit => visit.VisitDate)
                     .Select(visit => visit.NextAppointmentDate)
                     .FirstOrDefault(),
-                VisitsInPeriod = orthoCase.Visits.Count(visit => visit.VisitDate >= from && visit.VisitDate <= to),
+                VisitsInPeriod = orthoCase.Visits.Count(visit =>
+                    visit.IsActive && visit.VisitDate >= from && visit.VisitDate <= to),
                 Contract = db.Contracts
                     .Where(contract => contract.IsActive
                         && contract.RelatedCaseId == orthoCase.Id

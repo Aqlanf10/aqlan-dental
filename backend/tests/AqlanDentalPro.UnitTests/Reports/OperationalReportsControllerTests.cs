@@ -262,6 +262,32 @@ public sealed class OperationalReportsControllerTests
     }
 
     [Fact]
+    public async Task ExportPdfIncome_GeneratesPrintableArabicPdf()
+    {
+        await using var db = CreateDb();
+        var today = ClinicTimeProvider.ClinicToday();
+        var branch = AddBranch(db, "A");
+        var patient = AddPatient(db, branch, "P-001");
+        db.Payments.AddRange(
+            NewPayment(patient.Id, branch.Id, today, 10_000m, "YER", "R-YER"),
+            NewPayment(patient.Id, branch.Id, today, 100m, "SAR", "R-SAR"),
+            NewPayment(patient.Id, branch.Id, today, 20m, "USD", "R-USD"));
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, branch.Id);
+        var result = await controller.ExportPdf(
+            "income",
+            today.ToString("yyyy-MM-dd"),
+            today.ToString("yyyy-MM-dd"));
+
+        var file = result.Should().BeOfType<FileContentResult>().Subject;
+        file.ContentType.Should().Be("application/pdf");
+        file.FileDownloadName.Should().EndWith(".pdf");
+        file.FileContents.Take(5).Should().Equal("%PDF-"u8.ToArray());
+        file.FileContents.Length.Should().BeGreaterThan(5_000);
+    }
+
+    [Fact]
     public async Task LegacyFinancialReport_AlsoKeepsCurrencyTotalsSeparate()
     {
         await using var db = CreateDb();

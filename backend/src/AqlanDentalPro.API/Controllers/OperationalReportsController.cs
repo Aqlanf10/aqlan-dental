@@ -1,4 +1,5 @@
 using System.Text;
+using AqlanDentalPro.API.Services;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -84,6 +85,35 @@ public sealed class OperationalReportsController(
             bytes,
             "text/csv; charset=utf-8",
             $"{validation.Type}_{validation.FromDate:yyyyMMdd}_{validation.ToDate:yyyyMMdd}.csv");
+    }
+
+    [HttpGet("export-pdf")]
+    public async Task<IActionResult> ExportPdf(
+        [FromQuery] string type,
+        [FromQuery] string? from,
+        [FromQuery] string? to,
+        [FromQuery] int absenceDays = 90,
+        CancellationToken cancellationToken = default)
+    {
+        var validation = ValidateRequest(type, from, to, absenceDays, 1, 100);
+        if (validation.Error is not null) return validation.Error;
+        if (!TryGetBranchScope(out var branchId, out var forbid)) return forbid!;
+
+        var report = await BuildReportAsync(
+            validation.Type,
+            validation.FromDate,
+            validation.ToDate,
+            branchId,
+            validation.AbsenceDays);
+        var identity = await FinanceClinicIdentity.ResolveAsync(db, cancellationToken);
+        var bytes = await Task.Run(
+            () => OperationalReportPdfGenerator.Generate(report, identity),
+            cancellationToken);
+
+        return File(
+            bytes,
+            "application/pdf",
+            $"{validation.Type}_{validation.FromDate:yyyyMMdd}_{validation.ToDate:yyyyMMdd}.pdf");
     }
 
     private async Task<OperationalReportData> BuildReportAsync(

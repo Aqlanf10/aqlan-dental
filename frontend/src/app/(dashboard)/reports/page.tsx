@@ -170,6 +170,13 @@ type ReportKey =
   | "doctor-performance" | "ortho-progress" | "surgery-stats" | "treatment-plan-completion"
   | "lab-orders" | "prescription-analytics" | "patient-retention" | "booking-funnel";
 
+const DETAILED_EXPORT_TYPES: Partial<Record<ReportKey, string>> = {
+  "overdue-contracts": "outstanding-balances",
+  "ortho-progress": "ortho-cases",
+  "treatment-plan-completion": "treatment-progress",
+  "patient-retention": "returning-patients",
+};
+
 interface ReportCategory {
   key: string;
   label: string;
@@ -251,7 +258,7 @@ const TooltipCount = ({ active, payload, label, unit }: CustomTooltipProps & { u
   );
 };
 
-function downloadCsv(url: string, filename: string) {
+function downloadFile(url: string, filename: string) {
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
@@ -1346,21 +1353,15 @@ export default function ReportsPage() {
     fetchData();
   }, [fetchData]);
 
-  /* ─── CSV Export ─────────────────────────────────────────────────────── */
+  /* ─── Report export ──────────────────────────────────────────────────── */
   const handleExport = async () => {
     const directEndpoints: Partial<Record<ReportKey, string>> = {
       "appointment-analytics": "/api/reports/export/appointments",
       "patient-demographics": "/api/reports/export/patients",
       "financial": "/api/reports/export/payments",
     };
-    const detailedTypes: Partial<Record<ReportKey, string>> = {
-      "overdue-contracts": "outstanding-balances",
-      "ortho-progress": "ortho-cases",
-      "treatment-plan-completion": "treatment-progress",
-      "patient-retention": "returning-patients",
-    };
     const directEndpoint = directEndpoints[activeReport];
-    const detailedType = detailedTypes[activeReport];
+    const detailedType = DETAILED_EXPORT_TYPES[activeReport];
     if (!directEndpoint && !detailedType) {
       toast.error("التصدير التفصيلي غير متاح لهذا الملخص حاليًا.");
       return;
@@ -1372,10 +1373,10 @@ export default function ReportsPage() {
       // automatically and the 401 refresh interceptor works (previously this used a
       // manual Authorization header that silently failed when the token expired).
       const blob = detailedType
-        ? await downloadBlob("/api/reports/operations/export", { type: detailedType, from, to })
+        ? await downloadBlob("/api/reports/operations/export-pdf", { type: detailedType, from, to })
         : await downloadBlob(directEndpoint!, { from, to });
       const blobUrl = URL.createObjectURL(blob);
-      downloadCsv(blobUrl, `${activeReport}_${today}.csv`);
+      downloadFile(blobUrl, `${activeReport}_${today}.${detailedType ? "pdf" : "csv"}`);
       URL.revokeObjectURL(blobUrl);
     } catch {
       toast.error("فشل تصدير البيانات — تحقق من الاتصال وحاول مجدداً");
@@ -1397,6 +1398,7 @@ export default function ReportsPage() {
     "treatment-plan-completion",
     "patient-retention",
   ].includes(activeReport);
+  const exportsAsPdf = Boolean(DETAILED_EXPORT_TYPES[activeReport]);
 
   /* ─── Render content ─────────────────────────────────────────────────── */
   const renderReport = () => {
@@ -1548,11 +1550,13 @@ export default function ReportsPage() {
             <button
               onClick={handleExport}
               disabled={exporting || !canExport}
-              title={canExport ? "تصدير CSV" : "لا توجد صفوف تفصيلية قابلة للتصدير لهذا الملخص"}
+              title={canExport
+                ? exportsAsPdf ? "تحميل PDF" : "تصدير CSV"
+                : "لا توجد صفوف تفصيلية قابلة للتصدير لهذا الملخص"}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50 transition ms-1"
             >
               <Download className="w-3.5 h-3.5" />
-              {exporting ? "جارٍ التصدير..." : "تصدير CSV"}
+              {exporting ? "جارٍ التصدير..." : exportsAsPdf ? "تحميل PDF" : "تصدير CSV"}
             </button>
           </div>
 

@@ -72,6 +72,7 @@ const REPORTS: {
 ];
 
 type Preset = "today" | "month" | "year";
+type ExportFormat = "pdf" | "csv";
 
 function getPresetRange(preset: Preset): { from: string; to: string } {
   const today = localDateString();
@@ -114,7 +115,7 @@ export default function DetailedOperationsReportsPage() {
   const [to, setTo] = useState(initialRange.to);
   const [absenceDays, setAbsenceDays] = useState(90);
   const [page, setPage] = useState(1);
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<ExportFormat | null>(null);
 
   const reportQuery = useQuery<OperationalReport>({
     queryKey: ["operational-report", reportType, from, to, absenceDays, page],
@@ -139,21 +140,26 @@ export default function DetailedOperationsReportsPage() {
     setPage(1);
   };
 
-  const handleExport = async () => {
-    setExporting(true);
+  const handleExport = async (format: ExportFormat) => {
+    setExporting(format);
     try {
-      const blob = await downloadBlob("/api/reports/operations/export", {
+      const blob = await downloadBlob(
+        format === "pdf"
+          ? "/api/reports/operations/export-pdf"
+          : "/api/reports/operations/export",
+        {
         type: reportType,
         from,
         to,
         absenceDays,
-      });
-      downloadFile(blob, `${reportType}_${from}_${to}.csv`);
-      toast.success("تم تجهيز ملف التقرير");
+        },
+      );
+      downloadFile(blob, `${reportType}_${from}_${to}.${format}`);
+      toast.success(format === "pdf" ? "تم تجهيز تقرير PDF" : "تم تجهيز ملف CSV");
     } catch {
       toast.error("تعذر تصدير التقرير. حاول مرة أخرى.");
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   };
 
@@ -170,18 +176,29 @@ export default function DetailedOperationsReportsPage() {
           </Link>
           <h1 className="mt-2 text-2xl font-extrabold text-gray-900">التقارير التفصيلية</h1>
           <p className="mt-1 text-sm text-gray-500">
-            اختر نوع التقرير والفترة، ثم راجع الصفوف الفعلية أو صدّرها إلى CSV.
+            اختر نوع التقرير والفترة، ثم راجع الصفوف الفعلية أو حمّل تقرير PDF جاهزًا للطباعة.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleExport}
-          disabled={!data || data.totalRows === 0 || exporting || invalidRange}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-          تصدير CSV
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => handleExport("pdf")}
+            disabled={!data || exporting !== null || invalidRange}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            تحميل PDF
+          </button>
+          <button
+            type="button"
+            onClick={() => handleExport("csv")}
+            disabled={!data || exporting !== null || invalidRange}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {exporting === "csv" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            CSV
+          </button>
+        </div>
       </header>
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">

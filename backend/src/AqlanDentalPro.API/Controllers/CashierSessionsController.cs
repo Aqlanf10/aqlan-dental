@@ -147,7 +147,13 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                     "SELECT pg_advisory_xact_lock({0})", StableLockKeyHelper.CashierSessionNumber);
             }
 
-            var today = DateTime.UtcNow;
+            // DAILY-OPS-AUDIT FIX: previously used DateTime.UtcNow directly, so a shift opened
+            // between midnight and 03:00 Asia/Aden (server UTC still shows "yesterday") got a
+            // SessionNumber prefixed with the wrong calendar day, breaking daily sequencing/
+            // reporting for early-morning shifts. Use the clinic-local day, matching
+            // ClinicTimeProvider.ClinicToday() used everywhere else for "today" (e.g.
+            // GetDailySummary, DailyOperationsController).
+            var today = ClinicTimeProvider.ClinicToday().ToDateTime(TimeOnly.MinValue);
             var datePart = today.ToString("yyyyMMdd");
             var prefix = $"CS-{datePart}-";
 

@@ -1,0 +1,120 @@
+وافق على المتابعة وفق الخطة الآمنة التالية:
+
+أولًا: قاعدة البيانات
+
+1. لا تستخدم قاعدة Railway ولا تتصل بها إطلاقًا.
+2. لا تستخدم قاعدة helium الحالية للاختبار النهائي؛ لأنها أصبحت في حالة migrations جزئية.
+3. أنشئ قاعدة PostgreSQL تطوير جديدة وفارغة، أو schema جديدًا معزولًا، باسم:
+   aqlan_dental_replit_dev_clean
+4. استخدمها حصريًا لنسخة Replit وببيانات وهمية.
+5. لا تنفذ أي تعديل على قاعدة إنتاجية.
+6. أنشئ checkpoint ونسخة احتياطية من حالة الكود الحالية قبل البدء.
+
+ثانيًا: ملفات migrations الخمسة
+
+لا تنشئ ملفات Designer.cs مباشرة من الـModelSnapshot الحالي.
+
+ابدأ بالبحث عن النسخ الأصلية للملفات الخمسة في:
+
+- git log
+- جميع الفروع المحلية والبعيدة
+- tags
+- commits السابقة واللاحقة لكل migration
+- Pull Requests إن كانت متاحة
+- أي نسخة محفوظة من المستودع أو .migration-backup
+
+الملفات المطلوبة:
+
+- 20260528000000_AddClinicServicesAndRooms.Designer.cs
+- 20260529000000_AddPatientJourneyFields.Designer.cs
+- 20260530000000_AddPatientTreatmentPlanSteps.Designer.cs
+- 20260531000000_AddInvoicesAndInvoiceLineItems.Designer.cs
+- 20260601000000_AddInvoicePaymentLink.Designer.cs
+
+إذا وجدت النسخ الأصلية:
+
+1. استعدها دون تغيير.
+2. تحقق من namespace وDbContext وMigration ID.
+3. اعرض مصدر كل ملف والـcommit الذي استُعيد منه.
+4. شغّل build وdotnet ef migrations list قبل تطبيق أي شيء.
+
+إذا لم تجد النسخ الأصلية:
+
+1. أعد بناء الملفات داخل فرع replit-development فقط.
+2. لا تستخدم النموذج الحالي نفسه داخل الملفات الخمسة جميعًا.
+3. أعد بناء TargetModel التاريخي الخاص بكل migration اعتمادًا على:
+   - الكيانات الموجودة في commit وقت إنشاء migration.
+   - ModelSnapshot قبل وبعد migration.
+   - عمليات Up وDown.
+   - migrations السابقة واللاحقة.
+4. لا تغيّر محتوى Up وDown إلا إذا أثبت الاختبار وجود خطأ مستقل، واعرضه أولًا.
+5. لا تضف @Migration فقط كحل شكلي ولا تستخدم ملفات metadata ناقصة.
+6. اعرض diff تفصيليًا لكل Designer.cs قبل تطبيق migrations.
+
+ثالثًا: التحقق من سلسلة migrations
+
+قبل تشغيل database update:
+
+1. شغّل:
+   dotnet build
+   dotnet test
+   dotnet ef migrations list
+   dotnet ef migrations has-pending-model-changes
+
+2. تحقق أن migrations الخمسة تظهر بالترتيب الصحيح.
+
+3. ولّد SQL script من أول migration إلى آخر migration على قاعدة الاختبار فقط، وافحص:
+   - إنشاء Invoices قبل تعديلها.
+   - إنشاء InvoiceLineItems قبل AddLabOrderItemsAndPricing.
+   - إنشاء ClinicServices وRooms.
+   - إنشاء PatientJourney fields.
+   - إنشاء TreatmentPlanSteps.
+   - إنشاء رابط Invoice-Payment.
+   - عدم وجود DROP أو فقد بيانات غير مقصود.
+
+4. بعد المراجعة، طبّق السلسلة كاملة على قاعدة:
+   aqlan_dental_replit_dev_clean
+
+5. لا تستخدم EnsureCreated كبديل عن migrations.
+
+رابعًا: اختبارات ما بعد الإصلاح
+
+بعد نجاح migrations من الصفر:
+
+1. قارن schema النهائي مع:
+   - EF Core entities.
+   - AppDbContext configurations.
+   - ModelSnapshot الحالي.
+2. تحقق من المفاتيح الأجنبية والفهارس والقيود.
+3. شغّل جميع UnitTests وIntegrationTests.
+4. اختبر إنشاء فاتورة وربطها بدفعة.
+5. اختبر إنشاء طلب مختبر وربطه بـInvoiceLineItem.
+6. اختبر تكلفة المختبر وسعر المريض وعمولة الطبيب.
+7. تحقق من عدم تكرار الفاتورة أو تكلفة المختبر عند إعادة الطلب.
+8. لا تستخدم بيانات مرضى حقيقية.
+
+خامسًا: AppDbContextFactory
+
+احتفظ بإزالة connection string الثابت، لكن تحقق أن AppDbContextFactory:
+
+- يقرأ ConnectionStrings__DefaultConnection من البيئة.
+- لا يحتوي fallback إلى localhost أو كلمة مرور ثابتة.
+- لا يستطيع الاتصال بقاعدة Railway بالخطأ.
+- يفشل برسالة واضحة إن لم يوجد اتصال تجريبي.
+- لا يطبع connection string أو كلمة المرور في logs.
+
+في التقرير التالي اعرض:
+
+- هل عُثر على ملفات Designer الأصلية أم أُعيد بناؤها.
+- مصدر كل ملف.
+- الملفات المعدلة كاملة.
+- نتيجة dotnet ef migrations list.
+- نتيجة has-pending-model-changes.
+- نتيجة إنشاء قاعدة جديدة من الصفر.
+- عدد migrations التي طُبقت.
+- أول خطأ إن حدث، مع النص الكامل.
+- مقارنة schema النهائي بالنموذج الحالي.
+- نتيجة اختبارات المختبر والمالية وترابطهما.
+- أي مخاطر على قاعدة Railway مستقبلًا.
+
+لا تدمج إلى main ولا تتصل بالإنتاج.

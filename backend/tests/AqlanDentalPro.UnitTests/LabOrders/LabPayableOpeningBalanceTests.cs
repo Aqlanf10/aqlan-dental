@@ -131,9 +131,36 @@ public class LabPayableOpeningBalanceTests
         var bill = BuildOpeningBalance(supplierId, 40_000m);
         bill.IsOpeningBalance = false;
         db.SupplierBills.Add(bill);
+
+        // The payable's LabOrder navigation is REQUIRED, and the projection Includes it
+        // plus LabOrder.Patient. EF Core's InMemory provider drops the entire row — not
+        // just the navigation — when a required FK resolves to nothing, so a placeholder
+        // Guid here would make the row silently vanish and the assertion would be testing
+        // the fixture rather than the controller. Seed the real graph.
+        var patient = new Patient
+        {
+            PatientNumber = $"P-{Guid.NewGuid():N}"[..12],
+            FirstName = "سالم",
+            LastName = "المريض",
+            IsActive = true,
+        };
+        db.Patients.Add(patient);
+
+        var labOrder = new LabOrder
+        {
+            PatientId = patient.Id,
+            OrderNumber = $"LO-{Guid.NewGuid():N}"[..14],
+            ApplianceType = "تاج زيركون",
+            Status = "sent",
+            Priority = "normal",
+            LabId = labId,
+            IsActive = true,
+        };
+        db.LabOrders.Add(labOrder);
+
         db.LabPayables.Add(new LabPayable
         {
-            LabOrderId = Guid.NewGuid(),
+            LabOrderId = labOrder.Id,
             LabId = labId,
             SupplierBillId = bill.Id,
             Amount = 40_000m,

@@ -165,7 +165,18 @@ public class TestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
         // GenerateCreateScript is what StartupDatabaseMaintenance itself runs for a genuinely
         // empty production database, so the test schema is produced the same way production's is.
         var createScript = db.Database.GenerateCreateScript();
-        await db.Database.ExecuteSqlRawAsync(createScript);
+
+        // Executed through raw ADO, NOT ExecuteSqlRawAsync: that overload runs the statement
+        // through String.Format to bind parameters, so any brace in the DDL — and a generated
+        // schema has them, in defaults and jsonb literals — is read as a format placeholder and
+        // throws FormatException before a single table is created.
+        await db.Database.OpenConnectionAsync();
+        using (var createCmd = db.Database.GetDbConnection().CreateCommand())
+        {
+            createCmd.CommandText = createScript;
+            createCmd.CommandTimeout = 600;
+            await createCmd.ExecuteNonQueryAsync();
+        }
 
         // Verify rather than assume. If the schema is still absent, every test below would
         // fail with some unrelated-looking error; failing here says plainly what went wrong.

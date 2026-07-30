@@ -10,8 +10,9 @@ import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { useHasPermission } from "@/hooks/usePermissions";
 import { PERMISSION_KEYS } from "@/hooks/usePermissions";
-import type { LabPayable } from "@/types/lab";
+import type { LabPayable, LabCurrencyAmount } from "@/types/lab";
 import { cn } from "@/lib/utils";
+import { formatMoney, formatCurrencyAmounts } from "@/app/(dashboard)/finance-v3/components/FinanceHelpers";
 import { QueryErrorBanner } from "@/components/shared/QueryErrorBanner";
 
 /* ─── Status helpers ────────────────────────────────────────────────────────── */
@@ -195,6 +196,8 @@ export default function LabPayablesPage() {
         total: number;
         page: number;
         pageSize: number;
+        statusCounts: { pending: number; partial: number; paid: number };
+        balanceByCurrency: LabCurrencyAmount[];
       }>(`/api/lab-payables?${params}`);
       return res.data;
     },
@@ -233,23 +236,28 @@ export default function LabPayablesPage() {
             <p className="text-xl font-bold text-gray-900 mt-1">
               {data?.total ?? 0}
             </p>
+            {/* The count alone does not answer "how much do we owe" — and the answer is one
+                figure per currency, never a single sum. */}
+            <p className="text-xs text-red-600 font-medium mt-1">
+              {formatCurrencyAmounts(data?.balanceByCurrency)}
+            </p>
           </div>
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
             <p className="text-xs text-gray-500">قيد الانتظار</p>
             <p className="text-xl font-bold text-amber-600 mt-1">
-              {payables.filter((p) => p.status === "pending").length}
+              {data?.statusCounts?.pending ?? 0}
             </p>
           </div>
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
             <p className="text-xs text-gray-500">دفعة جزئية</p>
             <p className="text-xl font-bold text-blue-600 mt-1">
-              {payables.filter((p) => p.status === "partial").length}
+              {data?.statusCounts?.partial ?? 0}
             </p>
           </div>
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
             <p className="text-xs text-gray-500">مدفوع</p>
             <p className="text-xl font-bold text-green-600 mt-1">
-              {payables.filter((p) => p.status === "paid").length}
+              {data?.statusCounts?.paid ?? 0}
             </p>
           </div>
         </div>
@@ -334,10 +342,10 @@ export default function LabPayablesPage() {
                         {p.orderNumber ?? "—"}
                       </td>
                       <td className="px-4 py-3 text-gray-700">
-                        {p.amount.toLocaleString()}
+                        {formatMoney(p.amount, p.currency)}
                       </td>
                       <td className="px-4 py-3 text-green-600">
-                        {p.paidAmount.toLocaleString()}
+                        {formatMoney(p.paidAmount, p.currency)}
                       </td>
                       <td className="px-4 py-3">
                         <span

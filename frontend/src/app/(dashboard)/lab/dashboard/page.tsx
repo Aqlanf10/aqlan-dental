@@ -15,6 +15,7 @@ import type {
 } from "@/types/lab";
 import { cn } from "@/lib/utils";
 import { QueryErrorBanner } from "@/components/shared/QueryErrorBanner";
+import { formatCurrencyAmounts } from "@/app/(dashboard)/finance-v3/components/FinanceHelpers";
 
 // FE-08: STATUS_LABELS + STATUS_COLORS now imported from @/lib/labStatus (was re-declared locally).
 
@@ -152,7 +153,7 @@ export default function LabDashboardPage() {
           />
           <KPICard
             label="تم التسليم (30 يوم)"
-            value={kpis?.deliveredThisMonth ?? 0}
+            value={kpis?.deliveredLast30Days ?? 0}
             icon={<Truck className="w-5 h-5 text-emerald-700" />}
             color="bg-emerald-50"
           />
@@ -176,14 +177,14 @@ export default function LabDashboardPage() {
             color="bg-purple-50"
           />
           <KPICard
-            label="إجمالي التكاليف"
-            value={`${(kpis?.totalLabCosts ?? 0).toLocaleString()}`}
+            label="إجمالي التكاليف الملتزم بها"
+            value={formatCurrencyAmounts(kpis?.totalLabCostsByCurrency)}
             icon={<DollarSign className="w-5 h-5 text-blue-700" />}
             color="bg-blue-50"
           />
           <KPICard
             label="ديون المعامل"
-            value={`${(kpis?.totalDebt ?? 0).toLocaleString()}`}
+            value={formatCurrencyAmounts(kpis?.totalDebtByCurrency)}
             icon={<TrendingUp className="w-5 h-5 text-red-700" />}
             color="bg-red-50"
             sub="غير مدفوعة"
@@ -258,7 +259,7 @@ export default function LabDashboardPage() {
                       />
                     </div>
                     <span className="text-xs text-gray-500 whitespace-nowrap">
-                      {ARABIC_MONTHS[m.month - 1]}
+                      {ARABIC_MONTHS[m.month - 1] ?? m.month}
                     </span>
                     <span className="text-xs font-medium text-gray-700">{m.totalOrders}</span>
                   </div>

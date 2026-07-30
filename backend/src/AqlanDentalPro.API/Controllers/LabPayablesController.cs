@@ -151,7 +151,27 @@ public class LabPayablesController(
         var total = merged.Count;
         var data = merged.Skip((page - 1) * pageSize).Take(pageSize).ToList();
 
-        return Ok(new { data, total, page, pageSize });
+        // CORE-LAB-013: the screen's status cards used to be counted from the current page, next
+        // to a grand total counted server-wide — so with more than one page of payables the four
+        // numbers did not add up, and they changed as the user paged. Counted here over the whole
+        // merged set, they describe the same population the total does.
+        var statusCounts = new
+        {
+            Pending = merged.Count(r => r.Status == "pending"),
+            Partial = merged.Count(r => r.Status == "partial"),
+            Paid    = merged.Count(r => r.Status == "paid"),
+        };
+
+        // Balances are per currency for the same reason every other lab total is — a YER debt
+        // and a SAR debt are not addable.
+        var balanceByCurrency = merged
+            .GroupBy(r => r.Currency)
+            .Select(g => new { Currency = g.Key, Amount = g.Sum(r => r.Balance) })
+            .Where(x => x.Amount != 0m)
+            .OrderByDescending(x => x.Amount)
+            .ToList();
+
+        return Ok(new { data, total, page, pageSize, statusCounts, balanceByCurrency });
     }
 
     [HttpGet("{id:guid}")]

@@ -3,6 +3,7 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -43,7 +44,9 @@ public class LabReportsCurrencyTests
         currentUser.SetupGet(c => c.Role).Returns(UserRole.Admin);
         currentUser.SetupGet(c => c.BranchId).Returns(Guid.NewGuid());
 
-        return new LabReportsController(db, currentUser.Object);
+        // The real reader against the same in-memory db — a mock would let the shared
+        // derivation drift away from what these tests assert about it.
+        return new LabReportsController(db, currentUser.Object, new SupplierBalanceReader(db));
     }
 
     private static Guid SeedLab(AppDbContext db, string name, out Guid supplierId)

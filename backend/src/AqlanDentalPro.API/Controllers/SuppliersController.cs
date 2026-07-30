@@ -1,5 +1,6 @@
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -90,7 +91,12 @@ public sealed class UpdateSupplierRequestValidator : AbstractValidator<UpdateSup
 [ApiController]
 [Route("api/suppliers")]
 [Authorize(Policy = "AdminOnly")]
-public class SuppliersController(AppDbContext db, ILogger<SuppliersController> logger) : ControllerBase
+public class SuppliersController(
+    AppDbContext db,
+    ILogger<SuppliersController> logger,
+    // CORE-XMOD-001 — per-currency balances derived from the bills, because
+    // Supplier.Balance is a single scalar that cannot represent YER, SAR and USD.
+    SupplierBalanceReader balanceReader) : ControllerBase
 {
     // ─── 1. GET /api/suppliers — List all suppliers ──────────────────────
     /// <summary>Returns paginated list of suppliers with optional search.</summary>
@@ -131,14 +137,33 @@ public class SuppliersController(AppDbContext db, ILogger<SuppliersController> l
                 TotalSpent = s.PurchaseOrders
                     .Where(po => po.Status != Domain.Enums.PurchaseOrderStatus.Cancelled)
                     .Sum(po => po.TotalAmount),
-                OutstandingBills = s.Bills
-                    .Where(b => b.Status != Domain.Enums.BillStatus.Cancelled)
-                    .Sum(b => b.TotalAmount - b.PaidAmount),
                 CreatedAt = s.CreatedAt.ToString("yyyy-MM-dd")
             })
             .ToListAsync();
 
-        return Ok(new { data = suppliers, total, page, pageSize });
+        // CORE-XMOD-001: `OutstandingBills` used to be one scalar summing TotalAmount-PaidAmount
+        // across every bill regardless of currency — a supplier owed 200,000 YER and 1,000 SAR
+        // was reported as owing "201,000", which is not money in any currency. Replaced by a
+        // per-currency list from the shared reader, so the two are never added together.
+        var balances = await balanceReader.GetAsync(
+            suppliers.Select(x => x.Id).ToList(), branchId: null, ct: HttpContext.RequestAborted);
+
+        var withBalances = suppliers.Select(x => new
+        {
+            x.Id, x.Name, x.Type, x.ContactPerson, x.Phone, x.Email, x.Address, x.Notes,
+            // Kept for the screens that still read it, and only ever YER — see SupplierBalanceReader.
+            LegacyYerBalance = x.Balance,
+            x.PurchaseOrderCount,
+            x.OpenBillCount,
+            x.TotalSpent,
+            x.CreatedAt,
+            BalancesByCurrency = balances
+                .Where(b => b.SupplierId == x.Id)
+                .Select(b => new { b.Currency, b.TotalBilled, b.TotalPaid, b.Balance, b.OpenBills })
+                .ToList(),
+        }).ToList();
+
+        return Ok(new { data = withBalances, total, page, pageSize });
         }
         catch (Exception ex)
         {
@@ -220,9 +245,8 @@ public class SuppliersController(AppDbContext db, ILogger<SuppliersController> l
                     .Where(po => po.Status != Domain.Enums.PurchaseOrderStatus.Cancelled)
                     .Sum(po => po.TotalAmount),
                 BillCount = s.Bills.Count(b => b.Status != Domain.Enums.BillStatus.Cancelled),
-                OutstandingBills = s.Bills
-                    .Where(b => b.Status != Domain.Enums.BillStatus.Cancelled)
-                    .Sum(b => b.TotalAmount - b.PaidAmount),
+                // CORE-XMOD-001: OutstandingBills was one scalar summing across every currency.
+                // The per-currency answer is attached below from SupplierBalanceReader.
                 LastPurchaseDate = s.PurchaseOrders
                     .Where(po => po.Status != Domain.Enums.PurchaseOrderStatus.Cancelled)
                     .OrderByDescending(po => po.OrderDate)
@@ -260,7 +284,25 @@ public class SuppliersController(AppDbContext db, ILogger<SuppliersController> l
         if (supplier is null)
             return NotFound(new { message = "المورد غير موجود" });
 
-        return Ok(supplier);
+        // CORE-XMOD-001: what the clinic owes this supplier, one figure per currency.
+        var balances = await balanceReader.GetForSupplierAsync(id, ct: HttpContext.RequestAborted);
+
+        return Ok(new
+        {
+            supplier.Id,
+            supplier.Name,
+            supplier.Type,
+            LegacyYerBalance = supplier.Balance,
+            supplier.PurchaseOrderCount,
+            supplier.TotalPurchaseOrders,
+            supplier.BillCount,
+            supplier.LastPurchaseDate,
+            supplier.RecentPurchaseOrders,
+            supplier.RecentBills,
+            BalancesByCurrency = balances
+                .Select(b => new { b.Currency, b.TotalBilled, b.TotalPaid, b.Balance, b.OpenBills })
+                .ToList(),
+        });
     }
 
     // ─── 3. POST /api/suppliers — Create supplier ───────────────────────

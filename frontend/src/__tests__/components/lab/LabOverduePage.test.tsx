@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/dom";
-import LabOverduePage from "@/app/(dashboard)/lab/overdue/page";
+// CORE-LAB-017: /lab/overdue is a redirect stub now — the screen itself is a pivot inside
+// the lab workspace, so the test points at the panel that actually renders.
+import { LabOverduePanel as LabOverduePage } from "@/app/(dashboard)/lab/_panels/OverduePanel";
 import { renderWithQueryClient } from "@/__tests__/testUtils/renderWithQueryClient";
 import api from "@/lib/api";
 

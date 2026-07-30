@@ -43,6 +43,34 @@ public static class FinanceSettingsKeys
     public const string ReceiptFooterText     = "finance.receipt.footer_text";
     public const string ReceiptShowLeadDoctor = "finance.receipt.show_lead_doctor";
 
+    // ── Lab performance thresholds (CORE-LAB-015) ───────────────────────────
+    // These are contractual expectations of a lab, not display constants: the owner
+    // renegotiates turnaround time and acceptable remake rates per lab contract. They
+    // used to be literals inside the reports JSX — written twice each, once on the
+    // summary card and once on the row badge, so editing one made the two disagree
+    // silently about whether the same lab was performing acceptably.
+
+    /// <summary>Remake percentage at or above which a lab is flagged red.</summary>
+    public const string LabRemakeRateAlarm = "finance.lab.remake_rate_alarm";
+
+    /// <summary>Remake percentage at or above which a lab is flagged amber.</summary>
+    public const string LabRemakeRateWarn = "finance.lab.remake_rate_warn";
+
+    /// <summary>Overdue percentage at or above which a lab is flagged red.</summary>
+    public const string LabOverdueRateAlarm = "finance.lab.overdue_rate_alarm";
+
+    /// <summary>Overdue percentage at or above which a lab is flagged amber.</summary>
+    public const string LabOverdueRateWarn = "finance.lab.overdue_rate_warn";
+
+    /// <summary>Working days from sending to receiving, above which turnaround is flagged.</summary>
+    public const string LabTurnaroundDaysTarget = "finance.lab.turnaround_days_target";
+
+    /// <summary>On-time percentage at or above which a lab is considered good.</summary>
+    public const string LabOnTimeRateGood = "finance.lab.on_time_rate_good";
+
+    /// <summary>On-time percentage below which a lab is flagged red.</summary>
+    public const string LabOnTimeRateWarn = "finance.lab.on_time_rate_warn";
+
     /// <summary>
     /// All finance keys mapped to their default values. Defaults are chosen to
     /// preserve the current hardcoded/seeded behavior — changing a setting from
@@ -61,6 +89,16 @@ public static class FinanceSettingsKeys
         [CommissionDefaultBaseRule]           = "AfterDiscountAndCosts",
         [ReceiptFooterText]                   = "",      // empty = no custom footer
         [ReceiptShowLeadDoctor]               = "true",  // current behavior: lead-doctor block prints
+
+        // Defaults reproduce exactly the literals that were in the reports JSX, so moving
+        // them here changes no colour on any existing screen.
+        [LabRemakeRateAlarm]                  = "10",
+        [LabRemakeRateWarn]                   = "5",
+        [LabOverdueRateAlarm]                 = "15",
+        [LabOverdueRateWarn]                  = "5",
+        [LabTurnaroundDaysTarget]             = "7",
+        [LabOnTimeRateGood]                   = "90",
+        [LabOnTimeRateWarn]                   = "70",
     };
 
     /// <summary>True if <paramref name="key"/> is a known finance setting.</summary>

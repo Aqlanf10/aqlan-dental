@@ -116,24 +116,16 @@ export const NAV: NavEntry[] = [
       { href: "/inventory/purchases", label: "أوامر الشراء", icon: ShoppingCart, roles: getNavigationRoles("/inventory/purchases") },
     ],
   },
+  // CORE-LAB-017: the lab is ONE workspace, so it gets one sidebar entry. The five links
+  // that used to live here are pivots inside /lab now — chasing a late crown and checking
+  // whether that lab has been paid no longer means leaving the screen. The old routes still
+  // redirect into the matching pivot, so nothing that pointed at them breaks.
   {
-    kind: "group",
-    label: "المعامل",
+    href: "/lab",
+    label: "المعامل والتراكيب",
     icon: FlaskConical,
-    roles: getNavigationGroupRoles(
-      "/lab",
-      "/lab/dashboard",
-      "/lab/overdue",
-      "/lab/reports",
-      "/lab/payables",
-    ),
-    children: [
-      { href: "/lab", label: "طلبات المعمل", icon: FlaskConical, roles: getNavigationRoles("/lab"), permission: PERMISSION_KEYS.LAB_ORDERS_VIEW },
-      { href: "/lab/dashboard", label: "ملخص المعامل", icon: BarChart2, roles: getNavigationRoles("/lab/dashboard"), permission: PERMISSION_KEYS.LAB_REPORTS_VIEW },
-      { href: "/lab/overdue", label: "طلبات متأخرة", icon: Clock, roles: getNavigationRoles("/lab/overdue"), permission: PERMISSION_KEYS.LAB_ORDERS_VIEW },
-      { href: "/lab/reports", label: "تقارير المعامل", icon: BarChart2, roles: getNavigationRoles("/lab/reports"), permission: PERMISSION_KEYS.LAB_REPORTS_VIEW },
-      { href: "/lab/payables", label: "مستحقات المعامل", icon: DollarSign, roles: getNavigationRoles("/lab/payables"), permission: PERMISSION_KEYS.LAB_PAYABLES_VIEW },
-    ],
+    roles: getNavigationRoles("/lab"),
+    permission: PERMISSION_KEYS.LAB_ORDERS_VIEW,
   },
 
   // ── تقارير ───────────────────────────────────────────────────────────────

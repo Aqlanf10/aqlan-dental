@@ -322,10 +322,38 @@ export interface MonthlyTrendItem {
   totalCostByCurrency: LabCurrencyAmount[];
 }
 
+/**
+ * CORE-LAB-016: the clinic's running account with one lab, per currency.
+ *
+ * Derived from the supplier bills, NOT from Supplier.Balance — that column is a single
+ * scalar with no currency, and the lab finance sync only moves it for YER bills, so a lab
+ * that invoices in SAR or USD shows a balance of zero there no matter how much is owed.
+ */
+export interface LabAccount {
+  supplierId: string;
+  labName: string;
+  openBills: number;
+  billedByCurrency: LabCurrencyAmount[];
+  paidByCurrency: LabCurrencyAmount[];
+  balanceByCurrency: LabCurrencyAmount[];
+}
+
+/** CORE-LAB-015: lab performance thresholds, owner-configurable from Settings. */
+export interface LabPerformanceThresholds {
+  remakeRateAlarm: number;
+  remakeRateWarn: number;
+  overdueRateAlarm: number;
+  overdueRateWarn: number;
+  turnaroundDaysTarget: number;
+  onTimeRateGood: number;
+  onTimeRateWarn: number;
+}
+
 export interface LabDashboardData {
   kpis: LabDashboardKPIs;
   statusDistribution: StatusDistributionItem[];
   topLabs: TopLabItem[];
   recentOverdue: OverdueOrderItem[];
   monthlyTrend: MonthlyTrendItem[];
+  labAccounts: LabAccount[];
 }

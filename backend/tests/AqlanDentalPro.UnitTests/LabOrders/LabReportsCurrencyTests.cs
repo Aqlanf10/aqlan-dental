@@ -238,6 +238,86 @@ public class LabReportsCurrencyTests
 
     // ── Dashboard ────────────────────────────────────────────────────────────
 
+    // ── Lab accounts (CORE-LAB-016) ──────────────────────────────────────────
+
+    [Fact]
+    public async Task LabAccounts_ShowABalanceForALabThatInvoicesInSaudiRiyals()
+    {
+        // Supplier.Balance is a single scalar and the lab finance sync only moves it for YER
+        // bills, so a lab invoicing in SAR shows zero owed there no matter the debt. The
+        // account is derived from the bills, which carry the currency.
+        await using var db = CreateDb();
+        SeedLab(db, "معمل الرياض", out var supplierId);
+
+        db.SupplierBills.Add(new SupplierBill
+        {
+            BillNumber = "BILL-SAR-1", SupplierId = supplierId, Description = "تركيبات",
+            TotalAmount = 4_000m, PaidAmount = 1_500m, Currency = "SAR", ExchangeRateToYer = 68m,
+            Status = BillStatus.PartiallyPaid, BillDate = new DateOnly(2026, 7, 1),
+            BranchId = Guid.NewGuid(), CreatedBy = Guid.NewGuid(), IsActive = true,
+        });
+        db.SupplierBills.Add(new SupplierBill
+        {
+            BillNumber = "BILL-YER-1", SupplierId = supplierId, Description = "تركيبات",
+            TotalAmount = 90_000m, PaidAmount = 0m, Currency = "YER", ExchangeRateToYer = 1m,
+            Status = BillStatus.Unpaid, BillDate = new DateOnly(2026, 7, 2),
+            BranchId = Guid.NewGuid(), CreatedBy = Guid.NewGuid(), IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        // The scalar the suppliers module reads is untouched — that is the gap being worked around.
+        (await db.Suppliers.FirstAsync(x => x.Id == supplierId)).Balance.Should().Be(0m);
+
+        var account = Rows(Payload(await BuildController(db).GetLabAccounts(), "data"))
+            .Should().ContainSingle().Subject;
+
+        Read<string>(account, "LabName").Should().Be("معمل الرياض");
+
+        var balance = ByCurrency(Read<object>(account, "BalanceByCurrency"));
+        balance["SAR"].Should().Be(2_500m, "4,000 billed less 1,500 paid, in riyals — not converted");
+        balance["YER"].Should().Be(90_000m);
+
+        ByCurrency(Read<object>(account, "BilledByCurrency"))["SAR"].Should().Be(4_000m);
+        ByCurrency(Read<object>(account, "PaidByCurrency"))["SAR"].Should().Be(1_500m);
+    }
+
+    [Fact]
+    public async Task LabAccounts_ExcludeSuppliersThatAreNotDentalLabs()
+    {
+        await using var db = CreateDb();
+        var vendor = new Supplier { Name = "مورد مستلزمات", Type = SupplierType.MedicalVendor, IsActive = true };
+        db.Suppliers.Add(vendor);
+        db.SupplierBills.Add(new SupplierBill
+        {
+            BillNumber = "BILL-V-1", SupplierId = vendor.Id, Description = "مواد",
+            TotalAmount = 10_000m, Currency = "YER", ExchangeRateToYer = 1m,
+            Status = BillStatus.Unpaid, BillDate = new DateOnly(2026, 7, 1),
+            BranchId = Guid.NewGuid(), CreatedBy = Guid.NewGuid(), IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        Rows(Payload(await BuildController(db).GetLabAccounts(), "data")).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Performance_ServesItsThresholdsFromSettings_NotFromTheScreen()
+    {
+        await using var db = CreateDb();
+        db.Settings.Add(new Setting
+        {
+            Key = "finance.lab.remake_rate_alarm", Value = "3",
+            Category = "finance",
+        });
+        await db.SaveChangesAsync();
+
+        var thresholds = Payload(await BuildController(db).GetLabPerformance(null, null), "thresholds");
+
+        thresholds.GetType().GetProperty("RemakeRateAlarm")!.GetValue(thresholds)
+            .Should().Be(3m, "the owner's configured value must win over the old literal");
+        thresholds.GetType().GetProperty("TurnaroundDaysTarget")!.GetValue(thresholds)
+            .Should().Be(7m, "an unset key keeps the previous hardcoded default");
+    }
+
     [Fact]
     public async Task Dashboard_TotalCosts_ArePerCurrencyAndCommittedOnly()
     {

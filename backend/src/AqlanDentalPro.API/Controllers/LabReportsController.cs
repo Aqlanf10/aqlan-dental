@@ -1,7 +1,9 @@
 using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Application.Common;
 using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -33,6 +35,88 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
             .ToList();
 
     private Task<bool> CanViewReportsAsync() => PermissionGuard.HasAsync(db, currentUser, "lab_reports", "view");
+
+    /// <summary>
+    /// CORE-LAB-015: the thresholds that decide whether a lab is performing acceptably are a
+    /// contract term the owner renegotiates per lab, not a display constant. They were literals
+    /// in the reports JSX — each written twice, on the summary card and on the row badge — so
+    /// editing one made the two disagree about the same lab. Served from Settings instead, once.
+    /// </summary>
+    private async Task<object> ReadThresholdsAsync(CancellationToken ct)
+    {
+        var settings = new FinanceSettingsReader(db);
+        return new
+        {
+            RemakeRateAlarm      = await settings.GetDecimalAsync(FinanceSettingsKeys.LabRemakeRateAlarm, ct),
+            RemakeRateWarn       = await settings.GetDecimalAsync(FinanceSettingsKeys.LabRemakeRateWarn, ct),
+            OverdueRateAlarm     = await settings.GetDecimalAsync(FinanceSettingsKeys.LabOverdueRateAlarm, ct),
+            OverdueRateWarn      = await settings.GetDecimalAsync(FinanceSettingsKeys.LabOverdueRateWarn, ct),
+            TurnaroundDaysTarget = await settings.GetDecimalAsync(FinanceSettingsKeys.LabTurnaroundDaysTarget, ct),
+            OnTimeRateGood       = await settings.GetDecimalAsync(FinanceSettingsKeys.LabOnTimeRateGood, ct),
+            OnTimeRateWarn       = await settings.GetDecimalAsync(FinanceSettingsKeys.LabOnTimeRateWarn, ct),
+        };
+    }
+
+    /// <summary>
+    /// The clinic's running account with each lab, PER CURRENCY.
+    /// <para>
+    /// Read from <c>SupplierBill</c> rather than <c>Supplier.Balance</c> deliberately.
+    /// <c>Supplier.Balance</c> is a single scalar with no currency, and the lab finance sync
+    /// only moves it for YER bills — so a lab that invoices the clinic in SAR or USD shows a
+    /// running balance of zero no matter how much is owed. The bills carry the currency and
+    /// are the source of truth, so the account is derived from them and is correct for all
+    /// three currencies. Fixing the scalar itself is a cross-module change to the suppliers
+    /// entity and is recorded as a separate finding.
+    /// </para>
+    /// </summary>
+    private async Task<List<object>> GetLabAccountsAsync(CancellationToken ct)
+    {
+        // Joined explicitly rather than walking b.Supplier: the navigation is not loaded here,
+        // and the InMemory provider answers an unloaded required reference with null.
+        var rows = await (
+            from bill in db.SupplierBills
+            join supplier in db.Suppliers on bill.SupplierId equals supplier.Id
+            where supplier.Type == SupplierType.DentalLab
+            select new { bill, supplier })
+            .GroupBy(x => new { x.bill.SupplierId, SupplierName = x.supplier.Name, x.bill.Currency })
+            .Select(g => new
+            {
+                g.Key.SupplierId,
+                g.Key.SupplierName,
+                g.Key.Currency,
+                Billed = g.Sum(x => x.bill.TotalAmount),
+                Paid = g.Sum(x => x.bill.PaidAmount),
+                OpenBills = g.Count(x => x.bill.Status != BillStatus.FullyPaid
+                                      && x.bill.Status != BillStatus.Cancelled),
+            })
+            .ToListAsync(ct);
+
+        return rows
+            .GroupBy(r => new { r.SupplierId, r.SupplierName })
+            .Select(sup => (object)new
+            {
+                sup.Key.SupplierId,
+                LabName = sup.Key.SupplierName,
+                OpenBills = sup.Sum(x => x.OpenBills),
+                BilledByCurrency  = Fold(sup.Select(x => new LabCurrencyAmount(x.Currency, x.Billed))),
+                PaidByCurrency    = Fold(sup.Select(x => new LabCurrencyAmount(x.Currency, x.Paid))),
+                BalanceByCurrency = Fold(sup.Select(x => new LabCurrencyAmount(x.Currency, x.Billed - x.Paid))),
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// The clinic's account with every lab, per currency — the answer to "how much do we owe
+    /// this lab" when one lab invoices in Saudi riyals and another in dollars.
+    /// </summary>
+    [HttpGet("lab-accounts")]
+    public async Task<IActionResult> GetLabAccounts(CancellationToken ct = default)
+    {
+        if (!await CanViewReportsAsync()) return Forbid();
+
+        var accounts = await GetLabAccountsAsync(ct);
+        return Ok(new { data = accounts });
+    }
 
     /// <summary>Lab costs report — total costs per lab, per currency.</summary>
     /// <remarks>
@@ -148,7 +232,8 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
     /// Returns per-lab metrics: avg execution days, remake %, overdue %, total orders.
     /// </summary>
     [HttpGet("lab-performance")]
-    public async Task<IActionResult> GetLabPerformance([FromQuery] DateTime? from, [FromQuery] DateTime? to)
+    public async Task<IActionResult> GetLabPerformance(
+        [FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken ct = default)
     {
         if (!await CanViewReportsAsync()) return Forbid();
 
@@ -265,7 +350,12 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
             OverallOverdueRate = overallOverdueRate,
         };
 
-        return Ok(new { data = report, summary });
+        return Ok(new
+        {
+            data = report,
+            summary,
+            thresholds = await ReadThresholdsAsync(ct),
+        });
     }
 
     /// <summary>
@@ -273,7 +363,7 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
     /// Returns overall KPIs and recent activity for the lab dashboard page.
     /// </summary>
     [HttpGet("lab-dashboard")]
-    public async Task<IActionResult> GetLabDashboard()
+    public async Task<IActionResult> GetLabDashboard(CancellationToken ct = default)
     {
         if (!await CanViewReportsAsync()) return Forbid();
 
@@ -427,6 +517,7 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
             TopLabs = topLabs,
             RecentOverdue = recentOverdue,
             MonthlyTrend = monthlyTrend,
+            LabAccounts = await GetLabAccountsAsync(ct),
         };
 
         return Ok(new { data = dashboard });

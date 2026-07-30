@@ -41,6 +41,19 @@ const emptyItem = (): DraftItem => ({
   instructions: "",
 });
 
+/** Numbered section heading — makes the order of data entry explicit. */
+function FormStep({ number, title }: { number: number; title: string }) {
+  return (
+    <div className="flex items-center gap-2 pt-1">
+      <span className="grid place-items-center w-6 h-6 rounded-full bg-cyan-600 text-white text-xs font-bold shrink-0">
+        {number}
+      </span>
+      <h3 className="text-sm font-bold text-gray-900">{title}</h3>
+      <div className="flex-1 h-px bg-gray-100" />
+    </div>
+  );
+}
+
 export function NewLabOrderModal({ onClose, initialPatient }: Props) {
   const queryClient = useQueryClient();
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(initialPatient?.id ?? null);
@@ -173,7 +186,11 @@ export function NewLabOrderModal({ onClose, initialPatient }: Props) {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* CORE-LAB-018: the form is filled in a fixed order — who, then what, then when.
+              Numbered sections make that order visible instead of leaving the user to infer
+              it from a flat wall of inputs. */}
+          <FormStep number={1} title="المريض والمعمل" />
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-gray-700">المريض *</label>
@@ -211,6 +228,7 @@ export function NewLabOrderModal({ onClose, initialPatient }: Props) {
             </div>
           )}
 
+          <FormStep number={2} title="بنود العمل والتكلفة" />
           <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50 p-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-bold text-gray-900">بنود العمل</h3>
@@ -223,6 +241,18 @@ export function NewLabOrderModal({ onClose, initialPatient }: Props) {
               </button>
             </div>
 
+            {/* Placeholders disappear the moment a value is typed, so a filled row became six
+                anonymous boxes. A header row keeps every column identifiable. */}
+            <div className="hidden md:grid md:grid-cols-12 gap-3 px-3 text-xs font-semibold text-gray-500">
+              <span className="md:col-span-3">نوع العمل</span>
+              <span className="md:col-span-2">رقم/أرقام الأسنان</span>
+              <span className="md:col-span-2">الظل (اللون)</span>
+              <span className="md:col-span-1">العدد</span>
+              <span className="md:col-span-2">سعر الوحدة</span>
+              <span className="md:col-span-1">الإجمالي</span>
+              <span className="md:col-span-1" />
+            </div>
+
             {items.map((item, index) => (
               <div key={item.key} className="grid gap-3 rounded-lg bg-white p-3 border border-gray-100 md:grid-cols-12">
                 <select
@@ -233,10 +263,10 @@ export function NewLabOrderModal({ onClose, initialPatient }: Props) {
                   <option value="">نوع العمل</option>
                   {workTypes.map((type) => <option key={type.id} value={type.id}>{type.nameAr || type.name}</option>)}
                 </select>
-                <input className="md:col-span-2 border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="الأسنان" value={item.toothNumber ?? ""} onChange={(e) => updateItem(item.key, { toothNumber: e.target.value })} />
-                <input className="md:col-span-2 border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="الظل" value={item.shade ?? ""} onChange={(e) => updateItem(item.key, { shade: e.target.value })} />
-                <input className="md:col-span-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" type="number" min="1" value={item.unitsCount ?? 1} onChange={(e) => updateItem(item.key, { unitsCount: Number(e.target.value) })} />
-                <input className="md:col-span-2 border border-gray-200 rounded-lg px-3 py-2 text-sm" type="number" min="0" step="0.01" placeholder="سعر الوحدة" value={item.unitPrice ?? ""} onChange={(e) => updateItem(item.key, { unitPrice: e.target.value === "" ? undefined : Number(e.target.value) })} />
+                <input className="md:col-span-2 border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="الأسنان" aria-label="رقم الأسنان" value={item.toothNumber ?? ""} onChange={(e) => updateItem(item.key, { toothNumber: e.target.value })} />
+                <input className="md:col-span-2 border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="الظل" aria-label="الظل (اللون)" value={item.shade ?? ""} onChange={(e) => updateItem(item.key, { shade: e.target.value })} />
+                <input className="md:col-span-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" type="number" min="1" aria-label="العدد" value={item.unitsCount ?? 1} onChange={(e) => updateItem(item.key, { unitsCount: Number(e.target.value) })} />
+                <input className="md:col-span-2 border border-gray-200 rounded-lg px-3 py-2 text-sm" type="number" min="0" step="0.01" placeholder="سعر الوحدة" aria-label="سعر الوحدة" value={item.unitPrice ?? ""} onChange={(e) => updateItem(item.key, { unitPrice: e.target.value === "" ? undefined : Number(e.target.value) })} />
                 <div className="md:col-span-1 flex items-center text-sm font-bold text-gray-700">{Number(item.totalPrice ?? 0).toLocaleString()}</div>
                 <button type="button" disabled={items.length === 1} onClick={() => setItems((current) => current.filter((x) => x.key !== item.key))} className="md:col-span-1 text-red-500 disabled:text-gray-300 flex items-center justify-center">
                   <Trash2 className="w-4 h-4" />
@@ -265,6 +295,7 @@ export function NewLabOrderModal({ onClose, initialPatient }: Props) {
             </div>
           </div>
 
+          <FormStep number={3} title="الوصف والمواعيد" />
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-gray-700">وصف مختصر للعمل</label>
@@ -276,9 +307,18 @@ export function NewLabOrderModal({ onClose, initialPatient }: Props) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <input type="date" value={form.sentDate ?? ""} onChange={(e) => set("sentDate", e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500" />
-            <input type="date" value={form.expectedDate ?? ""} onChange={(e) => set("expectedDate", e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+          {/* These were two bare date boxes with no labels — the user had to guess which was
+              which, and getting them backwards is what makes an order look overdue on day one. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-gray-700">تاريخ الإرسال للمعمل</label>
+              <input type="date" value={form.sentDate ?? ""} onChange={(e) => set("sentDate", e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-gray-700">التاريخ المتوقع للاستلام</label>
+              <input type="date" value={form.expectedDate ?? ""} onChange={(e) => set("expectedDate", e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+              <p className="text-xs text-gray-400">يُحتسب التأخر مقارنة بهذا التاريخ</p>
+            </div>
           </div>
 
           <div className="space-y-1.5">

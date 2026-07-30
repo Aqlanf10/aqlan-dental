@@ -143,26 +143,27 @@ public class TestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        // CORE-CI-001: do NOT call MigrateAsync here.
+        // CORE-CI-001: build the schema from the EF MODEL, never from the migration chain.
         //
-        // The "belt-and-braces no-op" this used to be was neither. Building the host above
-        // already ran StartupDatabaseMaintenance, which for an EMPTY database deliberately
-        // does not replay the migration chain: it creates the full schema from the current EF
-        // model and records the migrations as applied (a baseline). CLAUDE.md documents why —
-        // 31 hand-written migrations carry no [Migration] attribute, so the chain cannot
-        // replay on an empty database at all.
+        // What used to be here was `await db.Database.MigrateAsync()`, described as an
+        // idempotent no-op on the assumption that startup maintenance had already prepared
+        // the database. Neither half held. StartupDatabaseMaintenance wraps every step in
+        // try/catch and logs warnings, so when it fails it fails silently — and MigrateAsync
+        // was therefore the ONLY thing attempting to create the schema. It cannot: CLAUDE.md
+        // records that 31 hand-written migrations carry no [Migration] attribute, so the chain
+        // is unreplayable on an empty database. It threw in this fixture, and all 24
+        // integration tests died before their first assertion. The CI job reported success
+        // anyway because the step carried continue-on-error, so this went unnoticed.
         //
-        // Calling MigrateAsync on top of that baseline made EF try to apply that same
-        // unreplayable chain, and it threw. Every one of the 24 integration tests died in this
-        // fixture before its first assertion — and the CI job reported success anyway because
-        // the step carries continue-on-error. The suite has therefore never actually run.
-        //
-        // The host has already prepared the schema. Verify that rather than re-doing it, so a
-        // future regression in startup maintenance fails here loudly instead of silently
-        // handing tests an empty database.
-        // Raw ADO rather than db.Database.SqlQuery<bool>: that helper wraps the statement as
-        // `SELECT t.Value FROM (...) t`, so it only works when the query itself yields a column
-        // literally named "Value". This is the same probe StartupDatabaseMaintenance uses.
+        // EnsureCreated is the right tool for a throwaway container: it creates the full
+        // schema from the current EF model and records no migration history — which is exactly
+        // what StartupDatabaseMaintenance does for a genuinely empty production database. It
+        // also means the schema under test always matches the model, so a drift between the
+        // two surfaces here rather than in production.
+        await db.Database.EnsureCreatedAsync();
+
+        // Verify rather than assume. If the schema is still absent, every test below would
+        // fail with some unrelated-looking error; failing here says plainly what went wrong.
         await db.Database.OpenConnectionAsync();
         bool usersTableExists;
         using (var checkCmd = db.Database.GetDbConnection().CreateCommand())
@@ -174,8 +175,7 @@ public class TestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
         if (!usersTableExists)
             throw new InvalidOperationException(
-                "Integration test database was not prepared by StartupDatabaseMaintenance — "
-                + "the schema baseline did not run, so no test can be trusted.");
+                "Integration test database has no schema after EnsureCreated — no test can be trusted.");
     }
 
     /// <summary>

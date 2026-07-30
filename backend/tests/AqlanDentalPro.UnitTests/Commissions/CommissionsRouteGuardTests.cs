@@ -109,7 +109,14 @@ public class CommissionsRouteGuardTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options);
 
-        var controller = new CommissionsController(db, commissionMock.Object, currentUserMock.Object);
+        // CORE-FIN-LAB-ADJ: real service against the same in-memory db — the route-guard tests
+        // never reach it, but a mock would silently accept a future signature change here.
+        var adjustmentService = new AqlanDentalPro.Infrastructure.Services.CommissionAdjustmentService(
+            db,
+            new Mock<ILogger<AqlanDentalPro.Infrastructure.Services.CommissionAdjustmentService>>().Object);
+
+        var controller = new CommissionsController(
+            db, commissionMock.Object, adjustmentService, currentUserMock.Object);
         return (controller, commissionMock, currentUserMock);
     }
 

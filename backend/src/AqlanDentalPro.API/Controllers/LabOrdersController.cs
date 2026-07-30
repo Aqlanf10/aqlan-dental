@@ -177,6 +177,10 @@ public class LabOrdersController(
     // CORE-LAB-001 — supplier bill + payable + journal linkage, shared by create and
     // update so attaching a lab/cost after the fact still reaches the books.
     LabOrderFinanceSyncService financeSync,
+    // CORE-FIN-LAB-ADJ — the doctor's commission deducts this order's cost, so any edit that
+    // moves the cost has to reach the commission too: recalculated where it is still unpaid,
+    // raised as a separate correction line where it has already been paid out.
+    ICommissionAdjustmentService commissionAdjustments,
     IJournalEntryService? journalEntryService = null) : ControllerBase
 {
     /// <summary>
@@ -879,6 +883,13 @@ public class LabOrdersController(
                 }
             }
 
+            // CORE-FIN-LAB-ADJ: runs for EVERY status, not just "sent". Pulling an order back to
+            // draft, or lowering its cost, has to release the deduction it was making against the
+            // doctor's commission — a guard here would leave the doctor short for a bill the
+            // clinic no longer owes. Idempotent, and inside this transaction so the order edit and
+            // the commission correction it caused commit together.
+            await commissionAdjustments.ResyncLabOrderAsync(order.Id, currentUser.UserId);
+
             await db.SaveChangesAsync();
             if (useTx) await tx!.CommitAsync();
         }
@@ -1029,11 +1040,11 @@ public class LabOrdersController(
         // to the lab, so make sure its financial trail exists. This is idempotent — if
         // Create or Update already built the bill this is a no-op — and it catches any
         // order that acquired a lab/cost through a path that did not sync.
-        if (string.Equals(nextStatus, "sent", StringComparison.OrdinalIgnoreCase))
+        var useSendTx = db.Database.IsRelational();
+        var sendTx = useSendTx ? await db.Database.BeginTransactionAsync() : null;
+        try
         {
-            var useSendTx = db.Database.IsRelational();
-            var sendTx = useSendTx ? await db.Database.BeginTransactionAsync() : null;
-            try
+            if (string.Equals(nextStatus, "sent", StringComparison.OrdinalIgnoreCase))
             {
                 var sync = await financeSync.SyncAsync(order,
                     order.BranchId ?? currentUser.BranchId ?? Guid.Empty,
@@ -1043,23 +1054,25 @@ public class LabOrdersController(
                     if (useSendTx) await sendTx!.RollbackAsync();
                     return BadRequest(new { message = sync.Error });
                 }
+            }
 
-                await db.SaveChangesAsync();
-                if (useSendTx) await sendTx!.CommitAsync();
-            }
-            catch
-            {
-                if (useSendTx) await sendTx!.RollbackAsync();
-                throw;
-            }
-            finally
-            {
-                if (sendTx is not null) await sendTx.DisposeAsync();
-            }
-        }
-        else
-        {
+            // CORE-FIN-LAB-ADJ: the status IS the commitment. Crossing draft → sent makes the
+            // cost deductible from the doctor's commission for the first time, and any move back
+            // out of a committed state releases it again — so this runs on every transition, not
+            // only the one that touches the supplier bill.
+            await commissionAdjustments.ResyncLabOrderAsync(order.Id, currentUser.UserId);
+
             await db.SaveChangesAsync();
+            if (useSendTx) await sendTx!.CommitAsync();
+        }
+        catch
+        {
+            if (useSendTx) await sendTx!.RollbackAsync();
+            throw;
+        }
+        finally
+        {
+            if (sendTx is not null) await sendTx.DisposeAsync();
         }
 
         if (nextStatus == "ready")
@@ -1222,6 +1235,13 @@ public class LabOrdersController(
                 LabOrderId = id, FromStatus = oldStatus, ToStatus = "cancelled",
                 ChangedByUserId = currentUser.UserId, Reason = req.Reason
             });
+
+            // CORE-FIN-LAB-ADJ: a cancelled order is not owed, so it must stop being deducted
+            // from the doctor's commission. Where that commission was already paid the money is
+            // not clawed back silently — a positive correction line is raised for the next
+            // settlement instead.
+            await commissionAdjustments.ResyncLabOrderAsync(order.Id, currentUser.UserId);
+
             await db.SaveChangesAsync();
             if (useTx) await tx!.CommitAsync();
         }
@@ -1509,6 +1529,11 @@ public class LabOrdersController(
             order.IsActive = false;
             order.DeletedAt = DateTime.UtcNow;
             order.DeletedBy = currentUser.UserId;
+
+            // CORE-FIN-LAB-ADJ: same reasoning as Cancel — a deleted order stops being a cost,
+            // so it must stop reducing the doctor's commission.
+            await commissionAdjustments.ResyncLabOrderAsync(order.Id, currentUser.UserId);
+
             await db.SaveChangesAsync();
             if (useTx) await tx!.CommitAsync();
         }

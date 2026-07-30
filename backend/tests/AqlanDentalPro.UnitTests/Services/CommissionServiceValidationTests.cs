@@ -352,4 +352,128 @@ public class CommissionServiceValidationTests
         result.Amount.Should().Be(2_000m);
         result.DoctorId.Should().Be(doctor.Id);
     }
+
+    // ── RecordPayment: correction lines (CORE-FIN-LAB-ADJ) ────────────────────
+
+    /// <summary>
+    /// Seeds a doctor with one Approved 3,000 commission and a single correction line of
+    /// <paramref name="adjustmentAmount"/>, then returns the doctor.
+    /// </summary>
+    private static async Task<Doctor> SeedDoctorWithAdjustmentAsync(
+        AppDbContext db, decimal adjustmentAmount)
+    {
+        var branchId = Guid.NewGuid();
+        db.Branches.Add(new Branch { Id = branchId, Name = "الفرع" });
+        db.Treasuries.Add(new Treasury
+        {
+            Name = "حساب بنكي", Type = TreasuryType.Bank,
+            Balance = 1_000_000m, BranchId = branchId, IsActive = true,
+        });
+
+        var doctor = new Doctor { Name = "د. أحمد", IsActive = true, BranchId = branchId };
+        db.Doctors.Add(doctor);
+
+        var invoice = new Invoice { InvoiceNumber = "INV-ADJ", Status = InvoiceStatus.Issued, IsActive = true };
+        db.Invoices.Add(invoice);
+
+        var lineItem = new InvoiceLineItem
+        {
+            Invoice                    = invoice,
+            Description                = "حشو",
+            Quantity                   = 1,
+            UnitPrice                  = 10_000m,
+            TotalPrice                 = 10_000m,
+            DoctorId                   = doctor.Id,
+            DoctorCommissionPercentage = 30m,
+            DoctorCommissionAmount     = 3_000m,
+            CommissionStatus           = CommissionStatus.Approved,
+            IsActive                   = true,
+        };
+        db.InvoiceLineItems.Add(lineItem);
+
+        db.DoctorCommissionAdjustments.Add(new DoctorCommissionAdjustment
+        {
+            DoctorId          = doctor.Id,
+            InvoiceLineItemId = lineItem.Id,
+            InvoiceId         = invoice.Id,
+            AdjustmentAmount  = adjustmentAmount,
+            Reason            = "تغيّرت تكلفة المعمل بعد الصرف",
+            Status            = CommissionAdjustmentStatus.Pending,
+            IsActive          = true,
+        });
+
+        await db.SaveChangesAsync();
+        return doctor;
+    }
+
+    private static RecordCommissionPaymentRequest PayRequest(Guid doctorId, decimal amount)
+        => new(
+            DoctorId:        doctorId,
+            Amount:          amount,
+            PaymentDate:     new DateOnly(2026, 7, 15),
+            PaymentMethod:   "bank",   // avoids the cashier-session requirement
+            ReferenceNumber: null,
+            Notes:           null,
+            LineItemIds:     null);
+
+    [Fact]
+    public async Task RecordPayment_PositiveAdjustment_RaisesTheCeilingAboveTheLineItemsAlone()
+    {
+        // 3,000 accrued + a 1,500 correction the clinic still owes = 4,500 payable. Before the
+        // correction was folded in, this payment would have been refused as an overpayment.
+        await using var db = CreateDb();
+        var doctor = await SeedDoctorWithAdjustmentAsync(db, adjustmentAmount: 1_500m);
+
+        var result = await CreateService(db).RecordPaymentAsync(PayRequest(doctor.Id, 4_500m), Guid.NewGuid());
+
+        result.Amount.Should().Be(4_500m);
+    }
+
+    [Fact]
+    public async Task RecordPayment_NegativeAdjustment_LowersTheCeiling()
+    {
+        // 3,000 accrued − 1,000 overpaid earlier = 2,000 payable. Paying the full 3,000 would
+        // hand the doctor money they have already received once.
+        await using var db = CreateDb();
+        var doctor = await SeedDoctorWithAdjustmentAsync(db, adjustmentAmount: -1_000m);
+
+        await CreateService(db).Invoking(s => s.RecordPaymentAsync(PayRequest(doctor.Id, 3_000m), Guid.NewGuid()))
+            .Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*يتجاوز*");
+    }
+
+    [Fact]
+    public async Task RecordPayment_StampsOpenCorrectionsWithTheDisbursementThatCarriedThem()
+    {
+        await using var db = CreateDb();
+        var doctor = await SeedDoctorWithAdjustmentAsync(db, adjustmentAmount: 1_500m);
+
+        var payment = await CreateService(db).RecordPaymentAsync(PayRequest(doctor.Id, 4_500m), Guid.NewGuid());
+
+        var adjustment = await db.DoctorCommissionAdjustments.SingleAsync();
+        adjustment.Status.Should().Be(CommissionAdjustmentStatus.Settled);
+        adjustment.SettledByPaymentId.Should().Be(payment.Id);
+        adjustment.SettledOn.Should().Be(new DateOnly(2026, 7, 15));
+
+        // Settled is a RECORD, not an arithmetic gate: the correction stays in the balance, so
+        // a second payment of the same amount must still be refused.
+        await CreateService(db).Invoking(s => s.RecordPaymentAsync(PayRequest(doctor.Id, 4_500m), Guid.NewGuid()))
+            .Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*يتجاوز*");
+    }
+
+    [Fact]
+    public async Task RecordPayment_CancelledAdjustment_DoesNotCountTowardTheBalance()
+    {
+        await using var db = CreateDb();
+        var doctor = await SeedDoctorWithAdjustmentAsync(db, adjustmentAmount: 1_500m);
+
+        var adjustment = await db.DoctorCommissionAdjustments.SingleAsync();
+        adjustment.Status = CommissionAdjustmentStatus.Cancelled;
+        await db.SaveChangesAsync();
+
+        await CreateService(db).Invoking(s => s.RecordPaymentAsync(PayRequest(doctor.Id, 4_500m), Guid.NewGuid()))
+            .Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*يتجاوز*");
+    }
 }

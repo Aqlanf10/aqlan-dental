@@ -205,4 +205,95 @@ public class CommissionServiceLabOrderAutoLinkTests
         reloaded.LabOrderId.Should().Be(firstOrder.Id, "an explicit existing link must not be replaced by the auto-resolver, even when other candidates exist");
         reloaded.LabCost.Should().Be(12_000m);
     }
+
+    // ── CORE-FIN-LAB-DRAFT ────────────────────────────────────────────────────
+    // The merged resolver excluded only "cancelled". A DRAFT is what the create modal
+    // saves with a provisional cost, before the lab has necessarily quoted, and
+    // ValidateReadyToSend refuses to send it until it has a real lab and a cost > 0 —
+    // so the clinic owes nothing yet. Deducting that figure UNDERPAYS the doctor for a
+    // bill that may never exist.
+
+    [Fact]
+    public async Task DraftLabOrderOnVisit_IsNotLinked_AndDoesNotReduceCommission()
+    {
+        await using var db = CreateDb();
+        var (service, doctor, patient, visit) = SeedCommon(db, defaultLabCost: 15_000m);
+        var lineItem = SeedLineItem(db, service, doctor, visit, patient);
+
+        db.LabOrders.Add(new LabOrder
+        {
+            Patient = patient,
+            VisitId = visit.Id,
+            Status = "draft",
+            Cost = 12_000m,
+            TotalCost = 12_000m,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var svc = CreateService(db);
+        await svc.AutoFillFromServiceAsync(lineItem.Id);
+
+        var reloaded = await db.InvoiceLineItems.AsNoTracking().FirstAsync(i => i.Id == lineItem.Id);
+        reloaded.LabOrderId.Should().BeNull("a draft is not a commitment to the lab, so it must not be linked");
+        reloaded.LabCost.Should().Be(15_000m, "the provisional draft cost must not replace the service default");
+    }
+
+    [Fact]
+    public async Task DraftAlongsideSentOnSameVisit_LinksTheSentOne_NotAmbiguous()
+    {
+        // Excluding drafts also DISAMBIGUATES: a visit carrying one real order plus an
+        // abandoned draft used to look like two candidates and linked nothing at all.
+        await using var db = CreateDb();
+        var (service, doctor, patient, visit) = SeedCommon(db, defaultLabCost: 15_000m);
+        var lineItem = SeedLineItem(db, service, doctor, visit, patient);
+
+        var sent = new LabOrder
+        {
+            Patient = patient, VisitId = visit.Id, Status = "sent",
+            Cost = 9_000m, TotalCost = 9_000m, IsActive = true,
+        };
+        db.LabOrders.Add(sent);
+        db.LabOrders.Add(new LabOrder
+        {
+            Patient = patient, VisitId = visit.Id, Status = "draft",
+            Cost = 1m, TotalCost = 1m, IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var svc = CreateService(db);
+        await svc.AutoFillFromServiceAsync(lineItem.Id);
+
+        var reloaded = await db.InvoiceLineItems.AsNoTracking().FirstAsync(i => i.Id == lineItem.Id);
+        reloaded.LabOrderId.Should().Be(sent.Id);
+        reloaded.LabCost.Should().Be(9_000m);
+    }
+
+    [Fact]
+    public async Task AlreadyLinkedOrderRevertedToDraft_StopsDeducting()
+    {
+        // The deduction is guarded independently of the resolver, so a link that arrived
+        // by any other path — or an order reverted to draft after linking — still obeys
+        // the rule.
+        await using var db = CreateDb();
+        var (service, doctor, patient, visit) = SeedCommon(db, defaultLabCost: 15_000m);
+        var lineItem = SeedLineItem(db, service, doctor, visit, patient);
+
+        var labOrder = new LabOrder
+        {
+            Patient = patient, VisitId = visit.Id, Status = "draft",
+            Cost = 12_000m, TotalCost = 12_000m, IsActive = true,
+        };
+        db.LabOrders.Add(labOrder);
+        await db.SaveChangesAsync();
+
+        lineItem.LabOrderId = labOrder.Id;   // pre-existing link
+        await db.SaveChangesAsync();
+
+        var svc = CreateService(db);
+        await svc.AutoFillFromServiceAsync(lineItem.Id);
+
+        var reloaded = await db.InvoiceLineItems.AsNoTracking().FirstAsync(i => i.Id == lineItem.Id);
+        reloaded.LabCost.Should().Be(15_000m, "a draft's provisional cost must not be deducted even when the link already exists");
+    }
 }

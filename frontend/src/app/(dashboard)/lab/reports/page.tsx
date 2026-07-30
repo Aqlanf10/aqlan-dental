@@ -8,9 +8,10 @@ import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import type {
   LabCostReportItem, LabPerformanceItem, LabPerformanceSummary,
-  LabPayable, LabDebtSummary,
+  LabPayable, LabDebtSummary, LabCurrencyAmount,
 } from "@/types/lab";
 import { QueryErrorBanner } from "@/components/shared/QueryErrorBanner";
+import { formatCurrencyAmounts, formatMoney } from "@/app/(dashboard)/finance-v3/components/FinanceHelpers";
 import { cn } from "@/lib/utils";
 
 type TabType = "costs" | "performance" | "debts";
@@ -26,11 +27,17 @@ export default function LabReportsPage() {
       const params = new URLSearchParams();
       if (dateFrom) params.set("from", dateFrom);
       if (dateTo) params.set("to", dateTo);
-      const res = await api.get<{ data: LabCostReportItem[] }>(`/api/reports/lab-costs?${params}`);
-      return res.data.data;
+      const res = await api.get<{ data: LabCostReportItem[]; totalsByCurrency: LabCurrencyAmount[] }>(`/api/reports/lab-costs?${params}`);
+      return res.data;
     },
     enabled: tab === "costs",
   });
+
+  // CORE-LAB-010: the grand total comes from the server, which grouped by currency at the
+  // source. Re-deriving it here by adding up the rows is exactly what produced a number that
+  // was not money in any currency.
+  const costsRows = costsData?.data ?? [];
+  const costsTotals = costsData?.totalsByCurrency ?? [];
 
   const { data: perfData, isLoading: perfLoading, isError: perfError, refetch: refetchPerf } = useQuery({
     queryKey: ["lab-performance", dateFrom, dateTo],
@@ -122,7 +129,7 @@ export default function LabReportsPage() {
               <div className="p-6">
                 <QueryErrorBanner text="تعذر تحميل بيانات التكاليف — تحقق من الاتصال وحاول مجددًا" onRetry={() => refetchCosts()} />
               </div>
-            ) : (costsData ?? []).length === 0 ? (
+            ) : costsRows.length === 0 ? (
               <div className="flex flex-col items-center py-12 text-gray-400">
                 <FlaskConical className="w-10 h-10 mb-3" />
                 <p className="font-medium">لا توجد بيانات تكاليف</p>
@@ -138,11 +145,11 @@ export default function LabReportsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {(costsData ?? []).map((item: LabCostReportItem, i: number) => (
+                    {costsRows.map((item: LabCostReportItem, i: number) => (
                       <tr key={i} className="hover:bg-gray-50">
                         <td className="px-4 py-3 font-medium text-gray-900">{item.labName}</td>
                         <td className="px-4 py-3 text-gray-700">{item.totalOrders}</td>
-                        <td className="px-4 py-3 text-gray-700 font-medium">{item.totalCost.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-gray-700 font-medium whitespace-nowrap">{formatCurrencyAmounts(item.totalCostByCurrency)}</td>
                         <td className="px-4 py-3">
                           <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium", item.pendingOrders > 0 ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-500")}>
                             {item.pendingOrders}
@@ -164,11 +171,11 @@ export default function LabReportsPage() {
                   <tfoot className="bg-gray-50 border-t border-gray-200">
                     <tr>
                       <td className="px-4 py-3 font-bold text-gray-900">الإجمالي</td>
-                      <td className="px-4 py-3 font-bold text-gray-900">{(costsData ?? []).reduce((s: number, i: LabCostReportItem) => s + i.totalOrders, 0)}</td>
-                      <td className="px-4 py-3 font-bold text-gray-900">{(costsData ?? []).reduce((s: number, i: LabCostReportItem) => s + i.totalCost, 0).toLocaleString()}</td>
-                      <td className="px-4 py-3 font-bold">{(costsData ?? []).reduce((s: number, i: LabCostReportItem) => s + i.pendingOrders, 0)}</td>
-                      <td className="px-4 py-3 font-bold">{(costsData ?? []).reduce((s: number, i: LabCostReportItem) => s + i.returnedOrders, 0)}</td>
-                      <td className="px-4 py-3 font-bold">{(costsData ?? []).reduce((s: number, i: LabCostReportItem) => s + i.remakeOrders, 0)}</td>
+                      <td className="px-4 py-3 font-bold text-gray-900">{costsRows.reduce((s: number, i: LabCostReportItem) => s + i.totalOrders, 0)}</td>
+                      <td className="px-4 py-3 font-bold text-gray-900 whitespace-nowrap">{formatCurrencyAmounts(costsTotals)}</td>
+                      <td className="px-4 py-3 font-bold">{costsRows.reduce((s: number, i: LabCostReportItem) => s + i.pendingOrders, 0)}</td>
+                      <td className="px-4 py-3 font-bold">{costsRows.reduce((s: number, i: LabCostReportItem) => s + i.returnedOrders, 0)}</td>
+                      <td className="px-4 py-3 font-bold">{costsRows.reduce((s: number, i: LabCostReportItem) => s + i.remakeOrders, 0)}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -200,7 +207,7 @@ export default function LabReportsPage() {
                 </div>
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                   <p className="text-xs text-gray-500">إجمالي التكاليف</p>
-                  <p className="text-xl font-bold text-gray-900 mt-1">{perfData.summary.totalCost.toLocaleString()}</p>
+                  <p className="text-lg font-bold text-gray-900 mt-1">{formatCurrencyAmounts(perfData.summary.totalCostByCurrency)}</p>
                 </div>
               </div>
             )}
@@ -263,7 +270,7 @@ export default function LabReportsPage() {
                               {item.onTimeRate}%
                             </span>
                           </td>
-                          <td className="px-3 py-3 text-gray-700">{item.totalCost.toLocaleString()}</td>
+                          <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{formatCurrencyAmounts(item.totalCostByCurrency)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -281,7 +288,7 @@ export default function LabReportsPage() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                   <p className="text-xs text-gray-500">إجمالي الديون</p>
-                  <p className="text-xl font-bold text-red-600 mt-1">{debtsData.summary.totalDebt.toLocaleString()}</p>
+                  <p className="text-lg font-bold text-red-600 mt-1">{formatCurrencyAmounts(debtsData.summary.totalDebtByCurrency)}</p>
                 </div>
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                   <p className="text-xs text-gray-500">عدد المستحقات</p>
@@ -326,9 +333,9 @@ export default function LabReportsPage() {
                         <tr key={p.id} className="hover:bg-gray-50">
                           <td className="px-4 py-3 font-medium text-gray-900">{p.labName ?? "—"}</td>
                           <td className="px-4 py-3 font-mono text-xs text-gray-500">{p.orderNumber ?? "—"}</td>
-                          <td className="px-4 py-3 text-gray-700">{p.amount.toLocaleString()}</td>
-                          <td className="px-4 py-3 text-green-600">{p.paidAmount.toLocaleString()}</td>
-                          <td className="px-4 py-3 text-red-600 font-medium">{p.balance.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{formatMoney(p.amount, p.currency)}</td>
+                          <td className="px-4 py-3 text-green-600 whitespace-nowrap">{formatMoney(p.paidAmount, p.currency)}</td>
+                          <td className="px-4 py-3 text-red-600 font-medium whitespace-nowrap">{formatMoney(p.balance, p.currency)}</td>
                           <td className="px-4 py-3">
                             <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium",
                               p.status === "pending" ? "bg-amber-100 text-amber-700" :

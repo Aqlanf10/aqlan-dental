@@ -58,6 +58,18 @@ public static class LabCostForCommission
         public bool NeedsAttention => Action == LabCostAction.Leave && Reason is not null;
     }
 
+    /// <summary>
+    /// The two statuses that are NOT a cost the clinic owes. Exposed as data rather than kept
+    /// inside <see cref="IsCommitted"/> so an EF query can use it directly — the lab cost
+    /// reports need exactly this boundary in SQL, and a second hand-written copy of the list
+    /// would eventually disagree with the commission side.
+    /// <para>
+    /// Matching in SQL is case-sensitive, which is safe here: <c>LabOrdersController</c> writes
+    /// statuses only from its own lower-case <c>ValidStatuses</c> list.
+    /// </para>
+    /// </summary>
+    public static readonly string[] UncommittedStatuses = ["draft", "cancelled"];
+
     /// <summary>A committed cost is anything past draft that has not been cancelled.</summary>
     public static bool IsCommitted(string? status, bool isActive)
     {
@@ -65,8 +77,7 @@ public static class LabCostForCommission
 
         var s = (status ?? string.Empty).Trim();
         return s.Length > 0
-            && !s.Equals("draft", StringComparison.OrdinalIgnoreCase)
-            && !s.Equals("cancelled", StringComparison.OrdinalIgnoreCase);
+            && !UncommittedStatuses.Contains(s, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>True when the order has been positively decided against — cancelled or deleted.</summary>

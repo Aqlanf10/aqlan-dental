@@ -1,6 +1,7 @@
 using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,9 +14,33 @@ namespace AqlanDentalPro.API.Controllers;
 [Authorize(Policy = "StaffOnly")]
 public class LabReportsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
+    /// <summary>
+    /// CORE-LAB-010: money in this module is never a single scalar. A lab order carries its own
+    /// currency (YER / SAR / USD), so every total here is a LIST of per-currency amounts. Summing
+    /// them into one number would produce a figure that is not money in any currency — the owner
+    /// would read "إجمالي التكاليف ٤٠٠٬٠٠٠" for 300,000 YER plus 100,000 SAR, which is wrong by
+    /// roughly sixty-eight times the SAR part.
+    /// </summary>
+    private sealed record LabCurrencyAmount(string Currency, decimal Amount);
+
+    /// <summary>Drops zero rows so an untouched currency does not clutter every total.</summary>
+    private static List<LabCurrencyAmount> Fold(IEnumerable<LabCurrencyAmount> amounts)
+        => amounts
+            .GroupBy(a => a.Currency)
+            .Select(g => new LabCurrencyAmount(g.Key, g.Sum(a => a.Amount)))
+            .Where(a => a.Amount != 0m)
+            .OrderByDescending(a => a.Amount)
+            .ToList();
+
     private Task<bool> CanViewReportsAsync() => PermissionGuard.HasAsync(db, currentUser, "lab_reports", "view");
 
-    /// <summary>Lab costs report — total costs per lab.</summary>
+    /// <summary>Lab costs report — total costs per lab, per currency.</summary>
+    /// <remarks>
+    /// CORE-LAB-011: costs count only COMMITTED orders. A draft was never sent, and a cancelled
+    /// order is not owed, so including either inflates what the clinic believes it spent — the
+    /// same boundary the supplier bill and the commission deduction already draw. Order COUNTS
+    /// still describe everything, which is why they are reported separately from the money.
+    /// </remarks>
     [HttpGet("lab-costs")]
     public async Task<IActionResult> GetLabCosts([FromQuery] DateTime? from, [FromQuery] DateTime? to)
     {
@@ -29,25 +54,50 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
         if (from.HasValue) query = query.Where(o => o.CreatedAt >= from.Value);
         if (to.HasValue) query = query.Where(o => o.CreatedAt <= to.Value);
 
-        var report = await query
-            .GroupBy(o => new { o.LabId, LabName = o.Lab != null ? o.Lab.Name : "غير محدد" })
+        var grouped = await query
+            .GroupBy(o => new
+            {
+                o.LabId,
+                LabName = o.Lab != null ? o.Lab.Name : "غير محدد",
+                o.Currency,
+            })
             .Select(g => new
             {
-                LabId = g.Key.LabId,
-                LabName = g.Key.LabName,
+                g.Key.LabId,
+                g.Key.LabName,
+                g.Key.Currency,
                 TotalOrders = g.Count(),
-                TotalCost = g.Sum(o => o.TotalCost ?? o.Cost ?? 0),
+                CommittedCost = g.Sum(o =>
+                    !LabCostForCommission.UncommittedStatuses.Contains(o.Status)
+                        ? (o.TotalCost ?? o.Cost ?? 0)
+                        : 0),
                 PendingOrders = g.Count(o => o.Status == "sent" || o.Status == "manufacturing"),
                 ReturnedOrders = g.Count(o => o.Status == "returned"),
                 RemakeOrders = g.Count(o => o.Status == "remake"),
             })
-            .OrderByDescending(r => r.TotalCost)
             .ToListAsync();
 
-        return Ok(new { data = report });
+        var report = grouped
+            .GroupBy(g => new { g.LabId, g.LabName })
+            .Select(lab => new
+            {
+                lab.Key.LabId,
+                lab.Key.LabName,
+                TotalOrders = lab.Sum(x => x.TotalOrders),
+                TotalCostByCurrency = Fold(lab.Select(x => new LabCurrencyAmount(x.Currency, x.CommittedCost))),
+                PendingOrders = lab.Sum(x => x.PendingOrders),
+                ReturnedOrders = lab.Sum(x => x.ReturnedOrders),
+                RemakeOrders = lab.Sum(x => x.RemakeOrders),
+            })
+            .OrderByDescending(r => r.TotalOrders)
+            .ToList();
+
+        var totals = Fold(grouped.Select(g => new LabCurrencyAmount(g.Currency, g.CommittedCost)));
+
+        return Ok(new { data = report, totalsByCurrency = totals });
     }
 
-    /// <summary>Lab debts report — unpaid/partial payables.</summary>
+    /// <summary>Lab debts report — unpaid/partial payables, per currency.</summary>
     [HttpGet("lab-debts")]
     public async Task<IActionResult> GetLabDebts([FromQuery] Guid? labId)
     {
@@ -71,6 +121,10 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
                 p.Amount,
                 p.PaidAmount,
                 Balance = p.Amount - p.PaidAmount,
+                // CORE-LAB-012: LabPayable has no currency column of its own — the amount is
+                // denominated by the supplier bill it was raised against. The frontend already
+                // declared a currency field for these rows and was rendering it as undefined.
+                Currency = p.SupplierBill != null ? p.SupplierBill.Currency : "YER",
                 p.Status,
                 DueDate = p.DueDate != null ? p.DueDate.Value.ToString("yyyy-MM-dd") : null,
                 CreatedAt = p.CreatedAt.ToString("yyyy-MM-dd"),
@@ -80,7 +134,7 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
 
         var summary = new
         {
-            TotalDebt = debts.Sum(d => d.Balance),
+            TotalDebtByCurrency = Fold(debts.Select(d => new LabCurrencyAmount(d.Currency, d.Balance))),
             TotalPayables = debts.Count,
             PendingCount = debts.Count(d => d.Status == "pending"),
             PartialCount = debts.Count(d => d.Status == "partial"),
@@ -124,7 +178,6 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
                     o.Status != "delivered" &&
                     o.Status != "cancelled"),
                 CancelledOrders = g.Count(o => o.Status == "cancelled"),
-                TotalCost = g.Sum(o => o.TotalCost ?? o.Cost ?? 0),
                 // For avg execution days: count only orders with both SentDate and ReceivedDate
                 OrdersWithExecutionDays = g
                     .Where(o => o.SentDate != null && o.ReceivedDate != null)
@@ -132,6 +185,26 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
                     .ToList(),
             })
             .ToListAsync();
+
+        // Money is grouped separately because it needs a currency dimension the count metrics
+        // above must NOT have — splitting the count rows by currency would turn one lab into
+        // several and quietly change every rate on this report.
+        var costsByLab = (await query
+            .GroupBy(o => new { o.LabId, o.Currency })
+            .Select(g => new
+            {
+                g.Key.LabId,
+                g.Key.Currency,
+                CommittedCost = g.Sum(o =>
+                    !LabCostForCommission.UncommittedStatuses.Contains(o.Status)
+                        ? (o.TotalCost ?? o.Cost ?? 0)
+                        : 0),
+            })
+            .ToListAsync())
+            .GroupBy(x => x.LabId)
+            .ToDictionary(
+                x => x.Key,
+                x => Fold(x.Select(c => new LabCurrencyAmount(c.Currency, c.CommittedCost))));
 
         var report = labGroups.Select(g =>
         {
@@ -157,7 +230,9 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
                 g.RemakeOrders,
                 g.OverdueOrders,
                 g.CancelledOrders,
-                g.TotalCost,
+                TotalCostByCurrency = g.LabId != null && costsByLab.TryGetValue(g.LabId, out var costs)
+                    ? costs
+                    : [],
                 AvgExecutionDays = avgDays,
                 RemakeRate = remakeRate,
                 OverdueRate = overdueRate,
@@ -184,7 +259,7 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
             TotalDelivered = report.Sum(r => r.DeliveredOrders),
             TotalOverdue = report.Sum(r => r.OverdueOrders),
             TotalRemakes = report.Sum(r => r.RemakeOrders),
-            TotalCost = report.Sum(r => r.TotalCost),
+            TotalCostByCurrency = Fold(costsByLab.Values.SelectMany(v => v)),
             OverallAvgExecutionDays = overallAvgDays,
             OverallRemakeRate = overallRemakeRate,
             OverallOverdueRate = overallOverdueRate,
@@ -203,7 +278,6 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
         if (!await CanViewReportsAsync()) return Forbid();
 
         var today = ClinicTimeProvider.ClinicToday();
-        var thirtyDaysAgo = DateTime.UtcNow.AddDays(-30);
 
         // Overall counts
         var totalOrders = await db.LabOrders.CountAsync();
@@ -216,18 +290,27 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
             o.ExpectedDate < today &&
             o.Status != "delivered" &&
             o.Status != "cancelled");
-        var deliveredThisMonth = await db.LabOrders.CountAsync(o =>
+        // Named DeliveredLast30Days, not "this month": the window really is the last 30 clinic
+        // days, which is also what the screen's own label says.
+        var deliveredLast30Days = await db.LabOrders.CountAsync(o =>
             o.Status == "delivered" && o.DeliveredDate != null && o.DeliveredDate >= today.AddDays(-30));
         var returnedOrders = await db.LabOrders.CountAsync(o => o.Status == "returned");
         var remakeOrders = await db.LabOrders.CountAsync(o => o.Status == "remake");
 
-        // Financial summary
-        var totalLabCosts = await db.LabOrders
-            .Where(o => o.LabId != null)
-            .SumAsync(o => o.TotalCost ?? o.Cost ?? 0);
-        var totalDebt = await db.LabPayables
+        // Financial summary — per currency, committed orders only.
+        var totalLabCosts = Fold((await db.LabOrders
+            .Where(o => o.LabId != null && !LabCostForCommission.UncommittedStatuses.Contains(o.Status))
+            .GroupBy(o => o.Currency)
+            .Select(g => new { Currency = g.Key, Amount = g.Sum(o => o.TotalCost ?? o.Cost ?? 0) })
+            .ToListAsync())
+            .Select(x => new LabCurrencyAmount(x.Currency, x.Amount)));
+
+        var totalDebt = Fold((await db.LabPayables
             .Where(p => p.Status != "paid")
-            .SumAsync(p => p.Amount - p.PaidAmount);
+            .GroupBy(p => p.SupplierBill != null ? p.SupplierBill.Currency : "YER")
+            .Select(g => new { Currency = g.Key, Amount = g.Sum(p => p.Amount - p.PaidAmount) })
+            .ToListAsync())
+            .Select(x => new LabCurrencyAmount(x.Currency, x.Amount)));
 
         // Status distribution for chart
         var statusDistribution = await db.LabOrders
@@ -235,21 +318,41 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
             .Select(g => new { Status = g.Key, Count = g.Count() })
             .ToListAsync();
 
-        // Orders by lab (top 5)
-        var topLabs = await db.LabOrders
+        // Orders by lab (top 5 by order count)
+        var labTotals = await db.LabOrders
             .Include(o => o.Lab)
             .Where(o => o.LabId != null)
-            .GroupBy(o => new { o.LabId, LabName = o.Lab != null ? o.Lab.Name : "غير محدد" })
+            .GroupBy(o => new
+            {
+                o.LabId,
+                LabName = o.Lab != null ? o.Lab.Name : "غير محدد",
+                o.Currency,
+            })
             .Select(g => new
             {
-                LabId = g.Key.LabId,
-                LabName = g.Key.LabName,
+                g.Key.LabId,
+                g.Key.LabName,
+                g.Key.Currency,
                 OrderCount = g.Count(),
-                TotalCost = g.Sum(o => o.TotalCost ?? o.Cost ?? 0),
+                CommittedCost = g.Sum(o =>
+                    !LabCostForCommission.UncommittedStatuses.Contains(o.Status)
+                        ? (o.TotalCost ?? o.Cost ?? 0)
+                        : 0),
+            })
+            .ToListAsync();
+
+        var topLabs = labTotals
+            .GroupBy(x => new { x.LabId, x.LabName })
+            .Select(lab => new
+            {
+                lab.Key.LabId,
+                lab.Key.LabName,
+                OrderCount = lab.Sum(x => x.OrderCount),
+                TotalCostByCurrency = Fold(lab.Select(x => new LabCurrencyAmount(x.Currency, x.CommittedCost))),
             })
             .OrderByDescending(l => l.OrderCount)
             .Take(5)
-            .ToListAsync();
+            .ToList();
 
         // Recent overdue orders
         var recentOverdue = await db.LabOrders
@@ -275,19 +378,35 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
 
         // Monthly trend (last 6 months)
         var sixMonthsAgo = DateTime.UtcNow.AddMonths(-6);
-        var monthlyTrend = await db.LabOrders
+        var monthlyRaw = await db.LabOrders
             .Where(o => o.CreatedAt >= sixMonthsAgo)
-            .GroupBy(o => new { o.CreatedAt.Year, o.CreatedAt.Month })
+            .GroupBy(o => new { o.CreatedAt.Year, o.CreatedAt.Month, o.Currency })
             .Select(g => new
             {
-                Year = g.Key.Year,
-                Month = g.Key.Month,
+                g.Key.Year,
+                g.Key.Month,
+                g.Key.Currency,
                 TotalOrders = g.Count(),
                 DeliveredOrders = g.Count(o => o.Status == "delivered"),
-                TotalCost = g.Sum(o => o.TotalCost ?? o.Cost ?? 0),
+                CommittedCost = g.Sum(o =>
+                    !LabCostForCommission.UncommittedStatuses.Contains(o.Status)
+                        ? (o.TotalCost ?? o.Cost ?? 0)
+                        : 0),
             })
-            .OrderBy(g => g.Year).ThenBy(g => g.Month)
             .ToListAsync();
+
+        var monthlyTrend = monthlyRaw
+            .GroupBy(x => new { x.Year, x.Month })
+            .Select(m => new
+            {
+                m.Key.Year,
+                m.Key.Month,
+                TotalOrders = m.Sum(x => x.TotalOrders),
+                DeliveredOrders = m.Sum(x => x.DeliveredOrders),
+                TotalCostByCurrency = Fold(m.Select(x => new LabCurrencyAmount(x.Currency, x.CommittedCost))),
+            })
+            .OrderBy(m => m.Year).ThenBy(m => m.Month)
+            .ToList();
 
         var dashboard = new
         {
@@ -298,11 +417,11 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
                 ReadyOrders = readyOrders,
                 ReceivedOrders = receivedOrders,
                 OverdueOrders = overdueOrders,
-                DeliveredThisMonth = deliveredThisMonth,
+                DeliveredLast30Days = deliveredLast30Days,
                 ReturnedOrders = returnedOrders,
                 RemakeOrders = remakeOrders,
-                TotalLabCosts = totalLabCosts,
-                TotalDebt = totalDebt,
+                TotalLabCostsByCurrency = totalLabCosts,
+                TotalDebtByCurrency = totalDebt,
             },
             StatusDistribution = statusDistribution,
             TopLabs = topLabs,

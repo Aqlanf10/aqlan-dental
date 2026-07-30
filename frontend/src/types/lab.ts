@@ -220,18 +220,29 @@ export interface RecordLabPaymentRequest {
 }
 
 // Lab Sprint 6 — Reports & Analytics
+/**
+ * CORE-LAB-010: lab money is never one number. A lab order carries its own currency, so every
+ * total in the lab reports is a list of per-currency amounts. Currencies with nothing in them
+ * are omitted, so a single-currency clinic still sees exactly one entry.
+ */
+export interface LabCurrencyAmount {
+  currency: string;
+  amount: number;
+}
+
 export interface LabCostReportItem {
   labId?: string;
   labName: string;
   totalOrders: number;
-  totalCost: number;
+  /** CORE-LAB-011: committed orders only — drafts and cancellations are not a cost. */
+  totalCostByCurrency: LabCurrencyAmount[];
   pendingOrders: number;
   returnedOrders: number;
   remakeOrders: number;
 }
 
 export interface LabDebtSummary {
-  totalDebt: number;
+  totalDebtByCurrency: LabCurrencyAmount[];
   totalPayables: number;
   pendingCount: number;
   partialCount: number;
@@ -245,7 +256,7 @@ export interface LabPerformanceItem {
   remakeOrders: number;
   overdueOrders: number;
   cancelledOrders: number;
-  totalCost: number;
+  totalCostByCurrency: LabCurrencyAmount[];
   avgExecutionDays: number;
   remakeRate: number;
   overdueRate: number;
@@ -258,7 +269,7 @@ export interface LabPerformanceSummary {
   totalDelivered: number;
   totalOverdue: number;
   totalRemakes: number;
-  totalCost: number;
+  totalCostByCurrency: LabCurrencyAmount[];
   overallAvgExecutionDays: number;
   overallRemakeRate: number;
   overallOverdueRate: number;
@@ -270,11 +281,12 @@ export interface LabDashboardKPIs {
   readyOrders: number;
   receivedOrders: number;
   overdueOrders: number;
-  deliveredThisMonth: number;
+  /** Renamed from deliveredThisMonth: the window is the last 30 clinic days, not a calendar month. */
+  deliveredLast30Days: number;
   returnedOrders: number;
   remakeOrders: number;
-  totalLabCosts: number;
-  totalDebt: number;
+  totalLabCostsByCurrency: LabCurrencyAmount[];
+  totalDebtByCurrency: LabCurrencyAmount[];
 }
 
 export interface StatusDistributionItem {
@@ -286,7 +298,7 @@ export interface TopLabItem {
   labId?: string;
   labName: string;
   orderCount: number;
-  totalCost: number;
+  totalCostByCurrency: LabCurrencyAmount[];
 }
 
 export interface OverdueOrderItem {
@@ -307,7 +319,7 @@ export interface MonthlyTrendItem {
   month: number;
   totalOrders: number;
   deliveredOrders: number;
-  totalCost: number;
+  totalCostByCurrency: LabCurrencyAmount[];
 }
 
 export interface LabDashboardData {

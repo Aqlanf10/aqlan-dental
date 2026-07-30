@@ -155,12 +155,17 @@ public class TestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
         // integration tests died before their first assertion. The CI job reported success
         // anyway because the step carried continue-on-error, so this went unnoticed.
         //
-        // EnsureCreated is the right tool for a throwaway container: it creates the full
-        // schema from the current EF model and records no migration history — which is exactly
-        // what StartupDatabaseMaintenance does for a genuinely empty production database. It
-        // also means the schema under test always matches the model, so a drift between the
-        // two surfaces here rather than in production.
-        await db.Database.EnsureCreatedAsync();
+        // The schema is built from the current EF MODEL, so it always matches the model under
+        // test — a drift between the two surfaces in this fixture rather than in production.
+        // NOT EnsureCreatedAsync: it decides by whether the DATABASE exists, not whether it
+        // has any tables. Testcontainers hands us a database that already exists but is empty,
+        // so EnsureCreated returned false and created nothing — which is exactly what the
+        // verification below then caught.
+        //
+        // GenerateCreateScript is what StartupDatabaseMaintenance itself runs for a genuinely
+        // empty production database, so the test schema is produced the same way production's is.
+        var createScript = db.Database.GenerateCreateScript();
+        await db.Database.ExecuteSqlRawAsync(createScript);
 
         // Verify rather than assume. If the schema is still absent, every test below would
         // fail with some unrelated-looking error; failing here says plainly what went wrong.
@@ -175,7 +180,7 @@ public class TestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
         if (!usersTableExists)
             throw new InvalidOperationException(
-                "Integration test database has no schema after EnsureCreated — no test can be trusted.");
+                "Integration test database has no schema after the create script ran — no test can be trusted.");
     }
 
     /// <summary>

@@ -180,8 +180,10 @@ public class LabOrdersController(
     // CORE-FIN-LAB-ADJ — the doctor's commission deducts this order's cost, so any edit that
     // moves the cost has to reach the commission too: recalculated where it is still unpaid,
     // raised as a separate correction line where it has already been paid out.
-    ICommissionAdjustmentService commissionAdjustments,
-    IJournalEntryService? journalEntryService = null) : ControllerBase
+    // CORE-XMOD-002: journalEntryService is gone from here on purpose. The controller no
+    // longer posts its own ledger entries — LabOrderFinanceSyncService owns that, and it is
+    // the only path that does, so a journal entry for a lab order can only be written one way.
+    ICommissionAdjustmentService commissionAdjustments) : ControllerBase
 {
     /// <summary>
     /// CORE-LAB-002: a lab order may only leave "draft" (or "remake") for "sent" once
@@ -563,102 +565,22 @@ public class LabOrdersController(
 
                 db.LabOrders.Add(order);
 
-                // A draft is not yet a commitment to the lab. Build the payable only
-                // when the order is actually sent; UpdateStatus owns the same boundary.
-                if (order.Status == "sent"
-                    && order.LabId.HasValue
-                    && (order.TotalCost > 0 || order.Cost > 0))
+                // CORE-XMOD-002: this used to be ~90 lines of inline supplier / bill-number /
+                // payable / journal code — a second, hand-maintained copy of what
+                // LabOrderFinanceSyncService already does for Update and for the send
+                // transition. Two copies of a money path drift: the update path grew a branch
+                // guard, an advisory lock and a currency check that this one never received.
+                // One code path owns the linkage now.
+                //
+                // The boundary is unchanged: a draft is not a commitment, so only a "sent"
+                // order builds a payable. UpdateStatus owns the same rule.
+                if (string.Equals(order.Status, "sent", StringComparison.OrdinalIgnoreCase))
                 {
-                    var payableAmount = order.TotalCost ?? order.Cost ?? 0;
-                    if (payableAmount > 0)
+                    var sync = await financeSync.SyncAsync(order, branchId, currentUser.UserId ?? Guid.Empty);
+                    if (!sync.Ok)
                     {
-                        var supplier = selectedLab!.SupplierId.HasValue
-                            ? await db.Suppliers.FirstOrDefaultAsync(item => item.Id == selectedLab.SupplierId.Value && item.IsActive)
-                            : null;
-                        supplier ??= await db.Suppliers.FirstOrDefaultAsync(item =>
-                            item.IsActive && item.Type == SupplierType.DentalLab && item.Name == selectedLab.Name);
-                        if (supplier is null)
-                        {
-                            supplier = new Supplier
-                            {
-                                Name = selectedLab.Name,
-                                Type = SupplierType.DentalLab,
-                                ContactPerson = selectedLab.ContactPerson,
-                                Phone = selectedLab.Phone,
-                                Email = selectedLab.Email,
-                                Address = selectedLab.Address,
-                                Notes = "تم إنشاؤه تلقائياً من وحدة المعامل"
-                            };
-                            db.Suppliers.Add(supplier);
-                        }
-                        selectedLab.SupplierId = supplier.Id;
-
-                        var billDate = order.SentDate ?? ClinicTimeProvider.ClinicToday();
-                        var billPrefix = $"BILL-{billDate:yyyyMMdd}-";
-                        if (useTx && db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
-                            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", StableLockKeyHelper.BillNumber);
-                        var lastBillNumber = await db.SupplierBills.IgnoreQueryFilters()
-                            .Where(bill => bill.BillNumber.StartsWith(billPrefix))
-                            .OrderByDescending(bill => bill.BillNumber)
-                            .Select(bill => bill.BillNumber)
-                            .FirstOrDefaultAsync();
-                        var billSequence = 1;
-                        if (!string.IsNullOrWhiteSpace(lastBillNumber)
-                            && int.TryParse(lastBillNumber[billPrefix.Length..], out var previousBillSequence))
-                            billSequence = previousBillSequence + 1;
-
-                        var supplierBill = new SupplierBill
-                        {
-                            BillNumber = $"{billPrefix}{billSequence:D3}",
-                            SupplierId = supplier.Id,
-                            Description = $"طلب معمل {order.OrderNumber} - {order.ApplianceType}",
-                            TotalAmount = payableAmount,
-                            Currency = currency,
-                            ExchangeRateToYer = exchangeRateToYer,
-                            ExchangeRateSource = currency == "YER" ? "same_currency" : "manual",
-                            Status = BillStatus.Unpaid,
-                            BillDate = billDate,
-                            DueDate = order.ExpectedDate,
-                            LabOrderId = order.Id,
-                            BranchId = branchId,
-                            CreatedBy = currentUser.UserId ?? Guid.Empty
-                        };
-                        db.SupplierBills.Add(supplierBill);
-                        if (currency == "YER") supplier.Balance += payableAmount;
-
-                        db.LabPayables.Add(new LabPayable
-                        {
-                            LabOrderId = order.Id,
-                            LabId = order.LabId!.Value,
-                            SupplierBillId = supplierBill.Id,
-                            Amount = payableAmount,
-                            PaidAmount = 0,
-                            Status = "pending",
-                            DueDate = order.ExpectedDate?.ToDateTime(TimeOnly.MinValue),
-                        });
-
-                        if (journalEntryService is not null && currentUser.UserId is { } performedBy && performedBy != Guid.Empty)
-                        {
-                            var entry = await journalEntryService.CreateEntryAsync(
-                                FinancialDocumentType.SupplierBill,
-                                supplierBill.Id,
-                                $"استحقاق طلب معمل {order.OrderNumber} - {selectedLab.Name}",
-                                billDate,
-                                branchId,
-                                performedBy,
-                                cashierSessionId: null,
-                                treasuryId: null,
-                                lines:
-                                [
-                                    (JournalAccountType.Expense, supplierBill.Id, payableAmount, 0m, $"تكلفة طلب المعمل {order.OrderNumber}"),
-                                    (JournalAccountType.AccountsPayable, supplier.Id, 0m, payableAmount, $"مستحق للمعمل {selectedLab.Name}")
-                                ],
-                                autoSave: false);
-                            entry.Currency = currency;
-                            entry.ExchangeRateToYer = exchangeRateToYer;
-                            entry.IsPosted = true;
-                            entry.PostedAt = DateTime.UtcNow;
-                        }
+                        if (useTx) await tx!.RollbackAsync();
+                        return BadRequest(new { message = sync.Error });
                     }
                 }
 

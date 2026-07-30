@@ -81,7 +81,7 @@ export function LabReportsPanel() {
     <ErrorBoundary>
       <div className="space-y-6">
         {/* Tabs */}
-        <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
+        <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit max-w-full overflow-x-auto">
           {tabs.map((t) => (
             <button
               key={t.key}
@@ -100,7 +100,7 @@ export function LabReportsPanel() {
         </div>
 
         {/* Date filters */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <span className="text-sm text-gray-500">الفترة:</span>
           <input
             type="date"

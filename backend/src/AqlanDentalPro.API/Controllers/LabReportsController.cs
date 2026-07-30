@@ -14,7 +14,12 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/reports")]
 [Authorize(Policy = "StaffOnly")]
-public class LabReportsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
+public class LabReportsController(
+    AppDbContext db,
+    ICurrentUserService currentUser,
+    // CORE-XMOD-001 — the same derivation the suppliers screen uses, so the two
+    // cannot report a different balance for the same lab.
+    SupplierBalanceReader balanceReader) : ControllerBase
 {
     /// <summary>
     /// CORE-LAB-010: money in this module is never a single scalar. A lab order carries its own
@@ -71,36 +76,32 @@ public class LabReportsController(AppDbContext db, ICurrentUserService currentUs
     /// </summary>
     private async Task<List<object>> GetLabAccountsAsync(CancellationToken ct)
     {
-        // Joined explicitly rather than walking b.Supplier: the navigation is not loaded here,
-        // and the InMemory provider answers an unloaded required reference with null.
-        var rows = await (
-            from bill in db.SupplierBills
-            join supplier in db.Suppliers on bill.SupplierId equals supplier.Id
-            where supplier.Type == SupplierType.DentalLab
-            select new { bill, supplier })
-            .GroupBy(x => new { x.bill.SupplierId, SupplierName = x.supplier.Name, x.bill.Currency })
-            .Select(g => new
-            {
-                g.Key.SupplierId,
-                g.Key.SupplierName,
-                g.Key.Currency,
-                Billed = g.Sum(x => x.bill.TotalAmount),
-                Paid = g.Sum(x => x.bill.PaidAmount),
-                OpenBills = g.Count(x => x.bill.Status != BillStatus.FullyPaid
-                                      && x.bill.Status != BillStatus.Cancelled),
-            })
+        var labSupplierIds = await db.Suppliers
+            .Where(x => x.Type == SupplierType.DentalLab)
+            .Select(x => new { x.Id, x.Name })
             .ToListAsync(ct);
 
-        return rows
-            .GroupBy(r => new { r.SupplierId, r.SupplierName })
-            .Select(sup => (object)new
+        if (labSupplierIds.Count == 0) return [];
+
+        var balances = await balanceReader.GetAsync(
+            labSupplierIds.Select(x => x.Id).ToList(), branchId: null, ct: ct);
+
+        return labSupplierIds
+            .Select(sup => new
             {
-                sup.Key.SupplierId,
-                LabName = sup.Key.SupplierName,
-                OpenBills = sup.Sum(x => x.OpenBills),
-                BilledByCurrency  = Fold(sup.Select(x => new LabCurrencyAmount(x.Currency, x.Billed))),
-                PaidByCurrency    = Fold(sup.Select(x => new LabCurrencyAmount(x.Currency, x.Paid))),
-                BalanceByCurrency = Fold(sup.Select(x => new LabCurrencyAmount(x.Currency, x.Billed - x.Paid))),
+                sup.Id,
+                sup.Name,
+                Rows = balances.Where(b => b.SupplierId == sup.Id).ToList(),
+            })
+            .Where(x => x.Rows.Count > 0)
+            .Select(x => (object)new
+            {
+                SupplierId = x.Id,
+                LabName = x.Name,
+                OpenBills = x.Rows.Sum(r => r.OpenBills),
+                BilledByCurrency  = Fold(x.Rows.Select(r => new LabCurrencyAmount(r.Currency, r.TotalBilled))),
+                PaidByCurrency    = Fold(x.Rows.Select(r => new LabCurrencyAmount(r.Currency, r.TotalPaid))),
+                BalanceByCurrency = Fold(x.Rows.Select(r => new LabCurrencyAmount(r.Currency, r.Balance))),
             })
             .ToList();
     }

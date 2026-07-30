@@ -101,6 +101,11 @@ public static class ServiceRegistrationConfiguration
         // CORE-LAB-001: shared, idempotent supplier-bill/payable/journal linkage for lab
         // orders — used by both create and update so a draft completed later still bills.
         services.AddScoped<LabOrderFinanceSyncService>();
+        // CORE-FIN-LAB-ADJ: keeps doctor commissions in step with the ACTUAL lab cost —
+        // recalculating unpaid ones in place and raising separate correction lines for
+        // commissions that were already paid out.
+        services.AddScoped<AqlanDentalPro.Application.Interfaces.Services.ICommissionAdjustmentService,
+                           AqlanDentalPro.Infrastructure.Services.CommissionAdjustmentService>();
         // READ-side query service extracted from OrthoCasesController (LabOrderQueryService pattern).
         // Concrete class (no interface). Controller keeps permission checks + write endpoints;
         // GET endpoints delegate their EF queries here.

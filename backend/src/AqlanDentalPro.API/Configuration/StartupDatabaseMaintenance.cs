@@ -163,6 +163,7 @@ public static class StartupDatabaseMaintenance
         await EnsureCephNormsSchemaAndSeedAsync(app);
         await EnsureOrthodonticAiLogsSchemaAsync(app);
         await EnsureRadiologyOrdersSchemaAsync(app);
+        await EnsureCommissionAdjustmentsSchemaAsync(app);
         await EnsurePhotoAnalysisSchemaAsync(app);
         await EnsureCephAnalysisVersionsSchemaAsync(app);
         await EnsureCephApprovalColumnsAsync(app);
@@ -1881,6 +1882,72 @@ public static class StartupDatabaseMaintenance
         {
             app.Services.GetRequiredService<ILogger<Program>>()
                 .LogWarning(ex, "RadiologyOrders schema hotfix failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// DoctorCommissionAdjustments table (CORE-FIN-LAB-ADJ — signed correction lines raised when
+    /// the actual cost behind an already-PAID commission changes). Purely additive: it creates a
+    /// new table and touches no existing one, so it is safe on a live database and needs no
+    /// destructive step to roll back — dropping the table restores the previous behaviour exactly.
+    /// Idempotent CREATE TABLE IF NOT EXISTS because the migration chain is frozen; fresh
+    /// databases get it from the EF model baseline, existing production databases get it here.
+    /// Mirrors DoctorCommissionAdjustment + BaseEntity and DoctorCommissionAdjustmentConfiguration.
+    /// </summary>
+    private static async Task EnsureCommissionAdjustmentsSchemaAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS "DoctorCommissionAdjustments" (
+                    "Id" uuid NOT NULL,
+                    "DoctorId" uuid NOT NULL,
+                    "InvoiceLineItemId" uuid NOT NULL,
+                    "InvoiceId" uuid NOT NULL,
+                    "LabOrderId" uuid NULL,
+                    "PaidCommissionAmount" numeric(12,2) NOT NULL DEFAULT 0,
+                    "RecalculatedCommissionAmount" numeric(12,2) NOT NULL DEFAULT 0,
+                    "AdjustmentAmount" numeric(12,2) NOT NULL DEFAULT 0,
+                    "PreviousLabCost" numeric(12,2) NOT NULL DEFAULT 0,
+                    "CurrentLabCost" numeric(12,2) NOT NULL DEFAULT 0,
+                    "Reason" character varying(500) NOT NULL DEFAULT '',
+                    "Status" character varying(20) NOT NULL DEFAULT 'Pending',
+                    "SettledByPaymentId" uuid NULL,
+                    "SettledOn" date NULL,
+                    "CreatedByUserId" uuid NULL,
+                    "CancelledByUserId" uuid NULL,
+                    "CancelReason" character varying(500) NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "UpdatedAt" timestamp with time zone NOT NULL,
+                    "IsActive" boolean NOT NULL DEFAULT true,
+                    "DeletedAt" timestamp with time zone NULL,
+                    "DeletedBy" uuid NULL,
+                    CONSTRAINT "PK_DoctorCommissionAdjustments" PRIMARY KEY ("Id"),
+                    CONSTRAINT "FK_DoctorCommissionAdjustments_Doctors_DoctorId" FOREIGN KEY ("DoctorId")
+                        REFERENCES "Doctors" ("Id") ON DELETE RESTRICT,
+                    CONSTRAINT "FK_DoctorCommissionAdjustments_InvoiceLineItems_InvoiceLineItemId"
+                        FOREIGN KEY ("InvoiceLineItemId") REFERENCES "InvoiceLineItems" ("Id") ON DELETE RESTRICT,
+                    CONSTRAINT "FK_DoctorCommissionAdjustments_LabOrders_LabOrderId" FOREIGN KEY ("LabOrderId")
+                        REFERENCES "LabOrders" ("Id") ON DELETE SET NULL
+                );
+                CREATE INDEX IF NOT EXISTS "IX_DoctorCommissionAdjustments_DoctorId_Status"
+                    ON "DoctorCommissionAdjustments" ("DoctorId", "Status");
+                CREATE INDEX IF NOT EXISTS "IX_DoctorCommissionAdjustments_InvoiceLineItemId"
+                    ON "DoctorCommissionAdjustments" ("InvoiceLineItemId");
+                CREATE INDEX IF NOT EXISTS "IX_DoctorCommissionAdjustments_LabOrderId"
+                    ON "DoctorCommissionAdjustments" ("LabOrderId");
+                CREATE INDEX IF NOT EXISTS "IX_DoctorCommissionAdjustments_SettledByPaymentId"
+                    ON "DoctorCommissionAdjustments" ("SettledByPaymentId");
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "DoctorCommissionAdjustments schema hotfix failed (non-fatal)");
         }
     }
 

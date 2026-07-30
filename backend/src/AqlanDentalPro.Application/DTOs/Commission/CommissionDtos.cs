@@ -103,6 +103,60 @@ public record DoctorCommissionPaymentDto(
     string? Notes,
     DateTime CreatedAt);
 
+// ── Commission adjustments (CORE-FIN-LAB-ADJ) ─────────────────────────────────
+
+/// <summary>
+/// A signed correction line on an already-PAID commission. Positive means the clinic still
+/// owes the doctor; negative means the doctor was overpaid and the amount comes off the next
+/// settlement. Never rewrites the original commission.
+/// </summary>
+public record CommissionAdjustmentDto(
+    Guid Id,
+    Guid DoctorId,
+    string? DoctorName,
+    Guid InvoiceLineItemId,
+    Guid InvoiceId,
+    string InvoiceNumber,
+    string PatientName,
+    string ServiceName,
+    Guid? LabOrderId,
+    string? LabOrderNumber,
+    decimal PaidCommissionAmount,
+    decimal RecalculatedCommissionAmount,
+    decimal AdjustmentAmount,
+    decimal PreviousLabCost,
+    decimal CurrentLabCost,
+    string Reason,
+    string Status,
+    Guid? SettledByPaymentId,
+    DateOnly? SettledOn,
+    DateTime CreatedAt);
+
+/// <summary>
+/// Outcome of re-syncing commissions against the real lab cost. <paramref name="Recalculated"/>
+/// counts unpaid commissions corrected in place; <paramref name="AdjustmentsRaised"/> counts
+/// paid commissions that received a separate correction line instead.
+/// </summary>
+public record CommissionResyncResult(
+    int LineItemsExamined,
+    int Recalculated,
+    int AdjustmentsRaised,
+    decimal NetAdjustmentAmount,
+    List<string> Skipped);
+
+public record CancelCommissionAdjustmentRequest([Required] string? Reason);
+
+/// <summary>Doctor-level settlement position including correction lines.</summary>
+public record DoctorSettlementSummaryDto(
+    Guid DoctorId,
+    string? DoctorName,
+    decimal EarnedFromLineItems,
+    decimal AdjustmentsTotal,
+    decimal TotalDue,
+    decimal AlreadyPaid,
+    decimal Remaining,
+    int PendingAdjustmentCount);
+
 // ── Service commission defaults ───────────────────────────────────────────────
 
 public record ServiceCommissionDefaultsDto(

@@ -3,6 +3,8 @@ import api from "@/lib/api";
 import type {
   LineItemCommission, UpdateLineItemCommissionRequest,
   CommissionReport, DoctorCommissionPayment,
+  CommissionAdjustment, CommissionAdjustmentStatus,
+  CommissionResyncResult, DoctorSettlementSummary,
 } from "@/types/commission";
 
 export function useInvoiceCommissions(invoiceId: string | undefined) {
@@ -119,6 +121,79 @@ export function useRecordCommissionPayment() {
       lineItemIds?: string[];
     }) => {
       const { data } = await api.post<DoctorCommissionPayment>("/api/commissions/payments", req);
+      return data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["commissions"] }),
+  });
+}
+
+// ── Commission adjustments (CORE-FIN-LAB-ADJ) ────────────────────────────────
+
+/**
+ * Correction lines raised against already-PAID commissions when the actual lab cost changed.
+ * The backend scopes a non-admin caller to their own doctor record, so passing no doctorId is
+ * safe for every role.
+ */
+export function useCommissionAdjustments(params?: {
+  doctorId?: string;
+  status?: CommissionAdjustmentStatus;
+}) {
+  return useQuery({
+    queryKey: ["commissions", "adjustments", params?.doctorId ?? null, params?.status ?? null],
+    queryFn: async () => {
+      const p = new URLSearchParams();
+      if (params?.doctorId) p.append("doctorId", params.doctorId);
+      if (params?.status)   p.append("status", params.status);
+      const qs = p.toString();
+      const { data } = await api.get<CommissionAdjustment[]>(
+        `/api/commissions/adjustments${qs ? `?${qs}` : ""}`
+      );
+      return data;
+    },
+  });
+}
+
+/** What the clinic owes one doctor right now, correction lines included. */
+export function useDoctorSettlement(doctorId: string | undefined) {
+  return useQuery({
+    queryKey: ["commissions", "settlement", doctorId],
+    queryFn: async () => {
+      const { data } = await api.get<DoctorSettlementSummary>(
+        `/api/commissions/doctors/${doctorId}/settlement`
+      );
+      return data;
+    },
+    enabled: !!doctorId,
+  });
+}
+
+/**
+ * Admin sweep over historical records. Only touches line items that already carry a lab-order
+ * link — it never guesses one, so ambiguous records stay untouched and are reported back in
+ * `skipped` rather than silently corrected.
+ */
+export function useBackfillCommissionAdjustments() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (doctorId?: string) => {
+      const qs = doctorId ? `?doctorId=${doctorId}` : "";
+      const { data } = await api.post<CommissionResyncResult>(
+        `/api/commissions/adjustments/backfill${qs}`
+      );
+      return data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["commissions"] }),
+  });
+}
+
+export function useCancelCommissionAdjustment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ adjustmentId, reason }: { adjustmentId: string; reason: string }) => {
+      const { data } = await api.post<CommissionAdjustment>(
+        `/api/commissions/adjustments/${adjustmentId}/cancel`,
+        { reason }
+      );
       return data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["commissions"] }),

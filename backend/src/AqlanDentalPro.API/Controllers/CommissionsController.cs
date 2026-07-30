@@ -13,6 +13,7 @@ namespace AqlanDentalPro.API.Controllers;
 public class CommissionsController(
     AppDbContext db,
     ICommissionService commissionService,
+    ICommissionAdjustmentService adjustmentService,
     ICurrentUserService currentUser) : ControllerBase
 {
     // FIN-PERM (Group B): the class-level CommissionView policy is the coarse gate;
@@ -228,8 +229,113 @@ public class CommissionsController(
         return Ok(result);
     }
 
+    // ── Commission adjustments (CORE-FIN-LAB-ADJ) ─────────────────────────────
+
+    /// <summary>
+    /// Correction lines raised against already-PAID commissions. A doctor only ever sees their
+    /// own, mirroring the scoping the commission report already applies.
+    /// </summary>
+    [HttpGet("adjustments")]
+    public async Task<IActionResult> GetAdjustments([FromQuery] Guid? doctorId, [FromQuery] string? status)
+    {
+        if (!await CanAsync("view")) return Deny();
+
+        doctorId = await ScopeToOwnDoctorAsync(doctorId);
+
+        var result = await adjustmentService.GetAdjustmentsAsync(doctorId, status, HttpContext.RequestAborted);
+        return Ok(result);
+    }
+
+    /// <summary>What the clinic owes this doctor right now, correction lines included.</summary>
+    [HttpGet("doctors/{doctorId:guid}/settlement")]
+    public async Task<IActionResult> GetSettlement(Guid doctorId)
+    {
+        if (!await CanAsync("view")) return Deny();
+
+        // A doctor asking about someone else's settlement gets their own, not a 403 leak of
+        // whether that other doctor exists — same shape as the report endpoint above.
+        var scoped = await ScopeToOwnDoctorAsync(doctorId);
+        var result = await adjustmentService.GetSettlementSummaryAsync(
+            scoped ?? doctorId, HttpContext.RequestAborted);
+
+        return result == null ? NotFound(new { message = "الطبيب غير موجود" }) : Ok(result);
+    }
+
+    /// <summary>
+    /// Re-syncs every commission linked to a lab order against that order's ACTUAL cost.
+    /// Unpaid commissions are corrected in place; paid ones get a separate correction line.
+    /// Idempotent — running it again with nothing changed raises nothing.
+    /// </summary>
+    [HttpPost("lab-orders/{labOrderId:guid}/resync")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> ResyncLabOrder(Guid labOrderId)
+    {
+        var userId = currentUser.UserId;
+        if (userId == null) return Unauthorized();
+
+        var result = await adjustmentService.ResyncLabOrderAsync(
+            labOrderId, userId.Value, HttpContext.RequestAborted);
+        await db.SaveChangesAsync();
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Backfill sweep over historical records. Only touches line items that ALREADY carry a lab
+    /// order link — it never guesses a link, so an ambiguous record stays untouched and shows up
+    /// in the unlinked fix-up list instead.
+    /// </summary>
+    [HttpPost("adjustments/backfill")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> BackfillAdjustments([FromQuery] Guid? doctorId)
+    {
+        var userId = currentUser.UserId;
+        if (userId == null) return Unauthorized();
+
+        var result = await adjustmentService.ResyncAllLinkedAsync(
+            doctorId, userId.Value, HttpContext.RequestAborted);
+        await db.SaveChangesAsync();
+        return Ok(result);
+    }
+
+    [HttpPost("adjustments/{adjustmentId:guid}/cancel")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> CancelAdjustment(
+        Guid adjustmentId, [FromBody] CancelCommissionAdjustmentRequest req)
+    {
+        var userId = currentUser.UserId;
+        if (userId == null) return Unauthorized();
+
+        try
+        {
+            var result = await adjustmentService.CancelAdjustmentAsync(
+                adjustmentId, req.Reason ?? string.Empty, userId.Value, HttpContext.RequestAborted);
+            return result == null ? NotFound(new { message = "بند التسوية غير موجود" }) : Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private Task<Guid?> GetDoctorIdForUserAsync(Guid userId) =>
         commissionService.GetDoctorIdForUserAsync(userId);
+
+    /// <summary>
+    /// Narrows a requested doctor filter to the caller's own doctor record unless they are an
+    /// admin — the same rule GetReport applies, kept in one place so a new endpoint cannot
+    /// accidentally expose one doctor's earnings to another.
+    /// </summary>
+    private async Task<Guid?> ScopeToOwnDoctorAsync(Guid? requested)
+    {
+        if (currentUser.IsAdmin || currentUser.UserId == null) return requested;
+
+        var own = await GetDoctorIdForUserAsync(currentUser.UserId.Value);
+        return own ?? requested;
+    }
 }

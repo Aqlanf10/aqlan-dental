@@ -256,19 +256,15 @@ public class CommissionService(
             throw new ArgumentException(ex.Message);
         }
 
-        // Pre-check remaining (fast-fail before starting transaction; re-checked inside lock)
-        var earned = await db.InvoiceLineItems
-            .Where(i => i.DoctorId == req.DoctorId
-                     && i.IsActive
-                     && (i.CommissionStatus == CommissionStatus.Approved
-                      || i.CommissionStatus == CommissionStatus.Paid))
-            .SumAsync(i => (decimal?)i.DoctorCommissionAmount) ?? 0m;
+        // Pre-check remaining (fast-fail before starting transaction; re-checked inside lock).
+        // CORE-FIN-LAB-ADJ: correction lines are part of what the clinic owes — a positive one
+        // raises the ceiling on this payment, a negative one lowers it. Leaving them out would
+        // make the guard below refuse a legitimate top-up, or wave through an overpayment.
+        var earned = await CommissionBalance.EarnedFromLineItemsAsync(db, req.DoctorId);
+        var adjustments = await CommissionBalance.AdjustmentsTotalAsync(db, req.DoctorId);
+        var alreadyPaid = await CommissionBalance.AlreadyPaidAsync(db, req.DoctorId);
 
-        var alreadyPaid = await db.DoctorCommissionPayments
-            .Where(p => p.DoctorId == req.DoctorId && p.IsActive)
-            .SumAsync(p => (decimal?)p.Amount) ?? 0m;
-
-        var remaining = earned - alreadyPaid;
+        var remaining = earned + adjustments - alreadyPaid;
         if (req.Amount > remaining)
             throw new ArgumentException(
                 $"المبلغ ({req.Amount:N2}) يتجاوز المتبقي المستحق للطبيب ({remaining:N2})");
@@ -291,18 +287,11 @@ public class CommissionService(
             }
 
             // Re-calculate remaining approved commission inside the lock
-            var lockedEarned = await db.InvoiceLineItems
-                .Where(i => i.DoctorId == req.DoctorId
-                         && i.IsActive
-                         && (i.CommissionStatus == CommissionStatus.Approved
-                          || i.CommissionStatus == CommissionStatus.Paid))
-                .SumAsync(i => (decimal?)i.DoctorCommissionAmount) ?? 0m;
+            var lockedEarned = await CommissionBalance.EarnedFromLineItemsAsync(db, req.DoctorId);
+            var lockedAdjustments = await CommissionBalance.AdjustmentsTotalAsync(db, req.DoctorId);
+            var lockedAlreadyPaid = await CommissionBalance.AlreadyPaidAsync(db, req.DoctorId);
 
-            var lockedAlreadyPaid = await db.DoctorCommissionPayments
-                .Where(p => p.DoctorId == req.DoctorId && p.IsActive)
-                .SumAsync(p => (decimal?)p.Amount) ?? 0m;
-
-            remaining = lockedEarned - lockedAlreadyPaid;
+            remaining = lockedEarned + lockedAdjustments - lockedAlreadyPaid;
             if (req.Amount > remaining)
                 throw new ArgumentException(
                     $"المبلغ ({req.Amount:N2}) يتجاوز المتبقي المستحق للطبيب ({remaining:N2})");
@@ -360,6 +349,23 @@ public class CommissionService(
 
             // Blocker 1: Atomically decrement Treasury.Balance for the commission outflow
             await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, paymentMethod, req.Amount, null, activeSession?.Id);
+
+            // CORE-FIN-LAB-ADJ: stamp every open correction with the disbursement that carried
+            // it. This is a RECORD of what the doctor was shown, not an arithmetic gate — the
+            // balance above sums Pending and Settled alike, so a partial payment cannot strand
+            // a correction or make it count twice.
+            var openAdjustments = await db.DoctorCommissionAdjustments
+                .Where(a => a.DoctorId == req.DoctorId
+                         && a.IsActive
+                         && a.Status == CommissionAdjustmentStatus.Pending)
+                .ToListAsync();
+
+            foreach (var adjustment in openAdjustments)
+            {
+                adjustment.Status             = CommissionAdjustmentStatus.Settled;
+                adjustment.SettledByPaymentId = payment.Id;
+                adjustment.SettledOn          = req.PaymentDate;
+            }
 
             // Mark specified line items as Paid
             if (req.LineItemIds is { Count: > 0 })
@@ -534,12 +540,27 @@ public class CommissionService(
             // Previously read only Cost, which LabOrdersController.Update never re-syncs — so a lab order
             // whose TotalCost grew via remakes would still report the old Cost to commission calculations,
             // inflating the doctor's commission (lab cost is a deduction from NetCommissionableAmount).
-            // CORE-FIN-LAB-DRAFT: guard the DEDUCTION, not only the resolver above — a line can
-            // carry a LabOrderId set by another path, or its order can be reverted to draft
-            // after linking. The rule must hold however the link arrived.
-            if (labOrder != null && IsCommissionDeductibleLabOrder(labOrder))
+            // CORE-FIN-LAB-DRAFT / CORE-FIN-LAB-ADJ: the draft/cancelled guard AND the currency
+            // conversion both live in LabCostForCommission now — guarding the DEDUCTION and not only
+            // the resolver above, because a line can carry a LabOrderId set by another path, or its
+            // order can be reverted to draft after linking. The rule must hold however the link arrived.
+            if (labOrder != null)
             {
-                item.LabCost = labOrder.TotalCost ?? labOrder.Cost ?? 0;
+                var resolved = LabCostForCommission.Resolve(new LabCostForCommission.Input(
+                    LabOrderStatus:            labOrder.Status,
+                    LabOrderIsActive:          labOrder.IsActive,
+                    TotalCost:                 labOrder.TotalCost,
+                    Cost:                      labOrder.Cost,
+                    LabOrderCurrency:          labOrder.Currency,
+                    LabOrderExchangeRateToYer: labOrder.ExchangeRateToYer,
+                    InvoiceCurrency:           item.Invoice?.Currency));
+
+                if (resolved.ShouldWrite)
+                    item.LabCost = resolved.Amount;
+                else if (resolved.NeedsAttention)
+                    logger.LogWarning(
+                        "[Commission] Lab cost not deducted for line item {LineItemId}: {Reason}",
+                        item.Id, resolved.Reason);
             }
         }
 
@@ -556,60 +577,18 @@ public class CommissionService(
             .Include(i => i.Doctor)
             .FirstOrDefaultAsync(i => i.Id == id && i.IsActive);
 
+    // CORE-FIN-LAB-DRAFT: "the clinic actually owes this lab cost" now has exactly one
+    // definition — LabCostForCommission.IsCommitted — shared by the deduction here, by the
+    // resync service and by its own unit tests. It mirrors the boundary the finance side
+    // already enforces: a supplier bill is posted only from "sent" onwards, and
+    // ValidateReadyToSend refuses to send an order until it has a lab and a cost above zero.
+
     /// <summary>
-    /// CORE-FIN-LAB-DRAFT: one definition of "the clinic actually owes this lab cost", so the
-    /// auto-link resolver and the deduction itself can never drift apart.
-    /// <para>
-    /// Mirrors the boundary the finance side already enforces: a supplier bill is posted only
-    /// from "sent" onwards, never for a draft — and <c>ValidateReadyToSend</c> refuses to send
-    /// an order until it actually has a lab and a cost greater than zero. A draft therefore
-    /// carries a PROVISIONAL cost the clinic has not committed to, and deducting it would
-    /// UNDERPAY the doctor for a bill that may never exist. A cancelled order is not owed either.
-    /// </para>
+    /// Delegates to <see cref="CommissionLineWriter"/> — the shared writer the resync service
+    /// also uses, so the OnPaymentCollection carve-out can only ever exist in one place.
     /// </summary>
-    private static bool IsCommissionDeductibleLabOrder(LabOrder labOrder)
-    {
-        if (!labOrder.IsActive) return false;
-
-        var status = (labOrder.Status ?? string.Empty).Trim();
-        return status.Length > 0
-            && !status.Equals("draft", StringComparison.OrdinalIgnoreCase)
-            && !status.Equals("cancelled", StringComparison.OrdinalIgnoreCase);
-    }
-
     private static void ApplyCalculation(InvoiceLineItem item)
-    {
-        var result = CommissionCalculator.Calculate(new CommissionCalculator.Input(
-            TotalPrice:                item.TotalPrice,
-            LineDiscountAmount:        item.LineDiscountAmount,
-            MaterialCost:              item.MaterialCost,
-            LabCost:                   item.LabCost,
-            OtherDirectCost:           item.OtherDirectCost,
-            DoctorCommissionPercentage:item.DoctorCommissionPercentage,
-            BaseRule:                  item.CommissionBaseRule));
-
-        item.NetCommissionableAmount = result.NetCommissionableAmount;
-
-        // FIN-09 FIX: When the service uses OnPaymentCollection recognition mode,
-        // do NOT overwrite DoctorCommissionAmount with the full amount. TriggerOnPaymentCommissionsAsync
-        // sets a proportional DoctorCommissionAmount based on collected payments; overwriting it here
-        // (from Recalculate/Approve/AutoFill) would reset the doctor's commission to the full accrual
-        // amount, effectively paying commission on uncollected revenue.
-        if (item.Service?.CommissionRecognitionMode != CommissionRecognitionMode.OnPaymentCollection)
-        {
-            item.DoctorCommissionAmount  = result.DoctorCommissionAmount;
-            item.CenterShareAmount       = result.CenterShareAmount;
-        }
-        else
-        {
-            // Keep the proportional DoctorCommissionAmount (set by TriggerOnPaymentCommissionsAsync).
-            // Recalculate CenterShare based on the proportional doctor amount.
-            item.CenterShareAmount = result.NetCommissionableAmount - item.DoctorCommissionAmount;
-        }
-
-        if (item.CommissionStatus == CommissionStatus.Pending && item.DoctorCommissionPercentage > 0)
-            item.CommissionStatus = CommissionStatus.Calculated;
-    }
+        => CommissionLineWriter.ApplyCalculation(item, item.Service?.CommissionRecognitionMode);
 
     private static LineItemCommissionDto MapLineItem(InvoiceLineItem i) => new(
         LineItemId:                i.Id,

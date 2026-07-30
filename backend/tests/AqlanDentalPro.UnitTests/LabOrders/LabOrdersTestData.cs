@@ -95,6 +95,12 @@ internal static class LabOrdersTestData
         // is the "journal disabled" configuration the service already tolerates.
         var financeSync = new LabOrderFinanceSyncService(db, journalEntryService: null);
 
+        // CORE-FIN-LAB-ADJ — real instance against the same in-memory db, not a mock: the
+        // commission resync now runs inside the same transaction as every lab-order write, so a
+        // stub here would hide a regression in exactly the path these tests exercise.
+        var commissionAdjustments = new CommissionAdjustmentService(
+            db, new Mock<ILogger<CommissionAdjustmentService>>().Object);
+
         return new LabOrdersController(
             db,
             currentUserMock.Object,
@@ -103,7 +109,8 @@ internal static class LabOrdersTestData
             patientAccessMock.Object,
             auditMock.Object,
             queryService,
-            financeSync);
+            financeSync,
+            commissionAdjustments);
     }
 
     /// <summary>

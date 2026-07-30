@@ -120,14 +120,17 @@ jobs:
         # TEST-18 / C-08 safety net: these tests spin up a throwaway postgres:16-alpine
         # container via Testcontainers (Docker is preinstalled on GitHub-hosted ubuntu
         # runners, no extra service config needed) and exercise cross-request race
-        # conditions (appointment double-booking, treasury concurrency, surgery status
-        # transitions, patient access control) plus schema-drift detection between the
-        # EF model and the live database. This job has NEVER run before in CI (the
-        # project existed but was not wired in — see docs/agent-audit/c-08-startup-maintenance-audit.md
-        # section 6). continue-on-error is set so a first-run failure surfaces as a
-        # warning without blocking merges; once this job is observed green for a few
-        # consecutive runs, remove continue-on-error to make it a blocking gate.
-        continue-on-error: true
+        # conditions (appointment double-booking, treasury concurrency, lab-order finance
+        # sync, surgery status transitions, patient access control) plus schema-drift
+        # detection between the EF model and the live database.
+        #
+        # CORE-CI-001: continue-on-error is REMOVED. It was added as a temporary allowance
+        # for a first run, with the intention of dropping it "once this job is observed
+        # green for a few consecutive runs". It never was green: the fixture called
+        # MigrateAsync on a database the host had already baselined, all 24 tests died
+        # before their first assertion, and the job reported success on every run since.
+        # A check that is green whether or not the tests pass is worse than no check —
+        # it is a green tick that certifies nothing while looking exactly like one that does.
         run: >
           dotnet test tests/AqlanDentalPro.IntegrationTests/AqlanDentalPro.IntegrationTests.csproj
           --no-restore --no-build --configuration Release

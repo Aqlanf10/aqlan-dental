@@ -143,10 +143,31 @@ public class TestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        // Idempotent — if the startup maintenance already migrated the DB,
-        // this is a no-op. Belt-and-braces so test code never sees a half-
-        // migrated schema regardless of how the app booted.
-        await db.Database.MigrateAsync();
+        // CORE-CI-001: do NOT call MigrateAsync here.
+        //
+        // The "belt-and-braces no-op" this used to be was neither. Building the host above
+        // already ran StartupDatabaseMaintenance, which for an EMPTY database deliberately
+        // does not replay the migration chain: it creates the full schema from the current EF
+        // model and records the migrations as applied (a baseline). CLAUDE.md documents why —
+        // 31 hand-written migrations carry no [Migration] attribute, so the chain cannot
+        // replay on an empty database at all.
+        //
+        // Calling MigrateAsync on top of that baseline made EF try to apply that same
+        // unreplayable chain, and it threw. Every one of the 24 integration tests died in this
+        // fixture before its first assertion — and the CI job reported success anyway because
+        // the step carries continue-on-error. The suite has therefore never actually run.
+        //
+        // The host has already prepared the schema. Verify that rather than re-doing it, so a
+        // future regression in startup maintenance fails here loudly instead of silently
+        // handing tests an empty database.
+        var usersTableExists = await db.Database
+            .SqlQuery<bool>($"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Users')")
+            .SingleAsync();
+
+        if (!usersTableExists)
+            throw new InvalidOperationException(
+                "Integration test database was not prepared by StartupDatabaseMaintenance — "
+                + "the schema baseline did not run, so no test can be trusted.");
     }
 
     /// <summary>

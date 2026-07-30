@@ -101,6 +101,9 @@ public static class ServiceRegistrationConfiguration
         // CORE-LAB-001: shared, idempotent supplier-bill/payable/journal linkage for lab
         // orders — used by both create and update so a draft completed later still bills.
         services.AddScoped<LabOrderFinanceSyncService>();
+        // CORE-XMOD-001: one derivation of a supplier's per-currency balance, shared by the
+        // suppliers screen and the lab accounts view so they cannot report different numbers.
+        services.AddScoped<SupplierBalanceReader>();
         // CORE-FIN-LAB-ADJ: keeps doctor commissions in step with the ACTUAL lab cost —
         // recalculating unpaid ones in place and raising separate correction lines for
         // commissions that were already paid out.

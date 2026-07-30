@@ -131,8 +131,14 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
 
             db.SupplierBills.Add(bill);
 
-            // Finance Phase 1: Update supplier balance (increase what we owe)
-            supplier.Balance += req.TotalAmount;
+            // CORE-XMOD-001: the legacy scalar is YER-only. Without this guard a SAR bill
+            // added its raw riyal figure straight into a column holding Yemeni riyals, so the
+            // supplier account became a number that is not money in any currency. Every other
+            // writer (FinanceV3SuppliersController, SupplierRefundService,
+            // LabOrderFinanceSyncService) already guards this way; this controller did not.
+            // Per-currency balances come from SupplierBalanceReader, which is what the screens read.
+            if (string.Equals(bill.Currency, "YER", StringComparison.OrdinalIgnoreCase))
+                supplier.Balance += req.TotalAmount;
 
             await db.SaveChangesAsync();
             await tx.CommitAsync();
@@ -494,8 +500,10 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
             bill.PaidAmount += req.Amount;
             bill.Status = bill.PaidAmount >= bill.TotalAmount ? BillStatus.FullyPaid : BillStatus.PartiallyPaid;
 
-            // Finance Phase 1: Update supplier balance (reduce what we owe)
-            if (bill.Supplier != null)
+            // CORE-XMOD-001: same guard on the way down. Subtracting a SAR payment from a
+            // YER column would drive the legacy balance negative by roughly the exchange rate.
+            if (bill.Supplier != null
+                && string.Equals(bill.Currency, "YER", StringComparison.OrdinalIgnoreCase))
             {
                 bill.Supplier.Balance -= req.Amount;
             }

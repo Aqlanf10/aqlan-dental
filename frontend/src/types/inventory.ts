@@ -57,8 +57,22 @@ export interface Supplier {
   notes?: string;
   isActive?: boolean;
   purchaseOrderCount?: number;
+  openBillCount?: number;
   totalSpent?: number;
   createdAt?: string;
+  /**
+   * CORE-XMOD-001: what the clinic owes, one entry per currency. Replaces the single
+   * `balance`/`outstandingBills` scalars, which summed YER, SAR and USD into one number.
+   */
+  balancesByCurrency?: Array<{
+    currency: string;
+    totalBilled: number;
+    totalPaid: number;
+    balance: number;
+    openBills: number;
+  }>;
+  /** Legacy YER-only column, kept only for modules that still read it. Do not use for new work. */
+  legacyYerBalance?: number;
 }
 
 export interface PaginatedResponse<T> {

@@ -1,4 +1,5 @@
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Infrastructure.Services;
 using FluentValidation;
@@ -96,7 +97,8 @@ public class SuppliersController(
     ILogger<SuppliersController> logger,
     // CORE-XMOD-001 — per-currency balances derived from the bills, because
     // Supplier.Balance is a single scalar that cannot represent YER, SAR and USD.
-    SupplierBalanceReader balanceReader) : ControllerBase
+    SupplierBalanceReader balanceReader,
+    ICurrentUserService currentUser) : ControllerBase
 {
     // ─── 1. GET /api/suppliers — List all suppliers ──────────────────────
     /// <summary>Returns paginated list of suppliers with optional search.</summary>
@@ -359,5 +361,107 @@ public class SuppliersController(
         supplier.IsActive = false;
         await db.SaveChangesAsync();
         return Ok(new { message = "تم حذف المورد بنجاح" });
+    }
+
+    // ─── 6. Legacy balance repair (CORE-XMOD-003) ────────────────────────
+    //
+    // Rows written before the currency guard reached SupplierBillsController hold a scalar
+    // that mixed YER with SAR and USD. Nothing reads it any more — every screen goes through
+    // SupplierBalanceReader — but leaving a wrong number in the database is a trap for the
+    // next person who does read it.
+    //
+    // The correct value is fully determined: under the rule every writer now follows, the
+    // scalar is the unpaid total of the supplier's YER bills and nothing else. So this
+    // recomputes rather than adjusts, which makes it idempotent — running it twice changes
+    // nothing the second time — and it can never invent a number, only restore a derived one.
+    //
+    // Preview first, apply explicitly. A financial column is not repaired by a side effect.
+
+    private async Task<List<(Guid Id, string Name, decimal Stored, decimal Correct)>> ComputeBalanceDriftAsync(
+        CancellationToken ct)
+    {
+        var suppliers = await db.Suppliers.IgnoreQueryFilters()
+            .Select(s => new { s.Id, s.Name, s.Balance })
+            .ToListAsync(ct);
+
+        var correctBySupplier = await db.SupplierBills
+            .Where(b => b.IsActive
+                     && b.Currency == "YER"
+                     && b.Status != Domain.Enums.BillStatus.Cancelled)
+            .GroupBy(b => b.SupplierId)
+            .Select(g => new { SupplierId = g.Key, Owed = g.Sum(b => b.TotalAmount - b.PaidAmount) })
+            .ToDictionaryAsync(x => x.SupplierId, x => x.Owed, ct);
+
+        return suppliers
+            .Select(s => (s.Id, s.Name, Stored: s.Balance, Correct: correctBySupplier.GetValueOrDefault(s.Id, 0m)))
+            .Where(x => x.Stored != x.Correct)
+            .OrderByDescending(x => Math.Abs(x.Stored - x.Correct))
+            .ToList();
+    }
+
+    /// <summary>Read-only: which suppliers' legacy YER scalar disagrees with their bills.</summary>
+    [HttpGet("balance-drift")]
+    public async Task<IActionResult> GetBalanceDrift(CancellationToken ct = default)
+    {
+        var drift = await ComputeBalanceDriftAsync(ct);
+
+        return Ok(new
+        {
+            count = drift.Count,
+            data = drift.Select(d => new
+            {
+                supplierId = d.Id,
+                supplierName = d.Name,
+                storedBalance = d.Stored,
+                correctBalance = d.Correct,
+                difference = d.Stored - d.Correct,
+            }).ToList(),
+        });
+    }
+
+    /// <summary>Rewrites the legacy YER scalar to the value derived from the supplier's bills.</summary>
+    [HttpPost("balance-drift/repair")]
+    public async Task<IActionResult> RepairBalanceDrift(CancellationToken ct = default)
+    {
+        var drift = await ComputeBalanceDriftAsync(ct);
+        if (drift.Count == 0)
+            return Ok(new { repaired = 0, message = "لا توجد فروقات — كل الأرصدة مطابقة للفواتير" });
+
+        var byId = drift.ToDictionary(d => d.Id, d => d);
+        var suppliers = await db.Suppliers.IgnoreQueryFilters()
+            .Where(s => byId.Keys.Contains(s.Id))
+            .ToListAsync(ct);
+
+        foreach (var supplier in suppliers)
+            supplier.Balance = byId[supplier.Id].Correct;
+
+        // Recorded per supplier, with both numbers: a silent rewrite of a financial column
+        // is indistinguishable from corruption when someone looks at it a year later.
+        foreach (var d in drift)
+        {
+            db.AuditLogs.Add(new AuditLog
+            {
+                Resource   = "Supplier.Balance",
+                ResourceId = d.Id,
+                Action     = Domain.Enums.AuditAction.Update,
+                UserId     = currentUser.UserId ?? Guid.Empty,
+                NewData    = System.Text.Json.JsonSerializer.SerializeToDocument(new
+                {
+                    action = "RepairLegacyYerBalance",
+                    supplierName = d.Name,
+                    storedBalance = d.Stored,
+                    correctBalance = d.Correct,
+                    reason = "CORE-XMOD-003: scalar mixed currencies before the guard reached SupplierBillsController",
+                }),
+            });
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        return Ok(new
+        {
+            repaired = drift.Count,
+            message = $"تم تصحيح {drift.Count} رصيد مورد من واقع الفواتير",
+        });
     }
 }

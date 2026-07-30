@@ -160,9 +160,17 @@ public class TestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
         // The host has already prepared the schema. Verify that rather than re-doing it, so a
         // future regression in startup maintenance fails here loudly instead of silently
         // handing tests an empty database.
-        var usersTableExists = await db.Database
-            .SqlQuery<bool>($"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Users')")
-            .SingleAsync();
+        // Raw ADO rather than db.Database.SqlQuery<bool>: that helper wraps the statement as
+        // `SELECT t.Value FROM (...) t`, so it only works when the query itself yields a column
+        // literally named "Value". This is the same probe StartupDatabaseMaintenance uses.
+        await db.Database.OpenConnectionAsync();
+        bool usersTableExists;
+        using (var checkCmd = db.Database.GetDbConnection().CreateCommand())
+        {
+            checkCmd.CommandText =
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Users')";
+            usersTableExists = await checkCmd.ExecuteScalarAsync() is bool b && b;
+        }
 
         if (!usersTableExists)
             throw new InvalidOperationException(

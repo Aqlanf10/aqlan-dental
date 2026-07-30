@@ -1,7 +1,10 @@
 using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.DTOs.Commission;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.API.Services;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
+using QuestPDF.Fluent;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -319,6 +322,33 @@ public class CommissionsController(
         {
             return Conflict(new { message = ex.Message });
         }
+    }
+
+    /// <summary>
+    /// The doctor's settlement statement as an Arabic PDF — accrued commission, every
+    /// correction with the lab order and invoice behind it, and what remains.
+    /// </summary>
+    [HttpGet("doctors/{doctorId:guid}/settlement/pdf")]
+    public async Task<IActionResult> GetSettlementPdf(Guid doctorId, CancellationToken ct = default)
+    {
+        if (!await CanAsync("view")) return Deny();
+
+        var scoped = await ScopeToOwnDoctorAsync(doctorId) ?? doctorId;
+
+        var summary = await adjustmentService.GetSettlementSummaryAsync(scoped, ct);
+        if (summary is null) return NotFound(new { message = "الطبيب غير موجود" });
+
+        var adjustments = await adjustmentService.GetAdjustmentsAsync(scoped, status: null, ct: ct);
+        var identity = await FinanceClinicIdentity.ResolveAsync(db, ct);
+
+        var document = new DoctorSettlementPdfGenerator(
+            identity,
+            new DoctorSettlementStatement(summary, adjustments, ClinicTimeProvider.ClinicToday()));
+
+        var bytes = document.GeneratePdf();
+        var safeName = string.Join("_", (summary.DoctorName ?? "doctor").Split(Path.GetInvalidFileNameChars()));
+
+        return File(bytes, "application/pdf", $"settlement-{safeName}-{ClinicTimeProvider.ClinicToday():yyyyMMdd}.pdf");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

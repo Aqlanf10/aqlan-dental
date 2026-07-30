@@ -86,6 +86,58 @@ export interface DoctorCommissionPayment {
   createdAt: string;
 }
 
+// ── Commission adjustments (CORE-FIN-LAB-ADJ) ────────────────────────────────
+
+export type CommissionAdjustmentStatus = "Pending" | "Settled" | "Cancelled";
+
+/**
+ * A signed correction on an already-PAID commission. Positive means the clinic still owes the
+ * doctor; negative means the doctor was overpaid and it comes off the next settlement. The
+ * original commission line is never rewritten — this is how the difference is carried instead.
+ */
+export interface CommissionAdjustment {
+  id: string;
+  doctorId: string;
+  doctorName: string | null;
+  invoiceLineItemId: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  patientName: string;
+  serviceName: string;
+  labOrderId: string | null;
+  labOrderNumber: string | null;
+  paidCommissionAmount: number;
+  recalculatedCommissionAmount: number;
+  adjustmentAmount: number;
+  previousLabCost: number;
+  currentLabCost: number;
+  reason: string;
+  status: CommissionAdjustmentStatus;
+  settledByPaymentId: string | null;
+  settledOn: string | null;
+  createdAt: string;
+}
+
+export interface CommissionResyncResult {
+  lineItemsExamined: number;
+  recalculated: number;
+  adjustmentsRaised: number;
+  netAdjustmentAmount: number;
+  /** Records the sweep deliberately left alone — never silently dropped. */
+  skipped: string[];
+}
+
+export interface DoctorSettlementSummary {
+  doctorId: string;
+  doctorName: string | null;
+  earnedFromLineItems: number;
+  adjustmentsTotal: number;
+  totalDue: number;
+  alreadyPaid: number;
+  remaining: number;
+  pendingAdjustmentCount: number;
+}
+
 export interface ServiceCommissionDefaults {
   serviceId: string;
   defaultMaterialCost: number;

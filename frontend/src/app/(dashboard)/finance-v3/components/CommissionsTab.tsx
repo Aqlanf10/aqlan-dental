@@ -14,6 +14,7 @@ import {
 } from "./FinanceSharedUI";
 import { formatYER, formatNumber } from "./FinanceHelpers";
 import { toast } from "@/stores/toastStore";
+import { CommissionAdjustmentsPanel } from "./CommissionAdjustmentsPanel";
 
 interface DoctorCommissionSummary {
   doctorId: string;
@@ -268,6 +269,12 @@ export function CommissionsTab() {
           </div>
         )}
       </div>
+
+      {/* CORE-FIN-LAB-ADJ — corrections on commissions that were already paid out. The table
+          above shows what each doctor accrued; these are the differences that appeared after
+          the money moved, and they are invisible anywhere else because a paid commission line
+          is deliberately never rewritten. */}
+      <CommissionAdjustmentsPanel doctorId={selectedDoctorId || undefined} />
     </div>
   );
 }

@@ -131,7 +131,12 @@ public class PatientService(
     {
         var writeBranchId = branchScope.ResolveWriteBranch();
         if (!branchScope.HasGlobalAccess && !writeBranchId.HasValue)
+        {
+            logger.LogWarning(
+                "Patient creation blocked because user {UserId} has no effective branch scope.",
+                currentUser.UserId);
             throw new InvalidOperationException("يجب تحديد فرع صالح قبل إنشاء المريض.");
+        }
 
         var normalizedPhone = PhoneNormalizer.Normalize(req.Phone);
         var normalizedWhatsApp = PhoneNormalizer.Normalize(req.WhatsApp);

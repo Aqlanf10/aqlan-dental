@@ -80,8 +80,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           await api.post("/api/auth/logout");
         } catch {
-          // Local revocation still runs. The server-side cookie is HttpOnly and
-          // will either already be expired or be rejected on the next refresh.
+          // Local cleanup still runs.
         }
         clearAccessToken();
         setImpersonatingSession(false);
@@ -116,39 +115,16 @@ export const useAuthStore = create<AuthState>()(
         const currentUser = get().user;
         if (!currentUser) return;
 
-        set({ isLoading: true });
+        clearLegacyTokenStorage();
         setAccessToken(targetAccessToken);
-
-        try {
-          // The impersonation endpoint has just replaced the browser refresh
-          // cookie with one owned by the target user. Revoke it immediately so
-          // impersonation is a short-lived access-token-only session. This avoids
-          // refreshing into an ordinary target session that has lost the original
-          // administrator claims.
-          await api.post("/api/auth/logout");
-
-          clearLegacyTokenStorage();
-          setImpersonatingSession(true);
-          setAuthCookie(true);
-          set({
-            originalUser: currentUser,
-            isImpersonating: true,
-            user,
-            isAuthenticated: true,
-          });
-        } catch {
-          clearAccessToken();
-          setImpersonatingSession(false);
-          setAuthCookie(false);
-          set({
-            user: null,
-            originalUser: null,
-            isImpersonating: false,
-            isAuthenticated: false,
-          });
-        } finally {
-          set({ isLoading: false });
-        }
+        setImpersonatingSession(true);
+        setAuthCookie(true);
+        set({
+          originalUser: currentUser,
+          isImpersonating: true,
+          user,
+          isAuthenticated: true,
+        });
       },
 
       stopImpersonation: async () => {
@@ -156,9 +132,12 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true });
 
         try {
-          // Call the backend while the impersonated access token — including
-          // originalUserId claims — is still active. The backend records the stop
-          // audit event and returns a newly issued administrator session.
+          // First revoke the target user's refresh cookie while retaining the
+          // impersonated access token in memory. The next call still carries the
+          // originalUserId claims and asks the backend to issue a brand-new admin
+          // session, which is the only accepted restoration path.
+          await api.post("/api/auth/logout");
+
           const { data } = await api.post<{
             accessToken: string;
             user: UserDto;
@@ -174,7 +153,7 @@ export const useAuthStore = create<AuthState>()(
             const { data: permData } = await api.get<{ role: string; permissions: string[] }>("/api/auth/me/permissions");
             data.user.permissions = permData.permissions;
           } catch {
-            // The restored administrator can still reload permissions later.
+            // The restored administrator can reload permissions later.
           }
 
           set({
@@ -205,7 +184,7 @@ export const useAuthStore = create<AuthState>()(
     {
       name: "aqlan-auth",
       // Never persist impersonation recovery material. A page reload during an
-      // impersonated access-token-only session deliberately requires re-login.
+      // impersonated session deliberately requires re-login.
       partialize: (s) => ({
         user: s.isImpersonating ? null : s.user,
         isAuthenticated: s.isImpersonating ? false : s.isAuthenticated,

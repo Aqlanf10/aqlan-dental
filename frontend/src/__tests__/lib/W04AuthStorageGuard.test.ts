@@ -19,7 +19,10 @@ describe("W04 staff authentication storage guard", () => {
   it("restores the administrator only from the backend stop response", () => {
     const storeSource = source("src/stores/authStore.ts");
     const stopCall = storeSource.indexOf('api.post<{\n            accessToken: string;');
-    const applyReturnedToken = storeSource.indexOf("setAccessToken(data.accessToken)");
+    const applyReturnedToken = storeSource.indexOf(
+      "setAccessToken(data.accessToken)",
+      stopCall,
+    );
 
     expect(stopCall).toBeGreaterThan(-1);
     expect(applyReturnedToken).toBeGreaterThan(stopCall);

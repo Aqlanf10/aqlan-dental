@@ -35,4 +35,19 @@ describe("W04 staff authentication storage guard", () => {
     expect(apiSource).toContain('url.includes("/api/auth/impersonate/")');
     expect(apiSource).toContain('await apiRaw.post("/api/auth/logout"');
   });
+
+  it("revokes a target refresh session after an impersonation page reload", () => {
+    const layoutSource = source("src/app/(dashboard)/layout.tsx");
+    const markerCheck = layoutSource.indexOf(
+      "localStorage.getItem(IMPERSONATION_SESSION_MARKER)",
+    );
+    const revokeCall = layoutSource.indexOf(
+      "await terminateImpersonatedRefreshSession()",
+    );
+    const normalRestore = layoutSource.indexOf("await fetchMe()");
+
+    expect(markerCheck).toBeGreaterThan(-1);
+    expect(revokeCall).toBeGreaterThan(markerCheck);
+    expect(normalRestore).toBeGreaterThan(revokeCall);
+  });
 });

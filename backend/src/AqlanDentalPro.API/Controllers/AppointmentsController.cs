@@ -266,6 +266,17 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateAppointmentRequest req)
     {
+        if (!currentUser.IsAdmin)
+        {
+            if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
+                return Forbid();
+
+            var patientInBranch = await db.Patients
+                .AnyAsync(p => p.Id == req.PatientId && p.BranchId == currentUser.BranchId.Value);
+            if (!patientInBranch)
+                return StatusCode(403, new { message = "المريض لا يتبع فرع المستخدم الحالي" });
+        }
+
         var denied = await DenyIfDoctorCannotAccess(req.PatientId);
         if (denied != null) return denied;
 
@@ -298,7 +309,14 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         // in the body while actually mutating (and reading back PHI for) a completely
         // different, inaccessible patient's appointment. Must authorize against the
         // appointment's stored owner, not the request body.
-        var ownerPatientId = await db.Appointments.Where(a => a.Id == id).Select(a => (Guid?)a.PatientId).FirstOrDefaultAsync();
+        var ownerPatientId = await db.Appointments
+            .Where(a => a.Id == id
+                && (currentUser.IsAdmin
+                    || (currentUser.BranchId.HasValue
+                        && currentUser.BranchId.Value != Guid.Empty
+                        && a.BranchId == currentUser.BranchId.Value)))
+            .Select(a => (Guid?)a.PatientId)
+            .FirstOrDefaultAsync();
         if (ownerPatientId.HasValue)
         {
             var denied = await DenyIfDoctorCannotAccess(ownerPatientId.Value);
@@ -334,7 +352,11 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
             .AnyAsync(c => c.Id == req.OrthoCaseId.Value
                 && c.PatientId == req.PatientId
                 && c.IsActive
-                && c.Status == OrthoCaseStatus.Active);
+                && c.Status == OrthoCaseStatus.Active
+                && (currentUser.IsAdmin
+                    || (currentUser.BranchId.HasValue
+                        && currentUser.BranchId.Value != Guid.Empty
+                        && c.BranchId == currentUser.BranchId.Value)));
 
         return validCase
             ? null
@@ -344,7 +366,14 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     [HttpPut("{id:guid}/status")]
     public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateAppointmentStatusRequest req)
     {
-        var ownerPatientId = await db.Appointments.Where(a => a.Id == id).Select(a => (Guid?)a.PatientId).FirstOrDefaultAsync();
+        var ownerPatientId = await db.Appointments
+            .Where(a => a.Id == id
+                && (currentUser.IsAdmin
+                    || (currentUser.BranchId.HasValue
+                        && currentUser.BranchId.Value != Guid.Empty
+                        && a.BranchId == currentUser.BranchId.Value)))
+            .Select(a => (Guid?)a.PatientId)
+            .FirstOrDefaultAsync();
         if (ownerPatientId.HasValue)
         {
             var denied = await DenyIfDoctorCannotAccess(ownerPatientId.Value);
@@ -426,6 +455,13 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
 
         var appointmentsQuery = db.Appointments
             .Where(a => req.AppointmentIds.Contains(a.Id) && a.IsActive);
+
+        if (!currentUser.IsAdmin)
+        {
+            if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
+                return Forbid();
+            appointmentsQuery = appointmentsQuery.Where(a => a.BranchId == currentUser.BranchId.Value);
+        }
 
         // CORE-APPT-001: a restricted doctor batch-updating status must not be able to
         // touch appointments for patients outside their access set by simply supplying

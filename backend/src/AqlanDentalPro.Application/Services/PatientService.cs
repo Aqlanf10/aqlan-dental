@@ -13,16 +13,46 @@ namespace AqlanDentalPro.Application.Services;
 public class PatientService(
     IPatientRepository repo,
     ICurrentUserService currentUser,
+    IBranchResourceScope branchScope,
     IPatientSettingsReader patientSettings,
     IPatientPortalService portalService,
     IClinicClock clinicClock,
     ILogger<PatientService> logger)
 {
+    public PatientService(
+        IPatientRepository repo,
+        ICurrentUserService currentUser,
+        IPatientSettingsReader patientSettings,
+        IPatientPortalService portalService,
+        IClinicClock clinicClock,
+        ILogger<PatientService> logger)
+        : this(
+            repo,
+            currentUser,
+            new BranchResourceScope(currentUser),
+            patientSettings,
+            portalService,
+            clinicClock,
+            logger)
+    {
+    }
+
     public async Task<PaginatedResponse<PatientListDto>> GetListAsync(
         string? search, int page, int pageSize, string? gender = null, Guid? doctorId = null,
         string? status = "active", IReadOnlySet<Guid>? allowedPatientIds = null)
     {
-        var branchId = currentUser.IsAdmin ? null : currentUser.BranchId;
+        var branchId = branchScope.EffectiveBranchId;
+        if (!branchScope.HasGlobalAccess && !branchId.HasValue)
+        {
+            return new PaginatedResponse<PatientListDto>
+            {
+                Data = [],
+                TotalCount = 0,
+                Page = page,
+                PageSize = pageSize
+            };
+        }
+
         var result = await repo.SearchAsync(search, page, pageSize, branchId, gender, doctorId, status, allowedPatientIds);
         var today = clinicClock.Today();
 
@@ -83,7 +113,7 @@ public class PatientService(
         // If not found (may be archived and filtered by global filter), try ignoring filters
         if (patient == null)
             patient = await repo.GetWithHistoriesIgnoreFiltersAsync(id);
-        if (patient == null) return null;
+        if (patient == null || !branchScope.CanAccess(patient.BranchId)) return null;
         var dto = ToProfileDto(patient, clinicClock.Today());
         try
         {
@@ -99,6 +129,10 @@ public class PatientService(
 
     public async Task<PatientProfileDto> CreateAsync(CreatePatientRequest req)
     {
+        var writeBranchId = branchScope.ResolveWriteBranch();
+        if (!branchScope.HasGlobalAccess && !writeBranchId.HasValue)
+            throw new InvalidOperationException("يجب تحديد فرع صالح قبل إنشاء المريض.");
+
         var normalizedPhone = PhoneNormalizer.Normalize(req.Phone);
         var normalizedWhatsApp = PhoneNormalizer.Normalize(req.WhatsApp);
 
@@ -124,7 +158,7 @@ public class PatientService(
                 Occupation = req.Occupation,
                 ReferralSource = req.ReferralSource,
                 PrimaryDoctorId = req.PrimaryDoctorId,
-                BranchId = currentUser.BranchId
+                BranchId = writeBranchId
             };
 
             if (req.MedicalHistory != null)
@@ -231,7 +265,7 @@ public class PatientService(
     {
         // Use ignore-filters variant to also find soft-deleted history rows
         var patient = await repo.GetWithHistoriesIgnoreFiltersAsync(id);
-        if (patient == null || !patient.IsActive) return null;
+        if (patient == null || !patient.IsActive || !branchScope.CanAccess(patient.BranchId)) return null;
 
         // Normalize and check duplicates before updating
         var normalizedPhone = PhoneNormalizer.Normalize(req.Phone);
@@ -370,14 +404,14 @@ public class PatientService(
         var normalized = PhoneNormalizer.Normalize(phone);
         if (string.IsNullOrEmpty(normalized)) return (false, null, null);
         var existing = await repo.FindByNormalizedPhoneAsync(normalized, excludeId);
-        if (existing == null) return (false, null, null);
+        if (existing == null || !branchScope.CanAccess(existing.BranchId)) return (false, null, null);
         return (true, existing.PatientNumber, $"{existing.FirstName} {existing.LastName}".Trim());
     }
 
     public async Task<bool> ArchiveAsync(Guid id)
     {
         var patient = await repo.GetByIdAsync(id);
-        if (patient == null) return false;
+        if (patient == null || !branchScope.CanAccess(patient.BranchId)) return false;
 
         patient.IsActive = false;
         patient.UpdatedAt = DateTime.UtcNow;
@@ -389,7 +423,7 @@ public class PatientService(
     public async Task<bool> RestoreAsync(Guid id)
     {
         var patient = await repo.GetArchivedByIdAsync(id);
-        if (patient == null) return false;
+        if (patient == null || !branchScope.CanAccess(patient.BranchId)) return false;
 
         patient.IsActive = true;
         patient.UpdatedAt = DateTime.UtcNow;
@@ -407,7 +441,7 @@ public class PatientService(
     {
         // Use ignore-filters variant to also find soft-deleted history rows
         var patient = await repo.GetWithHistoriesIgnoreFiltersAsync(id);
-        if (patient == null || !patient.IsActive) return null;
+        if (patient == null || !patient.IsActive || !branchScope.CanAccess(patient.BranchId)) return null;
 
         if (patient.MedicalHistory == null)
         {
@@ -470,7 +504,7 @@ public class PatientService(
     {
         // Use ignore-filters variant to also find soft-deleted history rows
         var patient = await repo.GetWithHistoriesIgnoreFiltersAsync(id);
-        if (patient == null || !patient.IsActive) return null;
+        if (patient == null || !patient.IsActive || !branchScope.CanAccess(patient.BranchId)) return null;
 
         if (patient.DentalHistory == null)
         {

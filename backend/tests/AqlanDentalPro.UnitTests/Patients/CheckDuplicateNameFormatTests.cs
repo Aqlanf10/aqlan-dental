@@ -28,11 +28,15 @@ public class CheckDuplicateNameFormatTests
 
     private static PatientsController BuildController(AppDbContext db)
     {
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.SetupGet(user => user.IsAuthenticated).Returns(true);
+        currentUser.SetupGet(user => user.IsAdmin).Returns(true);
+
         return new PatientsController(
             service: null!,
             db: db,
             financeReadService: null!,
-            currentUser: new Mock<ICurrentUserService>().Object,
+            currentUser: currentUser.Object,
             patientAccess: new Mock<IPatientAccessService>().Object,
             audit: new Mock<IAuditService>().Object,
             logger: new Mock<ILogger<PatientsController>>().Object);

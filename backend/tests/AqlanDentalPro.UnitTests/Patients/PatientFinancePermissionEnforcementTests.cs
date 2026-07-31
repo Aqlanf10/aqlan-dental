@@ -20,6 +20,8 @@ namespace AqlanDentalPro.UnitTests.Patients;
 /// </summary>
 public class PatientFinancePermissionEnforcementTests
 {
+    private static readonly Guid TestBranchId = Guid.NewGuid();
+
     private static AppDbContext CreateDb() =>
         new(new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -32,6 +34,7 @@ public class PatientFinancePermissionEnforcementTests
         mock.SetupGet(u => u.Role).Returns(role);
         mock.SetupGet(u => u.IsAdmin).Returns(role == UserRole.Admin);
         mock.SetupGet(u => u.IsAuthenticated).Returns(true);
+        mock.SetupGet(u => u.BranchId).Returns(TestBranchId);
         return mock.Object;
     }
 
@@ -54,6 +57,7 @@ public class PatientFinancePermissionEnforcementTests
             PatientNumber = "GM-TEST-001",
             FirstName = "Test",
             LastName = "Patient",
+            BranchId = TestBranchId,
             IsActive = true,
         };
         db.Patients.Add(patient);

@@ -8,11 +8,32 @@ using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Application.Services;
 
-public class AppointmentService(IAppointmentRepository repo, ICurrentUserService currentUser, IServiceScopeFactory scopeFactory, ILogger<AppointmentService> logger)
+public class AppointmentService(
+    IAppointmentRepository repo,
+    ICurrentUserService currentUser,
+    IBranchResourceScope branchScope,
+    IServiceScopeFactory scopeFactory,
+    ILogger<AppointmentService> logger)
 {
+    public AppointmentService(
+        IAppointmentRepository repo,
+        ICurrentUserService currentUser,
+        IServiceScopeFactory scopeFactory,
+        ILogger<AppointmentService> logger)
+        : this(
+            repo,
+            currentUser,
+            new BranchResourceScope(currentUser),
+            scopeFactory,
+            logger)
+    {
+    }
+
     public async Task<IEnumerable<AppointmentDto>> GetTodayAsync(Guid? doctorId = null)
     {
-        var branchId = currentUser.IsAdmin ? null : currentUser.BranchId;
+        var branchId = branchScope.EffectiveBranchId;
+        if (!branchScope.HasGlobalAccess && !branchId.HasValue)
+            return [];
         var list = await repo.GetTodayAsync(branchId, doctorId);
         return list.Select(ToDto);
     }
@@ -20,7 +41,9 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
     public async Task<IEnumerable<AppointmentDto>> GetByDateRangeAsync(
         DateOnly from, DateOnly to, Guid? doctorId = null, Guid? patientId = null, AppointmentStatus? status = null)
     {
-        var branchId = currentUser.IsAdmin ? null : currentUser.BranchId;
+        var branchId = branchScope.EffectiveBranchId;
+        if (!branchScope.HasGlobalAccess && !branchId.HasValue)
+            return [];
         // GAP-01 FIX: Pass status to repository for DB-level filtering
         var list = await repo.GetByDateRangeAsync(from, to, branchId, doctorId, patientId, status);
         return list.Select(ToDto);
@@ -36,7 +59,7 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         {
             PatientId = req.PatientId,
             DoctorId = req.DoctorId,
-            BranchId = currentUser.BranchId,
+            BranchId = branchScope.ResolveWriteBranch(),
             AppointmentDate = date,
             StartTime = start,
             EndTime = end,
@@ -95,18 +118,20 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
     public async Task<IEnumerable<AppointmentDto>> GetByPatientAsync(Guid patientId)
     {
         var list = await repo.GetByPatientAsync(patientId);
-        return list.Select(ToDto);
+        return list.Where(a => branchScope.CanAccess(a.BranchId)).Select(ToDto);
     }
 
     public async Task<AppointmentDto?> GetByIdAsync(Guid id)
     {
         var a = await repo.GetWithDetailAsync(id);
-        return a == null ? null : ToDto(a);
+        return a == null || !branchScope.CanAccess(a.BranchId) ? null : ToDto(a);
     }
 
     public async Task<DailyAppointmentStatsDto> GetDailyStatsAsync(DateOnly date)
     {
-        var branchId = currentUser.IsAdmin ? null : currentUser.BranchId;
+        var branchId = branchScope.EffectiveBranchId;
+        if (!branchScope.HasGlobalAccess && !branchId.HasValue)
+            return new DailyAppointmentStatsDto();
         var appointments = await repo.GetByDateRangeAsync(date, date, branchId, null);
 
         var list = appointments.ToList();
@@ -134,6 +159,8 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         Guid id, CreateAppointmentRequest req)
     {
         var appointment = await repo.GetWithDetailAsync(id);
+        if (appointment != null && !branchScope.CanAccess(appointment.BranchId))
+            return (null, "الموعد غير موجود");
         if (appointment == null) return (null, "الموعد غير موجود");
 
         var date  = DateOnly.Parse(req.AppointmentDate);
@@ -215,6 +242,8 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         Guid id, string status)
     {
         var appointment = await repo.GetWithDetailAsync(id);
+        if (appointment != null && !branchScope.CanAccess(appointment.BranchId))
+            return (null, "الموعد غير موجود");
         if (appointment == null) return (null, "الموعد غير موجود");
 
         if (!Enum.TryParse<AppointmentStatus>(status, true, out var parsed))

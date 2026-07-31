@@ -6,6 +6,7 @@
     <RootNamespace>AqlanDentalPro.Infrastructure</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="AqlanDentalPro.UnitTests" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>

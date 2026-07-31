@@ -32,6 +32,7 @@ public static class ServiceRegistrationConfiguration
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<ITokenService, TokenService>();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
+        services.AddScoped<IBranchResourceScope, BranchResourceScope>();
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<IPatientSettingsReader, PatientSettingsReader>();
         services.AddScoped<IClinicClock, ClinicClock>();

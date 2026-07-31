@@ -1,4 +1,5 @@
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -27,27 +28,44 @@ namespace AqlanDentalPro.Infrastructure.Services;
 ///   <item><c>GET /{id}/attachments</c> — attachment list</item>
 /// </list>
 ///
-/// <para><b>Not authorization-aware.</b> The controller gates every action with
-/// <c>CanAsync("view")</c> and <c>DenyIfDoctorCannotAccess</c> BEFORE delegating
-/// to this service. The service only executes EF queries and projects DTOs.</para>
+/// <para><b>Authorization-aware.</b> Every query is constrained by
+/// <see cref="IBranchResourceScope"/>. The controller still applies action
+/// permissions and doctor/patient ownership checks before delegating.</para>
 ///
 /// <para><b>API contract unchanged.</b> DTO property names match the original
 /// anonymous-type projections exactly, so the JSON response shape is identical
 /// (same camelCase keys, same null/non-null fields per endpoint).</para>
 ///
-/// <para><b>Behavior unchanged.</b> Same filters, same ordering, same fallback
-/// for missing <c>LabOrderItems</c> schema (PostgreSQL 42P01/42703), same
-/// <c>ClinicToday()</c> date for overdue/today queries.</para>
+/// <para><b>Query behavior unchanged within the authorized branch.</b> The
+/// filters, ordering, schema fallback (PostgreSQL 42P01/42703), and
+/// <c>ClinicToday()</c> handling remain the same.</para>
 /// </summary>
 public class LabOrderQueryService
 {
     private readonly AppDbContext _db;
+    private readonly IBranchResourceScope _branchScope;
     private readonly ILogger<LabOrderQueryService> _logger;
 
-    public LabOrderQueryService(AppDbContext db, ILogger<LabOrderQueryService> logger)
+    public LabOrderQueryService(
+        AppDbContext db,
+        IBranchResourceScope branchScope,
+        ILogger<LabOrderQueryService> logger)
     {
         _db = db;
+        _branchScope = branchScope;
         _logger = logger;
+    }
+
+    private IQueryable<LabOrder> ScopedOrders()
+    {
+        var query = _db.LabOrders.AsQueryable();
+        if (_branchScope.HasGlobalAccess)
+            return query;
+
+        var branchId = _branchScope.EffectiveBranchId;
+        return branchId.HasValue && branchId.Value != Guid.Empty
+            ? query.Where(order => order.BranchId == branchId.Value)
+            : query.Where(_ => false);
     }
 
     // ─── GET /api/lab-orders ────────────────────────────────────────────────
@@ -62,7 +80,7 @@ public class LabOrderQueryService
         int page,
         int pageSize)
     {
-        var query = _db.LabOrders
+        var query = ScopedOrders()
             .Include(l => l.Patient)
             .Include(l => l.OrthoCase)
             .Include(l => l.Doctor)
@@ -115,7 +133,7 @@ public class LabOrderQueryService
 
     public async Task<int> GetPendingCountAsync()
     {
-        return await _db.LabOrders
+        return await ScopedOrders()
             .CountAsync(l => l.Status == "sent" || l.Status == "manufacturing" || l.Status == "tryIn" || l.Status == "remake");
     }
 
@@ -125,7 +143,7 @@ public class LabOrderQueryService
     public async Task<List<LabOrderTodayDto>> GetTodayAsync()
     {
         var today = ClinicTimeProvider.ClinicToday();
-        return await _db.LabOrders
+        return await ScopedOrders()
             .Include(l => l.Patient)
             .Include(l => l.Doctor)
             .Where(l => l.SentDate == today || l.ExpectedDate == today || l.ReceivedDate == today || l.DeliveredDate == today)
@@ -161,7 +179,7 @@ public class LabOrderQueryService
     /// <summary>Returns lab orders that are ready or received (awaiting patient delivery).</summary>
     public async Task<List<LabOrderTodayDto>> GetReadyAsync()
     {
-        return await _db.LabOrders
+        return await ScopedOrders()
             .Include(l => l.Patient)
             .Include(l => l.Doctor)
             .Where(l => l.Status == "ready" || l.Status == "received")
@@ -198,7 +216,7 @@ public class LabOrderQueryService
     public async Task<List<LabOrderOverdueDto>> GetOverdueAsync()
     {
         var today = ClinicTimeProvider.ClinicToday();
-        return await _db.LabOrders
+        return await ScopedOrders()
             .Include(l => l.Patient)
             .Include(l => l.Doctor)
             .Include(l => l.Lab)
@@ -240,7 +258,7 @@ public class LabOrderQueryService
     /// <summary>Returns lab orders that are received and ready for patient delivery.</summary>
     public async Task<List<LabOrderReadyForDeliveryDto>> GetReadyForDeliveryAsync()
     {
-        return await _db.LabOrders
+        return await ScopedOrders()
             .Include(l => l.Patient)
             .Include(l => l.Doctor)
             .Include(l => l.Lab)
@@ -287,7 +305,7 @@ public class LabOrderQueryService
         LabOrder? order;
         try
         {
-            order = await _db.LabOrders
+            order = await ScopedOrders()
                 .Include(l => l.Patient)
                 .Include(l => l.OrthoCase)
                 .Include(l => l.Doctor)
@@ -298,7 +316,7 @@ public class LabOrderQueryService
         catch (Exception ex) when (IsMissingTableOrColumnError(ex))
         {
             _logger.LogWarning(ex, "LabOrderItems/WorkType query failed (schema mismatch) — falling back to query without Items for lab order {OrderId}. Error: {ErrorMsg}", id, ex.InnerException?.Message ?? ex.Message);
-            order = await _db.LabOrders
+            order = await ScopedOrders()
                 .Include(l => l.Patient)
                 .Include(l => l.OrthoCase)
                 .Include(l => l.Doctor)
@@ -369,12 +387,12 @@ public class LabOrderQueryService
     public async Task<List<LabOrderStatusHistoryDto>?> GetHistoryAsync(Guid id)
     {
         // Mirrors original controller: existence check before listing history.
-        var order = await _db.LabOrders.FindAsync(id);
+        var order = await ScopedOrders().FirstOrDefaultAsync(order => order.Id == id);
         if (order is null) return null;
 
         return await _db.LabOrderStatusHistories
             .Include(h => h.ChangedByUser)
-            .Where(h => h.LabOrderId == id)
+            .Where(h => h.LabOrderId == id && ScopedOrders().Any(order => order.Id == h.LabOrderId))
             .OrderByDescending(h => h.CreatedAt)
             .Select(h => new LabOrderStatusHistoryDto
             {
@@ -397,7 +415,7 @@ public class LabOrderQueryService
     public async Task<List<LabOrderAttachmentDto>> GetAttachmentsAsync(Guid id)
     {
         return await _db.LabOrderAttachments
-            .Where(a => a.LabOrderId == id)
+            .Where(a => a.LabOrderId == id && ScopedOrders().Any(order => order.Id == a.LabOrderId))
             .OrderByDescending(a => a.CreatedAt)
             .Select(a => new LabOrderAttachmentDto
             {

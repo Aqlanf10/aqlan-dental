@@ -215,6 +215,30 @@ public class LabOrdersController(
     // CLIN-01: Per-patient access check for actions where patientId is in body or inferred.
     private async Task<IActionResult?> DenyIfDoctorCannotAccess(Guid patientId)
     {
+        if (!currentUser.IsAdmin)
+        {
+            if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
+                return Forbid();
+
+            var patientBranch = await db.Patients
+                .Where(patient => patient.Id == patientId)
+                .Select(patient => patient.BranchId)
+                .FirstOrDefaultAsync();
+            if (!patientBranch.HasValue || patientBranch.Value != currentUser.BranchId.Value)
+            {
+                await audit.LogAsync(AuditAction.View, "Patient", patientId,
+                    newData: new
+                    {
+                        status = "denied",
+                        reason = "cross-branch",
+                        resource = "LabOrder",
+                        role = currentUser.Role?.ToString(),
+                        userId = currentUser.UserId
+                    });
+                return StatusCode(403, new { message = "طلب المختبر لا يتبع فرع المستخدم الحالي" });
+            }
+        }
+
         if (!patientAccess.IsDoctor) return null;
         if (!await patientAccess.CanAccessPatientAsync(patientId))
         {

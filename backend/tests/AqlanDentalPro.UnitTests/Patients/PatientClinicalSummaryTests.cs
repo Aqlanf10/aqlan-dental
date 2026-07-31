@@ -27,6 +27,7 @@ public class PatientClinicalSummaryTests
         await using var db = CreateDb();
         var patientId = Guid.NewGuid();
         var doctorId = Guid.NewGuid();
+        var branchId = Guid.NewGuid();
         var today = ClinicTimeProvider.ClinicToday();
 
         db.Patients.Add(new Patient
@@ -35,6 +36,7 @@ public class PatientClinicalSummaryTests
             PatientNumber = "P-SUMMARY-001",
             FirstName = "مريض",
             LastName = "الملخص",
+            BranchId = branchId,
         });
         db.Doctors.Add(new Doctor
         {
@@ -102,6 +104,7 @@ public class PatientClinicalSummaryTests
         currentUser.SetupGet(user => user.UserId).Returns(Guid.NewGuid());
         currentUser.SetupGet(user => user.Role).Returns(UserRole.GeneralDentist);
         currentUser.SetupGet(user => user.IsAuthenticated).Returns(true);
+        currentUser.SetupGet(user => user.BranchId).Returns(branchId);
         var patientAccess = new Mock<IPatientAccessService>();
         patientAccess.SetupGet(access => access.IsDoctor).Returns(true);
         patientAccess.SetupGet(access => access.HasFullAccess).Returns(false);

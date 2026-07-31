@@ -19,6 +19,8 @@ namespace AqlanDentalPro.UnitTests.LabOrders;
 /// </summary>
 internal static class LabOrdersTestData
 {
+    public static readonly Guid TestBranchId = Guid.NewGuid();
+
     /// <summary>
     /// Fixed UTC timestamp used everywhere a "now" value is needed in tests.
     /// 2026-06-15T10:30:00Z — matches the TEST-02/TEST-13 fixtures to keep test
@@ -37,6 +39,7 @@ internal static class LabOrdersTestData
             PatientNumber = $"P-{Guid.NewGuid():N}".Substring(0, 12),
             FirstName = firstName,
             LastName = lastName,
+            BranchId = TestBranchId,
             IsActive = true
         };
 
@@ -53,6 +56,7 @@ internal static class LabOrdersTestData
         => new()
         {
             PatientId = patientId,
+            BranchId = TestBranchId,
             OrthoCaseId = orthoCaseId,
             OrderNumber = $"LO-{Guid.NewGuid():N}".Substring(0, 14),
             ApplianceType = applianceType,
@@ -74,11 +78,17 @@ internal static class LabOrdersTestData
         AppDbContext db,
         Mock<IPatientAccessService>? patientAccessMock = null,
         Mock<ICurrentUserService>? currentUserMock = null,
-        Mock<IAuditService>? auditMock = null)
+        Mock<IAuditService>? auditMock = null,
+        bool configureBranchScope = true)
     {
         patientAccessMock ??= new Mock<IPatientAccessService>();
         currentUserMock ??= new Mock<ICurrentUserService>();
         auditMock ??= new Mock<IAuditService>();
+        if (configureBranchScope)
+        {
+            currentUserMock.SetupGet(user => user.IsAuthenticated).Returns(true);
+            currentUserMock.SetupGet(user => user.BranchId).Returns(TestBranchId);
+        }
 
         // IServiceScopeFactory — never invoked on the 403 path, but required by the constructor.
         var scopeFactoryMock = new Mock<IServiceScopeFactory>();
@@ -88,7 +98,12 @@ internal static class LabOrdersTestData
         // real instance against the same in-memory db + a query-service logger.
         // The 403 path under test never reaches the query service, but the param
         // is required by the constructor signature.
-        var queryService = new LabOrderQueryService(db, new Mock<ILogger<LabOrderQueryService>>().Object);
+        var branchScope = new Mock<IBranchResourceScope>();
+        branchScope.SetupGet(scope => scope.HasGlobalAccess).Returns(true);
+        var queryService = new LabOrderQueryService(
+            db,
+            branchScope.Object,
+            new Mock<ILogger<LabOrderQueryService>>().Object);
 
         // CORE-LAB-001 — supplier-bill/payable/journal linkage is now a constructor
         // dependency. Built against the same in-memory db with no journal service, which

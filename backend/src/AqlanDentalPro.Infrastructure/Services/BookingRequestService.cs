@@ -17,8 +17,31 @@ public class BookingRequestService(
     AppDbContext db,
     PatientService patientService,
     IAppointmentRepository appointmentRepository,
+    IBranchResourceScope branchScope,
     ILogger<BookingRequestService> logger) : IBookingRequestService
 {
+    internal BookingRequestService(
+        AppDbContext db,
+        PatientService patientService,
+        IAppointmentRepository appointmentRepository,
+        ILogger<BookingRequestService> logger)
+        : this(
+            db,
+            patientService,
+            appointmentRepository,
+            new LegacyUnrestrictedBranchScope(),
+            logger)
+    {
+    }
+
+    private sealed class LegacyUnrestrictedBranchScope : IBranchResourceScope
+    {
+        public Guid? EffectiveBranchId => null;
+        public bool HasGlobalAccess => true;
+        public bool CanAccess(Guid? resourceBranchId) => true;
+        public Guid? ResolveWriteBranch(Guid? requestedBranchId = null) => requestedBranchId;
+    }
+
     // Clinic working hours: Saturday-Thursday 08:00-20:00, Friday closed
     private static readonly TimeOnly ClinicOpen = new(8, 0);
     private static readonly TimeOnly ClinicClose = new(20, 0);
@@ -408,9 +431,18 @@ public class BookingRequestService(
 
             if (!string.IsNullOrWhiteSpace(normalizedPhone))
             {
-                existingPatient = await db.Patients
-                    .FirstOrDefaultAsync(p => p.IsActive &&
+                var existingPatientQuery = db.Patients
+                    .Where(p => p.IsActive &&
                         (p.NormalizedPhone == normalizedPhone || p.NormalizedWhatsApp == normalizedPhone));
+                if (!branchScope.HasGlobalAccess)
+                {
+                    var branchId = branchScope.EffectiveBranchId;
+                    existingPatientQuery = branchId.HasValue && branchId.Value != Guid.Empty
+                        ? existingPatientQuery.Where(p => p.BranchId == branchId.Value)
+                        : existingPatientQuery.Where(_ => false);
+                }
+
+                existingPatient = await existingPatientQuery.FirstOrDefaultAsync();
             }
 
             if (existingPatient != null)
@@ -450,6 +482,17 @@ public class BookingRequestService(
             }
         }
 
+        var patientOwner = await db.Patients
+            .Where(patient => patient.Id == patientId && patient.IsActive)
+            .Select(patient => new { patient.Id, patient.BranchId })
+            .FirstOrDefaultAsync();
+        if (patientOwner is null)
+            throw new ArgumentException("المريض المحدد غير موجود");
+        if (!patientOwner.BranchId.HasValue || patientOwner.BranchId.Value == Guid.Empty)
+            throw new InvalidOperationException("يجب ربط المريض بفرع صالح قبل تحويل طلب الحجز.");
+        if (!branchScope.CanAccess(patientOwner.BranchId))
+            throw new UnauthorizedAccessException("المريض لا يتبع فرع المستخدم الحالي");
+
         // 4-7. Create the Appointment (use resolved patientId instead of dto.PatientId),
         // link the booking request, and save — all atomically under the same
         // per-doctor/per-room advisory lock the direct booking path uses.
@@ -463,6 +506,7 @@ public class BookingRequestService(
         {
             PatientId = patientId,
             DoctorId = dto.DoctorId,
+            BranchId = patientOwner.BranchId,
             AppointmentDate = dto.AppointmentDate,
             StartTime = dto.StartTime,
             EndTime = dto.EndTime,

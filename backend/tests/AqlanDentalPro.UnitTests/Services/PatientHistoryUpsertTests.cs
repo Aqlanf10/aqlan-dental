@@ -39,6 +39,8 @@ public class PatientHistoryUpsertTests
         _currentUserMock.Setup(c => c.IsAdmin).Returns(false);
         _patientSettingsMock.Setup(s => s.GetNumberPrefixAsync(It.IsAny<CancellationToken>())).ReturnsAsync("GM");
         _clinicClockMock.Setup(c => c.Today()).Returns(new DateOnly(2026, 1, 1));
+        _currentUserMock.SetupGet(c => c.IsAuthenticated).Returns(true);
+        _currentUserMock.SetupGet(c => c.IsAdmin).Returns(true);
 
         _service = new PatientService(_repoMock.Object, _currentUserMock.Object, _patientSettingsMock.Object, _portalServiceMock.Object, _clinicClockMock.Object, _loggerMock.Object);
     }

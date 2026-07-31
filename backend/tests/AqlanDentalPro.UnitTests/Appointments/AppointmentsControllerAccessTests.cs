@@ -28,6 +28,7 @@ namespace AqlanDentalPro.UnitTests.Appointments;
 /// </summary>
 public class AppointmentsControllerAccessTests : IDisposable
 {
+    private static readonly Guid TestBranchId = Guid.NewGuid();
     private readonly AppDbContext _db;
 
     public AppointmentsControllerAccessTests()
@@ -46,6 +47,7 @@ public class AppointmentsControllerAccessTests : IDisposable
         PatientNumber = $"P-{Guid.NewGuid():N}"[..12],
         FirstName = first,
         LastName = last,
+        BranchId = TestBranchId,
         IsActive = true,
     };
 
@@ -64,6 +66,7 @@ public class AppointmentsControllerAccessTests : IDisposable
     {
         PatientId = patientId,
         DoctorId = doctorId,
+        BranchId = TestBranchId,
         AppointmentDate = date,
         StartTime = new TimeOnly(10, 0),
         EndTime = new TimeOnly(10, 30),
@@ -107,9 +110,10 @@ public class AppointmentsControllerAccessTests : IDisposable
     {
         var currentUser = new Mock<ICurrentUserService>();
         currentUser.SetupGet(c => c.UserId).Returns(Guid.NewGuid());
+        currentUser.SetupGet(c => c.IsAuthenticated).Returns(true);
         currentUser.SetupGet(c => c.IsAdmin).Returns(isAdmin);
         currentUser.SetupGet(c => c.Role).Returns(isAdmin ? UserRole.Admin : UserRole.GeneralDentist);
-        currentUser.SetupGet(c => c.BranchId).Returns((Guid?)null);
+        currentUser.SetupGet(c => c.BranchId).Returns(TestBranchId);
 
         var repo = new AppointmentRepository(_db);
         var scopeFactory = new Mock<IServiceScopeFactory>();

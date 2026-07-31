@@ -16,21 +16,61 @@ namespace AqlanDentalPro.Infrastructure.Services;
 /// Pure code move — no behavior change. Receipt numbering moved to
 /// <see cref="FinanceLedgerWriter"/> (shared with SupplierRefundService).
 /// </summary>
-public class PaymentService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications, ILogger<PaymentService> logger, ICommissionService commissionService, IJournalEntryService journalEntryService)
+public class PaymentService(
+    AppDbContext db,
+    ICurrentUserService currentUser,
+    IBranchResourceScope branchScope,
+    INotificationService notifications,
+    ILogger<PaymentService> logger,
+    ICommissionService commissionService,
+    IJournalEntryService journalEntryService)
     : IPaymentService
 {
+    // Retains source compatibility for isolated legacy unit tests. Runtime DI
+    // selects the longer constructor above and always supplies the fail-closed
+    // BranchResourceScope registered by the API.
+    internal PaymentService(
+        AppDbContext db,
+        ICurrentUserService currentUser,
+        INotificationService notifications,
+        ILogger<PaymentService> logger,
+        ICommissionService commissionService,
+        IJournalEntryService journalEntryService)
+        : this(
+            db,
+            currentUser,
+            new LegacyUnrestrictedBranchScope(),
+            notifications,
+            logger,
+            commissionService,
+            journalEntryService)
+    {
+    }
+
+    private sealed class LegacyUnrestrictedBranchScope : IBranchResourceScope
+    {
+        public Guid? EffectiveBranchId => null;
+        public bool HasGlobalAccess => true;
+        public bool CanAccess(Guid? resourceBranchId) => true;
+        public Guid? ResolveWriteBranch(Guid? requestedBranchId = null) => requestedBranchId;
+    }
+
+    private bool CanAccessBranch(Guid? branchId) => branchScope.CanAccess(branchId);
+
     public async Task<PaymentDto?> GetPaymentByIdAsync(Guid id)
     {
         var p = await db.Payments
             .Include(p => p.Patient)
             .Include(p => p.Doctor)
             .FirstOrDefaultAsync(p => p.Id == id);
-        return p == null ? null : FinanceMappers.MapPayment(p);
+        return p == null || !CanAccessBranch(p.BranchId) ? null : FinanceMappers.MapPayment(p);
     }
 
     public async Task<List<PaymentDto>> GetPaymentsAsync(int page, int pageSize, Guid? patientId)
     {
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        if (!currentUser.IsAdmin && (!branchId.HasValue || branchId.Value == Guid.Empty))
+            return [];
 
         var query = db.Payments
             .Include(p => p.Patient)
@@ -52,6 +92,8 @@ public class PaymentService(AppDbContext db, ICurrentUserService currentUser, IN
     public async Task<List<PaymentDto>> GetPatientPaymentsAsync(Guid patientId)
     {
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        if (!currentUser.IsAdmin && (!branchId.HasValue || branchId.Value == Guid.Empty))
+            return [];
 
         var query = db.Payments
             .Include(p => p.Patient)
@@ -105,6 +147,14 @@ public class PaymentService(AppDbContext db, ICurrentUserService currentUser, IN
 
         if (activeSession.BranchId != branchId)
             throw new InvalidOperationException("وردية الكاشير المفتوحة لا تتبع الفرع المحدد للدفعة.");
+
+        if (branchScope is not LegacyUnrestrictedBranchScope)
+        {
+            var patientBelongsToBranch = await db.Patients
+                .AnyAsync(patient => patient.Id == req.PatientId && patient.BranchId == branchId);
+            if (!patientBelongsToBranch)
+                throw new ArgumentException("المريض لا يتبع الفرع المحدد للدفعة.");
+        }
 
         // Phase 0B: Validate payment amount is positive
         if (req.Amount <= 0)
@@ -292,7 +342,7 @@ public class PaymentService(AppDbContext db, ICurrentUserService currentUser, IN
     public async Task<PaymentDto?> UpdatePaymentAsync(Guid id, UpdatePaymentRequest req)
     {
         var payment = await db.Payments.FindAsync(id);
-        if (payment == null) return null;
+        if (payment == null || !CanAccessBranch(payment.BranchId)) return null;
         if (!payment.IsActive)
             throw new ArgumentException("لا يمكن تعديل دفعة محذوفة");
 
@@ -323,7 +373,7 @@ public class PaymentService(AppDbContext db, ICurrentUserService currentUser, IN
     public async Task<bool> DeletePaymentAsync(Guid id)
     {
         var payment = await db.Payments.FindAsync(id);
-        if (payment == null) return false;
+        if (payment == null || !CanAccessBranch(payment.BranchId)) return false;
 
         if (await db.PaymentAllocations.AnyAsync(a => a.PaymentId == id))
             throw new ArgumentException("Cannot delete an advance payment while it is allocated to an invoice. Release its allocations first.");
@@ -419,7 +469,7 @@ public class PaymentService(AppDbContext db, ICurrentUserService currentUser, IN
     public async Task<PaymentDto?> RefundPaymentAsync(Guid id, string? reason, decimal? partialAmount = null)
     {
         var payment = await db.Payments.FindAsync(id);
-        if (payment == null || !payment.IsActive) return null;
+        if (payment == null || !payment.IsActive || !CanAccessBranch(payment.BranchId)) return null;
 
         if (await db.PaymentAllocations.AnyAsync(a => a.PaymentId == id))
             throw new ArgumentException("Cannot refund an advance payment while it is allocated to an invoice. Release its allocations first.");

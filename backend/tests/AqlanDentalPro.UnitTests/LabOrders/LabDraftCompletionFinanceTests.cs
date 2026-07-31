@@ -437,7 +437,11 @@ public class LabDraftCompletionFinanceTests
         currentUser.SetupGet(c => c.Role).Returns(UserRole.Admin);
         var access = new Mock<IPatientAccessService>();
         LabOrdersTestData.SetupNonDoctor(access);
-        var controller = LabOrdersTestData.BuildController(db, access, currentUser);
+        var controller = LabOrdersTestData.BuildController(
+            db,
+            access,
+            currentUser,
+            configureBranchScope: false);
 
         var order = LabOrdersTestData.BuildLabOrder(patient.Id);
         order.Status = "sent";

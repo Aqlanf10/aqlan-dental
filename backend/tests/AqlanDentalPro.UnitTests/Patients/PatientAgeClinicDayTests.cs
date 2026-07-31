@@ -72,6 +72,7 @@ public class PatientServiceClinicDayAgeTests
     private static PatientService BuildService(AppDbContext db, DateOnly clinicToday)
     {
         var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(u => u.IsAuthenticated).Returns(true);
         currentUser.Setup(u => u.IsAdmin).Returns(true);
         var patientSettings = new Mock<IPatientSettingsReader>();
         patientSettings.Setup(s => s.GetNumberPrefixAsync(It.IsAny<CancellationToken>())).ReturnsAsync("GM");

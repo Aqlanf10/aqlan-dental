@@ -270,6 +270,7 @@ public class JourneyUpdatedSignalRTests
         repo.Setup(r => r.SaveChangesAsync()).ReturnsAsync(1);
 
         var currentUser = new Mock<ICurrentUserService>();
+        currentUser.SetupGet(c => c.IsAuthenticated).Returns(true);
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
         currentUser.SetupGet(c => c.BranchId).Returns((Guid?)null);
 

@@ -27,6 +27,7 @@ public class AppointmentServiceTests
 
     private AppointmentService CreateService()
     {
+        _currentUserMock.SetupGet(c => c.IsAuthenticated).Returns(true);
         _currentUserMock.SetupGet(c => c.IsAdmin).Returns(true);
         _currentUserMock.SetupGet(c => c.BranchId).Returns((Guid?)null);
         return new AppointmentService(

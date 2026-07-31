@@ -174,7 +174,12 @@ public class PatientsController(
 
             var patient = await db.Patients
                 .IgnoreQueryFilters()
-                .Where(p => p.PatientNumber == patientNumber && p.IsActive)
+                .Where(p => p.PatientNumber == patientNumber
+                    && p.IsActive
+                    && (currentUser.IsAdmin
+                        || (currentUser.BranchId.HasValue
+                            && currentUser.BranchId.Value != Guid.Empty
+                            && p.BranchId == currentUser.BranchId.Value)))
                 .Select(p => new
                 {
                     p.Id,
@@ -239,12 +244,16 @@ public class PatientsController(
 
         var normalizedPhone = PhoneNormalizer.Normalize(phone);
         var normalizedWhatsApp = PhoneNormalizer.Normalize(whatsApp);
+        var branchId = currentUser.BranchId;
+        var hasGlobalBranchAccess = currentUser.IsAdmin;
 
         if (normalizedPhone != null)
         {
             var query = db.Patients
                 .IgnoreQueryFilters()
-                .Where(p => p.IsActive && (p.NormalizedPhone == normalizedPhone || p.NormalizedWhatsApp == normalizedPhone));
+                .Where(p => p.IsActive
+                    && (hasGlobalBranchAccess || (branchId.HasValue && branchId.Value != Guid.Empty && p.BranchId == branchId.Value))
+                    && (p.NormalizedPhone == normalizedPhone || p.NormalizedWhatsApp == normalizedPhone));
             if (excludeId.HasValue) query = query.Where(p => p.Id != excludeId.Value);
             var match = await query
                 .Select(p => new { p.Id, p.PatientNumber, FullName = (p.FirstName + " " + (string.IsNullOrWhiteSpace(p.MiddleName) ? "" : p.MiddleName + " ") + p.LastName).Trim(), p.Phone, MatchType = "phone" })
@@ -256,7 +265,9 @@ public class PatientsController(
         {
             var query = db.Patients
                 .IgnoreQueryFilters()
-                .Where(p => p.IsActive && (p.NormalizedWhatsApp == normalizedWhatsApp || p.NormalizedPhone == normalizedWhatsApp));
+                .Where(p => p.IsActive
+                    && (hasGlobalBranchAccess || (branchId.HasValue && branchId.Value != Guid.Empty && p.BranchId == branchId.Value))
+                    && (p.NormalizedWhatsApp == normalizedWhatsApp || p.NormalizedPhone == normalizedWhatsApp));
             if (excludeId.HasValue) query = query.Where(p => p.Id != excludeId.Value);
             var match = await query
                 .Select(p => new { p.Id, p.PatientNumber, FullName = (p.FirstName + " " + (string.IsNullOrWhiteSpace(p.MiddleName) ? "" : p.MiddleName + " ") + p.LastName).Trim(), p.Phone, MatchType = "whatsapp" })
@@ -268,7 +279,9 @@ public class PatientsController(
         {
             var query = db.Patients
                 .IgnoreQueryFilters()
-                .Where(p => p.PatientNumber == patientNumber && p.IsActive);
+                .Where(p => p.PatientNumber == patientNumber
+                    && p.IsActive
+                    && (hasGlobalBranchAccess || (branchId.HasValue && branchId.Value != Guid.Empty && p.BranchId == branchId.Value)));
             if (excludeId.HasValue) query = query.Where(p => p.Id != excludeId.Value);
             var match = await query
                 .Select(p => new { p.Id, p.PatientNumber, FullName = (p.FirstName + " " + (string.IsNullOrWhiteSpace(p.MiddleName) ? "" : p.MiddleName + " ") + p.LastName).Trim(), p.Phone, MatchType = "patientNumber" })
@@ -278,7 +291,12 @@ public class PatientsController(
 
         if (!string.IsNullOrWhiteSpace(firstName) && !string.IsNullOrWhiteSpace(lastName))
         {
-            var nameQuery = db.Patients.IgnoreQueryFilters().Where(p => p.IsActive && p.FirstName == firstName && p.LastName == lastName);
+            var nameQuery = db.Patients
+                .IgnoreQueryFilters()
+                .Where(p => p.IsActive
+                    && p.FirstName == firstName
+                    && p.LastName == lastName
+                    && (hasGlobalBranchAccess || (branchId.HasValue && branchId.Value != Guid.Empty && p.BranchId == branchId.Value)));
             if (excludeId.HasValue) nameQuery = nameQuery.Where(p => p.Id != excludeId.Value);
             if (!string.IsNullOrWhiteSpace(dateOfBirth) && DateOnly.TryParse(dateOfBirth, out var dob))
                 nameQuery = nameQuery.Where(p => p.DateOfBirth == dob);
@@ -429,7 +447,13 @@ public class PatientsController(
 
         // CORE-PAT-015: the profile deliberately serves archived patients, so the
         // summary must use the same existence rule instead of returning a partial 404.
-        var exists = await db.Patients.IgnoreQueryFilters().AnyAsync(p => p.Id == id);
+        var exists = await db.Patients
+            .IgnoreQueryFilters()
+            .AnyAsync(p => p.Id == id
+                && (currentUser.IsAdmin
+                    || (currentUser.BranchId.HasValue
+                        && currentUser.BranchId.Value != Guid.Empty
+                        && p.BranchId == currentUser.BranchId.Value)));
         if (!exists) return NotFound(new { message = "المريض غير موجود" });
 
         var clinicNow = ClinicTimeProvider.ClinicNow();

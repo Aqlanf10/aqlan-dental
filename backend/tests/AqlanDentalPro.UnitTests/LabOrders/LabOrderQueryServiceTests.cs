@@ -1,10 +1,12 @@
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Infrastructure.Services;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using Xunit;
 using LabEntity = AqlanDentalPro.Domain.Entities.Lab;
 using LabOrderEntity = AqlanDentalPro.Domain.Entities.LabOrder;
@@ -41,7 +43,14 @@ public class LabOrderQueryServiceTests
             .Options);
 
     private static LabOrderQueryService CreateService(AppDbContext db)
-        => new(db, NullLogger<LabOrderQueryService>.Instance);
+    {
+        var branchScope = new Mock<IBranchResourceScope>();
+        branchScope.SetupGet(scope => scope.HasGlobalAccess).Returns(true);
+        return new LabOrderQueryService(
+            db,
+            branchScope.Object,
+            NullLogger<LabOrderQueryService>.Instance);
+    }
 
     private static PatientEntity CreatePatient(Guid id) => new()
     {

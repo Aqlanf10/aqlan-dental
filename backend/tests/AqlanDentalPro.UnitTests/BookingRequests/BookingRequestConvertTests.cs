@@ -26,6 +26,8 @@ namespace AqlanDentalPro.UnitTests.BookingRequests;
 /// </summary>
 public class BookingRequestConvertTests
 {
+    private static readonly Guid TestBranchId = Guid.NewGuid();
+
     private static AppDbContext CreateInMemoryDb()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -41,7 +43,9 @@ public class BookingRequestConvertTests
         // PatientService.CreateAsync (patient number, normalized phones, portal
         // account) instead of hand-rolling a Patient row.
         var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(u => u.IsAuthenticated).Returns(true);
         currentUser.Setup(u => u.IsAdmin).Returns(true);
+        currentUser.Setup(u => u.BranchId).Returns(TestBranchId);
         var patientSettings = new Mock<IPatientSettingsReader>();
         patientSettings.Setup(s => s.GetNumberPrefixAsync(It.IsAny<CancellationToken>())).ReturnsAsync("GM");
         var portal = new Mock<IPatientPortalService>();
@@ -198,6 +202,8 @@ public class BookingRequestConvertTests
             var appointment = await db.Appointments.FirstOrDefaultAsync(a => a.DoctorId == doctor.Id);
             appointment.Should().NotBeNull();
             appointment!.PatientId.Should().NotBe(Guid.Empty);
+            appointment.BranchId.Should().Be(TestBranchId);
+            (await db.Patients.FindAsync(appointment.PatientId))!.BranchId.Should().Be(TestBranchId);
         }
 
         [Fact]

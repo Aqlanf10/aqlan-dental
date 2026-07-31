@@ -19,7 +19,7 @@ describe("patient related cases reliability contract", () => {
   it("uses a dedicated retry key instead of the finance refresh", () => {
     expect(source).toContain("const [relatedCasesRetryKey, setRelatedCasesRetryKey] = useState(0)");
     expect(source).toContain("const retryRelatedCases = () => setRelatedCasesRetryKey");
-    expect(source).toContain("[patientIdentifier, hasGuidPatientId, relatedCasesRetryKey]");
+    expect(source).toContain("[patientIdentifier, hasGuidPatientId, hasClinicalAccess, relatedCasesRetryKey]");
     expect(source).toContain("onClick={retryRelatedCases}");
   });
 

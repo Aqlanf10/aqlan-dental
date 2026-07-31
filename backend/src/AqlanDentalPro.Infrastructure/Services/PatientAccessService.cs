@@ -59,8 +59,14 @@ public class PatientAccessService(
 
         var d = doctorId.Value;
 
+        // A doctor-patient link never overrides branch isolation. Legacy records
+        // without a branch claim retain the previous behaviour, while normal staff
+        // JWTs (which carry branchId) can only reach patients in that branch.
+        var branchId = currentUser.BranchId;
         var patientExists = await db.Patients
-            .AnyAsync(p => p.Id == patientId && p.IsActive);
+            .AnyAsync(p => p.Id == patientId
+                && p.IsActive
+                && (!branchId.HasValue || p.BranchId == branchId.Value));
         if (!patientExists)
             return false;
 
@@ -151,6 +157,28 @@ public class PatientAccessService(
             .Where(c => c.IsActive && (c.SurgeonId == d || c.OrthodontistId == d))
             .Select(c => c.PatientId)
             .ToListAsync(), "OrthoSurgicalCases.SurgeonId/OrthodontistId");
+
+        // Apply branch isolation after collecting every supported link type. This
+        // closes cross-branch access even if a stale or malformed clinical link
+        // points at a patient in another branch.
+        if (currentUser.BranchId is { } branchId)
+        {
+            try
+            {
+                var branchPatientIds = await db.Patients
+                    .Where(p => p.IsActive && p.BranchId == branchId)
+                    .Select(p => p.Id)
+                    .ToListAsync();
+                ids.IntersectWith(branchPatientIds);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex,
+                    "PatientAccessService: branch isolation query failed for branch {BranchId}. Denying list access.",
+                    branchId);
+                return [];
+            }
+        }
 
         return ids;
     }

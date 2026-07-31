@@ -4,6 +4,17 @@ using Microsoft.Extensions.DependencyInjection;
 namespace AqlanDentalPro.API.Configuration;
 
 /// <summary>
+/// Canonical names for policies that protect clinical patient data.
+/// Keeping these names in one place prevents controller annotations and
+/// authorization registration from drifting apart.
+/// </summary>
+public static class AuthorizationPolicyNames
+{
+    public const string ClinicalRead = "ClinicalRead";
+    public const string ClinicalWrite = "ClinicalWrite";
+}
+
+/// <summary>
 /// Extension method for Role-Based Authorization Policy registration.
 /// Extracted from Program.cs for cleaner service configuration.
 /// </summary>
@@ -62,6 +73,24 @@ public static class AuthorizationPolicyConfiguration
 
             // Doctors (any medical role) + Admin
             opts.AddPolicy("DoctorAccess", policy =>
+                policy.RequireRole(
+                    nameof(UserRole.Admin),
+                    nameof(UserRole.Orthodontist),
+                    nameof(UserRole.GeneralDentist),
+                    nameof(UserRole.OralSurgeon)));
+
+            // Clinical patient records: admin + licensed clinical roles only.
+            // Read and write are deliberately separate policies even though their
+            // role sets currently match, so future read-only clinical roles cannot
+            // accidentally inherit mutation rights.
+            opts.AddPolicy(AuthorizationPolicyNames.ClinicalRead, policy =>
+                policy.RequireRole(
+                    nameof(UserRole.Admin),
+                    nameof(UserRole.Orthodontist),
+                    nameof(UserRole.GeneralDentist),
+                    nameof(UserRole.OralSurgeon)));
+
+            opts.AddPolicy(AuthorizationPolicyNames.ClinicalWrite, policy =>
                 policy.RequireRole(
                     nameof(UserRole.Admin),
                     nameof(UserRole.Orthodontist),

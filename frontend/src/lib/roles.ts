@@ -39,6 +39,20 @@ export function isAdminRole(role: string | null | undefined): boolean {
   return role?.toLowerCase() === "admin";
 }
 
+/** Clinical records may be read only by an administrator or a practitioner. */
+export function canReadClinical(role: string | null | undefined): boolean {
+  return isAdminRole(role) || isClinicalRole(role);
+}
+
+/**
+ * Clinical mutations currently use the same role set as clinical reads.
+ * Keep this as a separate capability so a future read-only practitioner role
+ * cannot accidentally gain write controls in the UI.
+ */
+export function canWriteClinical(role: string | null | undefined): boolean {
+  return isAdminRole(role) || isClinicalRole(role);
+}
+
 /** Returns true if the role is Reception (case-insensitive). */
 export function isReceptionRole(role: string | null | undefined): boolean {
   return role?.toLowerCase() === "reception";

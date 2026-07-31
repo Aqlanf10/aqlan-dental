@@ -1,4 +1,5 @@
 using AqlanDentalPro.API.Authorization;
+using AqlanDentalPro.API.Configuration;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -48,7 +49,7 @@ public sealed class CreatePrescriptionRequestValidator : AbstractValidator<Creat
 
 [ApiController]
 [Route("api/prescriptions")]
-[Authorize(Policy = "StaffOnly")]
+[Authorize(Policy = AuthorizationPolicyNames.ClinicalRead)]
 [ServiceFilter(typeof(PatientAccessFilter))]
 public class PrescriptionsController(
     AppDbContext db,
@@ -158,6 +159,7 @@ public class PrescriptionsController(
     }
 
     [HttpPost]
+    [Authorize(Policy = AuthorizationPolicyNames.ClinicalWrite)]
     public async Task<IActionResult> Create([FromBody] CreatePrescriptionRequest req)
     {
         // CLIN-01: Per-patient access check before creating (PatientId comes from the body,
@@ -211,6 +213,7 @@ public class PrescriptionsController(
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = AuthorizationPolicyNames.ClinicalWrite)]
     public async Task<IActionResult> Delete(Guid id)
     {
         var prescription = await db.Prescriptions.FindAsync(id);

@@ -100,11 +100,12 @@ public class PatientClinicalSummaryTests
 
         var currentUser = new Mock<ICurrentUserService>();
         currentUser.SetupGet(user => user.UserId).Returns(Guid.NewGuid());
-        currentUser.SetupGet(user => user.Role).Returns(UserRole.Reception);
+        currentUser.SetupGet(user => user.Role).Returns(UserRole.GeneralDentist);
         currentUser.SetupGet(user => user.IsAuthenticated).Returns(true);
         var patientAccess = new Mock<IPatientAccessService>();
-        patientAccess.SetupGet(access => access.IsDoctor).Returns(false);
-        patientAccess.SetupGet(access => access.HasFullAccess).Returns(true);
+        patientAccess.SetupGet(access => access.IsDoctor).Returns(true);
+        patientAccess.SetupGet(access => access.HasFullAccess).Returns(false);
+        patientAccess.Setup(access => access.CanAccessPatientAsync(patientId)).ReturnsAsync(true);
         var financeRead = new Mock<IFinanceReadService>();
 
         var controller = new PatientsController(

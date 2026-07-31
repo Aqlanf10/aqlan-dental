@@ -1,5 +1,6 @@
 using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.API.Authorization;
+using AqlanDentalPro.API.Configuration;
 using AqlanDentalPro.API.Hubs;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
@@ -60,7 +61,7 @@ public sealed class UpdateVisitRequest
 
 [ApiController]
 [Route("api/visits")]
-[Authorize(Policy = "StaffOnly")]
+[Authorize(Policy = AuthorizationPolicyNames.ClinicalRead)]
 [ServiceFilter(typeof(PatientAccessFilter))]
 public class VisitsController(
     AppDbContext db,
@@ -226,6 +227,7 @@ public class VisitsController(
 
     // ─── POST /api/visits ─────────────────────────────────────────────────────
     [HttpPost]
+    [Authorize(Policy = AuthorizationPolicyNames.ClinicalWrite)]
     public async Task<IActionResult> CreateVisit([FromBody] CreateVisitRequest req)
     {
         if (req.PatientId == Guid.Empty)
@@ -337,6 +339,7 @@ public class VisitsController(
 
     // ─── PUT /api/visits/{id} ─────────────────────────────────────────────────
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = AuthorizationPolicyNames.ClinicalWrite)]
     public async Task<IActionResult> UpdateVisit(Guid id, [FromBody] UpdateVisitRequest req)
     {
         var visit = await db.Visits.FindAsync(id);
@@ -423,6 +426,7 @@ public class VisitsController(
 
     // ─── DELETE /api/visits/{id} (soft-delete) ────────────────────────────────
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = AuthorizationPolicyNames.ClinicalWrite)]
     public async Task<IActionResult> DeleteVisit(Guid id)
     {
         var visit = await db.Visits.FindAsync(id);

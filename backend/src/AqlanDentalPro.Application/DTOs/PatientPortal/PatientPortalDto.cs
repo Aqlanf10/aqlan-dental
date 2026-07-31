@@ -38,13 +38,12 @@ public class PatientAuthResponse
     public PatientPortalProfileDto Profile { get; set; } = null!;
     public bool MustChangePassword { get; set; }
 
-    // SEC-10 [Obsolete]: The plaintext refresh token is now delivered via an
-    // HttpOnly + Secure + SameSite cookie named "portal_refresh" (set by the
-    // controller on login/reset/change/refresh). This property is RETAINED
-    // FOR ONE RELEASE ONLY as a backward-compatibility fallback so a stale
-    // frontend that still reads the body keeps working. New frontends MUST
-    // ignore this field — the cookie is not readable from JS. Scheduled for
-    // removal in the next release.
+    /// <summary>
+    /// Internal controller hand-off only. The plaintext refresh token is written
+    /// to the HttpOnly portal_refresh cookie and must never be serialized into a
+    /// response body, logs, browser storage, or developer tools.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
     public string? RefreshToken { get; set; }
 }
 

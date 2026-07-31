@@ -1,14 +1,22 @@
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 
 namespace AqlanDentalPro.API.Controllers;
 
 public sealed class ImportRemoteImageRequest
 {
     public string Url { get; init; } = string.Empty;
+    public Guid? PatientId { get; init; }
+    public string Purpose { get; init; } = "clinical-image";
+    public string? ResourceType { get; init; }
+    public Guid? ResourceId { get; init; }
 }
 
 [ApiController]
@@ -17,7 +25,10 @@ public sealed class ImportRemoteImageRequest
 public class UploadsController(
     ILogger<UploadsController> logger,
     IHttpClientFactory httpClientFactory,
-    ICurrentUserService currentUser) : ControllerBase
+    ICurrentUserService currentUser,
+    IBranchResourceScope branchScope,
+    AppDbContext db,
+    IConfiguration configuration) : ControllerBase
 {
     private static readonly HashSet<string> AllowedMimeTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -33,6 +44,7 @@ public class UploadsController(
 
     private const long MaxFileSize = 10 * 1024 * 1024; // 10 MB
     private const int MaxRedirects = 3;
+    private const string PublicPurpose = "public-website";
 
     // Resolved once at first use — same logic as Program.cs static files config
     private static string? _resolvedPath;
@@ -78,7 +90,14 @@ public class UploadsController(
 
     [HttpPost]
     [RequestSizeLimit(10 * 1024 * 1024)]
-    public async Task<IActionResult> Upload(IFormFile file)
+    public async Task<IActionResult> Upload(
+        IFormFile file,
+        [FromForm] Guid? patientId = null,
+        [FromForm] string purpose = "general",
+        [FromForm] string? resourceType = null,
+        [FromForm] Guid? resourceId = null,
+        [FromForm] bool isPublic = false,
+        CancellationToken cancellationToken = default)
     {
         if (file is null || file.Length == 0)
             return BadRequest(new { message = "الملف مطلوب" });
@@ -93,6 +112,22 @@ public class UploadsController(
         if (!AllowedMimeTypes.Contains(file.ContentType))
             return BadRequest(new { message = "نوع MIME غير مدعوم" });
 
+        var ownership = await ResolveUploadOwnershipAsync(
+            patientId,
+            purpose,
+            resourceType,
+            resourceId,
+            isPublic,
+            cancellationToken);
+        if (ownership.Error is not null)
+            return ownership.Error;
+
+        await using var buffer = new MemoryStream();
+        await file.CopyToAsync(buffer, cancellationToken);
+        var detected = DetectFileType(buffer.GetBuffer().AsSpan(0, checked((int)buffer.Length)));
+        if (detected is null || !ExtensionMatches(ext, detected.Value.Extension))
+            return BadRequest(new { message = "محتوى الملف لا يطابق النوع المعلن" });
+
         string uploadsPath;
         try
         {
@@ -104,11 +139,40 @@ public class UploadsController(
             return StatusCode(500, new { message = "فشل إنشاء مجلد المرفقات" });
         }
 
-        var fileName = $"{Guid.NewGuid()}{ext}";
+        var storedExtension = detected.Value.Extension == ".jpeg" ? ".jpg" : detected.Value.Extension;
+        var fileName = $"{Guid.NewGuid()}{storedExtension}";
         var filePath = Path.Combine(uploadsPath, fileName);
 
-        await using var stream = new FileStream(filePath, FileMode.Create);
-        await file.CopyToAsync(stream);
+        buffer.Position = 0;
+        await using (var stream = new FileStream(filePath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            await buffer.CopyToAsync(stream, cancellationToken);
+
+        var uploadedFile = new UploadedFile
+        {
+            FileName = fileName,
+            OriginalName = Path.GetFileName(file.FileName),
+            ContentType = detected.Value.MimeType,
+            Size = buffer.Length,
+            Sha256 = Convert.ToHexString(SHA256.HashData(buffer.ToArray())).ToLowerInvariant(),
+            Purpose = NormalizePurpose(purpose),
+            ResourceType = NormalizeOptional(resourceType),
+            ResourceId = resourceId,
+            PatientId = ownership.PatientId,
+            BranchId = ownership.BranchId,
+            UploadedBy = currentUser.UserId!.Value,
+            IsPublic = isPublic
+        };
+
+        try
+        {
+            db.UploadedFiles.Add(uploadedFile);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch
+        {
+            System.IO.File.Delete(filePath);
+            throw;
+        }
 
         // Return relative URL so frontend can construct full URL based on current host
         var fileUrl = $"/uploads/{fileName}";
@@ -118,8 +182,8 @@ public class UploadsController(
             url = fileUrl,
             fileName,
             originalName = file.FileName,
-            size = file.Length,
-            contentType = file.ContentType
+            size = buffer.Length,
+            contentType = detected.Value.MimeType
         });
     }
 
@@ -134,6 +198,19 @@ public class UploadsController(
             return BadRequest(new { message = "أدخل رابط صورة صحيحًا يبدأ بـ http أو https" });
         }
 
+        var ownership = await ResolveUploadOwnershipAsync(
+            request.PatientId,
+            request.Purpose,
+            request.ResourceType,
+            request.ResourceId,
+            isPublic: false,
+            cancellationToken);
+        if (ownership.Error is not null)
+            return ownership.Error;
+
+        if (!IsAllowedRemoteHost(sourceUri))
+            return BadRequest(new { message = "مصدر الصورة غير مسموح به" });
+
         var client = httpClientFactory.CreateClient("RemoteClinicalImage");
         Uri currentUri = sourceUri;
         HttpResponseMessage? response = null;
@@ -142,7 +219,8 @@ public class UploadsController(
         {
             for (var redirect = 0; redirect <= MaxRedirects; redirect++)
             {
-                if (!await IsSafeRemoteUriAsync(currentUri, cancellationToken))
+                if (!IsAllowedRemoteHost(currentUri) ||
+                    !await IsSafeRemoteUriAsync(currentUri, cancellationToken))
                     return BadRequest(new { message = "لا يمكن استيراد الصور من عنوان محلي أو شبكة خاصة" });
 
                 response?.Dispose();
@@ -191,6 +269,33 @@ public class UploadsController(
             buffer.Position = 0;
             await using (var output = new FileStream(filePath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 await buffer.CopyToAsync(output, cancellationToken);
+
+            var uploadedFile = new UploadedFile
+            {
+                FileName = fileName,
+                OriginalName = Path.GetFileName(currentUri.LocalPath),
+                ContentType = detected.Value.MimeType,
+                Size = buffer.Length,
+                Sha256 = Convert.ToHexString(SHA256.HashData(buffer.ToArray())).ToLowerInvariant(),
+                Purpose = NormalizePurpose(request.Purpose),
+                ResourceType = NormalizeOptional(request.ResourceType),
+                ResourceId = request.ResourceId,
+                PatientId = ownership.PatientId,
+                BranchId = ownership.BranchId,
+                UploadedBy = currentUser.UserId!.Value,
+                IsPublic = false
+            };
+
+            try
+            {
+                db.UploadedFiles.Add(uploadedFile);
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            catch
+            {
+                System.IO.File.Delete(filePath);
+                throw;
+            }
 
             return Ok(new
             {
@@ -241,17 +346,21 @@ public class UploadsController(
             return NotFound(new { message = "الملف غير موجود" });
 
         System.IO.File.Delete(filePath);
+        var metadata = db.UploadedFiles.FirstOrDefault(x => x.FileName == fileName);
+        if (metadata is not null)
+        {
+            db.UploadedFiles.Remove(metadata);
+            db.SaveChanges();
+        }
         return Ok(new { message = "تم حذف الملف" });
     }
 
-    // SEC-03: Authenticated file-serving endpoint. The legacy UseStaticFiles(/uploads) in
-    // Program.cs serves files BEFORE UseAuthentication — anyone with a URL can read clinical
-    // photos/X-rays/docs. This endpoint requires StaffOnly auth and serves the same files.
-    // Frontend migration to use this endpoint (with Authorization header via fetch+blob) is
-    // tracked separately; until then, UseStaticFiles is gated behind a Production-only auth
-    // middleware (see Program.cs) so Dev convenience is preserved but Prod is protected.
+    // Both API and legacy URLs terminate here. The physical path is never exposed;
+    // resource metadata and branch ownership are checked before every response.
     [HttpGet("{fileName}")]
-    public IActionResult Download(string fileName)
+    [HttpGet("/uploads/{fileName}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> Download(string fileName, CancellationToken cancellationToken = default)
     {
         // Prevent path traversal (same guard as Delete)
         if (fileName.Contains('/') || fileName.Contains('\\') || fileName.Contains(".."))
@@ -262,8 +371,186 @@ public class UploadsController(
         if (!System.IO.File.Exists(filePath))
             return NotFound(new { message = "الملف غير موجود" });
 
-        var ext = Path.GetExtension(fileName).ToLower();
-        var contentType = ext switch
+        var metadata = await db.UploadedFiles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.FileName == fileName, cancellationToken);
+
+        if (metadata is not null)
+        {
+            if (!metadata.IsPublic)
+            {
+                if (!currentUser.IsAuthenticated)
+                    return Unauthorized(new { message = "يجب تسجيل الدخول لعرض الملف" });
+                if (!branchScope.CanAccess(metadata.BranchId))
+                    return StatusCode(403, new { message = "لا تملك صلاحية الوصول إلى هذا الملف" });
+            }
+
+            return PhysicalFile(filePath, metadata.ContentType, metadata.OriginalName);
+        }
+
+        var legacy = await ResolveLegacyAccessAsync(fileName, cancellationToken);
+        if (!legacy.Found)
+            return NotFound(new { message = "الملف غير مرتبط بمورد مصرح" });
+        if (!legacy.IsPublic)
+        {
+            if (!currentUser.IsAuthenticated)
+                return Unauthorized(new { message = "يجب تسجيل الدخول لعرض الملف" });
+            if (!branchScope.CanAccess(legacy.BranchId))
+                return StatusCode(403, new { message = "لا تملك صلاحية الوصول إلى هذا الملف" });
+        }
+
+        return PhysicalFile(filePath, ContentTypeForExtension(Path.GetExtension(fileName)), fileName);
+    }
+
+    private async Task<(Guid? PatientId, Guid? BranchId, IActionResult? Error)> ResolveUploadOwnershipAsync(
+        Guid? patientId,
+        string purpose,
+        string? resourceType,
+        Guid? resourceId,
+        bool isPublic,
+        CancellationToken cancellationToken)
+    {
+        if (!currentUser.IsAuthenticated || currentUser.UserId is null)
+            return (null, null, Unauthorized(new { message = "يجب تسجيل الدخول لرفع الملفات" }));
+
+        if (isPublic)
+        {
+            if (!currentUser.IsAdmin || !string.Equals(NormalizePurpose(purpose), PublicPurpose, StringComparison.Ordinal))
+                return (null, null, StatusCode(403, new { message = "نشر الملفات العامة يتطلب صلاحية المدير وغرض الموقع العام" }));
+            return (null, branchScope.ResolveWriteBranch(), null);
+        }
+
+        Guid? branchId = null;
+        if (patientId.HasValue)
+        {
+            branchId = await db.Patients
+                .Where(x => x.Id == patientId.Value)
+                .Select(x => x.BranchId)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (!branchScope.CanAccess(branchId))
+                return (null, null, StatusCode(403, new { message = "لا تملك صلاحية رفع ملف لهذا المريض" }));
+        }
+        else if (resourceId.HasValue &&
+                 string.Equals(resourceType, "OrthoCase", StringComparison.OrdinalIgnoreCase))
+        {
+            var owner = await db.OrthoCases
+                .Where(x => x.Id == resourceId.Value)
+                .Select(x => new { x.PatientId, x.BranchId })
+                .FirstOrDefaultAsync(cancellationToken);
+            if (owner is null || !branchScope.CanAccess(owner.BranchId))
+                return (null, null, StatusCode(403, new { message = "لا تملك صلاحية رفع ملف لهذه الحالة" }));
+            patientId = owner.PatientId;
+            branchId = owner.BranchId;
+        }
+        else
+        {
+            branchId = branchScope.ResolveWriteBranch();
+            if (!branchId.HasValue)
+                return (null, null, StatusCode(403, new { message = "يجب تحديد مورد أو فرع يملك الملف" }));
+        }
+
+        return (patientId, branchId, null);
+    }
+
+    private bool IsAllowedRemoteHost(Uri uri)
+    {
+        var allowedHosts = configuration
+            .GetSection("Uploads:RemoteImageAllowedHosts")
+            .Get<string[]>() ?? [];
+
+        return allowedHosts.Any(host =>
+            !string.IsNullOrWhiteSpace(host) &&
+            string.Equals(uri.IdnHost, host.Trim().TrimEnd('.'), StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task<(bool Found, bool IsPublic, Guid? BranchId)> ResolveLegacyAccessAsync(
+        string fileName,
+        CancellationToken cancellationToken)
+    {
+        var url = $"/uploads/{fileName}";
+
+        var isPublic = await db.Settings.AnyAsync(
+            x => x.Value == url &&
+                 (x.Key.Contains("logo") || x.Key.Contains("favicon") ||
+                  x.Key.Contains("banner") || x.Key.Contains("image")),
+            cancellationToken);
+        if (isPublic)
+            return (true, true, null);
+
+        var patientBranch = await db.ClinicalPhotos
+            .Where(x => x.FileUrl == url)
+            .Select(x => x.Patient.BranchId)
+            .Concat(db.Radiographs.Where(x => x.FileUrl == url).Select(x => x.Patient.BranchId))
+            .Concat(db.Documents.Where(x => x.FileUrl == url).Select(x => x.Patient.BranchId))
+            .FirstOrDefaultAsync(cancellationToken);
+        if (patientBranch.HasValue)
+            return (true, false, patientBranch);
+
+        var orthoBranch = await db.OrthoClinicalPhotos
+            .Where(x => x.PhotoUrl == url)
+            .Select(x => x.OrthoCase.BranchId)
+            .Concat(db.CephAnalyses.Where(x => x.XrayFileUrl == url).Select(x => x.OrthoCase.BranchId))
+            .Concat(db.PhotoAnalyses.Where(x => x.ImageFileUrl == url).Select(x => x.OrthoCase.BranchId))
+            .FirstOrDefaultAsync(cancellationToken);
+        if (orthoBranch.HasValue)
+            return (true, false, orthoBranch);
+
+        var businessBranch = await db.SupplierBills
+            .Where(x => x.AttachmentUrl == url)
+            .Select(x => (Guid?)x.BranchId)
+            .Concat(db.OperationalExpenses.Where(x => x.ReceiptAttachmentUrl == url).Select(x => (Guid?)x.BranchId))
+            .Concat(db.Inventory.Where(x => x.ImageUrl == url).Select(x => x.BranchId))
+            .FirstOrDefaultAsync(cancellationToken);
+        if (businessBranch.HasValue)
+            return (true, false, businessBranch);
+
+        var messageBranch = await db.Messages
+            .Where(x => x.AttachmentUrl == url || x.Attachments.Any(a => a.FileUrl == url))
+            .Select(x => x.Conversation.BranchId)
+            .FirstOrDefaultAsync(cancellationToken);
+        return messageBranch.HasValue
+            ? (true, false, messageBranch)
+            : (false, false, null);
+    }
+
+    private static string NormalizePurpose(string? purpose) =>
+        string.IsNullOrWhiteSpace(purpose) ? "general" : purpose.Trim().ToLowerInvariant()[..Math.Min(purpose.Trim().Length, 100)];
+
+    private static string? NormalizeOptional(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim()[..Math.Min(value.Trim().Length, 100)];
+
+    private static bool ExtensionMatches(string declared, string detected) =>
+        string.Equals(declared, detected, StringComparison.OrdinalIgnoreCase) ||
+        (declared is ".jpg" or ".jpeg" && detected is ".jpg" or ".jpeg") ||
+        (declared is ".m4a" or ".mp4" && detected is ".m4a" or ".mp4");
+
+    private static (string Extension, string MimeType)? DetectFileType(ReadOnlySpan<byte> bytes)
+    {
+        var image = DetectImageType(bytes);
+        if (image is not null) return image;
+
+        if (bytes.Length >= 5 && bytes[..5].SequenceEqual("%PDF-"u8))
+            return (".pdf", "application/pdf");
+        if (bytes.Length >= 12 && bytes[..4].SequenceEqual("RIFF"u8) && bytes.Slice(8, 4).SequenceEqual("WAVE"u8))
+            return (".wav", "audio/wav");
+        if (bytes.Length >= 4 && bytes[..4].SequenceEqual("OggS"u8))
+            return (".ogg", "audio/ogg");
+        if (bytes.Length >= 4 && bytes[..4].SequenceEqual(new byte[] { 0x1A, 0x45, 0xDF, 0xA3 }))
+            return (".webm", "audio/webm");
+        if (bytes.Length >= 12 && bytes.Slice(4, 4).SequenceEqual("ftyp"u8))
+            return bytes.Slice(8, 4).SequenceEqual("M4A "u8)
+                ? (".m4a", "audio/mp4")
+                : (".mp4", "audio/mp4");
+        if ((bytes.Length >= 3 && bytes[..3].SequenceEqual("ID3"u8)) ||
+            (bytes.Length >= 2 && bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0))
+            return (".mp3", "audio/mpeg");
+
+        return null;
+    }
+
+    private static string ContentTypeForExtension(string extension) =>
+        extension.ToLowerInvariant() switch
         {
             ".jpg" or ".jpeg" => "image/jpeg",
             ".png" => "image/png",
@@ -271,15 +558,11 @@ public class UploadsController(
             ".pdf" => "application/pdf",
             ".webm" => "audio/webm",
             ".ogg" => "audio/ogg",
-            ".mp4" => "audio/mp4",
-            ".m4a" => "audio/mp4",
+            ".mp4" or ".m4a" => "audio/mp4",
             ".mp3" => "audio/mpeg",
             ".wav" => "audio/wav",
             _ => "application/octet-stream"
         };
-
-        return PhysicalFile(filePath, contentType, fileName);
-    }
 
     private static bool IsRedirect(HttpStatusCode statusCode) =>
         statusCode is HttpStatusCode.Moved or

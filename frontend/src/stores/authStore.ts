@@ -5,13 +5,10 @@ import type { UserDto, LoginRequest } from "@/types/auth";
 import api from "@/lib/api";
 
 /** Helper: set/clear auth cookie for middleware */
-function setAuthCookie(authenticated: boolean, token?: string | null) {
+function setAuthCookie(authenticated: boolean) {
   if (typeof document === "undefined") return;
-  // NAV-CEPH-FIX (Part 2): the access-token cookie must carry the Secure flag on HTTPS
-  // origins. Without it, browsers silently drop the cookie when the production frontend
-  // (Vercel HTTPS) talks to the backend /uploads/* endpoint (proxied same-origin via the
-  // Next.js rewrite) → image requests go out unauthenticated → 401 → ceph X-rays and
-  // clinical photos fail to load. Computed once per call (login/logout/rehydrate).
+  // This is only a non-secret routing sentinel used by Next.js middleware.
+  // The real media credential is issued by the API as an HttpOnly cookie.
   const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
   const secureFlag = isHttps ? "; Secure" : "";
   // SEC-03: aqlan_auth_status is the sentinel cookie for Next.js middleware routing (existing).
@@ -19,18 +16,6 @@ function setAuthCookie(authenticated: boolean, token?: string | null) {
     authenticated ? "authenticated" : ""
   }; path=/; max-age=${authenticated ? 60 * 60 * 24 * 7 : 0}; SameSite=Strict${secureFlag}`;
 
-  // SEC-03: aqlan_access_token carries the real JWT so the backend /uploads/* auth middleware
-  // (Program.cs) can validate it for <img src="/uploads/..."> requests. Browsers send cookies
-  // automatically on same-origin requests, so images render without manual headers. Cleared on
-  // logout. Note: this is NOT HttpOnly because the frontend still reads access_token from
-  // localStorage for axios — the cookie is a SECONDARY copy for image requests only.
-  // NAV-CEPH-FIX (Part 2): Secure flag added on HTTPS so the cookie survives cross-origin-via-
-  // rewrite same-origin requests in production.
-  if (authenticated && token) {
-    document.cookie = `aqlan_access_token=${token}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Strict${secureFlag}`;
-  } else {
-    document.cookie = `aqlan_access_token=; path=/; max-age=0; SameSite=Strict${secureFlag}`;
-  }
 }
 
 interface AuthState {
@@ -63,7 +48,7 @@ export const useAuthStore = create<AuthState>()(
             credentials
           );
           localStorage.setItem("access_token", data.accessToken);
-          setAuthCookie(true, data.accessToken);
+          setAuthCookie(true);
 
           // Fetch user permissions after login
           try {
@@ -99,7 +84,7 @@ export const useAuthStore = create<AuthState>()(
       fetchMe: async () => {
         try {
           const { data } = await api.get<UserDto>("/api/auth/me");
-          setAuthCookie(true, localStorage.getItem("access_token"));
+          setAuthCookie(true);
 
           // Fetch user permissions
           try {
@@ -125,7 +110,7 @@ export const useAuthStore = create<AuthState>()(
         localStorage.setItem("access_token", accessToken);
         // SEC-03: sync the access-token cookie so /uploads/* requests authenticate as the
         // impersonated user.
-        setAuthCookie(true, accessToken);
+        setAuthCookie(true);
         set({
           originalUser: currentUser,
           isImpersonating: true,
@@ -141,7 +126,7 @@ export const useAuthStore = create<AuthState>()(
           localStorage.removeItem("aqlan_original_token");
         }
         // SEC-03: sync the access-token cookie back to the original user.
-        setAuthCookie(true, originalToken);
+        setAuthCookie(true);
         const { originalUser } = get();
         if (originalUser) {
           set({
@@ -171,7 +156,7 @@ export const useAuthStore = create<AuthState>()(
       onRehydrateStorage: () => (state) => {
         // Sync cookie on rehydration
         if (state?.isAuthenticated) {
-          setAuthCookie(true, localStorage.getItem("access_token"));
+          setAuthCookie(true);
         }
       },
     }

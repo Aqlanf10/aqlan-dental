@@ -40,6 +40,21 @@ public static class JwtAuthenticationConfiguration
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
                     ClockSkew = TimeSpan.Zero
                 };
+                opts.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = context =>
+                    {
+                        // Inline media cannot attach an Authorization header. The backend
+                        // issues this cookie as HttpOnly and it is accepted only by the
+                        // read-only, ownership-checked file route.
+                        if (context.Request.Path.StartsWithSegments("/uploads") &&
+                            context.Request.Cookies.TryGetValue("aqlan_access_token", out var token))
+                        {
+                            context.Token = token;
+                        }
+                        return Task.CompletedTask;
+                    }
+                };
             });
     }
 }

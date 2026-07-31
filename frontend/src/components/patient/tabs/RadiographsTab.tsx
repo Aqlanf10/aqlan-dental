@@ -163,6 +163,8 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
       // Upload file
       const formData = new FormData();
       formData.append("file", xrayFile);
+      formData.append("patientId", patientId);
+      formData.append("purpose", "radiograph");
       const uploadRes = await api.post<{ url: string; originalName: string; size: number; contentType: string }>("/api/uploads", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });

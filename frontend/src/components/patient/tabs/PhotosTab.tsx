@@ -174,6 +174,8 @@ export function PhotosTab({ patientId, orthoCaseId }: PhotosTabProps) {
       // Upload file first
       const formData = new FormData();
       formData.append("file", photoFile);
+      formData.append("patientId", patientId);
+      formData.append("purpose", "clinical-photo");
       const uploadRes = await api.post<{ url: string }>("/api/uploads", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });

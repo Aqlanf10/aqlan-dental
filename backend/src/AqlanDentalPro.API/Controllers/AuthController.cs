@@ -44,6 +44,7 @@ public class AuthController(
     ILogger<AuthController> logger) : ControllerBase
 {
     private const string RefreshTokenCookie = "refresh_token";
+    private const string AccessTokenCookie = "aqlan_access_token";
 
     [HttpPost("login")]
     [AllowAnonymous]
@@ -80,6 +81,7 @@ public class AuthController(
         await loginAttempts.ResetFailedAttemptsAsync(request.Username);
 
         SetRefreshTokenCookie(result.RefreshToken);
+        SetAccessTokenCookie(result.AccessToken);
         return Ok(new { result.AccessToken, result.User });
     }
 
@@ -92,6 +94,7 @@ public class AuthController(
             await authService.LogoutAsync(currentUser.UserId.Value, refreshToken);
 
         Response.Cookies.Delete(RefreshTokenCookie);
+        DeleteAccessTokenCookie();
         return NoContent();
     }
 
@@ -118,10 +121,12 @@ public class AuthController(
             if (result == null)
             {
                 Response.Cookies.Delete(RefreshTokenCookie);
+                DeleteAccessTokenCookie();
                 return Unauthorized(new { message = "انتهت صلاحية الجلسة، يرجى تسجيل الدخول مجدداً" });
             }
 
             SetRefreshTokenCookie(result.Value.refreshToken);
+            SetAccessTokenCookie(result.Value.accessToken);
             return Ok(new { accessToken = result.Value.accessToken });
         }
         catch (Exception ex)
@@ -140,6 +145,7 @@ public class AuthController(
             
             // For auth errors (invalid/expired token), clear cookie and return 401
             Response.Cookies.Delete(RefreshTokenCookie);
+            DeleteAccessTokenCookie();
             return Unauthorized(new { message = "انتهت صلاحية الجلسة، يرجى تسجيل الدخول مجدداً" });
         }
     }
@@ -433,6 +439,7 @@ public class AuthController(
         await tokenService.StoreRefreshTokenAsync(targetUser.Id, refreshToken);
 
         SetRefreshTokenCookie(refreshToken);
+        SetAccessTokenCookie(accessToken);
 
         await auditService.LogAsync(AuditAction.ImpersonationStarted, "users", userId,
             details: $"Admin {currentUser.Username} started impersonating {targetUser.Username}. Reason: {request.Reason}");
@@ -479,6 +486,7 @@ public class AuthController(
         await tokenService.StoreRefreshTokenAsync(originalUser.Id, refreshToken);
 
         SetRefreshTokenCookie(refreshToken);
+        SetAccessTokenCookie(accessToken);
 
         await auditService.LogAsync(AuditAction.ImpersonationStopped, "users", originalUserId,
             details: $"Stopped impersonation, returned to user {originalUser.Username}");
@@ -514,6 +522,26 @@ public class AuthController(
         };
         Response.Cookies.Append(RefreshTokenCookie, token, opts);
     }
+
+    private void SetAccessTokenCookie(string token)
+    {
+        Response.Cookies.Append(AccessTokenCookie, token, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.Strict,
+            Path = "/uploads",
+            Expires = DateTimeOffset.UtcNow.AddMinutes(30)
+        });
+    }
+
+    private void DeleteAccessTokenCookie() =>
+        Response.Cookies.Delete(AccessTokenCookie, new CookieOptions
+        {
+            Secure = true,
+            SameSite = SameSiteMode.Strict,
+            Path = "/uploads"
+        });
 
     private static string HashToken(string token)
     {

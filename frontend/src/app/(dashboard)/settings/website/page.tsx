@@ -177,6 +177,8 @@ function ImageUploadCard({
       // a manual Authorization header that broke when the token expired).
       const formData = new FormData();
       formData.append("file", file);
+      formData.append("purpose", "public-website");
+      formData.append("isPublic", "true");
 
       const data = await upload<{ url: string }>("/api/uploads", formData);
       onChange(fieldKey, data.url);

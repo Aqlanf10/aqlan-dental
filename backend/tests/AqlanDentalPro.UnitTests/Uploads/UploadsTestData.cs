@@ -1,5 +1,10 @@
 using AqlanDentalPro.API.Controllers;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.Domain.Enums;
+using AqlanDentalPro.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -31,6 +36,8 @@ namespace AqlanDentalPro.UnitTests.Uploads;
 /// </summary>
 internal static class UploadsTestData
 {
+    public static readonly Guid DefaultUserId = Guid.Parse("10000000-0000-0000-0000-000000000001");
+    public static readonly Guid DefaultBranchId = Guid.Parse("20000000-0000-0000-0000-000000000001");
     /// <summary>
     /// Shared temp directory for all UploadsController tests in this assembly run.
     /// Set via UPLOADS_PATH env var before the first controller is constructed so the
@@ -91,19 +98,41 @@ internal static class UploadsTestData
     public static UploadsController BuildController(
         Mock<ICurrentUserService>? currentUserMock = null,
         Mock<IHttpClientFactory>? httpClientFactoryMock = null,
-        Mock<ILogger<UploadsController>>? loggerMock = null)
+        Mock<ILogger<UploadsController>>? loggerMock = null,
+        AppDbContext? db = null,
+        IConfiguration? configuration = null)
     {
         EnsureSharedUploadsPath();
 
         currentUserMock ??= new Mock<ICurrentUserService>();
+        currentUserMock.SetupGet(x => x.UserId).Returns(DefaultUserId);
+        currentUserMock.SetupGet(x => x.BranchId).Returns(DefaultBranchId);
+        currentUserMock.SetupGet(x => x.IsAuthenticated).Returns(true);
+        currentUserMock.SetupGet(x => x.Role).Returns(UserRole.GeneralDentist);
         httpClientFactoryMock ??= new Mock<IHttpClientFactory>();
         loggerMock ??= new Mock<ILogger<UploadsController>>();
+        db ??= BuildDb();
+        configuration ??= new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Uploads:RemoteImageAllowedHosts:0"] = "example.com",
+                ["Uploads:RemoteImageAllowedHosts:1"] = "93.184.216.34"
+            })
+            .Build();
 
         return new UploadsController(
             loggerMock.Object,
             httpClientFactoryMock.Object,
-            currentUserMock.Object);
+            currentUserMock.Object,
+            new BranchResourceScope(currentUserMock.Object),
+            db,
+            configuration);
     }
+
+    public static AppDbContext BuildDb() =>
+        new(new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase($"uploads-{Guid.NewGuid()}")
+            .Options);
 
     /// <summary>
     /// Cleans any files written to the shared uploads dir between tests so each test

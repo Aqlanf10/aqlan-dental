@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Moq;
+using System.Net;
 using Xunit;
 
 namespace AqlanDentalPro.UnitTests.Uploads;
@@ -208,6 +209,21 @@ public class UploadsControllerTests : IDisposable
         ((string)payload.contentType).Should().Be("application/pdf");
     }
 
+    [Fact]
+    public async Task Upload_FakeJpegBody_Returns400_AndDoesNotPersist()
+    {
+        var controller = UploadsTestData.BuildController();
+        var file = UploadsTestData.BuildFormFile(
+            "<script>alert(1)</script>"u8.ToArray(),
+            fileName: "fake.jpg",
+            contentType: "image/jpeg");
+
+        var result = await controller.Upload(file);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        Directory.GetFiles(UploadsTestData.SharedUploadsDir).Should().BeEmpty();
+    }
+
     // ── Download (GET /api/uploads/{fileName}) ───────────────────────────────────
 
     [Fact]
@@ -215,7 +231,7 @@ public class UploadsControllerTests : IDisposable
     {
         var controller = UploadsTestData.BuildController();
 
-        var result = controller.Download("never-exists.jpg");
+        var result = await controller.Download("never-exists.jpg");
 
         var notFound = result.Should().BeOfType<NotFoundObjectResult>().Subject;
         notFound.StatusCode.Should().Be(404);
@@ -227,11 +243,11 @@ public class UploadsControllerTests : IDisposable
     [InlineData("..\\windows\\system32")]
     [InlineData("subdir/file.jpg")]
     [InlineData("a/b/c.jpg")]
-    public void Download_PathTraversalAttempt_Returns400_ArabicMessage(string fileName)
+    public async Task Download_PathTraversalAttempt_Returns400_ArabicMessage(string fileName)
     {
         var controller = UploadsTestData.BuildController();
 
-        var result = controller.Download(fileName);
+        var result = await controller.Download(fileName);
 
         var bad = result.Should().BeOfType<BadRequestObjectResult>().Subject;
         bad.StatusCode.Should().Be(400);
@@ -246,9 +262,22 @@ public class UploadsControllerTests : IDisposable
         var filePath = Path.Combine(UploadsTestData.SharedUploadsDir, fileName);
         await File.WriteAllBytesAsync(filePath, new byte[] { 0xFF, 0xD8, 0xFF, 0xE0 });
 
-        var controller = UploadsTestData.BuildController();
+        await using var db = UploadsTestData.BuildDb();
+        db.UploadedFiles.Add(new AqlanDentalPro.Domain.Entities.UploadedFile
+        {
+            FileName = fileName,
+            OriginalName = fileName,
+            ContentType = "image/jpeg",
+            Size = 4,
+            Sha256 = new string('a', 64),
+            Purpose = "clinical-photo",
+            BranchId = UploadsTestData.DefaultBranchId,
+            UploadedBy = UploadsTestData.DefaultUserId
+        });
+        await db.SaveChangesAsync();
+        var controller = UploadsTestData.BuildController(db: db);
 
-        var result = controller.Download(fileName);
+        var result = await controller.Download(fileName);
 
         var physical = result.Should().BeOfType<PhysicalFileResult>().Subject;
         physical.ContentType.Should().Be("image/jpeg",
@@ -263,15 +292,69 @@ public class UploadsControllerTests : IDisposable
         var filePath = Path.Combine(UploadsTestData.SharedUploadsDir, fileName);
         await File.WriteAllBytesAsync(filePath, new byte[] { 0x25, 0x50, 0x44, 0x46 });
 
-        var controller = UploadsTestData.BuildController();
+        await using var db = UploadsTestData.BuildDb();
+        db.UploadedFiles.Add(new AqlanDentalPro.Domain.Entities.UploadedFile
+        {
+            FileName = fileName,
+            OriginalName = fileName,
+            ContentType = "application/pdf",
+            Size = 4,
+            Sha256 = new string('b', 64),
+            Purpose = "patient-document",
+            BranchId = UploadsTestData.DefaultBranchId,
+            UploadedBy = UploadsTestData.DefaultUserId
+        });
+        await db.SaveChangesAsync();
+        var controller = UploadsTestData.BuildController(db: db);
 
-        var result = controller.Download(fileName);
+        var result = await controller.Download(fileName);
 
         var physical = result.Should().BeOfType<PhysicalFileResult>().Subject;
         physical.ContentType.Should().Be("application/pdf");
     }
 
     // ── Delete (DELETE /api/uploads/{fileName}) — SEC-24 admin-only ──────────────
+
+    [Fact]
+    public async Task Download_FileOwnedByAnotherBranch_Returns403()
+    {
+        var fileName = $"{Guid.NewGuid():N}.jpg";
+        await File.WriteAllBytesAsync(
+            Path.Combine(UploadsTestData.SharedUploadsDir, fileName),
+            new byte[] { 0xFF, 0xD8, 0xFF, 0xE0 });
+
+        await using var db = UploadsTestData.BuildDb();
+        db.UploadedFiles.Add(new AqlanDentalPro.Domain.Entities.UploadedFile
+        {
+            FileName = fileName,
+            OriginalName = fileName,
+            ContentType = "image/jpeg",
+            Size = 4,
+            Sha256 = new string('c', 64),
+            Purpose = "clinical-photo",
+            BranchId = Guid.Parse("20000000-0000-0000-0000-000000000099"),
+            UploadedBy = UploadsTestData.DefaultUserId
+        });
+        await db.SaveChangesAsync();
+
+        var result = await UploadsTestData.BuildController(db: db).Download(fileName);
+
+        result.Should().BeOfType<ObjectResult>()
+            .Which.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task Download_UntrackedLegacyPhysicalFile_Returns404()
+    {
+        var fileName = $"{Guid.NewGuid():N}.jpg";
+        await File.WriteAllBytesAsync(
+            Path.Combine(UploadsTestData.SharedUploadsDir, fileName),
+            new byte[] { 0xFF, 0xD8, 0xFF, 0xE0 });
+
+        var result = await UploadsTestData.BuildController().Download(fileName);
+
+        result.Should().BeOfType<NotFoundObjectResult>();
+    }
 
     [Fact]
     public async Task Delete_NonAdmin_Returns403_ArabicMessage_DoesNotDeleteFile()
@@ -375,11 +458,62 @@ public class UploadsControllerTests : IDisposable
 
     // ── Helpers ──────────────────────────────────────────────────────────────────
 
+    [Theory]
+    [InlineData("http://127.0.0.1/image.jpg")]
+    [InlineData("http://10.0.0.4/image.jpg")]
+    [InlineData("http://169.254.169.254/latest/meta-data")]
+    [InlineData("http://[::1]/image.jpg")]
+    public async Task ImportImage_PrivateOrMetadataAddress_IsBlocked(string url)
+    {
+        var controller = UploadsTestData.BuildController();
+
+        var result = await controller.ImportImage(new ImportRemoteImageRequest { Url = url }, default);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task ImportImage_RedirectToLoopback_IsBlockedBeforeSecondRequest()
+    {
+        var handler = new StubHttpMessageHandler((_, _) =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.Redirect);
+            response.Headers.Location = new Uri("http://127.0.0.1/private.jpg");
+            return Task.FromResult(response);
+        });
+        var factory = new Mock<IHttpClientFactory>();
+        factory.Setup(x => x.CreateClient("RemoteClinicalImage"))
+            .Returns(new HttpClient(handler));
+        var controller = UploadsTestData.BuildController(httpClientFactoryMock: factory);
+
+        var result = await controller.ImportImage(
+            new ImportRemoteImageRequest { Url = "https://93.184.216.34/image.jpg" },
+            default);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        handler.RequestCount.Should().Be(1);
+    }
+
     private static string ExtractMessage(object? value)
     {
         value.Should().NotBeNull("the 4xx response must carry a payload");
         var prop = value!.GetType().GetProperty("message");
         prop.Should().NotBeNull("the 4xx response must carry a 'message' field (Arabic)");
         return (string)prop!.GetValue(value)!;
+    }
+
+    private sealed class StubHttpMessageHandler(
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> callback)
+        : HttpMessageHandler
+    {
+        public int RequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            return callback(request, cancellationToken);
+        }
     }
 }

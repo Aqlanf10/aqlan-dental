@@ -192,6 +192,8 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
     try {
       const formData = new FormData();
       formData.append("file", file);
+      formData.append("patientId", patientId);
+      formData.append("purpose", "patient-document");
       const { data } = await api.post<{ url: string; fileName: string; originalName: string; size: number; contentType: string }>("/api/uploads", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });

@@ -177,6 +177,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     // segments are computed in PatientSegmentsController and not stored).
     public DbSet<PatientSegment> PatientSegments => Set<PatientSegment>();
     public DbSet<PatientSegmentMember> PatientSegmentMembers => Set<PatientSegmentMember>();
+    public DbSet<UploadedFile> UploadedFiles => Set<UploadedFile>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

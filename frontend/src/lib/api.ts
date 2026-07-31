@@ -8,6 +8,8 @@ import { notifyClinicQueueActionFailure } from "@/lib/clinicQueueActionErrors";
 let accessToken: string | null = null;
 let impersonatingSession = false;
 
+export const IMPERSONATION_SESSION_MARKER = "aqlan_impersonation_active";
+
 export function setAccessToken(token: string | null) {
   accessToken = token;
 }
@@ -65,12 +67,13 @@ const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue = [];
 };
 
-function clearBrowserAuthState() {
+export function clearStaffBrowserSession() {
   clearAccessToken();
   setImpersonatingSession(false);
   if (typeof window !== "undefined") {
     localStorage.removeItem("access_token");
     localStorage.removeItem("aqlan_original_token");
+    localStorage.removeItem(IMPERSONATION_SESSION_MARKER);
     document.cookie = "aqlan_auth_status=; path=/; max-age=0";
   }
 }
@@ -78,10 +81,11 @@ function clearBrowserAuthState() {
 /**
  * An impersonated access token must never be refreshed into an ordinary target
  * session because that new JWT would lose originalUserId/isImpersonating claims.
- * When the short token expires, consume the target refresh token once, use the
- * replacement access token only to call logout, and revoke the replacement token.
+ * Consume the target refresh token once, use the replacement access token only to
+ * call logout, then revoke the replacement token. This is also used when a page is
+ * reloaded and the in-memory impersonation claims have disappeared.
  */
-async function terminateExpiredImpersonationSession() {
+export async function terminateImpersonatedRefreshSession() {
   try {
     const { data } = await apiRaw.post<{ accessToken: string }>(
       "/api/auth/refresh-token"
@@ -103,8 +107,8 @@ api.interceptors.response.use(
 
     if (error.response?.status === 401 && impersonatingSession) {
       processQueue(error, null);
-      await terminateExpiredImpersonationSession();
-      clearBrowserAuthState();
+      await terminateImpersonatedRefreshSession();
+      clearStaffBrowserSession();
       if (typeof window !== "undefined") window.location.href = "/login";
       return Promise.reject(error);
     }
@@ -138,7 +142,7 @@ api.interceptors.response.use(
         return api(original);
       } catch {
         processQueue(error, null);
-        clearBrowserAuthState();
+        clearStaffBrowserSession();
         if (typeof window !== "undefined") window.location.href = "/login";
         return Promise.reject(error);
       } finally {

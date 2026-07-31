@@ -12,17 +12,9 @@ using System.Text;
 namespace AqlanDentalPro.Infrastructure.Services;
 
 /// <summary>
-/// Generates and manages JWT access/refresh tokens.
-///
-/// HOTFIX: All Redis operations are wrapped in try/catch to prevent
-/// Redis unavailability from breaking the auth flow. When Redis is down:
-/// - StoreRefreshTokenAsync silently fails — refresh token not persisted, user must re-login to refresh
-/// - ValidateRefreshTokenAsync returns false — user must re-login
-/// - RevokeRefreshTokenAsync silently continues — token not revoked but will expire naturally
-/// - GetOwnerOfRefreshTokenAsync returns null — user must re-login
-/// - RevokeAllRefreshTokensAsync silently continues — tokens expire naturally
-///
-/// Access token generation (JWT) is unaffected — it does not use Redis.
+/// Generates JWT access tokens and manages opaque refresh tokens in Redis.
+/// Only SHA-256 hashes are persisted. Rotation is performed atomically so two
+/// concurrent refresh requests cannot both consume the same credential.
 /// </summary>
 public class TokenService : ITokenService
 {
@@ -39,10 +31,7 @@ public class TokenService : ITokenService
         _logger = logger;
     }
 
-    public string GenerateAccessToken(User user)
-    {
-        return GenerateAccessToken(user, null, null);
-    }
+    public string GenerateAccessToken(User user) => GenerateAccessToken(user, null, null);
 
     public string GenerateAccessToken(User user, Guid? originalUserId = null, string? originalRole = null)
     {
@@ -57,19 +46,15 @@ public class TokenService : ITokenService
             new(ClaimTypes.Role, user.Role.ToString()),
             new("branchId", user.BranchId?.ToString() ?? ""),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            // SEC-02 FIX: Include mustChangePassword claim so middleware can enforce password change
             new("mustChangePassword", user.MustChangePassword.ToString().ToLowerInvariant()),
         };
 
-        // Impersonation claims
         if (originalUserId.HasValue)
         {
             claims.Add(new Claim("originalUserId", originalUserId.Value.ToString()));
             claims.Add(new Claim("isImpersonating", "true"));
             if (!string.IsNullOrEmpty(originalRole))
-            {
                 claims.Add(new Claim("originalRole", originalRole));
-            }
         }
 
         var token = new JwtSecurityToken(
@@ -93,32 +78,30 @@ public class TokenService : ITokenService
         try
         {
             var hash = HashToken(refreshToken);
-            var expiry = TimeSpan.FromDays(int.Parse(_config["Jwt:RefreshTokenExpiryDays"] ?? "7"));
-            var tokenKey = $"refresh:{userId}:{hash[..16]}";
-            var ownerKey = $"refresh:owner:{hash[..16]}";
+            var expiry = GetRefreshExpiry();
+            var prefix = hash[..16];
             var batch = _db.CreateBatch();
-            var task1 = batch.StringSetAsync(tokenKey, hash, expiry);
-            var task2 = batch.StringSetAsync(ownerKey, userId.ToString(), expiry);
+            var tokenTask = batch.StringSetAsync($"refresh:{userId}:{prefix}", hash, expiry);
+            var ownerTask = batch.StringSetAsync($"refresh:owner:{prefix}", userId.ToString(), expiry);
             batch.Execute();
-            // LOGIN FIX: Properly await the batch tasks instead of Task.CompletedTask.
-            // Without this, the refresh token may not be persisted to Redis before the
-            // login response is sent, causing refresh-token operations to fail.
-            await Task.WhenAll(task1, task2);
+            await Task.WhenAll(tokenTask, ownerTask);
         }
         catch (RedisConnectionException ex)
         {
-            _logger.LogError(ex, "Redis unavailable during StoreRefreshTokenAsync for user '{UserId}'. Refresh token not persisted — user will need to re-login to refresh.",
+            _logger.LogError(ex,
+                "Redis unavailable during StoreRefreshTokenAsync for user '{UserId}'. Refresh token was not persisted.",
                 userId);
-            // Silently continue — login still succeeds, but refresh token won't be validatable
         }
         catch (RedisTimeoutException ex)
         {
-            _logger.LogError(ex, "Redis timeout during StoreRefreshTokenAsync for user '{UserId}'. Refresh token not persisted.",
+            _logger.LogError(ex,
+                "Redis timeout during StoreRefreshTokenAsync for user '{UserId}'. Refresh token was not persisted.",
                 userId);
         }
         catch (RedisException ex)
         {
-            _logger.LogError(ex, "Redis error during StoreRefreshTokenAsync for user '{UserId}'. Refresh token not persisted.",
+            _logger.LogError(ex,
+                "Redis error during StoreRefreshTokenAsync for user '{UserId}'. Refresh token was not persisted.",
                 userId);
         }
     }
@@ -130,23 +113,94 @@ public class TokenService : ITokenService
             var hash = HashToken(refreshToken);
             var key = $"refresh:{userId}:{hash[..16]}";
             var stored = await _db.StringGetAsync(key);
-            return stored.HasValue && stored == hash;
+            return stored.HasValue && FixedTimeEquals(stored.ToString(), hash);
         }
         catch (RedisConnectionException ex)
         {
-            _logger.LogError(ex, "Redis unavailable during ValidateRefreshTokenAsync for user '{UserId}'. Assuming token is invalid — user must re-login.",
+            _logger.LogError(ex,
+                "Redis unavailable during ValidateRefreshTokenAsync for user '{UserId}'. Treating token as invalid.",
                 userId);
             return false;
         }
         catch (RedisTimeoutException ex)
         {
-            _logger.LogError(ex, "Redis timeout during ValidateRefreshTokenAsync for user '{UserId}'. Assuming token is invalid.",
+            _logger.LogError(ex,
+                "Redis timeout during ValidateRefreshTokenAsync for user '{UserId}'. Treating token as invalid.",
                 userId);
             return false;
         }
         catch (RedisException ex)
         {
-            _logger.LogError(ex, "Redis error during ValidateRefreshTokenAsync for user '{UserId}'. Assuming token is invalid.",
+            _logger.LogError(ex,
+                "Redis error during ValidateRefreshTokenAsync for user '{UserId}'. Treating token as invalid.",
+                userId);
+            return false;
+        }
+    }
+
+    public async Task<bool> RotateRefreshTokenAsync(
+        Guid userId,
+        string currentRefreshToken,
+        string replacementRefreshToken)
+    {
+        try
+        {
+            var currentHash = HashToken(currentRefreshToken);
+            var replacementHash = HashToken(replacementRefreshToken);
+            var currentPrefix = currentHash[..16];
+            var replacementPrefix = replacementHash[..16];
+            var expiryMilliseconds = checked((long)GetRefreshExpiry().TotalMilliseconds);
+
+            const string script = """
+                local current = redis.call('GET', KEYS[1])
+                if (not current) or current ~= ARGV[1] then
+                    return 0
+                end
+
+                redis.call('DEL', KEYS[1])
+                redis.call('DEL', KEYS[2])
+                redis.call('SET', KEYS[3], ARGV[2], 'PX', ARGV[4])
+                redis.call('SET', KEYS[4], ARGV[3], 'PX', ARGV[4])
+                return 1
+                """;
+
+            var result = await _db.ScriptEvaluateAsync(
+                script,
+                new RedisKey[]
+                {
+                    $"refresh:{userId}:{currentPrefix}",
+                    $"refresh:owner:{currentPrefix}",
+                    $"refresh:{userId}:{replacementPrefix}",
+                    $"refresh:owner:{replacementPrefix}"
+                },
+                new RedisValue[]
+                {
+                    currentHash,
+                    replacementHash,
+                    userId.ToString(),
+                    expiryMilliseconds
+                });
+
+            return (long)result == 1;
+        }
+        catch (RedisConnectionException ex)
+        {
+            _logger.LogError(ex,
+                "Redis unavailable during atomic refresh-token rotation for user '{UserId}'.",
+                userId);
+            return false;
+        }
+        catch (RedisTimeoutException ex)
+        {
+            _logger.LogError(ex,
+                "Redis timeout during atomic refresh-token rotation for user '{UserId}'.",
+                userId);
+            return false;
+        }
+        catch (RedisException ex)
+        {
+            _logger.LogError(ex,
+                "Redis error during atomic refresh-token rotation for user '{UserId}'.",
                 userId);
             return false;
         }
@@ -157,25 +211,29 @@ public class TokenService : ITokenService
         try
         {
             var hash = HashToken(refreshToken);
+            var prefix = hash[..16];
             await _db.KeyDeleteAsync(new RedisKey[]
             {
-                $"refresh:{userId}:{hash[..16]}",
-                $"refresh:owner:{hash[..16]}"
+                $"refresh:{userId}:{prefix}",
+                $"refresh:owner:{prefix}"
             });
         }
         catch (RedisConnectionException ex)
         {
-            _logger.LogError(ex, "Redis unavailable during RevokeRefreshTokenAsync for user '{UserId}'. Token not revoked — will expire naturally.",
+            _logger.LogError(ex,
+                "Redis unavailable during RevokeRefreshTokenAsync for user '{UserId}'. Token will expire naturally.",
                 userId);
         }
         catch (RedisTimeoutException ex)
         {
-            _logger.LogError(ex, "Redis timeout during RevokeRefreshTokenAsync for user '{UserId}'. Token not revoked.",
+            _logger.LogError(ex,
+                "Redis timeout during RevokeRefreshTokenAsync for user '{UserId}'.",
                 userId);
         }
         catch (RedisException ex)
         {
-            _logger.LogError(ex, "Redis error during RevokeRefreshTokenAsync for user '{UserId}'. Token not revoked.",
+            _logger.LogError(ex,
+                "Redis error during RevokeRefreshTokenAsync for user '{UserId}'.",
                 userId);
         }
     }
@@ -191,17 +249,20 @@ public class TokenService : ITokenService
         }
         catch (RedisConnectionException ex)
         {
-            _logger.LogError(ex, "Redis unavailable during GetOwnerOfRefreshTokenAsync. Assuming token has no owner — user must re-login.");
+            _logger.LogError(ex,
+                "Redis unavailable during GetOwnerOfRefreshTokenAsync. Treating token as unowned.");
             return null;
         }
         catch (RedisTimeoutException ex)
         {
-            _logger.LogError(ex, "Redis timeout during GetOwnerOfRefreshTokenAsync. Assuming token has no owner.");
+            _logger.LogError(ex,
+                "Redis timeout during GetOwnerOfRefreshTokenAsync. Treating token as unowned.");
             return null;
         }
         catch (RedisException ex)
         {
-            _logger.LogError(ex, "Redis error during GetOwnerOfRefreshTokenAsync. Assuming token has no owner.");
+            _logger.LogError(ex,
+                "Redis error during GetOwnerOfRefreshTokenAsync. Treating token as unowned.");
             return null;
         }
     }
@@ -211,25 +272,49 @@ public class TokenService : ITokenService
         try
         {
             var server = _redis.GetServer(_redis.GetEndPoints().First());
-            var keys = server.Keys(pattern: $"refresh:{userId}:*").ToArray();
-            if (keys.Length > 0)
-                await _db.KeyDeleteAsync(keys);
+            var tokenKeys = server.Keys(pattern: $"refresh:{userId}:*").ToArray();
+            if (tokenKeys.Length == 0) return;
+
+            // Owner lookup keys must be removed too. Leaving them behind allowed a
+            // revoked token to resolve to a userId before validation, producing
+            // stale session metadata and unnecessary refresh attempts.
+            var storedHashes = await _db.StringGetAsync(tokenKeys);
+            var ownerKeys = storedHashes
+                .Where(value => value.HasValue && value.ToString().Length >= 16)
+                .Select(value => (RedisKey)$"refresh:owner:{value.ToString()[..16]}")
+                .ToArray();
+
+            await _db.KeyDeleteAsync(tokenKeys.Concat(ownerKeys).ToArray());
         }
         catch (RedisConnectionException ex)
         {
-            _logger.LogError(ex, "Redis unavailable during RevokeAllRefreshTokensAsync for user '{UserId}'. Tokens not revoked — will expire naturally.",
+            _logger.LogError(ex,
+                "Redis unavailable during RevokeAllRefreshTokensAsync for user '{UserId}'. Tokens will expire naturally.",
                 userId);
         }
         catch (RedisTimeoutException ex)
         {
-            _logger.LogError(ex, "Redis timeout during RevokeAllRefreshTokensAsync for user '{UserId}'. Tokens not revoked.",
+            _logger.LogError(ex,
+                "Redis timeout during RevokeAllRefreshTokensAsync for user '{UserId}'.",
                 userId);
         }
         catch (RedisException ex)
         {
-            _logger.LogError(ex, "Redis error during RevokeAllRefreshTokensAsync for user '{UserId}'. Tokens not revoked.",
+            _logger.LogError(ex,
+                "Redis error during RevokeAllRefreshTokensAsync for user '{UserId}'.",
                 userId);
         }
+    }
+
+    private TimeSpan GetRefreshExpiry() =>
+        TimeSpan.FromDays(int.Parse(_config["Jwt:RefreshTokenExpiryDays"] ?? "7"));
+
+    private static bool FixedTimeEquals(string left, string right)
+    {
+        var leftBytes = Encoding.UTF8.GetBytes(left);
+        var rightBytes = Encoding.UTF8.GetBytes(right);
+        return leftBytes.Length == rightBytes.Length &&
+               CryptographicOperations.FixedTimeEquals(leftBytes, rightBytes);
     }
 
     private static string HashToken(string token)

@@ -5,6 +5,11 @@ import { Topbar } from "@/components/layout/Topbar";
 import { ImpersonationBanner } from "@/components/layout/ImpersonationBanner";
 import { Toaster } from "@/components/ui/toaster";
 import { useAuthStore } from "@/stores/authStore";
+import {
+  clearStaffBrowserSession,
+  IMPERSONATION_SESSION_MARKER,
+  terminateImpersonatedRefreshSession,
+} from "@/lib/api";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useSignalRMessaging } from "@/hooks/useSignalRMessaging";
@@ -23,10 +28,26 @@ export default function DashboardLayout({
   useSignalRMessaging();
 
   useEffect(() => {
-    // W04: access tokens are no longer persisted in localStorage. Always ask the
-    // API to validate/restore the session on mount; the axios interceptor uses the
-    // HttpOnly refresh cookie when the in-memory access token is absent.
+    // W04: access tokens are no longer persisted. A non-secret marker is retained
+    // only to detect a page reload during impersonation. In that case revoke the
+    // target refresh session before it can be refreshed into an ordinary target
+    // login, clear local state, and require fresh administrator authentication.
     const validateSession = async () => {
+      if (localStorage.getItem(IMPERSONATION_SESSION_MARKER) === "1") {
+        await terminateImpersonatedRefreshSession();
+        clearStaffBrowserSession();
+        useAuthStore.setState({
+          user: null,
+          isAuthenticated: false,
+          originalUser: null,
+          isImpersonating: false,
+          isLoading: false,
+        });
+        router.replace("/login");
+        setIsReady(true);
+        return;
+      }
+
       await fetchMe();
       if (!useAuthStore.getState().isAuthenticated) {
         router.push("/login");

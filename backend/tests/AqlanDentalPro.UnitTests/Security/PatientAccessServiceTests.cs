@@ -26,11 +26,16 @@ public class PatientAccessServiceTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options);
 
-    private static ICurrentUserService CreateUser(Guid userId, UserRole role, bool isAdmin = false)
+    private static ICurrentUserService CreateUser(
+        Guid userId,
+        UserRole role,
+        bool isAdmin = false,
+        Guid? branchId = null)
     {
         var mock = new Mock<ICurrentUserService>();
         mock.Setup(u => u.UserId).Returns(userId);
         mock.Setup(u => u.Role).Returns(role);
+        mock.Setup(u => u.BranchId).Returns(branchId);
         mock.Setup(u => u.IsAdmin).Returns(isAdmin);
         mock.Setup(u => u.IsAuthenticated).Returns(true);
         return mock.Object;
@@ -252,6 +257,26 @@ public class PatientAccessServiceTests
         (await svcB.CanAccessPatientAsync(patient.Id)).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task CanAccessPatient_DoctorLinkedAcrossBranch_ReturnsFalse()
+    {
+        await using var db = CreateDb();
+        var userId = Guid.NewGuid();
+        var allowedBranchId = Guid.NewGuid();
+        var otherBranchId = Guid.NewGuid();
+        var (patient, _) = await SeedPatientAndDoctor(db, userId, isPrimary: true);
+        patient.BranchId = otherBranchId;
+        await db.SaveChangesAsync();
+
+        var svc = Build(db, CreateUser(
+            userId,
+            UserRole.GeneralDentist,
+            branchId: allowedBranchId));
+
+        (await svc.CanAccessPatientAsync(patient.Id)).Should().BeFalse(
+            "a clinical link must never override the branch carried by the staff JWT");
+    }
+
     // Regression test: the ortho-surgical joint-planning workflow assigns a surgeon (or
     // orthodontist) to a case via SurgeonId/OrthodontistId on OrthoSurgicalCase — often for a
     // patient the surgeon is reviewing for the FIRST time (that is the entire point of a
@@ -394,6 +419,28 @@ public class PatientAccessServiceTests
         ids!.Should().Contain(patient.Id);
         ids.Should().Contain(patient2.Id);
         ids.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task GetAccessiblePatientIds_RemovesLinkedPatientsFromOtherBranches()
+    {
+        await using var db = CreateDb();
+        var userId = Guid.NewGuid();
+        var allowedBranchId = Guid.NewGuid();
+        var otherBranchId = Guid.NewGuid();
+        var (patient, _) = await SeedPatientAndDoctor(db, userId, isPrimary: true);
+        patient.BranchId = otherBranchId;
+        await db.SaveChangesAsync();
+
+        var svc = Build(db, CreateUser(
+            userId,
+            UserRole.Orthodontist,
+            branchId: allowedBranchId));
+
+        var ids = await svc.GetAccessiblePatientIdsAsync();
+
+        ids.Should().NotBeNull();
+        ids.Should().BeEmpty("clinical lists must be restricted to the current branch");
     }
 
     [Fact]

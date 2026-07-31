@@ -1,4 +1,5 @@
 using AqlanDentalPro.API.Authorization;
+using AqlanDentalPro.API.Configuration;
 using AqlanDentalPro.Application.DTOs.Common;
 using AqlanDentalPro.Application.DTOs.Patients;
 using AqlanDentalPro.Application.Interfaces.Services;
@@ -140,11 +141,15 @@ public class PatientsController(
             if (patientAccess.IsDoctor)
                 return Ok(ToClinicalDto(patient));
 
-            // Non-doctor roles receive the full profile including contact info — log for compliance.
+            // Only admins receive the full profile. Reception and other
+            // non-clinical staff receive operational/contact fields without
+            // medical or dental history.
             await audit.LogAsync(AuditAction.View, "PatientContactInfo", id,
                 newData: new { role = currentUser.Role?.ToString() });
 
-            return Ok(patient);
+            return currentUser.IsAdmin
+                ? Ok(patient)
+                : Ok(ToOperationalDto(patient));
         }
         catch (Exception ex)
         {
@@ -341,6 +346,7 @@ public class PatientsController(
     // ── Clinical history ──────────────────────────────────────────────────────
 
     [HttpGet("{id:guid}/medical-history")]
+    [Authorize(Policy = AuthorizationPolicyNames.ClinicalRead)]
     public async Task<IActionResult> GetMedicalHistory(Guid id)
     {
         var denied = await DenyIfDoctorCannotAccess(id);
@@ -352,6 +358,7 @@ public class PatientsController(
     }
 
     [HttpPut("{id:guid}/medical-history")]
+    [Authorize(Policy = AuthorizationPolicyNames.ClinicalWrite)]
     public async Task<IActionResult> UpdateMedicalHistory(Guid id, [FromBody] MedicalHistoryDto dto)
     {
         var denied = await DenyIfDoctorCannotAccess(id);
@@ -376,6 +383,7 @@ public class PatientsController(
     }
 
     [HttpGet("{id:guid}/dental-history")]
+    [Authorize(Policy = AuthorizationPolicyNames.ClinicalRead)]
     public async Task<IActionResult> GetDentalHistory(Guid id)
     {
         var denied = await DenyIfDoctorCannotAccess(id);
@@ -387,6 +395,7 @@ public class PatientsController(
     }
 
     [HttpPut("{id:guid}/dental-history")]
+    [Authorize(Policy = AuthorizationPolicyNames.ClinicalWrite)]
     public async Task<IActionResult> UpdateDentalHistory(Guid id, [FromBody] DentalHistoryDto dto)
     {
         var denied = await DenyIfDoctorCannotAccess(id);
@@ -517,8 +526,9 @@ public class PatientsController(
             MedicalAlerts = BuildMedicalAlerts(medicalHistory),
         };
 
-        // CORE-PAT-019: clinical fields are always returned, while financial fields
-        // remain null unless the granular owner-configurable permission is granted.
+        // CORE-PAT-019: financial fields remain null unless the granular,
+        // owner-configurable permission is granted. Clinical fields are stripped
+        // from the final response for reception and other non-clinical roles.
         var canViewFinanceTotals = !patientAccess.IsDoctor
             && await CanViewFinanceAsync("finance.patient_balance");
         if (canViewFinanceTotals)
@@ -532,7 +542,9 @@ public class PatientsController(
                 newData: new { role = currentUser.Role?.ToString() });
         }
 
-        return Ok(summary);
+        return Ok(currentUser.IsAdmin || patientAccess.IsDoctor
+            ? summary
+            : ToOperationalSummary(summary));
     }
 
     private static string? FirstNonBlank(params string?[] values) =>
@@ -584,6 +596,8 @@ public class PatientsController(
         var patient = await service.GetByIdAsync(id);
         if (patient == null) return NotFound(new { message = "المريض غير موجود" });
 
+        var canReadClinical = currentUser.IsAdmin || patientAccess.IsDoctor;
+
         var appointmentEvents = await db.Appointments
             .Where(a => a.PatientId == id)
             .Include(a => a.Doctor)
@@ -601,7 +615,7 @@ public class PatientsController(
             .ToListAsync();
 
         var visitEvents = await db.Visits
-            .Where(v => v.PatientId == id)
+            .Where(v => canReadClinical && v.PatientId == id)
             .Include(v => v.Doctor)
             .OrderByDescending(v => v.VisitDate)
             .Select(v => new
@@ -620,7 +634,7 @@ public class PatientsController(
 
         // Referral events — show referrals sent/received for this patient
         var referralEvents = await db.InternalReferrals
-            .Where(r => r.PatientId == id && r.IsActive)
+            .Where(r => canReadClinical && r.PatientId == id && r.IsActive)
             .Include(r => r.FromDoctor)
             .Include(r => r.ToDoctor)
             .OrderByDescending(r => r.CreatedAt)
@@ -703,5 +717,40 @@ public class PatientsController(
         MedicalHistory = p.MedicalHistory,
         DentalHistory = p.DentalHistory,
         IsLimitedView = true,
+    };
+
+    private static PatientOperationalDto ToOperationalDto(PatientProfileDto p) => new()
+    {
+        Id = p.Id,
+        PatientNumber = p.PatientNumber,
+        FirstName = p.FirstName,
+        MiddleName = p.MiddleName,
+        LastName = p.LastName,
+        DateOfBirth = p.DateOfBirth,
+        Gender = p.Gender,
+        Age = p.Age,
+        Phone = p.Phone,
+        Email = p.Email,
+        WhatsApp = p.WhatsApp,
+        Address = p.Address,
+        PrimaryDoctorId = p.PrimaryDoctorId,
+        PrimaryDoctorName = p.PrimaryDoctorName,
+        BranchId = p.BranchId,
+        BranchName = p.BranchName,
+        CreatedAt = p.CreatedAt,
+        IsActive = p.IsActive,
+    };
+
+    private static PatientSummaryDto ToOperationalSummary(PatientSummaryDto summary) => new()
+    {
+        TotalAppointments = summary.TotalAppointments,
+        CompletedAppointments = summary.CompletedAppointments,
+        NextAppointmentDate = summary.NextAppointmentDate,
+        NextAppointmentTime = summary.NextAppointmentTime,
+        NextAppointmentType = summary.NextAppointmentType,
+        NextAppointmentDoctor = summary.NextAppointmentDoctor,
+        TotalPaid = summary.TotalPaid,
+        TotalOutstanding = summary.TotalOutstanding,
+        UnbilledVisitsAmount = summary.UnbilledVisitsAmount,
     };
 }

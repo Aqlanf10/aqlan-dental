@@ -1,5 +1,6 @@
 using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.API.Authorization;
+using AqlanDentalPro.API.Configuration;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -40,7 +41,7 @@ public sealed class AddRadiographRequest
 
 [ApiController]
 [Route("api/clinical-photos")]
-[Authorize(Policy = "StaffOnly")]
+[Authorize(Policy = AuthorizationPolicyNames.ClinicalRead)]
 [ServiceFilter(typeof(PatientAccessFilter))]
 public class ClinicalPhotosController(
     AppDbContext db,
@@ -87,6 +88,7 @@ public class ClinicalPhotosController(
     }
 
     [HttpPost]
+    [Authorize(Policy = AuthorizationPolicyNames.ClinicalWrite)]
     public async Task<IActionResult> AddPhoto([FromBody] AddPhotoRequest req)
     {
         // CLIN-01: patientId is in the body — check before creating.
@@ -121,6 +123,7 @@ public class ClinicalPhotosController(
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = AuthorizationPolicyNames.ClinicalWrite)]
     public async Task<IActionResult> DeletePhoto(Guid id)
     {
         var photo = await db.ClinicalPhotos.FindAsync(id);
@@ -143,7 +146,7 @@ public class ClinicalPhotosController(
 
 [ApiController]
 [Route("api/radiographs")]
-[Authorize(Policy = "StaffOnly")]
+[Authorize(Policy = AuthorizationPolicyNames.ClinicalRead)]
 [ServiceFilter(typeof(PatientAccessFilter))]
 public class RadiographsController(
     AppDbContext db,
@@ -194,6 +197,7 @@ public class RadiographsController(
     }
 
     [HttpPost]
+    [Authorize(Policy = AuthorizationPolicyNames.ClinicalWrite)]
     public async Task<IActionResult> AddRadiograph([FromBody] AddRadiographRequest req)
     {
         // CLIN-01: per-patient check before creating.
@@ -230,6 +234,7 @@ public class RadiographsController(
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = AuthorizationPolicyNames.ClinicalWrite)]
     public async Task<IActionResult> DeleteRadiograph(Guid id)
     {
         var xray = await db.Radiographs.FindAsync(id);

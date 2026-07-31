@@ -21,7 +21,7 @@ import api from "@/lib/api";
 import { extractErrorMessage } from "@/lib/errors";
 import { patientBalanceView } from "@/lib/patientSummary";
 import { cn, GENDER_LABELS, formatArabicDate, formatPhoneForWhatsApp } from "@/lib/utils";
-import { isClinicalRole, isAccountantRole, canViewPatientFinance } from "@/lib/roles";
+import { isClinicalRole, isAccountantRole, canReadClinical, canViewPatientFinance } from "@/lib/roles";
 import { financeV3ContractsUrl } from "@/lib/financeRoutes";
 import { rtlArrowBack as RtlArrowBack } from "@/lib/rtlIcons";
 import { isGuid } from "@/lib/patientRouting";
@@ -90,6 +90,7 @@ interface RibbonItem {
   color: string;
   bgColor: string;
   action: () => void;
+  requiresClinicalAccess?: boolean;
 }
 
 interface RibbonGroup {
@@ -108,6 +109,7 @@ export default function PatientProfilePage() {
   // isClinicalRole covers: Doctor, Orthodontist, GeneralDentist, OralSurgeon
   const isDoctor       = isClinicalRole(user?.role);
   const isAccountant   = isAccountantRole(user?.role);
+  const hasClinicalAccess = canReadClinical(user?.role);
   const canViewFinance = canViewPatientFinance(user?.role);
 
   const [patient,      setPatient]      = useState<PatientProfile | null>(null);
@@ -171,15 +173,15 @@ export default function PatientProfilePage() {
       label: "إجراءات العيادة",
       items: [
         { icon: TreatmentIcon, label: "جلسة علاج", color: "text-emerald-600", bgColor: "hover:bg-emerald-50",
-          action: () => { switchTab("visits"); setOpenAddVisitModal(true); } },
+          action: () => { switchTab("visits"); setOpenAddVisitModal(true); }, requiresClinicalAccess: true },
         { icon: ClipboardList, label: "خطة علاج", color: "text-sky-600", bgColor: "hover:bg-sky-50",
-          action: () => { switchTab("clinical-notes"); setClinicalSubTab("treatment-plan"); } },
+          action: () => { switchTab("clinical-notes"); setClinicalSubTab("treatment-plan"); }, requiresClinicalAccess: true },
         { icon: CalendarPlus, label: "موعد جديد", color: "text-violet-600", bgColor: "hover:bg-violet-50",
           action: () => { /* handled via Link */ } },
         { icon: Pill, label: "وصفة طبية", color: "text-pink-600", bgColor: "hover:bg-pink-50",
-          action: () => router.push(`/prescriptions/new?patientId=${id}`) },
+          action: () => router.push(`/prescriptions/new?patientId=${id}`), requiresClinicalAccess: true },
         { icon: ScanLine, label: "طلب أشعة", color: "text-cyan-600", bgColor: "hover:bg-cyan-50",
-          action: () => router.push(`/radiology-orders/new?patientId=${id}`) },
+          action: () => router.push(`/radiology-orders/new?patientId=${id}`), requiresClinicalAccess: true },
       ],
     },
     {
@@ -199,22 +201,22 @@ export default function PatientProfilePage() {
       label: "الحالات السريرية",
       items: [
         { icon: Activity, label: "حالة تقويم", color: "text-violet-600", bgColor: "hover:bg-violet-50",
-          action: () => router.push(`/ortho/new?patientId=${id}`) },
+          action: () => router.push(`/ortho/new?patientId=${id}`), requiresClinicalAccess: true },
         { icon: Scissors, label: "حالة جراحة", color: "text-rose-600", bgColor: "hover:bg-rose-50",
-          action: () => { switchTab("treatments"); setTreatmentSubTab("surgery"); } },
+          action: () => { switchTab("treatments"); setTreatmentSubTab("surgery"); }, requiresClinicalAccess: true },
         { icon: Eye, label: "طب أسنان عام", color: "text-sky-600", bgColor: "hover:bg-sky-50",
-          action: () => { switchTab("treatments"); setTreatmentSubTab("general"); } },
+          action: () => { switchTab("treatments"); setTreatmentSubTab("general"); }, requiresClinicalAccess: true },
       ],
     },
     {
       label: "المرفقات والسجلات",
       items: [
         { icon: ImageIcon, label: "صور", color: "text-teal-600", bgColor: "hover:bg-teal-50",
-          action: () => { switchTab("documents"); setDocumentsSubTab("photos"); } },
+          action: () => { switchTab("documents"); setDocumentsSubTab("photos"); }, requiresClinicalAccess: true },
         { icon: ScanLine, label: "أشعة", color: "text-indigo-600", bgColor: "hover:bg-indigo-50",
-          action: () => { switchTab("documents"); setDocumentsSubTab("radiographs"); } },
+          action: () => { switchTab("documents"); setDocumentsSubTab("radiographs"); }, requiresClinicalAccess: true },
         { icon: FolderOpen, label: "مستندات", color: "text-amber-600", bgColor: "hover:bg-amber-50",
-          action: () => { switchTab("documents"); setDocumentsSubTab("documents"); } },
+          action: () => { switchTab("documents"); setDocumentsSubTab("documents"); }, requiresClinicalAccess: true },
         { icon: FlaskConical, label: "مختبر", color: "text-cyan-600", bgColor: "hover:bg-cyan-50",
           action: () => { switchTab("documents"); setDocumentsSubTab("lab-orders"); } },
       ],
@@ -223,7 +225,7 @@ export default function PatientProfilePage() {
       label: "طباعة وتواصل",
       items: [
         { icon: Printer, label: "طباعة", color: "text-slate-600", bgColor: "hover:bg-slate-100",
-          action: () => { /* handled via Link */ } },
+          action: () => { /* handled via Link */ }, requiresClinicalAccess: true },
         { icon: MessageCircle, label: "رسالة", color: "text-green-600", bgColor: "hover:bg-green-50",
           action: () => { switchTab("activity-log"); setActivitySubTab("messages"); } },
         { icon: KeyRound, label: "بوابة المريض", color: "text-orange-600", bgColor: "hover:bg-orange-50",
@@ -233,11 +235,17 @@ export default function PatientProfilePage() {
   ];
 
   // Filter ribbon groups for limited view and Doctor / Accountant roles
-  const visibleRibbonGroups = ribbonGroups.filter(g => {
-    if ((limited || !canViewFinance) && g.label === "المالية V3") return false;
-    if (isAccountant && ["إجراءات العيادة", "الحالات السريرية", "المرفقات والسجلات"].includes(g.label)) return false;
-    return true;
-  });
+  const visibleRibbonGroups = ribbonGroups
+    .map(group => ({
+      ...group,
+      items: group.items.filter(item => hasClinicalAccess || !item.requiresClinicalAccess),
+    }))
+    .filter(group => {
+      if (group.items.length === 0) return false;
+      if ((limited || !canViewFinance) && group.label === "المالية V3") return false;
+      if (isAccountant && ["إجراءات العيادة", "الحالات السريرية", "المرفقات والسجلات"].includes(group.label)) return false;
+      return true;
+    });
 
   // ─── Handlers ───────────────────────────────────────────────────────────
 
@@ -383,6 +391,14 @@ export default function PatientProfilePage() {
 
   useEffect(() => {
     if (!patientIdentifier || !hasGuidPatientId) return;
+    if (!hasClinicalAccess) {
+      setOrthoCases([]);
+      setSurgeryCases([]);
+      setOrthoCasesError(null);
+      setSurgeryCasesError(null);
+      setRelatedCasesLoading(false);
+      return;
+    }
 
     let cancelled = false;
     setRelatedCasesLoading(true);
@@ -413,7 +429,7 @@ export default function PatientProfilePage() {
     });
 
     return () => { cancelled = true; };
-  }, [patientIdentifier, hasGuidPatientId, relatedCasesRetryKey]);
+  }, [patientIdentifier, hasGuidPatientId, hasClinicalAccess, relatedCasesRetryKey]);
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
@@ -458,6 +474,15 @@ export default function PatientProfilePage() {
     
     switch (activeTab) {
       case "overview":
+        if (!hasClinicalAccess) {
+          return (
+            <BasicInfoTab
+              patient={patient}
+              orthoCases={[]}
+              surgeryCases={[]}
+            />
+          );
+        }
         return (
           <OverviewTab
             patientId={id}
@@ -483,8 +508,8 @@ export default function PatientProfilePage() {
             ) : null}
             <BasicInfoTab
               patient={patient}
-              orthoCases={orthoCases}
-              surgeryCases={surgeryCases}
+              orthoCases={hasClinicalAccess ? orthoCases : []}
+              surgeryCases={hasClinicalAccess ? surgeryCases : []}
             />
           </>
         );
@@ -578,22 +603,26 @@ export default function PatientProfilePage() {
         );
 
       case "documents":
+        const effectiveDocumentsSubTab = hasClinicalAccess ? documentsSubTab : "lab-orders";
+        const documentTabs = hasClinicalAccess
+          ? [
+              { key: "photos" as const, label: "الصور السريرية" },
+              { key: "radiographs" as const, label: "الأشعة" },
+              { key: "documents" as const, label: "المستندات والتقارير" },
+              { key: "lab-orders" as const, label: "طلبات المختبر" },
+            ]
+          : [{ key: "lab-orders" as const, label: "طلبات المختبر" }];
         return (
           <div className="space-y-4">
             {renderSubTabs(
-              [
-                { key: "photos", label: "الصور السريرية" },
-                { key: "radiographs", label: "الأشعة" },
-                { key: "documents", label: "المستندات والتقارير" },
-                { key: "lab-orders", label: "طلبات المختبر" }
-              ],
-              documentsSubTab,
+              documentTabs,
+              effectiveDocumentsSubTab,
               setDocumentsSubTab
             )}
-            {documentsSubTab === "photos" && <PhotosTab patientId={id} />}
-            {documentsSubTab === "radiographs" && <RadiographsTab patientId={id} />}
-            {documentsSubTab === "documents" && <DocumentsTab patientId={id} />}
-            {documentsSubTab === "lab-orders" && <LabOrdersTab patientId={id} />}
+            {effectiveDocumentsSubTab === "photos" && <PhotosTab patientId={id} />}
+            {effectiveDocumentsSubTab === "radiographs" && <RadiographsTab patientId={id} />}
+            {effectiveDocumentsSubTab === "documents" && <DocumentsTab patientId={id} />}
+            {effectiveDocumentsSubTab === "lab-orders" && <LabOrdersTab patientId={id} />}
           </div>
         );
 
@@ -624,6 +653,9 @@ export default function PatientProfilePage() {
   const visibleTabs = ALL_PIVOT_TABS.filter((tab) => {
     // Finance tab: Admin and Accountant only
     if (!canViewFinance && tab.key === "finance") return false;
+    // Reception keeps demographic, appointment, finance, communication and lab
+    // workflows, but clinical history and treatment records are not rendered.
+    if (!hasClinicalAccess && ["medical-history", "clinical-notes", "visits", "treatments"].includes(tab.key)) return false;
     // Clinical roles: no activity-log (portal/messages are admin/reception workflows)
     if (isDoctor && tab.key === "activity-log")  return false;
     // Accountant: no clinical tabs
@@ -738,7 +770,7 @@ export default function PatientProfilePage() {
             )}
 
             {/* Medical Alerts Card (Accountants cannot see) */}
-            {!isAccountant && patient.medicalHistory?.chronicDiseases && (
+            {hasClinicalAccess && patient.medicalHistory?.chronicDiseases && (
               <div className="bg-gradient-to-br from-red-50 to-rose-50 border border-red-100 p-2.5 rounded-xl min-w-[160px] hover:shadow-md transition-all duration-300 cursor-pointer hover:scale-[1.02]"
                 onClick={() => switchTab("medical-history")}>
                 <span className="block text-[10px] text-red-500 font-bold mb-1.5 tracking-wider">
@@ -896,13 +928,14 @@ export default function PatientProfilePage() {
           )}
           <div className="px-6 pb-3 grid grid-cols-6 gap-2">
             {[
-              { label: 'المواعيد', value: summary?.totalAppointments ?? '—', bgClass: 'bg-sky-50 border-sky-100', textClass: 'text-sky-700' },
-              { label: 'المكتملة', value: summary?.completedAppointments ?? '—', bgClass: 'bg-emerald-50 border-emerald-100', textClass: 'text-emerald-700' },
-              { label: 'التقويم النشط', value: summary?.activeOrthoCases ?? '—', bgClass: 'bg-violet-50 border-violet-100', textClass: 'text-violet-700' },
-              { label: 'المدفوع', value: summary?.totalPaid != null ? summary.totalPaid.toLocaleString() : '—', bgClass: 'bg-green-50 border-green-100', textClass: 'text-green-700' },
-              { label: 'المستحق', value: summary?.totalOutstanding != null ? summary.totalOutstanding.toLocaleString() : '—', bgClass: 'bg-orange-50 border-orange-100', textClass: 'text-orange-700' },
-              { label: 'الوصفات', value: summary?.prescriptionsCount ?? '—', bgClass: 'bg-blue-50 border-blue-100', textClass: 'text-blue-700' },
+              { label: 'المواعيد', value: summary?.totalAppointments ?? '—', bgClass: 'bg-sky-50 border-sky-100', textClass: 'text-sky-700', clinical: false },
+              { label: 'المكتملة', value: summary?.completedAppointments ?? '—', bgClass: 'bg-emerald-50 border-emerald-100', textClass: 'text-emerald-700', clinical: false },
+              { label: 'التقويم النشط', value: summary?.activeOrthoCases ?? '—', bgClass: 'bg-violet-50 border-violet-100', textClass: 'text-violet-700', clinical: true },
+              { label: 'المدفوع', value: summary?.totalPaid != null ? summary.totalPaid.toLocaleString() : '—', bgClass: 'bg-green-50 border-green-100', textClass: 'text-green-700', clinical: false },
+              { label: 'المستحق', value: summary?.totalOutstanding != null ? summary.totalOutstanding.toLocaleString() : '—', bgClass: 'bg-orange-50 border-orange-100', textClass: 'text-orange-700', clinical: false },
+              { label: 'الوصفات', value: summary?.prescriptionsCount ?? '—', bgClass: 'bg-blue-50 border-blue-100', textClass: 'text-blue-700', clinical: true },
             ].map((stat, i) => {
+              if (stat.clinical && !hasClinicalAccess) return null;
               if (!canViewFinance && (stat.label === 'المدفوع' || stat.label === 'المستحق')) return null;
               return (
                 <div key={i} className={`${stat.bgClass} rounded-lg px-3 py-1.5 text-center border`}>

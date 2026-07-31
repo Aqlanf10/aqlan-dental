@@ -1,4 +1,5 @@
 using AqlanDentalPro.API.Authorization;
+using AqlanDentalPro.API.Configuration;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -37,7 +38,7 @@ public sealed class UpdateDocumentRequest
 
 [ApiController]
 [Route("api/documents")]
-[Authorize(Policy = "StaffOnly")]
+[Authorize(Policy = AuthorizationPolicyNames.ClinicalRead)]
 [ServiceFilter(typeof(PatientAccessFilter))]
 public class DocumentsController(
     AppDbContext db,
@@ -145,6 +146,7 @@ public class DocumentsController(
 
     // ─── POST /api/documents ──────────────────────────────────────────────────
     [HttpPost]
+    [Authorize(Policy = AuthorizationPolicyNames.ClinicalWrite)]
     public async Task<IActionResult> CreateDocument([FromBody] CreateDocumentRequest req)
     {
         if (req.PatientId == Guid.Empty)
@@ -199,6 +201,7 @@ public class DocumentsController(
 
     // ─── PUT /api/documents/{id} ──────────────────────────────────────────────
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = AuthorizationPolicyNames.ClinicalWrite)]
     public async Task<IActionResult> UpdateDocument(Guid id, [FromBody] UpdateDocumentRequest req)
     {
         var doc = await db.Documents.FindAsync(id);
@@ -237,6 +240,7 @@ public class DocumentsController(
 
     // ─── DELETE /api/documents/{id} (soft-delete) ─────────────────────────────
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = AuthorizationPolicyNames.ClinicalWrite)]
     public async Task<IActionResult> DeleteDocument(Guid id)
     {
         var doc = await db.Documents.FindAsync(id);

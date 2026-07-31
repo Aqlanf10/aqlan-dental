@@ -95,3 +95,30 @@ public class PatientClinicalDto
     /// <summary>Always true — signals to the frontend that this is a restricted view.</summary>
     public bool IsLimitedView { get; set; } = true;
 }
+
+/// <summary>
+/// Minimum patient view for reception and other non-clinical staff.
+/// Contact and scheduling identifiers are available, while medical and dental
+/// histories are deliberately absent.
+/// </summary>
+public class PatientOperationalDto
+{
+    public Guid Id { get; set; }
+    public string PatientNumber { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string? MiddleName { get; set; }
+    public string LastName { get; set; } = string.Empty;
+    public string? DateOfBirth { get; set; }
+    public string? Gender { get; set; }
+    public int? Age { get; set; }
+    public string? Phone { get; set; }
+    public string? Email { get; set; }
+    public string? WhatsApp { get; set; }
+    public string? Address { get; set; }
+    public Guid? PrimaryDoctorId { get; set; }
+    public string? PrimaryDoctorName { get; set; }
+    public Guid? BranchId { get; set; }
+    public string? BranchName { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public bool IsActive { get; set; }
+}

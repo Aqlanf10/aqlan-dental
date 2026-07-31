@@ -4,6 +4,7 @@ import { persist } from "zustand/middleware";
 import type { UserDto, LoginRequest } from "@/types/auth";
 import api, {
   clearAccessToken,
+  IMPERSONATION_SESSION_MARKER,
   setAccessToken,
   setImpersonatingSession,
 } from "@/lib/api";
@@ -24,6 +25,12 @@ function clearLegacyTokenStorage() {
   // only in module memory; the refresh credential is an HttpOnly API cookie.
   localStorage.removeItem("access_token");
   localStorage.removeItem("aqlan_original_token");
+}
+
+function markImpersonationActive(active: boolean) {
+  if (typeof window === "undefined") return;
+  if (active) localStorage.setItem(IMPERSONATION_SESSION_MARKER, "1");
+  else localStorage.removeItem(IMPERSONATION_SESSION_MARKER);
 }
 
 interface AuthState {
@@ -56,6 +63,7 @@ export const useAuthStore = create<AuthState>()(
             credentials
           );
           clearLegacyTokenStorage();
+          markImpersonationActive(false);
           setAccessToken(data.accessToken);
           setImpersonatingSession(false);
           setAuthCookie(true);
@@ -85,6 +93,7 @@ export const useAuthStore = create<AuthState>()(
         clearAccessToken();
         setImpersonatingSession(false);
         clearLegacyTokenStorage();
+        markImpersonationActive(false);
         setAuthCookie(false);
         set({ user: null, isAuthenticated: false, originalUser: null, isImpersonating: false });
       },
@@ -106,6 +115,7 @@ export const useAuthStore = create<AuthState>()(
           clearAccessToken();
           setImpersonatingSession(false);
           clearLegacyTokenStorage();
+          markImpersonationActive(false);
           setAuthCookie(false);
           set({ user: null, isAuthenticated: false, originalUser: null, isImpersonating: false });
         }
@@ -116,6 +126,7 @@ export const useAuthStore = create<AuthState>()(
         if (!currentUser) return;
 
         clearLegacyTokenStorage();
+        markImpersonationActive(true);
         setAccessToken(targetAccessToken);
         setImpersonatingSession(true);
         setAuthCookie(true);
@@ -147,6 +158,7 @@ export const useAuthStore = create<AuthState>()(
           setAccessToken(data.accessToken);
           setImpersonatingSession(false);
           clearLegacyTokenStorage();
+          markImpersonationActive(false);
           setAuthCookie(true);
 
           try {
@@ -168,6 +180,7 @@ export const useAuthStore = create<AuthState>()(
           clearAccessToken();
           setImpersonatingSession(false);
           clearLegacyTokenStorage();
+          markImpersonationActive(false);
           setAuthCookie(false);
           set({
             user: null,
@@ -184,7 +197,8 @@ export const useAuthStore = create<AuthState>()(
     {
       name: "aqlan-auth",
       // Never persist impersonation recovery material. A page reload during an
-      // impersonated session deliberately requires re-login.
+      // impersonated session is detected through a non-secret marker and revoked
+      // before any target session can be restored.
       partialize: (s) => ({
         user: s.isImpersonating ? null : s.user,
         isAuthenticated: s.isImpersonating ? false : s.isAuthenticated,

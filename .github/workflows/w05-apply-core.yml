@@ -1,0 +1,467 @@
+name: W05 Apply Core Patch
+
+on:
+  push:
+    branches:
+      - codex/w05-clinic-business-date
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/w05-clinic-business-date
+          fetch-depth: 0
+
+      - name: Apply W05 core patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, found {count}: {old[:120]!r}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          # DI registration
+          replace_once(
+              'backend/src/AqlanDentalPro.API/Configuration/ServiceRegistrationConfiguration.cs',
+              '        services.AddScoped<IClinicClock, ClinicClock>();\n',
+              '        services.AddScoped<IClinicClock, ClinicClock>();\n'
+              '        services.AddScoped<IJourneyBusinessDatePolicy, JourneyBusinessDatePolicy>();\n')
+
+          # Thin API adapter accepts an optional explicit override payload.
+          replace_once(
+              'backend/src/AqlanDentalPro.API/Controllers/PatientJourneyController.cs',
+              '    public async Task<IActionResult> StartVisit(Guid appointmentId)\n'
+              '        => await checkoutService.StartVisitAsync(appointmentId);',
+              '    public async Task<IActionResult> StartVisit(Guid appointmentId, [FromBody] StartVisitRequest? req = null)\n'
+              '        => await checkoutService.StartVisitAsync(appointmentId, req);')
+
+          checkout_path = Path('backend/src/AqlanDentalPro.Infrastructure/Services/CheckoutService.cs')
+          checkout = checkout_path.read_text(encoding='utf-8')
+
+          old_ctor = '''    ICommissionService commissionService,
+    ICurrentUserService currentUser,
+    IPatientAccessService patientAccessService,'''
+          new_ctor = '''    ICommissionService commissionService,
+    ICurrentUserService currentUser,
+    IClinicClock clinicClock,
+    IJourneyBusinessDatePolicy businessDatePolicy,
+    IPatientAccessService patientAccessService,'''
+          if checkout.count(old_ctor) != 1:
+              raise SystemExit('CheckoutService constructor pattern mismatch')
+          checkout = checkout.replace(old_ctor, new_ctor, 1)
+
+          marker = '    // ─── 2. POST /api/patient-journey/{appointmentId}/intake ────────────────\n'
+          helpers = '''    private IActionResult? ValidateJourneyBusinessDate(
+        Appointment appointment,
+        IFutureAppointmentOverrideRequest? request,
+        out JourneyBusinessDateDecision decision)
+    {
+        decision = businessDatePolicy.Evaluate(
+            appointment.AppointmentDate,
+            request?.OverrideFutureAppointment ?? false,
+            request?.OverrideReason,
+            currentUser.IsAdmin);
+
+        if (decision.Allowed) return null;
+
+        var payload = new
+        {
+            code = decision.ErrorCode,
+            message = decision.Message,
+            appointmentDate = appointment.AppointmentDate.ToString("yyyy-MM-dd"),
+            businessDate = decision.BusinessDate.ToString("yyyy-MM-dd"),
+            timeZone = clinicClock.TimeZoneId
+        };
+
+        return decision.ErrorCode == "future_appointment_override_forbidden"
+            ? StatusCode(403, payload)
+            : BadRequest(payload);
+    }
+
+    private void AddFutureAppointmentOverrideAudit(
+        Appointment appointment,
+        string operation,
+        JourneyBusinessDateDecision decision)
+    {
+        if (!decision.Overridden) return;
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            UserId = currentUser.UserId,
+            Action = AuditAction.Approve,
+            Resource = "FutureAppointmentJourneyOverride",
+            ResourceId = appointment.Id,
+            NewData = JsonDocument.Parse(JsonSerializer.Serialize(new
+            {
+                operation,
+                appointment.PatientId,
+                appointmentDate = appointment.AppointmentDate.ToString("yyyy-MM-dd"),
+                businessDate = decision.BusinessDate.ToString("yyyy-MM-dd"),
+                reason = decision.OverrideReason,
+                timeZone = clinicClock.TimeZoneId
+            })),
+            CreatedAt = clinicClock.UtcNow()
+        });
+    }
+
+'''
+          if checkout.count(marker) != 1:
+              raise SystemExit('CheckoutService helper marker mismatch')
+          checkout = checkout.replace(marker, helpers + marker, 1)
+
+          intake_active = '''        if (!appointment.IsActive)
+            return BadRequest(new { message = "الموعد محذوف" });
+
+        // Validate transition: Scheduled/Confirmed → Arrived'''
+          intake_active_new = '''        if (!appointment.IsActive)
+            return BadRequest(new { message = "الموعد محذوف" });
+
+        var dateError = ValidateJourneyBusinessDate(appointment, req, out var dateDecision);
+        if (dateError != null) return dateError;
+
+        // Validate transition: Scheduled/Confirmed → Arrived'''
+          if checkout.count(intake_active) != 1:
+              raise SystemExit('Intake preflight pattern mismatch')
+          checkout = checkout.replace(intake_active, intake_active_new, 1)
+
+          intake_reload = '''            await db.Entry(appointment).ReloadAsync();
+            if (appointment.Status == AppointmentStatus.Arrived)'''
+          intake_reload_new = '''            await db.Entry(appointment).ReloadAsync();
+            dateError = ValidateJourneyBusinessDate(appointment, req, out dateDecision);
+            if (dateError != null)
+            {
+                await tx.RollbackAsync();
+                return dateError;
+            }
+            if (appointment.Status == AppointmentStatus.Arrived)'''
+          if checkout.count(intake_reload) != 1:
+              raise SystemExit('Intake reload pattern mismatch')
+          checkout = checkout.replace(intake_reload, intake_reload_new, 1)
+
+          intake_time = '''            appointment.Status = targetStatus;
+            appointment.ArrivedAt = DateTime.UtcNow;
+            appointment.UpdatedAt = DateTime.UtcNow;'''
+          intake_time_new = '''            var eventUtc = clinicClock.UtcNow();
+            appointment.Status = targetStatus;
+            appointment.ArrivedAt = eventUtc;
+            appointment.UpdatedAt = eventUtc;'''
+          if checkout.count(intake_time) != 1:
+              raise SystemExit('Intake timestamp pattern mismatch')
+          checkout = checkout.replace(intake_time, intake_time_new, 1)
+
+          intake_save = '''            if (!string.IsNullOrWhiteSpace(req.Notes))
+                appointment.Notes = string.IsNullOrWhiteSpace(appointment.Notes)
+                    ? req.Notes
+                    : $"{appointment.Notes}\\n{req.Notes}";
+
+            await db.SaveChangesAsync();'''
+          intake_save_new = '''            if (!string.IsNullOrWhiteSpace(req.Notes))
+                appointment.Notes = string.IsNullOrWhiteSpace(appointment.Notes)
+                    ? req.Notes
+                    : $"{appointment.Notes}\\n{req.Notes}";
+
+            AddFutureAppointmentOverrideAudit(appointment, "Intake", dateDecision);
+            await db.SaveChangesAsync();'''
+          if checkout.count(intake_save) != 1:
+              raise SystemExit('Intake audit pattern mismatch')
+          checkout = checkout.replace(intake_save, intake_save_new, 1)
+
+          send_active = '''        if (!appointment.IsActive)
+            return BadRequest(new { message = "الموعد محذوف" });
+
+        // Must be Arrived or Waiting status'''
+          send_active_new = '''        if (!appointment.IsActive)
+            return BadRequest(new { message = "الموعد محذوف" });
+
+        var dateError = ValidateJourneyBusinessDate(appointment, req, out var dateDecision);
+        if (dateError != null) return dateError;
+
+        // Must be Arrived or Waiting status'''
+          if checkout.count(send_active) != 1:
+              raise SystemExit('SendToQueue preflight pattern mismatch')
+          checkout = checkout.replace(send_active, send_active_new, 1)
+
+          send_start = checkout.index('    public async Task<IActionResult> SendToQueueAsync')
+          send_end = checkout.index('    // ─── 4. POST /api/patient-journey/', send_start)
+          send_block = checkout[send_start:send_end]
+          if send_block.count('var today = ClinicTimeProvider.ClinicToday();') != 1:
+              raise SystemExit('SendToQueue today pattern mismatch')
+          send_block = send_block.replace('var today = ClinicTimeProvider.ClinicToday();', 'var today = clinicClock.Today();', 1)
+
+          send_lock = '''            if (tx != null)
+            {
+                // Acquire advisory lock scoped to this patient (same as ClinicQueueController.AddToQueue)
+                var lockKey = (int)(appointment.PatientId.GetHashCode() % 100000);
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            }
+
+            // Re-check for existing active queue item for this appointment (inside lock)'''
+          send_lock_new = '''            if (tx != null)
+            {
+                // Acquire advisory lock scoped to this patient (same as ClinicQueueController.AddToQueue)
+                var lockKey = (int)(appointment.PatientId.GetHashCode() % 100000);
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            }
+
+            await db.Entry(appointment).ReloadAsync();
+            dateError = ValidateJourneyBusinessDate(appointment, req, out dateDecision);
+            if (dateError != null)
+            {
+                if (tx != null) await tx.RollbackAsync();
+                return dateError;
+            }
+            AddFutureAppointmentOverrideAudit(appointment, "SendToQueue", dateDecision);
+
+            // Re-check for existing active queue item for this appointment (inside lock)'''
+          if send_block.count(send_lock) != 1:
+              raise SystemExit('SendToQueue lock pattern mismatch')
+          send_block = send_block.replace(send_lock, send_lock_new, 1)
+          checkout = checkout[:send_start] + send_block + checkout[send_end:]
+
+          if checkout.count('public async Task<IActionResult> StartVisitAsync(Guid appointmentId)') != 1:
+              raise SystemExit('StartVisit signature mismatch')
+          checkout = checkout.replace(
+              'public async Task<IActionResult> StartVisitAsync(Guid appointmentId)',
+              'public async Task<IActionResult> StartVisitAsync(Guid appointmentId, StartVisitRequest? req = null)',
+              1)
+
+          start_active = '''        if (!appointment.IsActive)
+            return BadRequest(new { message = "الموعد محذوف" });
+
+        // Must be in InRoom, Called, or Arrived'''
+          start_active_new = '''        if (!appointment.IsActive)
+            return BadRequest(new { message = "الموعد محذوف" });
+
+        var dateError = ValidateJourneyBusinessDate(appointment, req, out var dateDecision);
+        if (dateError != null) return dateError;
+
+        // Must be in InRoom, Called, or Arrived'''
+          if checkout.count(start_active) != 1:
+              raise SystemExit('StartVisit preflight mismatch')
+          checkout = checkout.replace(start_active, start_active_new, 1)
+
+          start_idx = checkout.index('    public async Task<IActionResult> StartVisitAsync')
+          start_end = checkout.index('    // ─── 5. POST /api/patient-journey/', start_idx)
+          start_block = checkout[start_idx:start_end]
+          if start_block.count('var today = ClinicTimeProvider.ClinicToday();') != 1:
+              raise SystemExit('StartVisit today mismatch')
+          start_block = start_block.replace('var today = ClinicTimeProvider.ClinicToday();', 'var today = clinicClock.Today();', 1)
+
+          start_lock = '''            // Acquire advisory lock scoped to this appointment
+            var lockKey = (int)(appointmentId.GetHashCode() % 100000);
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            // Re-check for existing visit INSIDE the lock (to prevent race condition)'''
+          start_lock_new = '''            // Acquire advisory lock scoped to this appointment
+            var lockKey = (int)(appointmentId.GetHashCode() % 100000);
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            await db.Entry(appointment).ReloadAsync();
+            dateError = ValidateJourneyBusinessDate(appointment, req, out dateDecision);
+            if (dateError != null)
+            {
+                await tx.RollbackAsync();
+                return dateError;
+            }
+            AddFutureAppointmentOverrideAudit(appointment, "StartVisit", dateDecision);
+
+            // Re-check for existing visit INSIDE the lock (to prevent race condition)'''
+          if start_block.count(start_lock) != 1:
+              raise SystemExit('StartVisit lock mismatch')
+          start_block = start_block.replace(start_lock, start_lock_new, 1)
+          checkout = checkout[:start_idx] + start_block + checkout[start_end:]
+          checkout_path.write_text(checkout, encoding='utf-8')
+
+          queue_path = Path('backend/src/AqlanDentalPro.API/Controllers/ClinicQueueController.cs')
+          queue = queue_path.read_text(encoding='utf-8')
+
+          using_old = 'using AqlanDentalPro.Application.DTOs.Appointments;\n'
+          using_new = 'using AqlanDentalPro.Application.DTOs.Appointments;\nusing AqlanDentalPro.Application.DTOs.Journey;\n'
+          if queue.count(using_old) != 1:
+              raise SystemExit('ClinicQueue using mismatch')
+          queue = queue.replace(using_old, using_new, 1)
+
+          ctor_old = '''    IWhatsAppService whatsAppService,
+    IAuditService audit,
+    ILogger<ClinicQueueController> logger) : ControllerBase'''
+          ctor_new = '''    IWhatsAppService whatsAppService,
+    IAuditService audit,
+    ICurrentUserService currentUser,
+    IClinicClock clinicClock,
+    IJourneyBusinessDatePolicy businessDatePolicy,
+    ILogger<ClinicQueueController> logger) : ControllerBase'''
+          if queue.count(ctor_old) != 1:
+              raise SystemExit('ClinicQueue constructor mismatch')
+          queue = queue.replace(ctor_old, ctor_new, 1)
+
+          queue = queue.replace('        var today = ClinicTimeProvider.ClinicToday();\n\n        // Validate patient exists',
+                                '        var today = clinicClock.Today();\n\n        // Validate patient exists', 1)
+
+          validate_appointment = '''            // Validate appointment if provided
+            if (req.AppointmentId.HasValue)
+            {
+                var appointment = await db.Appointments.FindAsync(req.AppointmentId.Value);
+                if (appointment is null)
+                    return NotFound(new { message = "الموعد غير موجود" });
+                if (appointment.PatientId != req.PatientId)
+                    return BadRequest(new { message = "الموعد لا ينتمي لهذا المريض" });
+            }'''
+          validate_appointment_new = '''            // Validate appointment if provided, including W05 business-date guard.
+            if (req.AppointmentId.HasValue)
+            {
+                var appointment = await db.Appointments.FindAsync(req.AppointmentId.Value);
+                if (appointment is null)
+                    return NotFound(new { message = "الموعد غير موجود" });
+                if (!appointment.IsActive)
+                    return BadRequest(new { message = "الموعد محذوف" });
+                if (appointment.PatientId != req.PatientId)
+                    return BadRequest(new { message = "الموعد لا ينتمي لهذا المريض" });
+
+                var dateError = ValidateJourneyBusinessDate(appointment, req, out var dateDecision);
+                if (dateError != null) return dateError;
+                AddFutureAppointmentOverrideAudit(appointment, "LegacyAddToQueue", dateDecision);
+            }'''
+          if queue.count(validate_appointment) != 1:
+              raise SystemExit('ClinicQueue appointment validation mismatch')
+          queue = queue.replace(validate_appointment, validate_appointment_new, 1)
+
+          mark_sig = '    public async Task<IActionResult> MarkArrived(Guid id)'
+          if queue.count(mark_sig) != 1:
+              raise SystemExit('MarkArrived signature mismatch')
+          queue = queue.replace(mark_sig, '    public async Task<IActionResult> MarkArrived(Guid id, [FromBody] StartVisitRequest? req = null)', 1)
+
+          mark_date = '''        var today = ClinicTimeProvider.ClinicToday();
+        if (appointment.AppointmentDate != today)
+            return BadRequest(new { message = "لا يمكن تسجيل الوصول إلا لمواعيد اليوم" });'''
+          mark_date_new = '''        var dateError = ValidateJourneyBusinessDate(appointment, req, out var dateDecision);
+        if (dateError != null) return dateError;
+        var today = dateDecision.BusinessDate;'''
+          if queue.count(mark_date) != 1:
+              raise SystemExit('MarkArrived date guard mismatch')
+          queue = queue.replace(mark_date, mark_date_new, 1)
+
+          mark_lock = '''            var lockKey = (int)(appointment.PatientId.GetHashCode() % 100000);
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            // Also add to clinic queue if not already there'''
+          mark_lock_new = '''            var lockKey = (int)(appointment.PatientId.GetHashCode() % 100000);
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            await db.Entry(appointment).ReloadAsync();
+            dateError = ValidateJourneyBusinessDate(appointment, req, out dateDecision);
+            if (dateError != null)
+            {
+                await tx.RollbackAsync();
+                return dateError;
+            }
+            AddFutureAppointmentOverrideAudit(appointment, "LegacyMarkArrived", dateDecision);
+
+            // Also add to clinic queue if not already there'''
+          if queue.count(mark_lock) != 1:
+              raise SystemExit('MarkArrived lock mismatch')
+          queue = queue.replace(mark_lock, mark_lock_new, 1)
+
+          mark_time = '''            appointment.Status = AppointmentStatus.Waiting;
+            appointment.ArrivedAt = DateTime.UtcNow;
+            appointment.UpdatedAt = DateTime.UtcNow;'''
+          mark_time_new = '''            var eventUtc = clinicClock.UtcNow();
+            appointment.Status = AppointmentStatus.Waiting;
+            appointment.ArrivedAt = eventUtc;
+            appointment.UpdatedAt = eventUtc;'''
+          if queue.count(mark_time) != 1:
+              raise SystemExit('MarkArrived timestamp mismatch')
+          queue = queue.replace(mark_time, mark_time_new, 1)
+
+          helper_marker = '    private Guid? GetCurrentUserId()\n'
+          controller_helpers = '''    private IActionResult? ValidateJourneyBusinessDate(
+        Appointment appointment,
+        IFutureAppointmentOverrideRequest? request,
+        out JourneyBusinessDateDecision decision)
+    {
+        decision = businessDatePolicy.Evaluate(
+            appointment.AppointmentDate,
+            request?.OverrideFutureAppointment ?? false,
+            request?.OverrideReason,
+            currentUser.IsAdmin);
+
+        if (decision.Allowed) return null;
+        var payload = new
+        {
+            code = decision.ErrorCode,
+            message = decision.Message,
+            appointmentDate = appointment.AppointmentDate.ToString("yyyy-MM-dd"),
+            businessDate = decision.BusinessDate.ToString("yyyy-MM-dd"),
+            timeZone = clinicClock.TimeZoneId
+        };
+        return decision.ErrorCode == "future_appointment_override_forbidden"
+            ? StatusCode(403, payload)
+            : BadRequest(payload);
+    }
+
+    private void AddFutureAppointmentOverrideAudit(
+        Appointment appointment,
+        string operation,
+        JourneyBusinessDateDecision decision)
+    {
+        if (!decision.Overridden) return;
+        db.AuditLogs.Add(new AuditLog
+        {
+            UserId = currentUser.UserId,
+            Action = AuditAction.Approve,
+            Resource = "FutureAppointmentJourneyOverride",
+            ResourceId = appointment.Id,
+            NewData = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(new
+            {
+                operation,
+                appointment.PatientId,
+                appointmentDate = appointment.AppointmentDate.ToString("yyyy-MM-dd"),
+                businessDate = decision.BusinessDate.ToString("yyyy-MM-dd"),
+                reason = decision.OverrideReason,
+                timeZone = clinicClock.TimeZoneId
+            })),
+            CreatedAt = clinicClock.UtcNow()
+        });
+    }
+
+'''
+          if queue.count(helper_marker) != 1:
+              raise SystemExit('ClinicQueue helper marker mismatch')
+          queue = queue.replace(helper_marker, controller_helpers + helper_marker, 1)
+
+          dto_old = '''    public string? RoomName { get; set; }
+    public string? Notes { get; set; }
+}'''
+          dto_new = '''    public string? RoomName { get; set; }
+    public string? Notes { get; set; }
+    public bool OverrideFutureAppointment { get; set; }
+    public string? OverrideReason { get; set; }
+}'''
+          if queue.count(dto_old) != 1:
+              raise SystemExit('AddToQueueRequest DTO mismatch')
+          queue = queue.replace(dto_old, dto_new, 1)
+          queue = queue.replace('public class AddToQueueRequest\n{', 'public class AddToQueueRequest : IFutureAppointmentOverrideRequest\n{', 1)
+          queue_path.write_text(queue, encoding='utf-8')
+
+          Path('.github/workflows/w05-apply-core.yml').unlink()
+          PY
+
+      - name: Commit patched files
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat(journey): enforce clinic business date across active paths"
+          git push origin HEAD:codex/w05-clinic-business-date

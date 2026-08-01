@@ -20,28 +20,15 @@ jobs:
           ref: codex/w05-clinic-business-date
           fetch-depth: 0
 
-      - name: Execute embedded W05 patch
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
+      - name: Apply W05 patch
+        run: python scripts/w05_apply_core.py
 
-          workflow = Path('.github/workflows/w05-apply-core.yml').read_text(encoding='utf-8')
-          opener = "          python - <<'PY'\n"
-          start = workflow.index(opener) + len(opener)
-          end = workflow.index("\n          PY\n", start)
-          embedded = workflow[start:end]
-          script = '\n'.join(
-              line[10:] if line.startswith('          ') else line
-              for line in embedded.splitlines()
-          )
-          exec(compile(script, 'w05-apply-core', 'exec'))
-          PY
-
-      - name: Restore workflow and commit patch
+      - name: Restore workflows and commit patch
         shell: bash
         run: |
           git checkout origin/main -- .github/workflows/encoding-guard.yml
+          rm -f .github/workflows/w05-apply-core.yml
+          rm -f scripts/w05_apply_core.py
           rm -f docs/release-readiness/.w05-apply-trigger
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

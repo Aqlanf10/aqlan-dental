@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - codex/extract-release-playbook-w05
+  pull_request:
+    branches:
+      - codex/release-work-playbook
 
 permissions:
   contents: read

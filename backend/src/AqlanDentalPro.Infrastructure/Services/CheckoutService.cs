@@ -31,6 +31,30 @@ public class CheckoutService(
     IRealTimePushService pushService,
     ILogger<CheckoutService> logger)
 {
+    /// <summary>
+    /// Backward-compatible constructor for existing unit/integration fixtures.
+    /// Production DI selects the primary constructor above and injects the
+    /// canonical clock and policy explicitly.
+    /// </summary>
+    public CheckoutService(
+        AppDbContext db,
+        ICommissionService commissionService,
+        ICurrentUserService currentUser,
+        IPatientAccessService patientAccessService,
+        IRealTimePushService pushService,
+        ILogger<CheckoutService> logger)
+        : this(
+            db,
+            commissionService,
+            currentUser,
+            new ClinicClock(),
+            new JourneyBusinessDatePolicy(new ClinicClock()),
+            patientAccessService,
+            pushService,
+            logger)
+    {
+    }
+
     // IAuditService is injected per CLIN-22 spec for future audit-log migration.
     // The two existing AuditLog writes (MarkLeftWithoutCompletion, ValidateFinancialClosure)
     // intentionally keep direct db.AuditLogs.Add(...) so they remain in the same

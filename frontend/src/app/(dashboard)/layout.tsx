@@ -5,8 +5,12 @@ import { Topbar } from "@/components/layout/Topbar";
 import { ImpersonationBanner } from "@/components/layout/ImpersonationBanner";
 import { Toaster } from "@/components/ui/toaster";
 import { useAuthStore } from "@/stores/authStore";
+import {
+  clearStaffBrowserSession,
+  IMPERSONATION_SESSION_MARKER,
+  terminateImpersonatedRefreshSession,
+} from "@/lib/api";
 import { useRouter, usePathname } from "next/navigation";
-
 import { useEffect, useState } from "react";
 import { useSignalRMessaging } from "@/hooks/useSignalRMessaging";
 import { isRouteAllowed } from "@/lib/routePermissions";
@@ -16,37 +20,44 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { isAuthenticated, fetchMe, user } = useAuthStore();
+  const { fetchMe, user } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
   const [isReady, setIsReady] = useState(false);
 
-  // SignalR: اتصال فوري للمراسلة والإشعارات
   useSignalRMessaging();
 
   useEffect(() => {
-    // If we have a persisted auth state but no user data, try to fetch it
-    if (isAuthenticated && !user) {
-      fetchMe().finally(() => setIsReady(true));
-    } else if (!isAuthenticated) {
-      // Check if there's a token and try to validate it
-      const token = localStorage.getItem("access_token");
-      if (token) {
-        fetchMe().catch(() => {
-          router.push("/login");
-        }).finally(() => setIsReady(true));
-      } else {
+    // W04: access tokens are no longer persisted. A non-secret marker is retained
+    // only to detect a page reload during impersonation. In that case revoke the
+    // target refresh session before it can be refreshed into an ordinary target
+    // login, clear local state, and require fresh administrator authentication.
+    const validateSession = async () => {
+      if (localStorage.getItem(IMPERSONATION_SESSION_MARKER) === "1") {
+        await terminateImpersonatedRefreshSession();
+        clearStaffBrowserSession();
+        useAuthStore.setState({
+          user: null,
+          isAuthenticated: false,
+          originalUser: null,
+          isImpersonating: false,
+          isLoading: false,
+        });
+        router.replace("/login");
+        setIsReady(true);
+        return;
+      }
+
+      await fetchMe();
+      if (!useAuthStore.getState().isAuthenticated) {
         router.push("/login");
       }
-    } else {
       setIsReady(true);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-    // Intentionally excluded: this effect runs once on mount to validate the auth token.
-    // Adding fetchMe/user/isAuthenticated would cause an infinite re-fetch loop since
-    // fetchMe updates the user state, which would re-trigger this effect.
+    };
 
-  // ─── Route Permission Guard ─────────────────────────────────────────
+    void validateSession();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const userRole = user?.role ?? null;
   useEffect(() => {
     if (isReady && userRole && !isRouteAllowed(pathname, userRole)) {
@@ -71,13 +82,8 @@ export default function DashboardLayout({
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "#eef3f9", direction: "rtl" }}>
-      {/* Impersonation Banner — fixed at top */}
       <ImpersonationBanner />
-
-      {/* Sidebar — fixed, right side in RTL */}
       <Sidebar />
-
-      {/* Main content — offset by sidebar width on desktop */}
       <div className="flex-1 flex flex-col overflow-hidden lg:mr-64">
         <Topbar />
         <main className="flex-1 overflow-y-auto p-6">

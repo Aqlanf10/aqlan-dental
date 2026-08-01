@@ -2,20 +2,35 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { UserDto, LoginRequest } from "@/types/auth";
-import api from "@/lib/api";
+import api, {
+  clearAccessToken,
+  IMPERSONATION_SESSION_MARKER,
+  setAccessToken,
+  setImpersonatingSession,
+} from "@/lib/api";
 
-/** Helper: set/clear auth cookie for middleware */
+/** Helper: set/clear the non-secret routing sentinel used by middleware. */
 function setAuthCookie(authenticated: boolean) {
   if (typeof document === "undefined") return;
-  // This is only a non-secret routing sentinel used by Next.js middleware.
-  // The real media credential is issued by the API as an HttpOnly cookie.
   const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
   const secureFlag = isHttps ? "; Secure" : "";
-  // SEC-03: aqlan_auth_status is the sentinel cookie for Next.js middleware routing (existing).
   document.cookie = `aqlan_auth_status=${
     authenticated ? "authenticated" : ""
   }; path=/; max-age=${authenticated ? 60 * 60 * 24 * 7 : 0}; SameSite=Strict${secureFlag}`;
+}
 
+function clearLegacyTokenStorage() {
+  if (typeof window === "undefined") return;
+  // W04: remove values written by older releases. Staff access tokens now live
+  // only in module memory; the refresh credential is an HttpOnly API cookie.
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("aqlan_original_token");
+}
+
+function markImpersonationActive(active: boolean) {
+  if (typeof window === "undefined") return;
+  if (active) localStorage.setItem(IMPERSONATION_SESSION_MARKER, "1");
+  else localStorage.removeItem(IMPERSONATION_SESSION_MARKER);
 }
 
 interface AuthState {
@@ -27,7 +42,7 @@ interface AuthState {
   login: (credentials: LoginRequest) => Promise<boolean>;
   logout: () => Promise<void>;
   fetchMe: () => Promise<void>;
-  startImpersonation: (accessToken: string, user: UserDto) => void;
+  startImpersonation: (accessToken: string, user: UserDto) => Promise<void>;
   stopImpersonation: () => Promise<void>;
 }
 
@@ -47,23 +62,22 @@ export const useAuthStore = create<AuthState>()(
             "/api/auth/login",
             credentials
           );
-          localStorage.setItem("access_token", data.accessToken);
+          clearLegacyTokenStorage();
+          markImpersonationActive(false);
+          setAccessToken(data.accessToken);
+          setImpersonatingSession(false);
           setAuthCookie(true);
 
-          // Fetch user permissions after login
           try {
             const { data: permData } = await api.get<{ role: string; permissions: string[] }>("/api/auth/me/permissions");
             data.user.permissions = permData.permissions;
           } catch {
-            // Permissions fetch failed — continue without permissions
+            // Permissions fetch failed — continue without permissions.
           }
 
           set({ user: data.user, isAuthenticated: true, originalUser: null, isImpersonating: false });
-          // Return true if user must change password so caller can redirect
           return !!(data.mustChangePassword || data.user.mustChangePassword);
         } catch (error: unknown) {
-          // Re-throw so login page can show appropriate error message
-          // (network errors vs auth errors need different messages)
           throw error;
         } finally {
           set({ isLoading: false });
@@ -74,9 +88,12 @@ export const useAuthStore = create<AuthState>()(
         try {
           await api.post("/api/auth/logout");
         } catch {
-          // ignore logout API errors
+          // Local cleanup still runs.
         }
-        localStorage.removeItem("access_token");
+        clearAccessToken();
+        setImpersonatingSession(false);
+        clearLegacyTokenStorage();
+        markImpersonationActive(false);
         setAuthCookie(false);
         set({ user: null, isAuthenticated: false, originalUser: null, isImpersonating: false });
       },
@@ -86,30 +103,32 @@ export const useAuthStore = create<AuthState>()(
           const { data } = await api.get<UserDto>("/api/auth/me");
           setAuthCookie(true);
 
-          // Fetch user permissions
           try {
             const { data: permData } = await api.get<{ role: string; permissions: string[] }>("/api/auth/me/permissions");
             data.permissions = permData.permissions;
           } catch {
-            // Permissions fetch failed — user will have limited UI but can still function
+            // Permissions fetch failed — user will have limited UI but can still function.
           }
 
           set({ user: data, isAuthenticated: true });
         } catch {
-          localStorage.removeItem("access_token");
+          clearAccessToken();
+          setImpersonatingSession(false);
+          clearLegacyTokenStorage();
+          markImpersonationActive(false);
           setAuthCookie(false);
-          set({ user: null, isAuthenticated: false, isImpersonating: false });
+          set({ user: null, isAuthenticated: false, originalUser: null, isImpersonating: false });
         }
       },
 
-      startImpersonation: (accessToken: string, user: UserDto) => {
+      startImpersonation: async (targetAccessToken: string, user: UserDto) => {
         const currentUser = get().user;
         if (!currentUser) return;
-        // Store the original user and token for restoration
-        localStorage.setItem("aqlan_original_token", localStorage.getItem("access_token") ?? "");
-        localStorage.setItem("access_token", accessToken);
-        // SEC-03: sync the access-token cookie so /uploads/* requests authenticate as the
-        // impersonated user.
+
+        clearLegacyTokenStorage();
+        markImpersonationActive(true);
+        setAccessToken(targetAccessToken);
+        setImpersonatingSession(true);
         setAuthCookie(true);
         set({
           originalUser: currentUser,
@@ -120,44 +139,75 @@ export const useAuthStore = create<AuthState>()(
       },
 
       stopImpersonation: async () => {
-        const originalToken = localStorage.getItem("aqlan_original_token");
-        if (originalToken) {
-          localStorage.setItem("access_token", originalToken);
-          localStorage.removeItem("aqlan_original_token");
-        }
-        // SEC-03: sync the access-token cookie back to the original user.
-        setAuthCookie(true);
-        const { originalUser } = get();
-        if (originalUser) {
+        if (!get().isImpersonating) return;
+        set({ isLoading: true });
+
+        try {
+          // First revoke the target user's refresh cookie while retaining the
+          // impersonated access token in memory. The next call still carries the
+          // originalUserId claims and asks the backend to issue a brand-new admin
+          // session, which is the only accepted restoration path.
+          await api.post("/api/auth/logout");
+
+          const { data } = await api.post<{
+            accessToken: string;
+            user: UserDto;
+            isImpersonating: false;
+          }>("/api/auth/stop-impersonation");
+
+          setAccessToken(data.accessToken);
+          setImpersonatingSession(false);
+          clearLegacyTokenStorage();
+          markImpersonationActive(false);
+          setAuthCookie(true);
+
+          try {
+            const { data: permData } = await api.get<{ role: string; permissions: string[] }>("/api/auth/me/permissions");
+            data.user.permissions = permData.permissions;
+          } catch {
+            // The restored administrator can reload permissions later.
+          }
+
           set({
-            user: originalUser,
+            user: data.user,
             originalUser: null,
             isImpersonating: false,
+            isAuthenticated: true,
           });
+        } catch (error) {
+          // Never restore a cached administrator token after a failed stop. The
+          // only safe fallback is a fresh login.
+          clearAccessToken();
+          setImpersonatingSession(false);
+          clearLegacyTokenStorage();
+          markImpersonationActive(false);
+          setAuthCookie(false);
+          set({
+            user: null,
+            originalUser: null,
+            isImpersonating: false,
+            isAuthenticated: false,
+          });
+          throw error;
+        } finally {
+          set({ isLoading: false });
         }
-        // Also try to call the backend to invalidate the impersonation session
-        try {
-          await api.post("/api/auth/stop-impersonation");
-        } catch {
-          // Ignore errors - we've already restored the original token locally
-        }
-        // Refresh user data from backend to ensure consistency
-        await get().fetchMe();
       },
     }),
     {
       name: "aqlan-auth",
+      // Never persist impersonation recovery material. A page reload during an
+      // impersonated session is detected through a non-secret marker and revoked
+      // before any target session can be restored.
       partialize: (s) => ({
-        user: s.user,
-        isAuthenticated: s.isAuthenticated,
-        originalUser: s.originalUser,
-        isImpersonating: s.isImpersonating,
+        user: s.isImpersonating ? null : s.user,
+        isAuthenticated: s.isImpersonating ? false : s.isAuthenticated,
       }),
       onRehydrateStorage: () => (state) => {
-        // Sync cookie on rehydration
-        if (state?.isAuthenticated) {
-          setAuthCookie(true);
-        }
+        clearAccessToken();
+        setImpersonatingSession(false);
+        clearLegacyTokenStorage();
+        if (state?.isAuthenticated) setAuthCookie(true);
       },
     }
   )

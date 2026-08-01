@@ -25,6 +25,8 @@ public class CheckoutService(
     AppDbContext db,
     ICommissionService commissionService,
     ICurrentUserService currentUser,
+    IClinicClock clinicClock,
+    IJourneyBusinessDatePolicy businessDatePolicy,
     IPatientAccessService patientAccessService,
     IRealTimePushService pushService,
     ILogger<CheckoutService> logger)
@@ -67,6 +69,59 @@ public class CheckoutService(
         }
     }
 
+    private IActionResult? ValidateJourneyBusinessDate(
+        Appointment appointment,
+        IFutureAppointmentOverrideRequest? request,
+        out JourneyBusinessDateDecision decision)
+    {
+        decision = businessDatePolicy.Evaluate(
+            appointment.AppointmentDate,
+            request?.OverrideFutureAppointment ?? false,
+            request?.OverrideReason,
+            currentUser.IsAdmin);
+
+        if (decision.Allowed) return null;
+
+        var payload = new
+        {
+            code = decision.ErrorCode,
+            message = decision.Message,
+            appointmentDate = appointment.AppointmentDate.ToString("yyyy-MM-dd"),
+            businessDate = decision.BusinessDate.ToString("yyyy-MM-dd"),
+            timeZone = clinicClock.TimeZoneId
+        };
+
+        return decision.ErrorCode == "future_appointment_override_forbidden"
+            ? StatusCode(403, payload)
+            : BadRequest(payload);
+    }
+
+    private void AddFutureAppointmentOverrideAudit(
+        Appointment appointment,
+        string operation,
+        JourneyBusinessDateDecision decision)
+    {
+        if (!decision.Overridden) return;
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            UserId = currentUser.UserId,
+            Action = AuditAction.Approve,
+            Resource = "FutureAppointmentJourneyOverride",
+            ResourceId = appointment.Id,
+            NewData = JsonDocument.Parse(JsonSerializer.Serialize(new
+            {
+                operation,
+                appointment.PatientId,
+                appointmentDate = appointment.AppointmentDate.ToString("yyyy-MM-dd"),
+                businessDate = decision.BusinessDate.ToString("yyyy-MM-dd"),
+                reason = decision.OverrideReason,
+                timeZone = clinicClock.TimeZoneId
+            })),
+            CreatedAt = clinicClock.UtcNow()
+        });
+    }
+
     // ─── 2. POST /api/patient-journey/{appointmentId}/intake ────────────────
     /// <summary>Reception confirms patient arrival and records intake info.</summary>
     /// <remarks>
@@ -83,6 +138,9 @@ public class CheckoutService(
         if (!appointment.IsActive)
             return BadRequest(new { message = "الموعد محذوف" });
 
+        var dateError = ValidateJourneyBusinessDate(appointment, req, out var dateDecision);
+        if (dateError != null) return dateError;
+
         // Validate transition: Scheduled/Confirmed → Arrived
         var targetStatus = AppointmentStatus.Arrived;
         if (!AppointmentStatusTransitions.IsValidTransition(appointment.Status, targetStatus))
@@ -98,6 +156,12 @@ public class CheckoutService(
 
             // Re-check appointment status INSIDE the lock (to prevent race condition)
             await db.Entry(appointment).ReloadAsync();
+            dateError = ValidateJourneyBusinessDate(appointment, req, out dateDecision);
+            if (dateError != null)
+            {
+                await tx.RollbackAsync();
+                return dateError;
+            }
             if (appointment.Status == AppointmentStatus.Arrived)
             {
                 await tx.RollbackAsync();
@@ -110,9 +174,10 @@ public class CheckoutService(
             }
 
             // Update appointment
+            var eventUtc = clinicClock.UtcNow();
             appointment.Status = targetStatus;
-            appointment.ArrivedAt = DateTime.UtcNow;
-            appointment.UpdatedAt = DateTime.UtcNow;
+            appointment.ArrivedAt = eventUtc;
+            appointment.UpdatedAt = eventUtc;
 
             // Attach service if provided
             if (req.ServiceId.HasValue)
@@ -141,6 +206,7 @@ public class CheckoutService(
                     ? req.Notes
                     : $"{appointment.Notes}\n{req.Notes}";
 
+            AddFutureAppointmentOverrideAudit(appointment, "Intake", dateDecision);
             await db.SaveChangesAsync();
             await tx.CommitAsync();
 
@@ -179,11 +245,14 @@ public class CheckoutService(
         if (!appointment.IsActive)
             return BadRequest(new { message = "الموعد محذوف" });
 
+        var dateError = ValidateJourneyBusinessDate(appointment, req, out var dateDecision);
+        if (dateError != null) return dateError;
+
         // Must be Arrived or Waiting status
         if (appointment.Status != AppointmentStatus.Arrived && appointment.Status != AppointmentStatus.Waiting)
             return BadRequest(new { message = "يجب أن يكون المريض وصل أو في الانتظار قبل إضافته لقائمة الانتظار" });
 
-        var today = ClinicTimeProvider.ClinicToday();
+        var today = clinicClock.Today();
 
         // Relational production providers use a transaction + advisory lock to
         // serialize concurrent clicks. InMemory tests have no transactions/raw SQL,
@@ -199,6 +268,15 @@ public class CheckoutService(
                 var lockKey = (int)(appointment.PatientId.GetHashCode() % 100000);
                 await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
             }
+
+            await db.Entry(appointment).ReloadAsync();
+            dateError = ValidateJourneyBusinessDate(appointment, req, out dateDecision);
+            if (dateError != null)
+            {
+                if (tx != null) await tx.RollbackAsync();
+                return dateError;
+            }
+            AddFutureAppointmentOverrideAudit(appointment, "SendToQueue", dateDecision);
 
             // Re-check for existing active queue item for this appointment (inside lock)
             var existingQueueItem = await db.ClinicQueueItems
@@ -331,7 +409,7 @@ public class CheckoutService(
     /// that could create duplicate visits when concurrent requests hit this endpoint.
     /// Pattern matches ClinicQueueController.StartVisit.
     /// </remarks>
-    public async Task<IActionResult> StartVisitAsync(Guid appointmentId)
+    public async Task<IActionResult> StartVisitAsync(Guid appointmentId, StartVisitRequest? req = null)
     {
         // Pre-flight validation (outside transaction for fast rejection)
         var appointment = await db.Appointments.FindAsync(appointmentId);
@@ -339,6 +417,9 @@ public class CheckoutService(
             return NotFound(new { message = "الموعد غير موجود" });
         if (!appointment.IsActive)
             return BadRequest(new { message = "الموعد محذوف" });
+
+        var dateError = ValidateJourneyBusinessDate(appointment, req, out var dateDecision);
+        if (dateError != null) return dateError;
 
         // Must be in InRoom, Called, or Arrived (with queue in InRoom/Called) status
         // FIX: Accept Arrived status because SyncAppointmentStatus can be blocked by transition rules,
@@ -368,7 +449,7 @@ public class CheckoutService(
             }
         }
 
-        var today = ClinicTimeProvider.ClinicToday();
+        var today = clinicClock.Today();
 
         // Sprint 1 FIX: Wrap in transaction + advisory lock to prevent duplicate visits
         await using var tx = await db.Database.BeginTransactionAsync();
@@ -377,6 +458,15 @@ public class CheckoutService(
             // Acquire advisory lock scoped to this appointment
             var lockKey = (int)(appointmentId.GetHashCode() % 100000);
             await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            await db.Entry(appointment).ReloadAsync();
+            dateError = ValidateJourneyBusinessDate(appointment, req, out dateDecision);
+            if (dateError != null)
+            {
+                await tx.RollbackAsync();
+                return dateError;
+            }
+            AddFutureAppointmentOverrideAudit(appointment, "StartVisit", dateDecision);
 
             // Re-check for existing visit INSIDE the lock (to prevent race condition)
             var existingVisit = await db.Visits

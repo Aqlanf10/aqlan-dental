@@ -6,36 +6,7 @@ on:
   pull_request:
     branches: [main, master]
 
-permissions:
-  contents: write
-
 jobs:
-  w05-patch:
-    if: github.head_ref == 'codex/w05-clinic-business-date' && github.actor != 'github-actions[bot]'
-    name: Apply W05 Core Patch Once
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: codex/w05-clinic-business-date
-          fetch-depth: 0
-
-      - name: Apply W05 patch
-        run: python scripts/w05_apply_core.py
-
-      - name: Restore workflows and commit patch
-        shell: bash
-        run: |
-          git checkout origin/main -- .github/workflows/encoding-guard.yml
-          rm -f .github/workflows/w05-apply-core.yml
-          rm -f scripts/w05_apply_core.py
-          rm -f docs/release-readiness/.w05-apply-trigger
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "feat(journey): enforce clinic business date across active paths"
-          git push origin HEAD:codex/w05-clinic-business-date
-
   mojibake:
     name: Arabic Mojibake Guard
     runs-on: ubuntu-latest

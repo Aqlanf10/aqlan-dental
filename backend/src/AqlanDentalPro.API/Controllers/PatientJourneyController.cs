@@ -103,8 +103,8 @@ public class PatientJourneyController(
     /// Pattern matches ClinicQueueController.StartVisit.
     /// </remarks>
     [HttpPost("{appointmentId:guid}/start-visit")]
-    public async Task<IActionResult> StartVisit(Guid appointmentId)
-        => await checkoutService.StartVisitAsync(appointmentId);
+    public async Task<IActionResult> StartVisit(Guid appointmentId, [FromBody] StartVisitRequest? req = null)
+        => await checkoutService.StartVisitAsync(appointmentId, req);
 
     // ─── 5. POST /api/patient-journey/{visitId}/handoff-to-reception ────────
     /// <summary>Doctor finishes and sends patient to reception for checkout.</summary>

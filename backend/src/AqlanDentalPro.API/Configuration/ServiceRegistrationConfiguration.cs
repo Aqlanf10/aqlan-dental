@@ -36,6 +36,7 @@ public static class ServiceRegistrationConfiguration
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<IPatientSettingsReader, PatientSettingsReader>();
         services.AddScoped<IClinicClock, ClinicClock>();
+        services.AddScoped<IJourneyBusinessDatePolicy, JourneyBusinessDatePolicy>();
         services.AddScoped<PatientService>();
         services.AddScoped<AppointmentService>();
         services.AddScoped<DashboardService>();

@@ -3,11 +3,7 @@
  *
  * Originally a 1,788-line monolith. Split into one file per modal under
  * `_components/modals/` (CLEANUP-1). This barrel preserves the existing
- * import path so call sites (e.g. `daily-operations/page.tsx`) don't break:
- *
- *   import { QuickPaymentModal, ... } from "./_components/Modals";
- *
- * No behavior changes — pure file extraction. Arabic RTL preserved.
+ * import path so call sites (e.g. `daily-operations/page.tsx`) don't break.
  */
 
 export { QuickPaymentModal } from "./modals/QuickPaymentModal";
@@ -23,3 +19,7 @@ export { KeyboardShortcutsHelp } from "./modals/KeyboardShortcutsHelp";
 export { BulkSmsModal } from "./modals/BulkSmsModal";
 export { DirectPaymentModal } from "./modals/DirectPaymentModal";
 export { OverrideDialog } from "./modals/OverrideDialog";
+export {
+  FutureAppointmentOverrideDialog,
+  type FutureAppointmentOverrideOperation,
+} from "./modals/FutureAppointmentOverrideDialog";

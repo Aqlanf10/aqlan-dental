@@ -1,0 +1,54 @@
+name: Extract Release Playbook Text
+
+on:
+  push:
+    branches:
+      - codex/extract-release-playbook-w05
+
+permissions:
+  contents: read
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract DOCX text
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import xml.etree.ElementTree as ET
+
+          source = Path('docs/release-readiness/AQLAN_DENTAL_MASTER_WORK_PLAYBOOK_AR.docx')
+          output = Path('playbook-extracted.txt')
+          ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+
+          with ZipFile(source) as archive:
+              root = ET.fromstring(archive.read('word/document.xml'))
+
+          lines = []
+          for paragraph in root.findall('.//w:p', ns):
+              parts = []
+              for node in paragraph.iter():
+                  if node.tag == f"{{{ns['w']}}}t" and node.text:
+                      parts.append(node.text)
+                  elif node.tag == f"{{{ns['w']}}}tab":
+                      parts.append('\t')
+                  elif node.tag == f"{{{ns['w']}}}br":
+                      parts.append('\n')
+              text = ''.join(parts).strip()
+              if text:
+                  lines.append(text)
+
+          output.write_text('\n'.join(lines), encoding='utf-8')
+          PY
+
+      - name: Upload extracted playbook
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-playbook-text
+          path: playbook-extracted.txt
+          retention-days: 1

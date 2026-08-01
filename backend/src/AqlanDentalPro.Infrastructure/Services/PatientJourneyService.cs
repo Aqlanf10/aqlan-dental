@@ -21,8 +21,17 @@ public class PatientJourneyService(
     AppDbContext db,
     IPatientAccessService patientAccessService,
     IFinanceReadService financeReadService,
+    IClinicClock clinicClock,
     ILogger<PatientJourneyService> logger)
 {
+    public PatientJourneyService(
+        AppDbContext db,
+        IPatientAccessService patientAccessService,
+        IFinanceReadService financeReadService,
+        ILogger<PatientJourneyService> logger)
+        : this(db, patientAccessService, financeReadService, new ClinicClock(), logger)
+    {
+    }
     // ─── 1. GET /api/patient-journey/today ────────────────────────────────────
     /// <summary>Returns today's patient journey list combining appointments,
     /// queue status, visit data, and payment info.</summary>
@@ -219,6 +228,10 @@ public class PatientJourneyService(
                 return new
                 {
                     AppointmentId = (Guid?)a.Id,
+                    AppointmentDate = (string?)a.AppointmentDate.ToString("yyyy-MM-dd"),
+                    ArrivedAt = a.ArrivedAt,
+                    QueueAddedAt = queueItem?.CreatedAt,
+                    VisitStartedAt = visit?.CreatedAt,
                     PatientId = a.PatientId,
                     PatientName = BuildPatientDisplayName(a.Patient),
                     PatientNumber = a.Patient?.PatientNumber,
@@ -334,6 +347,10 @@ public class PatientJourneyService(
                     result.Add(new
                     {
                         AppointmentId = (Guid?)null,
+                        AppointmentDate = (string?)null,
+                        ArrivedAt = (DateTime?)null,
+                        QueueAddedAt = (DateTime?)q.CreatedAt,
+                        VisitStartedAt = (DateTime?)visit?.CreatedAt,
                         PatientId = q.PatientId,
                         PatientName = patientName,
                         PatientNumber = q.Patient?.PatientNumber,
@@ -443,7 +460,7 @@ public class PatientJourneyService(
                     return StatusCode(403, new { message = "ليس لديك صلاحية الوصول لبيانات هذا المريض" });
             }
 
-            var today = ClinicTimeProvider.ClinicToday();
+            var today = clinicClock.Today();
 
             // 1. Patient basic info
             var patient = await db.Patients
@@ -999,7 +1016,7 @@ public class PatientJourneyService(
             .Select(g => g.OrderByDescending(c => c.CreatedAt).First())
             .ToList();
         var caseIds = selectedCases.Select(c => c.Id).ToList();
-        var today = ClinicTimeProvider.ClinicToday();
+        var today = clinicClock.Today();
 
         var visits = await db.OrthoVisits
             .IgnoreQueryFilters()

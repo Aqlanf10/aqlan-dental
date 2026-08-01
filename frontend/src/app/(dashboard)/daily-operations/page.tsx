@@ -87,6 +87,8 @@ import {
   BulkSmsModal,
   DirectPaymentModal,
   OverrideDialog,
+  FutureAppointmentOverrideDialog,
+  type FutureAppointmentOverrideOperation,
 } from "./_components/Modals";
 
 // ── Embedded module views ──
@@ -117,6 +119,15 @@ const animationStyles = `
 .animate-fade-in-up { animation: fadeInUp 0.2s ease-out; }
 .animate-panel-slide { animation: panelSlideIn 0.25s ease-out; }
 `;
+
+function journeyBusinessDateErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object" || !("response" in error)) return undefined;
+  return (error as { response?: { data?: { code?: string } } }).response?.data?.code;
+}
+
+function isFutureAppointmentBlock(error: unknown): boolean {
+  return journeyBusinessDateErrorCode(error) === "future_appointment";
+}
 
 
 
@@ -240,6 +251,12 @@ export default function DailyOperationsPage() {
     type: "Intake" | "SendToQueue";
     item: TodayJourneyItem;
     overdueAmount: number;
+  } | null>(null);
+  const [futureOverrideOpen, setFutureOverrideOpen] = useState(false);
+  const [pendingFutureOverride, setPendingFutureOverride] = useState<{
+    type: FutureAppointmentOverrideOperation;
+    item: TodayJourneyItem;
+    body?: { notes?: string; roomId?: string };
   } | null>(null);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [confirmDialogType, setConfirmDialogType] = useState<"Cancel" | "NoShow" | "CancelQueue" | "ChangeRoom" | "Complete">("Cancel");
@@ -463,6 +480,20 @@ export default function DailyOperationsPage() {
   ]);
 
   // ── Action handlers ──
+  const openFutureOverrideIfAllowed = useCallback((
+    error: unknown,
+    type: FutureAppointmentOverrideOperation,
+    item: TodayJourneyItem,
+    body?: { notes?: string; roomId?: string },
+  ) => {
+    if (!isFutureAppointmentBlock(error)) return false;
+    if (userRole !== "Admin") return false;
+
+    setPendingFutureOverride({ type, item, body });
+    setFutureOverrideOpen(true);
+    return true;
+  }, [userRole]);
+
   const triggerIntakeOrQueue = useCallback(async (item: TodayJourneyItem, actionType: "Intake" | "SendToQueue", overrideManager?: string) => {
     try {
       if (!overrideManager) {
@@ -477,24 +508,37 @@ export default function DailyOperationsPage() {
       }
 
       const notesSuffix = overrideManager ? `[تجاوز متأخرات: بواسطة المدير ${overrideManager}]` : "";
+      const actionBody = notesSuffix ? { notes: notesSuffix } : {};
 
       if (actionType === "Intake") {
         if (!item.appointmentId) { toast.error("لا يمكن تسجيل الوصول بدون موعد"); return; }
         intakeMutation.mutate(
-          { appointmentId: item.appointmentId, body: notesSuffix ? { notes: notesSuffix } : {} },
-          { onSuccess: () => toast.success("تم تسجيل وصول المريض"), onError: (err) => toast.error(extractErrorMessage(err, "فشل تسجيل الوصول")) }
+          { appointmentId: item.appointmentId, body: actionBody },
+          {
+            onSuccess: () => toast.success("تم تسجيل وصول المريض"),
+            onError: (err) => {
+              if (openFutureOverrideIfAllowed(err, "Intake", item, actionBody)) return;
+              toast.error(extractErrorMessage(err, "فشل تسجيل الوصول"));
+            },
+          },
         );
       } else {
         if (!item.appointmentId) { toast.error("لا يمكن إضافة المريض للانتظار بدون موعد"); return; }
         sendToQueueMutation.mutate(
-          { appointmentId: item.appointmentId, body: notesSuffix ? { notes: notesSuffix } : {} },
-          { onSuccess: () => toast.success("تمت إضافة المريض للانتظار"), onError: (err) => toast.error(extractErrorMessage(err, "فشل إضافة المريض للانتظار")) }
+          { appointmentId: item.appointmentId, body: actionBody },
+          {
+            onSuccess: () => toast.success("تمت إضافة المريض للانتظار"),
+            onError: (err) => {
+              if (openFutureOverrideIfAllowed(err, "SendToQueue", item, actionBody)) return;
+              toast.error(extractErrorMessage(err, "فشل إضافة المريض للانتظار"));
+            },
+          },
         );
       }
     } catch (err) {
       toast.error(extractErrorMessage(err, "فشل إتمام العملية"));
     }
-  }, [intakeMutation, sendToQueueMutation]);
+  }, [intakeMutation, sendToQueueMutation, openFutureOverrideIfAllowed]);
 
   const handleOverrideConfirm = useCallback((managerUsername: string) => {
     if (!pendingOverrideAction) return;
@@ -550,13 +594,53 @@ export default function DailyOperationsPage() {
       return;
     }
     startVisitMutation.mutate(
-      item.appointmentId,
+      { appointmentId: item.appointmentId },
       {
         onSuccess: () => toast.success("تم بدء الزيارة بنجاح"),
-        onError: (err) => toast.error(extractErrorMessage(err, "فشل بدء الزيارة")),
+        onError: (err) => {
+          if (openFutureOverrideIfAllowed(err, "StartVisit", item)) return;
+          toast.error(extractErrorMessage(err, "فشل بدء الزيارة"));
+        },
       },
     );
-  }, [startVisitMutation]);
+  }, [startVisitMutation, openFutureOverrideIfAllowed]);
+
+  const handleFutureOverrideConfirm = useCallback((reason: string) => {
+    if (!pendingFutureOverride?.item.appointmentId) return;
+
+    const { type, item, body } = pendingFutureOverride;
+    const overrideBody = {
+      ...body,
+      overrideFutureAppointment: true,
+      overrideReason: reason,
+    };
+    const callbacks = {
+      onSuccess: () => {
+        setFutureOverrideOpen(false);
+        setPendingFutureOverride(null);
+        toast.success("تم تنفيذ الإجراء وتسجيل التجاوز الإداري");
+      },
+      onError: (error: unknown) =>
+        toast.error(extractErrorMessage(error, "فشل تنفيذ التجاوز الإداري")),
+    };
+
+    if (type === "Intake") {
+      intakeMutation.mutate(
+        { appointmentId: item.appointmentId, body: overrideBody },
+        callbacks,
+      );
+    } else if (type === "SendToQueue") {
+      sendToQueueMutation.mutate(
+        { appointmentId: item.appointmentId, body: overrideBody },
+        callbacks,
+      );
+    } else {
+      startVisitMutation.mutate(
+        { appointmentId: item.appointmentId, body: overrideBody },
+        callbacks,
+      );
+    }
+  }, [pendingFutureOverride, intakeMutation, sendToQueueMutation, startVisitMutation]);
 
   const handleQuickPayment = useCallback((item: TodayJourneyItem) => {
     if (!activeCashierSession) {
@@ -1793,6 +1877,20 @@ export default function DailyOperationsPage() {
         patientName={pendingOverrideAction?.item?.patientName ?? ""}
         overdueAmount={pendingOverrideAction?.overdueAmount ?? 0}
         onConfirm={handleOverrideConfirm}
+      />
+
+      <FutureAppointmentOverrideDialog
+        open={futureOverrideOpen}
+        onClose={() => {
+          if (intakeMutation.isPending || sendToQueueMutation.isPending || startVisitMutation.isPending) return;
+          setFutureOverrideOpen(false);
+          setPendingFutureOverride(null);
+        }}
+        patientName={pendingFutureOverride?.item.patientName ?? ""}
+        appointmentDate={pendingFutureOverride?.item.appointmentDate ?? undefined}
+        operation={pendingFutureOverride?.type ?? "Intake"}
+        isPending={intakeMutation.isPending || sendToQueueMutation.isPending || startVisitMutation.isPending}
+        onConfirm={handleFutureOverrideConfirm}
       />
 
       {undoAction && (

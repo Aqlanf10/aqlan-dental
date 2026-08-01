@@ -170,30 +170,38 @@ public class CheckoutService(
         if (!AppointmentStatusTransitions.IsValidTransition(appointment.Status, targetStatus))
             return BadRequest(new { message = $"لا يمكن تسجيل الوصول لموعد بحالة {appointment.Status}" });
 
-        // Sprint 2 FIX: Wrap in transaction + advisory lock to prevent double-intake
-        await using var tx = await db.Database.BeginTransactionAsync();
+        // Relational production providers use a transaction + advisory lock to
+        // serialize concurrent intake requests. EF InMemory has neither real
+        // transactions nor raw SQL, so tests exercise the same state machine
+        // without the cross-process lock.
+        await using var tx = db.Database.IsRelational()
+            ? await db.Database.BeginTransactionAsync()
+            : null;
         try
         {
-            // Acquire advisory lock scoped to this appointment
-            var lockKey = (int)(appointmentId.GetHashCode() % 100000);
-            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            if (tx != null)
+            {
+                // Acquire advisory lock scoped to this appointment
+                var lockKey = (int)(appointmentId.GetHashCode() % 100000);
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            }
 
             // Re-check appointment status INSIDE the lock (to prevent race condition)
             await db.Entry(appointment).ReloadAsync();
             dateError = ValidateJourneyBusinessDate(appointment, req, out dateDecision);
             if (dateError != null)
             {
-                await tx.RollbackAsync();
+                if (tx != null) await tx.RollbackAsync();
                 return dateError;
             }
             if (appointment.Status == AppointmentStatus.Arrived)
             {
-                await tx.RollbackAsync();
+                if (tx != null) await tx.RollbackAsync();
                 return Conflict(new { message = "تم تسجيل وصول هذا المريض مسبقاً" });
             }
             if (!AppointmentStatusTransitions.IsValidTransition(appointment.Status, targetStatus))
             {
-                await tx.RollbackAsync();
+                if (tx != null) await tx.RollbackAsync();
                 return BadRequest(new { message = $"لا يمكن تسجيل الوصول لموعد بحالة {appointment.Status}" });
             }
 
@@ -232,7 +240,7 @@ public class CheckoutService(
 
             AddFutureAppointmentOverrideAudit(appointment, "Intake", dateDecision);
             await db.SaveChangesAsync();
-            await tx.CommitAsync();
+            if (tx != null) await tx.CommitAsync();
 
             // SignalR: best-effort push so daily-ops screens invalidate instantly.
             await PushJourneyUpdatedAsync("intake", appointmentId, appointment.PatientId, branchId: currentUser.BranchId);

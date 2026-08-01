@@ -606,7 +606,8 @@ export default function DailyOperationsPage() {
   }, [startVisitMutation, openFutureOverrideIfAllowed]);
 
   const handleFutureOverrideConfirm = useCallback((reason: string) => {
-    if (!pendingFutureOverride?.item.appointmentId) return;
+    const appointmentId = pendingFutureOverride?.item.appointmentId;
+    if (!pendingFutureOverride || !appointmentId) return;
 
     const { type, item, body } = pendingFutureOverride;
     const overrideBody = {
@@ -626,17 +627,17 @@ export default function DailyOperationsPage() {
 
     if (type === "Intake") {
       intakeMutation.mutate(
-        { appointmentId: item.appointmentId, body: overrideBody },
+        { appointmentId, body: overrideBody },
         callbacks,
       );
     } else if (type === "SendToQueue") {
       sendToQueueMutation.mutate(
-        { appointmentId: item.appointmentId, body: overrideBody },
+        { appointmentId, body: overrideBody },
         callbacks,
       );
     } else {
       startVisitMutation.mutate(
-        { appointmentId: item.appointmentId, body: overrideBody },
+        { appointmentId, body: overrideBody },
         callbacks,
       );
     }

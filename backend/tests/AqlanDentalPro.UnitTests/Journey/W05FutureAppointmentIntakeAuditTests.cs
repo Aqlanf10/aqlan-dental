@@ -110,10 +110,7 @@ public sealed class W05FutureAppointmentIntakeAuditTests
         bool isAdmin,
         Guid? userId = null)
     {
-        var currentUser = new Mock<ICurrentUserService>();
-        currentUser.SetupGet(x => x.IsAdmin).Returns(isAdmin);
-        currentUser.SetupGet(x => x.Role).Returns(isAdmin ? UserRole.Admin : UserRole.Reception);
-        currentUser.SetupGet(x => x.UserId).Returns(userId);
+        var currentUser = new FixedCurrentUser(isAdmin, userId);
 
         var access = new Mock<IPatientAccessService>();
         access.Setup(x => x.CanAccessPatientAsync(It.IsAny<Guid>())).ReturnsAsync(true);
@@ -122,12 +119,24 @@ public sealed class W05FutureAppointmentIntakeAuditTests
         return new CheckoutService(
             db,
             Mock.Of<ICommissionService>(),
-            currentUser.Object,
+            currentUser,
             clock,
             new JourneyBusinessDatePolicy(clock),
             access.Object,
             Mock.Of<IRealTimePushService>(),
             NullLogger<CheckoutService>.Instance);
+    }
+
+    private sealed class FixedCurrentUser(bool isAdmin, Guid? userId) : ICurrentUserService
+    {
+        public Guid? UserId { get; } = userId;
+        public string? Username => isAdmin ? "admin" : "reception";
+        public UserRole? Role => isAdmin ? UserRole.Admin : UserRole.Reception;
+        public Guid? BranchId => null;
+        public bool IsAdmin { get; } = isAdmin;
+        public bool IsAuthenticated => true;
+        public Guid? OriginalUserId => null;
+        public bool IsImpersonating => false;
     }
 
     private sealed class FixedClinicClock : IClinicClock

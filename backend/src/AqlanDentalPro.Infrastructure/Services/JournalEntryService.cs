@@ -2,7 +2,10 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using System.Collections.Concurrent;
+using System.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Infrastructure.Services;
@@ -19,6 +22,8 @@ public class JournalEntryService(
     ILogger<JournalEntryService> logger
 ) : IJournalEntryService
 {
+    private static readonly ConcurrentDictionary<DateOnly, int> InMemoryEntrySequences = new();
+
     // ─── Create Entry ────────────────────────────────────────────────────────
 
     public async Task<JournalEntry> CreateEntryAsync(
@@ -41,6 +46,8 @@ public class JournalEntryService(
             throw new ArgumentException("PerformedBy is required and cannot be Guid.Empty", nameof(performedBy));
         if (financialDocumentId == Guid.Empty)
             throw new ArgumentException("FinancialDocumentId is required and cannot be Guid.Empty", nameof(financialDocumentId));
+
+        await EnsurePeriodOpenAsync(branchId, entryDate, ct);
 
         // Finance V3: Validate AccountId is not Guid.Empty on each line
         var lineItems = lines.ToList();
@@ -128,6 +135,11 @@ public class JournalEntryService(
         Guid performedBy,
         CancellationToken ct = default)
     {
+        await using var ownedTransaction = db.Database.IsRelational()
+            && db.Database.CurrentTransaction == null
+                ? await db.Database.BeginTransactionAsync(ct)
+                : null;
+
         var original = await db.JournalEntries
             .Include(e => e.Lines)
             .FirstOrDefaultAsync(e => e.Id == originalEntryId, ct);
@@ -138,8 +150,13 @@ public class JournalEntryService(
         if (original.IsReversal)
             throw new InvalidOperationException("Cannot reverse a reversal entry. Create a new original-type entry instead. (Section 2.3.7)");
 
-        if (original.ReversedByEntryId.HasValue)
-            throw new InvalidOperationException($"Entry {originalEntryId} has already been reversed by entry {original.ReversedByEntryId}.");
+        var existingReversalId = original.ReversedByEntryId
+            ?? await db.JournalEntries
+                .Where(entry => entry.ReversalOfEntryId == originalEntryId)
+                .Select(entry => (Guid?)entry.Id)
+                .FirstOrDefaultAsync(ct);
+        if (existingReversalId.HasValue)
+            throw new InvalidOperationException($"Entry {originalEntryId} has already been reversed by entry {existingReversalId}.");
 
         // Mirror the lines: debit → credit, credit → debit
         var reversalLines = original.Lines.Select(l => (
@@ -160,6 +177,7 @@ public class JournalEntryService(
             cashierSessionId: original.CashierSessionId,
             treasuryId: original.TreasuryId,
             lines: reversalLines,
+            autoSave: false,
             ct: ct);
 
         // A reversal must retain the original currency snapshot; otherwise a non-YER
@@ -170,10 +188,17 @@ public class JournalEntryService(
         // Link reversal
         reversal.IsReversal = true;
         reversal.ReversalOfEntryId = originalEntryId;
-        original.ReversedByEntryId = reversal.Id;
 
-        db.JournalEntries.Update(original);
+        // Insert the reversal before setting the original's back-link. The two
+        // self-referencing FKs otherwise form a circular save dependency. The
+        // surrounding transaction keeps both saves atomic on relational stores.
         await db.SaveChangesAsync(ct);
+
+        original.ReversedByEntryId = reversal.Id;
+        await db.SaveChangesAsync(ct);
+
+        if (ownedTransaction != null)
+            await ownedTransaction.CommitAsync(ct);
 
         logger.LogInformation(
             "Created reversal JournalEntry {ReversalNumber} for original {OriginalNumber}",
@@ -196,6 +221,8 @@ public class JournalEntryService(
         if (entry.IsPosted)
             throw new InvalidOperationException($"JournalEntry {entry.EntryNumber} is already posted.");
 
+        await EnsurePeriodOpenAsync(entry.BranchId, entry.EntryDate, ct);
+
         if (!entry.IsBalanced())
         {
             var totalDebit = entry.Lines.Sum(l => l.Debit);
@@ -217,25 +244,84 @@ public class JournalEntryService(
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var prefix = $"JE-{today:yyyyMMdd}-";
 
-        // Simple sequential generation without advisory locks.
-        // Advisory locks (both xact_lock and session-level) cause DbContext concurrency
-        // issues when called from FinanceService.DualWritePaymentEntryAsync which is
-        // already inside a transaction. The unique constraint on EntryNumber provides
-        // sufficient protection against duplicates.
-        var lastEntry = await db.JournalEntries
-            .Where(e => e.EntryNumber.StartsWith(prefix))
-            .OrderByDescending(e => e.EntryNumber)
-            .FirstOrDefaultAsync(ct);
-
-        var nextSeq = 1;
-        if (lastEntry is not null)
+        if (db.Database.IsRelational()
+            && db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
         {
-            var lastPart = lastEntry.EntryNumber.Substring(prefix.Length);
-            if (int.TryParse(lastPart, out var lastSeq))
-                nextSeq = lastSeq + 1;
+            var sequence = await ReservePostgresSequenceAsync(today, ct);
+            return $"{prefix}{sequence:D3}";
         }
 
+        // EF InMemory is used by unit tests. Keep the same observable numbering
+        // contract and reserve process-local values atomically for concurrent tests.
+        var lastEntryNumber = await db.JournalEntries
+            .Where(e => e.EntryNumber.StartsWith(prefix))
+            .OrderByDescending(e => e.EntryNumber)
+            .Select(e => e.EntryNumber)
+            .FirstOrDefaultAsync(ct);
+
+        var persistedSequence = 0;
+        if (lastEntryNumber is not null)
+        {
+            var lastPart = lastEntryNumber[prefix.Length..];
+            if (int.TryParse(lastPart, out var lastSeq))
+                persistedSequence = lastSeq;
+        }
+
+        var nextSeq = InMemoryEntrySequences.AddOrUpdate(
+            today,
+            persistedSequence + 1,
+            (_, current) => Math.Max(current + 1, persistedSequence + 1));
         return $"{prefix}{nextSeq:D3}";
+    }
+
+    private async Task<int> ReservePostgresSequenceAsync(DateOnly entryDate, CancellationToken ct)
+    {
+        var connection = db.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose)
+            await connection.OpenAsync(ct);
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
+            command.CommandText = """
+                INSERT INTO "JournalEntryNumberSequences" ("EntryDate", "LastSequence")
+                VALUES (@entryDate, 1)
+                ON CONFLICT ("EntryDate") DO UPDATE
+                SET "LastSequence" = "JournalEntryNumberSequences"."LastSequence" + 1
+                RETURNING "LastSequence";
+                """;
+
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "entryDate";
+            parameter.DbType = DbType.Date;
+            parameter.Value = entryDate.ToDateTime(TimeOnly.MinValue);
+            command.Parameters.Add(parameter);
+
+            var result = await command.ExecuteScalarAsync(ct);
+            return Convert.ToInt32(result, System.Globalization.CultureInfo.InvariantCulture);
+        }
+        finally
+        {
+            if (shouldClose)
+                await connection.CloseAsync();
+        }
+    }
+
+    private async Task EnsurePeriodOpenAsync(Guid branchId, DateOnly entryDate, CancellationToken ct)
+    {
+        var isClosed = await db.AccountingPeriods.AnyAsync(period =>
+            period.BranchId == branchId
+            && period.IsActive
+            && period.Status == "Closed"
+            && entryDate >= period.StartDate
+            && entryDate <= period.EndDate,
+            ct);
+
+        if (isClosed)
+            throw new InvalidOperationException(
+                $"Cannot create or post a journal entry dated {entryDate:yyyy-MM-dd} in a closed accounting period.");
     }
 
     // ─── Get Entry By ID ─────────────────────────────────────────────────────

@@ -31,6 +31,19 @@ public class JournalEntryConfiguration : IEntityTypeConfiguration<JournalEntry>
         builder.HasIndex(e => e.TreasuryId);
         builder.HasIndex(e => e.PerformedBy);
 
+        // One canonical journal entry per source document. Reversal entries are
+        // deliberately excluded because they point back to the same source.
+        // Year-end closing creates one entry per currency for a single period.
+        builder.HasIndex(e => new { e.BranchId, e.FinancialDocumentType, e.FinancialDocumentId })
+            .IsUnique()
+            .HasFilter("\"IsReversal\" = FALSE AND \"FinancialDocumentType\" <> 'YearEndClosing'");
+
+        // A journal entry may be reversed at most once. This is the authoritative
+        // database invariant; ReversedByEntryId remains the convenient back-link.
+        builder.HasIndex(e => e.ReversalOfEntryId)
+            .IsUnique()
+            .HasFilter("\"ReversalOfEntryId\" IS NOT NULL");
+
         // Composite index for common queries: branch + date range
         builder.HasIndex(e => new { e.BranchId, e.EntryDate });
 

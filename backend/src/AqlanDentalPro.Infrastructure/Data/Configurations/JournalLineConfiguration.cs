@@ -40,6 +40,6 @@ public class JournalLineConfiguration : IEntityTypeConfiguration<JournalLine>
         // At least one must be > 0, and they cannot both be > 0
         // Note: This is enforced at application level as well
         builder.ToTable(t => t.HasCheckConstraint("CK_JournalLines_DebitCreditMutual",
-            "\"Debit\" >= 0 AND \"Credit\" >= 0 AND (\"Debit\" > 0 OR \"Credit\" > 0)"));
+            "((\"Debit\" > 0 AND \"Credit\" = 0) OR (\"Credit\" > 0 AND \"Debit\" = 0))"));
     }
 }

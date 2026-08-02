@@ -3709,13 +3709,19 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.HasIndex("PerformedBy");
 
-                    b.HasIndex("ReversalOfEntryId");
+                    b.HasIndex("ReversalOfEntryId")
+                        .IsUnique()
+                        .HasFilter("\"ReversalOfEntryId\" IS NOT NULL");
 
                     b.HasIndex("ReversedByEntryId");
 
                     b.HasIndex("TreasuryId");
 
                     b.HasIndex("BranchId", "EntryDate");
+
+                    b.HasIndex("BranchId", "FinancialDocumentType", "FinancialDocumentId")
+                        .IsUnique()
+                        .HasFilter("\"IsReversal\" = FALSE AND \"FinancialDocumentType\" <> 'YearEndClosing'");
 
                     b.ToTable("JournalEntries", (string)null);
                 });
@@ -3781,7 +3787,7 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.ToTable("JournalLines", null, t =>
                         {
-                            t.HasCheckConstraint("CK_JournalLines_DebitCreditMutual", "\"Debit\" >= 0 AND \"Credit\" >= 0 AND (\"Debit\" > 0 OR \"Credit\" > 0)");
+                            t.HasCheckConstraint("CK_JournalLines_DebitCreditMutual", "((\"Debit\" > 0 AND \"Credit\" = 0) OR (\"Credit\" > 0 AND \"Debit\" = 0))");
                         });
                 });
 

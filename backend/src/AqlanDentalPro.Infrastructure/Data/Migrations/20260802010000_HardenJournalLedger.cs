@@ -53,6 +53,17 @@ public partial class HardenJournalLedger : Migration
                 IF EXISTS (
                     SELECT 1
                     FROM "JournalEntries"
+                    WHERE "IsReversal" = FALSE
+                      AND "FinancialDocumentType" = 'YearEndClosing'
+                    GROUP BY "BranchId", "FinancialDocumentType", "FinancialDocumentId", "Currency"
+                    HAVING COUNT(*) > 1
+                ) THEN
+                    RAISE EXCEPTION 'W11 preflight failed: duplicate year-end source identities exist per currency';
+                END IF;
+
+                IF EXISTS (
+                    SELECT 1
+                    FROM "JournalEntries"
                     WHERE "ReversalOfEntryId" IS NOT NULL
                     GROUP BY "ReversalOfEntryId"
                     HAVING COUNT(*) > 1
@@ -71,6 +82,10 @@ public partial class HardenJournalLedger : Migration
             CREATE UNIQUE INDEX "IX_JournalEntries_BranchId_FinancialDocumentType_FinancialDocumentId"
                 ON "JournalEntries" ("BranchId", "FinancialDocumentType", "FinancialDocumentId")
                 WHERE "IsReversal" = FALSE AND "FinancialDocumentType" <> 'YearEndClosing';
+
+            CREATE UNIQUE INDEX "UX_JournalEntries_YearEndSourceCurrency"
+                ON "JournalEntries" ("BranchId", "FinancialDocumentType", "FinancialDocumentId", "Currency")
+                WHERE "IsReversal" = FALSE AND "FinancialDocumentType" = 'YearEndClosing';
 
             DROP INDEX IF EXISTS "IX_JournalEntries_ReversalOfEntryId";
             CREATE UNIQUE INDEX "IX_JournalEntries_ReversalOfEntryId"
@@ -266,6 +281,7 @@ public partial class HardenJournalLedger : Migration
             DROP FUNCTION IF EXISTS validate_journal_entry_balance(uuid);
 
             DROP TABLE IF EXISTS "JournalEntryNumberSequences";
+            DROP INDEX IF EXISTS "UX_JournalEntries_YearEndSourceCurrency";
             DROP INDEX IF EXISTS "IX_JournalEntries_BranchId_FinancialDocumentType_FinancialDocumentId";
             DROP INDEX IF EXISTS "IX_JournalEntries_ReversalOfEntryId";
             CREATE INDEX "IX_JournalEntries_ReversalOfEntryId"

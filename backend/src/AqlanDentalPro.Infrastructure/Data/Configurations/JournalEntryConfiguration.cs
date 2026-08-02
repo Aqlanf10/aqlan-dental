@@ -38,6 +38,11 @@ public class JournalEntryConfiguration : IEntityTypeConfiguration<JournalEntry>
             .IsUnique()
             .HasFilter("\"IsReversal\" = FALSE AND \"FinancialDocumentType\" <> 'YearEndClosing'");
 
+        builder.HasIndex(e => new { e.BranchId, e.FinancialDocumentType, e.FinancialDocumentId, e.Currency })
+            .IsUnique()
+            .HasDatabaseName("UX_JournalEntries_YearEndSourceCurrency")
+            .HasFilter("\"IsReversal\" = FALSE AND \"FinancialDocumentType\" = 'YearEndClosing'");
+
         // A journal entry may be reversed at most once. This is the authoritative
         // database invariant; ReversedByEntryId remains the convenient back-link.
         builder.HasIndex(e => e.ReversalOfEntryId)

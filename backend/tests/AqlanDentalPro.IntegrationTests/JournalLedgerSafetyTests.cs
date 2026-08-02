@@ -160,6 +160,20 @@ public sealed class JournalLedgerSafetyTests : IClassFixture<TestWebAppFactory>,
     }
 
     [Fact]
+    public async Task YearEndSourceAllowsDifferentCurrenciesButRejectsDuplicateCurrency()
+    {
+        var sourceId = Guid.NewGuid();
+        await CreateYearEndEntryAsync(sourceId, "YER");
+        await CreateYearEndEntryAsync(sourceId, "SAR");
+
+        var act = () => CreateYearEndEntryAsync(sourceId, "YER");
+
+        var exception = await act.Should().ThrowAsync<DbUpdateException>();
+        exception.Which.InnerException.Should().BeOfType<PostgresException>()
+            .Which.SqlState.Should().Be(PostgresErrorCodes.UniqueViolation);
+    }
+
+    [Fact]
     public async Task ClosedPeriodIsImmutableButOfficialReversalPostsInOpenPeriod()
     {
         var closedDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1));
@@ -225,6 +239,28 @@ public sealed class JournalLedgerSafetyTests : IClassFixture<TestWebAppFactory>,
             null,
             BalancedLines());
         await service.PostEntryAsync(entry.Id);
+        return entry;
+    }
+
+    private async Task<JournalEntry> CreateYearEndEntryAsync(Guid sourceId, string currency)
+    {
+        await using var db = await _factory.CreateDbContextAsync();
+        var service = new AqlanDentalPro.Infrastructure.Services.JournalEntryService(
+            db,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<AqlanDentalPro.Infrastructure.Services.JournalEntryService>.Instance);
+        var entry = await service.CreateEntryAsync(
+            FinancialDocumentType.YearEndClosing,
+            sourceId,
+            $"W11 year-end {currency}",
+            DateOnly.FromDateTime(DateTime.UtcNow),
+            _branchId,
+            _userId,
+            null,
+            null,
+            BalancedLines(),
+            autoSave: false);
+        entry.Currency = currency;
+        await db.SaveChangesAsync();
         return entry;
     }
 

@@ -3723,6 +3723,11 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .IsUnique()
                         .HasFilter("\"IsReversal\" = FALSE AND \"FinancialDocumentType\" <> 'YearEndClosing'");
 
+                    b.HasIndex("BranchId", "FinancialDocumentType", "FinancialDocumentId", "Currency")
+                        .IsUnique()
+                        .HasDatabaseName("UX_JournalEntries_YearEndSourceCurrency")
+                        .HasFilter("\"IsReversal\" = FALSE AND \"FinancialDocumentType\" = 'YearEndClosing'");
+
                     b.ToTable("JournalEntries", (string)null);
                 });
 

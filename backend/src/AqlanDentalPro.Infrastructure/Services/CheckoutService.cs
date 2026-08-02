@@ -182,7 +182,7 @@ public class CheckoutService(
             if (tx != null)
             {
                 // Acquire advisory lock scoped to this appointment
-                var lockKey = (int)(appointmentId.GetHashCode() % 100000);
+                var lockKey = StableLockKeyHelper.StableGuidToLong(appointmentId);
                 await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
             }
 
@@ -284,7 +284,7 @@ public class CheckoutService(
         if (appointment.Status != AppointmentStatus.Arrived && appointment.Status != AppointmentStatus.Waiting)
             return BadRequest(new { message = "يجب أن يكون المريض وصل أو في الانتظار قبل إضافته لقائمة الانتظار" });
 
-        var today = clinicClock.Today();
+        var today = dateDecision.BusinessDate;
 
         // Relational production providers use a transaction + advisory lock to
         // serialize concurrent clicks. InMemory tests have no transactions/raw SQL,
@@ -297,7 +297,7 @@ public class CheckoutService(
             if (tx != null)
             {
                 // Acquire advisory lock scoped to this patient (same as ClinicQueueController.AddToQueue)
-                var lockKey = (int)(appointment.PatientId.GetHashCode() % 100000);
+                var lockKey = StableLockKeyHelper.StableGuidToLong(appointment.PatientId);
                 await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
             }
 
@@ -308,8 +308,9 @@ public class CheckoutService(
                 if (tx != null) await tx.RollbackAsync();
                 return dateError;
             }
-            AddFutureAppointmentOverrideAudit(appointment, "SendToQueue", dateDecision);
-
+            // The request may have waited on the advisory lock across clinic midnight.
+            // Always use the business date from the decision made under the lock.
+            today = dateDecision.BusinessDate;
             // Re-check for existing active queue item for this appointment (inside lock)
             var existingQueueItem = await db.ClinicQueueItems
                 .FirstOrDefaultAsync(q => q.AppointmentId == appointmentId && q.QueueDate == today
@@ -337,6 +338,7 @@ public class CheckoutService(
                     appointment.UpdatedAt = DateTime.UtcNow;
                 }
 
+                AddFutureAppointmentOverrideAudit(appointment, "SendToQueue", dateDecision);
                 await db.SaveChangesAsync();
                 if (tx != null) await tx.CommitAsync();
 
@@ -409,6 +411,7 @@ public class CheckoutService(
                 appointment.UpdatedAt = DateTime.UtcNow;
             }
 
+            AddFutureAppointmentOverrideAudit(appointment, "SendToQueue", dateDecision);
             await db.SaveChangesAsync();
             if (tx != null) await tx.CommitAsync();
 
@@ -470,36 +473,31 @@ public class CheckoutService(
         if (!isInRoomOrCalled && !isArrivedWithQueueInRoom)
             return BadRequest(new { message = "يجب أن يكون المريض داخل الغرفة قبل بدء الزيارة" });
 
-        // FIX: If appointment is Arrived or Called, transition to InRoom first.
-        // This ensures the appointment status stays in sync with the queue/visit progression.
-        if (appointment.Status == AppointmentStatus.Arrived || appointment.Status == AppointmentStatus.Called)
-        {
-            if (AppointmentStatusTransitions.IsValidTransition(appointment.Status, AppointmentStatus.InRoom))
-            {
-                appointment.Status = AppointmentStatus.InRoom;
-                appointment.UpdatedAt = DateTime.UtcNow;
-            }
-        }
-
-        var today = clinicClock.Today();
+        var today = dateDecision.BusinessDate;
 
         // Sprint 1 FIX: Wrap in transaction + advisory lock to prevent duplicate visits
-        await using var tx = await db.Database.BeginTransactionAsync();
+        var tx = db.Database.IsRelational()
+            ? await db.Database.BeginTransactionAsync()
+            : null;
         try
         {
-            // Acquire advisory lock scoped to this appointment
-            var lockKey = (int)(appointmentId.GetHashCode() % 100000);
-            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            if (tx != null)
+            {
+                // Acquire the same stable cross-process lock on every visit-start route.
+                var lockKey = StableLockKeyHelper.StableGuidToLong(appointmentId);
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            }
 
             await db.Entry(appointment).ReloadAsync();
             dateError = ValidateJourneyBusinessDate(appointment, req, out dateDecision);
             if (dateError != null)
             {
-                await tx.RollbackAsync();
+                if (tx != null) await tx.RollbackAsync();
                 return dateError;
             }
-            AddFutureAppointmentOverrideAudit(appointment, "StartVisit", dateDecision);
-
+            // Rebind after acquiring the lock so queue/visit dates cannot retain
+            // the previous clinic day when the request crosses midnight.
+            today = dateDecision.BusinessDate;
             // Re-check for existing visit INSIDE the lock (to prevent race condition)
             var existingVisit = await db.Visits
                 .FirstOrDefaultAsync(v => v.AppointmentId == appointmentId && v.IsActive);
@@ -513,7 +511,7 @@ public class CheckoutService(
 
             if (queueItem == null)
             {
-                await tx.RollbackAsync();
+                if (tx != null) await tx.RollbackAsync();
                 return BadRequest(new { message = "لا يوجد عنصر انتظار نشط لهذا الموعد" });
             }
 
@@ -521,25 +519,38 @@ public class CheckoutService(
             var validationError = ClinicQueueStatusTransitions.GetValidationError(queueItem.Status, ClinicQueueStatus.InProgress);
             if (validationError != null)
             {
-                await tx.RollbackAsync();
+                if (tx != null) await tx.RollbackAsync();
                 return BadRequest(new { message = validationError });
             }
+
+            // Normalize inside the lock, after ReloadAsync. Moving this transition
+            // before ReloadAsync loses it and leaves the appointment stuck at Arrived.
+            if (appointment.Status is AppointmentStatus.Arrived or AppointmentStatus.Called
+                && AppointmentStatusTransitions.IsValidTransition(appointment.Status, AppointmentStatus.InRoom))
+            {
+                appointment.Status = AppointmentStatus.InRoom;
+                appointment.UpdatedAt = clinicClock.UtcNow();
+            }
+
+            // All rejection gates have passed; only successful operations are audited.
+            AddFutureAppointmentOverrideAudit(appointment, "StartVisit", dateDecision);
 
             if (existingVisit != null)
             {
                 // Visit already exists, just update statuses
+                var eventUtc = clinicClock.UtcNow();
                 queueItem.Status = ClinicQueueStatus.InProgress;
-                queueItem.StartedAt = DateTime.UtcNow;
-                queueItem.UpdatedAt = DateTime.UtcNow;
+                queueItem.StartedAt = eventUtc;
+                queueItem.UpdatedAt = eventUtc;
 
                 if (AppointmentStatusTransitions.IsValidTransition(appointment.Status, AppointmentStatus.InProgress))
                 {
                     appointment.Status = AppointmentStatus.InProgress;
-                    appointment.UpdatedAt = DateTime.UtcNow;
+                    appointment.UpdatedAt = eventUtc;
                 }
 
                 await db.SaveChangesAsync();
-                await tx.CommitAsync();
+                if (tx != null) await tx.CommitAsync();
 
                 // SignalR: best-effort push so daily-ops screens invalidate instantly.
                 await PushJourneyUpdatedAsync("start-visit", appointment.Id, appointment.PatientId, visitId: existingVisit.Id, branchId: currentUser.BranchId);
@@ -584,25 +595,26 @@ public class CheckoutService(
             catch (DbUpdateException ex)
             {
                 logger.LogError(ex, "Failed to create visit for appointment {AppointmentId}", appointmentId);
-                await tx.RollbackAsync();
+                if (tx != null) await tx.RollbackAsync();
                 return StatusCode(500, new { message = "فشل إنشاء الزيارة — يرجى المحاولة مرة أخرى" });
             }
 
             // Update queue item
+            var startedAt = clinicClock.UtcNow();
             queueItem.VisitId = visit.Id;
             queueItem.Status = ClinicQueueStatus.InProgress;
-            queueItem.StartedAt = DateTime.UtcNow;
-            queueItem.UpdatedAt = DateTime.UtcNow;
+            queueItem.StartedAt = startedAt;
+            queueItem.UpdatedAt = startedAt;
 
             // Update appointment
             if (AppointmentStatusTransitions.IsValidTransition(appointment.Status, AppointmentStatus.InProgress))
             {
                 appointment.Status = AppointmentStatus.InProgress;
-                appointment.UpdatedAt = DateTime.UtcNow;
+                appointment.UpdatedAt = startedAt;
             }
 
             await db.SaveChangesAsync();
-            await tx.CommitAsync();
+            if (tx != null) await tx.CommitAsync();
 
             // SignalR: best-effort push so daily-ops screens invalidate instantly.
             await PushJourneyUpdatedAsync("start-visit", appointment.Id, appointment.PatientId, visitId: visit.Id, branchId: currentUser.BranchId);
@@ -620,8 +632,12 @@ public class CheckoutService(
         }
         catch
         {
-            await tx.RollbackAsync();
+            if (tx != null) await tx.RollbackAsync();
             throw;
+        }
+        finally
+        {
+            if (tx != null) await tx.DisposeAsync();
         }
     }
 

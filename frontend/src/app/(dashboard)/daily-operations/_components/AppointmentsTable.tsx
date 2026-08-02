@@ -64,6 +64,39 @@ function WaitTimeChip({ minutes }: { minutes?: number }) {
   );
 }
 
+function journeyEventTime(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("ar-YE", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Aden",
+  }).format(date);
+}
+
+/** W05: show the real timestamps of each journey event, not Visit.CreatedAt. */
+function JourneyEventTimes({ item }: { item: TodayJourneyItem }) {
+  const events = [
+    ["الوصول", journeyEventTime(item.arrivedAt)],
+    ["إضافة للانتظار", journeyEventTime(item.queueAddedAt)],
+    ["بدء العلاج", journeyEventTime(item.visitStartedAt)],
+  ].filter((event): event is [string, string] => Boolean(event[1]));
+
+  if (!item.appointmentDate && events.length === 0) return null;
+  return (
+    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[9px] text-slate-500">
+      {item.appointmentDate && (
+        <span>تاريخ الموعد: <b dir="ltr">{item.appointmentDate}</b></span>
+      )}
+      {events.map(([label, value]) => (
+        <span key={label}>{label}: <b dir="ltr">{value}</b></span>
+      ))}
+    </div>
+  );
+}
+
 /* ─── Medical Alert Badge ──────────────────────────────────────────────────── */
 function MedicalAlertBadge() {
   return (
@@ -565,6 +598,7 @@ function AppointmentRow({
           <StatusBadge status={item.appointmentStatus} />
           {queueWaitMinutes && <WaitTimeChip minutes={queueWaitMinutes} />}
         </div>
+        <JourneyEventTimes item={item} />
       </td>
       <td className="py-2 px-3"><NextActionBadge action={item.nextAction} /></td>
       <td className="py-2 px-3">
@@ -781,6 +815,7 @@ function MobileCard({
       {expanded && (
         <div className="mt-3 pt-3 border-t space-y-2" style={{ borderColor: "#f1f5f9" }}>
           <div className="flex flex-wrap gap-3 text-xs" style={{ color: "#64748b" }}>
+            <JourneyEventTimes item={item} />
             {item.serviceName && (
               <span className="flex items-center gap-1">
                 <strong>الخدمة:</strong> {item.serviceName}

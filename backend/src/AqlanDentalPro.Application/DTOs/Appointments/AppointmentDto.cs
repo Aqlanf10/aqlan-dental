@@ -66,16 +66,20 @@ public class CreateAppointmentRequest
     public Guid? PackageId { get; set; }
 }
 
-public class UpdateAppointmentStatusRequest
+public class UpdateAppointmentStatusRequest : AqlanDentalPro.Application.DTOs.Journey.IFutureAppointmentOverrideRequest
 {
     public string Status { get; set; } = string.Empty;
+    public bool OverrideFutureAppointment { get; set; }
+    public string? OverrideReason { get; set; }
 }
 
 /// <summary>Request body for batch updating appointment statuses.</summary>
-public class BatchUpdateStatusRequest
+public class BatchUpdateStatusRequest : AqlanDentalPro.Application.DTOs.Journey.IFutureAppointmentOverrideRequest
 {
     public List<Guid> AppointmentIds { get; set; } = [];
     public string Status { get; set; } = string.Empty;
+    public bool OverrideFutureAppointment { get; set; }
+    public string? OverrideReason { get; set; }
 }
 
 /// <summary>Request body for calling a patient to a room.</summary>

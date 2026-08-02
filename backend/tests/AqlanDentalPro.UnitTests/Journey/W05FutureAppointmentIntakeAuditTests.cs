@@ -70,6 +70,44 @@ public sealed class W05FutureAppointmentIntakeAuditTests
             .Should().Be("Asia/Aden");
     }
 
+    [Fact]
+    public async Task StartVisit_FutureAppointmentWithoutOverride_IsRejectedWithoutVisit()
+    {
+        await using var db = CreateDb();
+        var appointment = SeedFutureAppointmentReadyToStart(db);
+        var service = CreateService(db, isAdmin: false);
+
+        var result = await service.StartVisitAsync(appointment.Id, new StartVisitRequest());
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        (await db.Visits.CountAsync()).Should().Be(0);
+        appointment.Status.Should().Be(AppointmentStatus.Arrived);
+    }
+
+    [Fact]
+    public async Task StartVisit_AdminOverride_NormalizesAfterReloadAndUsesBusinessDateAndRealStartTime()
+    {
+        await using var db = CreateDb();
+        var appointment = SeedFutureAppointmentReadyToStart(db);
+        var service = CreateService(db, isAdmin: true, Guid.NewGuid());
+
+        var result = await service.StartVisitAsync(appointment.Id, new StartVisitRequest
+        {
+            OverrideFutureAppointment = true,
+            OverrideReason = "حضور استثنائي بموافقة المدير"
+        });
+
+        result.Should().BeOfType<OkObjectResult>();
+        appointment.Status.Should().Be(AppointmentStatus.InProgress);
+        var visit = await db.Visits.SingleAsync();
+        visit.VisitDate.Should().Be(BusinessDate);
+        var queue = await db.ClinicQueueItems.SingleAsync();
+        queue.Status.Should().Be(ClinicQueueStatus.InProgress);
+        queue.StartedAt.Should().Be(EventUtc);
+        var audit = await db.AuditLogs.SingleAsync();
+        audit.NewData!.RootElement.GetProperty("operation").GetString().Should().Be("StartVisit");
+    }
+
     private static AppDbContext CreateDb()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -104,6 +142,23 @@ public sealed class W05FutureAppointmentIntakeAuditTests
         };
         db.Patients.Add(patient);
         db.Appointments.Add(appointment);
+        db.SaveChanges();
+        return appointment;
+    }
+
+    private static Appointment SeedFutureAppointmentReadyToStart(AppDbContext db)
+    {
+        var appointment = SeedFutureAppointment(db);
+        appointment.Status = AppointmentStatus.Arrived;
+        db.ClinicQueueItems.Add(new ClinicQueueItem
+        {
+            Id = Guid.NewGuid(),
+            PatientId = appointment.PatientId,
+            AppointmentId = appointment.Id,
+            QueueDate = BusinessDate,
+            Status = ClinicQueueStatus.InRoom,
+            IsActive = true
+        });
         db.SaveChanges();
         return appointment;
     }

@@ -1,6 +1,6 @@
 # W11 — Journal and Accounting-Period Integrity
 
-Status: implemented locally; PostgreSQL acceptance pending CI.
+Status: implemented; PostgreSQL acceptance passed in CI.
 
 ## Scope
 
@@ -19,7 +19,7 @@ Status: implemented locally; PostgreSQL acceptance pending CI.
 - Release builds for unit and integration projects succeed.
 - Existing finance/journal regression set: 90/90 passed.
 - W11 application period-lock tests: 3/3 passed.
-- PostgreSQL integration tests cover strict line constraints, ten concurrent number reservations, duplicate source rejection, closed-period immutability, and official reversal.
-- Local PostgreSQL execution is unavailable because Docker is not installed; the repository CI Testcontainers job is the required acceptance gate before merge.
+- PostgreSQL integration tests cover strict line constraints, ten concurrent number reservations, duplicate source rejection, closed-period immutability, and official reversal; all 4/4 passed in CI.
+- Local PostgreSQL execution is unavailable because Docker is not installed; the repository CI Testcontainers job supplied the required PostgreSQL acceptance evidence.
 
 Branch: `codex/w11-journal-period-locks`

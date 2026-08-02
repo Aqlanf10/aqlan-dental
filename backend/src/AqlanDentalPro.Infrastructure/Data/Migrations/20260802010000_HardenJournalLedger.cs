@@ -86,11 +86,11 @@ public partial class HardenJournalLedger : Migration
 
             INSERT INTO "JournalEntryNumberSequences" ("EntryDate", "LastSequence")
             SELECT
-                entry."EntryDate",
+                to_date(substring(entry."EntryNumber" from 4 for 8), 'YYYYMMDD'),
                 MAX(substring(entry."EntryNumber" from '([0-9]+)$')::integer)
             FROM "JournalEntries" entry
             WHERE entry."EntryNumber" ~ '^JE-[0-9]{8}-[0-9]+$'
-            GROUP BY entry."EntryDate";
+            GROUP BY to_date(substring(entry."EntryNumber" from 4 for 8), 'YYYYMMDD');
 
             CREATE OR REPLACE FUNCTION validate_journal_entry_balance(target_entry_id uuid)
             RETURNS void AS $$

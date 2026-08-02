@@ -96,6 +96,43 @@ public sealed class JournalLedgerSafetyTests : IClassFixture<TestWebAppFactory>,
     }
 
     [Fact]
+    public async Task SequenceBootstrapUsesDateEmbeddedInNumberForBackdatedEntry()
+    {
+        var numberDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        var backdatedEntry = await CreatePostedEntryAsync(numberDate.AddYears(-1));
+        backdatedEntry.EntryNumber.Should().StartWith($"JE-{numberDate:yyyyMMdd}-");
+
+        await using (var connection = new NpgsqlConnection(_factory.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                DELETE FROM "JournalEntryNumberSequences"
+                WHERE "EntryDate" = @numberDate;
+
+                INSERT INTO "JournalEntryNumberSequences" ("EntryDate", "LastSequence")
+                SELECT
+                    to_date(substring(entry."EntryNumber" from 4 for 8), 'YYYYMMDD'),
+                    MAX(substring(entry."EntryNumber" from '([0-9]+)$')::integer)
+                FROM "JournalEntries" entry
+                WHERE entry."EntryNumber" ~ '^JE-[0-9]{8}-[0-9]+$'
+                GROUP BY to_date(substring(entry."EntryNumber" from 4 for 8), 'YYYYMMDD');
+                """;
+            command.Parameters.AddWithValue("numberDate", numberDate);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        using var scope = _factory.Services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IJournalEntryService>();
+        var nextNumber = await service.GenerateEntryNumberAsync();
+
+        var previousSequence = int.Parse(backdatedEntry.EntryNumber.Split('-')[2]);
+        var nextSequence = int.Parse(nextNumber.Split('-')[2]);
+        nextNumber.Should().StartWith($"JE-{numberDate:yyyyMMdd}-");
+        nextSequence.Should().Be(previousSequence + 1);
+    }
+
+    [Fact]
     public async Task DuplicateSourceIdentityIsRejectedByDatabase()
     {
         var sourceId = Guid.NewGuid();

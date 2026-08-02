@@ -135,6 +135,9 @@ public class JournalEntryService(
         Guid performedBy,
         CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new ArgumentException("Reversal reason is required.", nameof(reason));
+
         await using var ownedTransaction = db.Database.IsRelational()
             && db.Database.CurrentTransaction == null
                 ? await db.Database.BeginTransactionAsync(ct)

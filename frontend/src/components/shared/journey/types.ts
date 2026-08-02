@@ -38,6 +38,10 @@ export type {
  */
 export interface TodayJourneyItem {
   appointmentId: string | null; // null for walk-in patients without an appointment
+  appointmentDate?: string | null;
+  arrivedAt?: string | null;
+  queueAddedAt?: string | null;
+  visitStartedAt?: string | null;
   patientId: string;
   patientName: string;
   patientPhone?: string;

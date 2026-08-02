@@ -1,8 +1,19 @@
 namespace AqlanDentalPro.Application.DTOs.Journey;
 
+/// <summary>
+/// Explicit administrative override for a future appointment journey action.
+/// The API never infers an override from role alone: the caller must request it
+/// and provide a reason, then the backend verifies manager permission.
+/// </summary>
+public interface IFutureAppointmentOverrideRequest
+{
+    bool OverrideFutureAppointment { get; }
+    string? OverrideReason { get; }
+}
+
 /// <summary>Reception-side intake request — marks the patient as arrived and
 /// optionally attaches a service / room to the appointment.</summary>
-public class IntakeRequest
+public class IntakeRequest : IFutureAppointmentOverrideRequest
 {
     public Guid? ServiceId { get; set; }
     public string? ChiefComplaint { get; set; }
@@ -10,14 +21,25 @@ public class IntakeRequest
     public Guid? RoomId { get; set; }
     public bool RequiresConsultationFee { get; set; }
     public decimal? ConsultationFeeAmount { get; set; }
+    public bool OverrideFutureAppointment { get; set; }
+    public string? OverrideReason { get; set; }
 }
 
 /// <summary>Optional room assignment + notes when adding an appointment to the
 /// clinic queue.</summary>
-public class SendToQueueRequest
+public class SendToQueueRequest : IFutureAppointmentOverrideRequest
 {
     public Guid? RoomId { get; set; }
     public string? Notes { get; set; }
+    public bool OverrideFutureAppointment { get; set; }
+    public string? OverrideReason { get; set; }
+}
+
+/// <summary>Optional explicit manager override when starting treatment.</summary>
+public class StartVisitRequest : IFutureAppointmentOverrideRequest
+{
+    public bool OverrideFutureAppointment { get; set; }
+    public string? OverrideReason { get; set; }
 }
 
 /// <summary>Doctor handoff payload — clinical findings, proposed procedure, and

@@ -285,11 +285,12 @@ public class JourneyUpdatedSignalRTests
         var patientAccess = new Mock<IPatientAccessService>();
         patientAccess.SetupGet(p => p.IsDoctor).Returns(false);
         var audit = new Mock<IAuditService>();
+        var clock = new ClinicClock();
 
         var controller = new AppointmentsController(
             appointmentService, db, currentUser.Object,
             whatsapp.Object, email.Object, push.Object,
-            patientAccess.Object, audit.Object,
+            patientAccess.Object, audit.Object, clock, new JourneyBusinessDatePolicy(clock),
             NullLogger<AppointmentsController>.Instance);
 
         var result = await controller.UpdateStatus(

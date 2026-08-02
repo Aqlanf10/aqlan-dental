@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.DTOs.Appointments;
+using AqlanDentalPro.Application.DTOs.Journey;
 using AqlanDentalPro.Application.DTOs.Sms;
 using AqlanDentalPro.Application.DTOs.WhatsApp;
 using AqlanDentalPro.Application.Interfaces.Services;
@@ -30,6 +31,9 @@ public class ClinicQueueController(
     ISmsService smsService,
     IWhatsAppService whatsAppService,
     IAuditService audit,
+    ICurrentUserService currentUser,
+    IClinicClock clinicClock,
+    IJourneyBusinessDatePolicy businessDatePolicy,
     ILogger<ClinicQueueController> logger) : ControllerBase
 {
     private static readonly HashSet<ClinicQueueStatus> ActiveStatuses =
@@ -153,7 +157,7 @@ public class ClinicQueueController(
     [HttpPost]
     public async Task<IActionResult> AddToQueue([FromBody] AddToQueueRequest req)
     {
-        var today = ClinicTimeProvider.ClinicToday();
+        var today = clinicClock.Today();
 
         // Validate patient exists
         var patient = await db.Patients.FindAsync(req.PatientId);
@@ -167,8 +171,11 @@ public class ClinicQueueController(
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
-            var lockKey = (int)(req.PatientId.GetHashCode() % 100000);
+            var lockKey = StableLockKeyHelper.StableGuidToLong(req.PatientId);
             await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            // The request may wait across clinic midnight while acquiring the lock.
+            today = clinicClock.Today();
 
             // Check for duplicate active queue item today (now safe under lock)
             var existingActive = await db.ClinicQueueItems
@@ -180,14 +187,21 @@ public class ClinicQueueController(
             if (existingActive)
                 return Conflict(new { message = "يوجد عنصر نشط لهذا المريض في قائمة الانتظار اليوم بالفعل" });
 
-            // Validate appointment if provided
+            // Validate appointment if provided, including W05 business-date guard.
             if (req.AppointmentId.HasValue)
             {
                 var appointment = await db.Appointments.FindAsync(req.AppointmentId.Value);
                 if (appointment is null)
                     return NotFound(new { message = "الموعد غير موجود" });
+                if (!appointment.IsActive)
+                    return BadRequest(new { message = "الموعد محذوف" });
                 if (appointment.PatientId != req.PatientId)
                     return BadRequest(new { message = "الموعد لا ينتمي لهذا المريض" });
+
+                var dateError = ValidateJourneyBusinessDate(appointment, req, out var dateDecision);
+                if (dateError != null) return dateError;
+                today = dateDecision.BusinessDate;
+                AddFutureAppointmentOverrideAudit(appointment, "LegacyAddToQueue", dateDecision);
             }
 
             // Validate doctor (now required)
@@ -273,7 +287,7 @@ public class ClinicQueueController(
         try
         {
             // CON-03 FIX: Acquire advisory lock on queue item to prevent double-processing
-            var lockKey = (int)(id.GetHashCode() % 100000);
+            var lockKey = StableLockKeyHelper.StableGuidToLong(id);
             await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
 
             var item = await db.ClinicQueueItems.FindAsync(id);
@@ -403,15 +417,20 @@ public class ClinicQueueController(
     // ─── POST /api/clinic-queue/{id}/start ───────────────────────────────────
     /// <summary>Marks the visit as in progress. Creates a Visit if not linked.</summary>
     [HttpPost("{id:guid}/start")]
-    public async Task<IActionResult> StartVisit(Guid id)
+    public async Task<IActionResult> StartVisit(Guid id, [FromBody] StartVisitRequest? req = null)
     {
         // CON-03 FIX: Add advisory lock for concurrency protection
-        await using var tx = await db.Database.BeginTransactionAsync();
+        await using var tx = db.Database.IsRelational()
+            ? await db.Database.BeginTransactionAsync()
+            : null;
         try
         {
-            // CON-03 FIX: Acquire advisory lock on queue item
-            var lockKey = (int)(id.GetHashCode() % 100000);
-            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            // CON-03 FIX: Acquire stable advisory lock on queue item
+            if (tx != null)
+            {
+                var lockKey = StableLockKeyHelper.StableGuidToLong(id);
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            }
 
             var item = await db.ClinicQueueItems
                 .Include(q => q.Appointment)
@@ -435,10 +454,24 @@ public class ClinicQueueController(
             // each other for a given appointment. Locks are additive (pg_advisory_xact_lock
             // does not release until the transaction ends), so holding both the queue-item
             // lock and the appointment lock in the same transaction is safe.
-            if (item.AppointmentId.HasValue)
+            if (tx != null && item.AppointmentId.HasValue)
             {
-                var appointmentLockKey = (int)(item.AppointmentId.Value.GetHashCode() % 100000);
+                var appointmentLockKey = StableLockKeyHelper.StableGuidToLong(item.AppointmentId.Value);
                 await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", appointmentLockKey);
+            }
+
+            var businessDate = clinicClock.Today();
+            if (item.Appointment != null)
+            {
+                await db.Entry(item.Appointment).ReloadAsync();
+                var dateError = ValidateJourneyBusinessDate(item.Appointment, req, out var dateDecision);
+                if (dateError != null)
+                {
+                    if (tx != null) await tx.RollbackAsync();
+                    return dateError;
+                }
+                businessDate = dateDecision.BusinessDate;
+                AddFutureAppointmentOverrideAudit(item.Appointment, "LegacyQueueStartVisit", dateDecision);
             }
 
             // Create a Visit if not already linked
@@ -469,8 +502,7 @@ public class ClinicQueueController(
                         // (confirmed live: visit 2026-07-05 vs appointment 2026-07-06).
                         // Prefer the linked appointment's own clinic date — matches
                         // AppointmentsController.StartVisit semantics.
-                        VisitDate = item.Appointment?.AppointmentDate
-                            ?? ClinicTimeProvider.ClinicToday(),
+                        VisitDate = businessDate,
                         DoctorId = item.DoctorId ?? item.Appointment?.DoctorId,
                         Specialty = item.Appointment?.Specialty,
                         ServiceId = item.ServiceId ?? item.Appointment?.ServiceId
@@ -490,14 +522,15 @@ public class ClinicQueueController(
                 }
             }
 
+            var eventUtc = clinicClock.UtcNow();
             item.Status = ClinicQueueStatus.InProgress;
-            item.StartedAt = DateTime.UtcNow;
-            item.UpdatedAt = DateTime.UtcNow;
+            item.StartedAt = eventUtc;
+            item.UpdatedAt = eventUtc;
 
             await SyncAppointmentStatus(item, AppointmentStatus.InProgress);
 
             await db.SaveChangesAsync();
-            await tx.CommitAsync();
+            if (tx != null) await tx.CommitAsync();
 
             // SignalR: Branch-scoped push — notify queue update when visit starts
             var branchId = GetCurrentBranchId();
@@ -518,7 +551,7 @@ public class ClinicQueueController(
         }
         catch
         {
-            await tx.RollbackAsync();
+            if (tx != null) await tx.RollbackAsync();
             throw;
         }
     }
@@ -1395,7 +1428,7 @@ public class ClinicQueueController(
     /// <summary>Marks appointment as Waiting and sets ArrivedAt. Legacy endpoint — use POST /api/patient-journey/{id}/intake instead.</summary>
     [Obsolete("Use POST /api/patient-journey/{id}/intake instead. This legacy endpoint does not push SignalR updates.")]
     [HttpPost("arrive/{id:guid}")]
-    public async Task<IActionResult> MarkArrived(Guid id)
+    public async Task<IActionResult> MarkArrived(Guid id, [FromBody] StartVisitRequest? req = null)
     {
         var appointment = await db.Appointments.FindAsync(id);
         if (appointment is null)
@@ -1404,9 +1437,9 @@ public class ClinicQueueController(
         if (!appointment.IsActive)
             return BadRequest(new { message = "الموعد محذوف" });
 
-        var today = ClinicTimeProvider.ClinicToday();
-        if (appointment.AppointmentDate != today)
-            return BadRequest(new { message = "لا يمكن تسجيل الوصول إلا لمواعيد اليوم" });
+        var dateError = ValidateJourneyBusinessDate(appointment, req, out var dateDecision);
+        if (dateError != null) return dateError;
+        var today = dateDecision.BusinessDate;
 
         if (appointment.Status == AppointmentStatus.Cancelled || appointment.Status == AppointmentStatus.NoShow)
             return BadRequest(new { message = "لا يمكن تسجيل وصول موعد ملغى أو لم يحضر" });
@@ -1415,8 +1448,18 @@ public class ClinicQueueController(
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
-            var lockKey = (int)(appointment.PatientId.GetHashCode() % 100000);
+            var lockKey = StableLockKeyHelper.StableGuidToLong(appointment.PatientId);
             await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            await db.Entry(appointment).ReloadAsync();
+            dateError = ValidateJourneyBusinessDate(appointment, req, out dateDecision);
+            if (dateError != null)
+            {
+                await tx.RollbackAsync();
+                return dateError;
+            }
+            today = dateDecision.BusinessDate;
+            AddFutureAppointmentOverrideAudit(appointment, "LegacyMarkArrived", dateDecision);
 
             // Also add to clinic queue if not already there (re-check under lock)
             var existingQueueItem = await db.ClinicQueueItems
@@ -1428,9 +1471,10 @@ public class ClinicQueueController(
             if (!AppointmentStatusTransitions.IsValidTransition(appointment.Status, AppointmentStatus.Waiting))
                 return BadRequest(new { message = $"لا يمكن تغيير حالة الموعد من {appointment.Status} إلى {AppointmentStatus.Waiting}" });
 
+            var eventUtc = clinicClock.UtcNow();
             appointment.Status = AppointmentStatus.Waiting;
-            appointment.ArrivedAt = DateTime.UtcNow;
-            appointment.UpdatedAt = DateTime.UtcNow;
+            appointment.ArrivedAt = eventUtc;
+            appointment.UpdatedAt = eventUtc;
 
             if (!existingQueueItem)
             {
@@ -1468,6 +1512,56 @@ public class ClinicQueueController(
     }
 
     // ─── Private helpers ─────────────────────────────────────────────────────
+
+    private IActionResult? ValidateJourneyBusinessDate(
+        Appointment appointment,
+        IFutureAppointmentOverrideRequest? request,
+        out JourneyBusinessDateDecision decision)
+    {
+        decision = businessDatePolicy.Evaluate(
+            appointment.AppointmentDate,
+            request?.OverrideFutureAppointment ?? false,
+            request?.OverrideReason,
+            currentUser.IsAdmin);
+
+        if (decision.Allowed) return null;
+        var payload = new
+        {
+            code = decision.ErrorCode,
+            message = decision.Message,
+            appointmentDate = appointment.AppointmentDate.ToString("yyyy-MM-dd"),
+            businessDate = decision.BusinessDate.ToString("yyyy-MM-dd"),
+            timeZone = clinicClock.TimeZoneId
+        };
+        return decision.ErrorCode == "future_appointment_override_forbidden"
+            ? StatusCode(403, payload)
+            : BadRequest(payload);
+    }
+
+    private void AddFutureAppointmentOverrideAudit(
+        Appointment appointment,
+        string operation,
+        JourneyBusinessDateDecision decision)
+    {
+        if (!decision.Overridden) return;
+        db.AuditLogs.Add(new AuditLog
+        {
+            UserId = currentUser.UserId,
+            Action = AuditAction.Approve,
+            Resource = "FutureAppointmentJourneyOverride",
+            ResourceId = appointment.Id,
+            NewData = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(new
+            {
+                operation,
+                appointment.PatientId,
+                appointmentDate = appointment.AppointmentDate.ToString("yyyy-MM-dd"),
+                businessDate = decision.BusinessDate.ToString("yyyy-MM-dd"),
+                reason = decision.OverrideReason,
+                timeZone = clinicClock.TimeZoneId
+            })),
+            CreatedAt = clinicClock.UtcNow()
+        });
+    }
 
     private Guid? GetCurrentUserId()
     {
@@ -1596,7 +1690,7 @@ public class ClinicQueueController(
 
 // ─── Request DTOs ────────────────────────────────────────────────────────────
 
-public class AddToQueueRequest
+public class AddToQueueRequest : IFutureAppointmentOverrideRequest
 {
     public Guid PatientId { get; set; }
     public Guid? AppointmentId { get; set; }
@@ -1606,6 +1700,8 @@ public class AddToQueueRequest
     public Guid? ClinicRoomId { get; set; }
     public string? RoomName { get; set; }
     public string? Notes { get; set; }
+    public bool OverrideFutureAppointment { get; set; }
+    public string? OverrideReason { get; set; }
 }
 
 public class CallQueuePatientRequest

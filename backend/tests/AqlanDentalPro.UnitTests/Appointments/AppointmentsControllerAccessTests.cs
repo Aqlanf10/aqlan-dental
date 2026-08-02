@@ -123,10 +123,12 @@ public class AppointmentsControllerAccessTests : IDisposable
         var email = new Mock<IEmailService>();
         var push = new Mock<IRealTimePushService>();
         var audit = new Mock<IAuditService>();
+        var clock = new ClinicClock();
 
         return new AppointmentsController(
             service, _db, currentUser.Object, whatsapp.Object, email.Object, push.Object,
-            accessMock.Object, audit.Object, NullLogger<AppointmentsController>.Instance);
+            accessMock.Object, audit.Object, clock, new JourneyBusinessDatePolicy(clock),
+            NullLogger<AppointmentsController>.Instance);
     }
 
     private static string ExtractMessage(object? value)
@@ -135,6 +137,93 @@ public class AppointmentsControllerAccessTests : IDisposable
         var prop = value!.GetType().GetProperty("message");
         prop.Should().NotBeNull("the response must carry a 'message' field (Arabic)");
         return (string)prop!.GetValue(value)!;
+    }
+
+    [Fact]
+    public async Task UpdateStatus_FutureArrivalWithoutExplicitOverride_IsRejectedWithoutQueueMutation()
+    {
+        var (_, appointment) = await SeedAsync(new ClinicClock().Today().AddDays(1));
+        var access = new Mock<IPatientAccessService>();
+        SetupNonDoctor(access);
+        var controller = BuildController(access, isAdmin: false);
+
+        var result = await controller.UpdateStatus(
+            appointment.Id,
+            new UpdateAppointmentStatusRequest { Status = "Arrived" });
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        appointment.Status.Should().Be(AppointmentStatus.Scheduled);
+        (await _db.ClinicQueueItems.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task UpdateStatus_AdminFutureArrivalWithReason_IsAuditedAndQueuedOnBusinessDate()
+    {
+        var clock = new ClinicClock();
+        var (_, appointment) = await SeedAsync(clock.Today().AddDays(1));
+        var access = new Mock<IPatientAccessService>();
+        SetupNonDoctor(access);
+        var controller = BuildController(access, isAdmin: true);
+
+        var result = await controller.UpdateStatus(
+            appointment.Id,
+            new UpdateAppointmentStatusRequest
+            {
+                Status = "Arrived",
+                OverrideFutureAppointment = true,
+                OverrideReason = "حضور مبكر بموافقة المدير"
+            });
+
+        result.Should().BeOfType<OkObjectResult>();
+        appointment.Status.Should().Be(AppointmentStatus.Arrived);
+        appointment.ArrivedAt.Should().NotBeNull();
+        var queue = await _db.ClinicQueueItems.SingleAsync();
+        queue.QueueDate.Should().Be(clock.Today());
+        var audit = await _db.AuditLogs.SingleAsync();
+        audit.Resource.Should().Be("FutureAppointmentJourneyOverride");
+    }
+
+    [Fact]
+    public async Task StartVisit_FutureAppointmentWithoutOverride_IsRejectedWithoutVisit()
+    {
+        var (_, appointment) = await SeedAsync(new ClinicClock().Today().AddDays(1));
+        appointment.Status = AppointmentStatus.InRoom;
+        await _db.SaveChangesAsync();
+        var access = new Mock<IPatientAccessService>();
+        SetupNonDoctor(access);
+        var controller = BuildController(access, isAdmin: false);
+
+        var result = await controller.StartVisit(appointment.Id, new());
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        (await _db.Visits.CountAsync()).Should().Be(0);
+        appointment.Status.Should().Be(AppointmentStatus.InRoom);
+    }
+
+    [Fact]
+    public async Task StartVisit_AdminFutureOverride_CreatesVisitOnBusinessDateAndAudit()
+    {
+        var clock = new ClinicClock();
+        var (_, appointment) = await SeedAsync(clock.Today().AddDays(1));
+        appointment.Status = AppointmentStatus.InRoom;
+        await _db.SaveChangesAsync();
+        var access = new Mock<IPatientAccessService>();
+        SetupNonDoctor(access);
+        var controller = BuildController(access, isAdmin: true);
+
+        var result = await controller.StartVisit(appointment.Id, new()
+        {
+            OverrideFutureAppointment = true,
+            OverrideReason = "بدء استثنائي بموافقة المدير"
+        });
+
+        result.Should().BeOfType<OkObjectResult>();
+        appointment.Status.Should().Be(AppointmentStatus.InProgress);
+        (await _db.Visits.SingleAsync()).VisitDate.Should().Be(clock.Today());
+        var audit = await _db.AuditLogs.SingleAsync();
+        audit.Resource.Should().Be("FutureAppointmentJourneyOverride");
+        audit.NewData!.RootElement.GetProperty("operation").GetString()
+            .Should().Be("LegacyAppointmentStartVisit");
     }
 
     // ── GetById ──────────────────────────────────────────────────────────────────

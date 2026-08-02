@@ -50,6 +50,33 @@ function renderTable(
 }
 
 describe("AppointmentsTable visit transition actions", () => {
+  it("renders the appointment date and real journey event timestamps", () => {
+    const arrivedAt = "2026-08-02T06:15:00Z";
+    const queueAddedAt = "2026-08-02T06:30:00Z";
+    const visitStartedAt = "2026-08-02T07:00:00Z";
+    const formatEventTime = (value: string) => new Intl.DateTimeFormat("ar-YE", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: "Asia/Aden",
+    }).format(new Date(value));
+
+    renderTable({
+      ...baseItem,
+      appointmentDate: "2026-08-02",
+      arrivedAt,
+      queueAddedAt,
+      visitStartedAt,
+    });
+
+    // The initially visible desktop row must use the canonical timestamps
+    // returned by the API (the mobile details appear only after expansion).
+    expect(screen.getByText("2026-08-02")).toBeInTheDocument();
+    expect(screen.getByText(formatEventTime(arrivedAt))).toBeInTheDocument();
+    expect(screen.getByText(formatEventTime(queueAddedAt))).toBeInTheDocument();
+    expect(screen.getByText(formatEventTime(visitStartedAt))).toBeInTheDocument();
+  });
+
   it("shows بدء الزيارة for an InRoom patient and invokes the start action", () => {
     const onStartVisit = renderTable(baseItem);
 

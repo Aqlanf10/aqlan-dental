@@ -34,9 +34,15 @@ public class ClinicQueueDisplayTests
         var smsService = new Mock<ISmsService>().Object;
         var whatsAppService = new Mock<IWhatsAppService>().Object;
         var auditService = new Mock<IAuditService>().Object;
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.SetupGet(x => x.IsAdmin).Returns(true);
+        var clinicClock = new ClinicClock();
+        var businessDatePolicy = new JourneyBusinessDatePolicy(clinicClock);
         var logger = new Mock<ILogger<ClinicQueueController>>().Object;
 
-        return new ClinicQueueController(db, pushService, smsService, whatsAppService, auditService, logger);
+        return new ClinicQueueController(
+            db, pushService, smsService, whatsAppService, auditService,
+            currentUser.Object, clinicClock, businessDatePolicy, logger);
     }
 
     [Fact]

@@ -206,13 +206,23 @@ export function useQueueWaitTime() {
 
 // ─── Mutations ───────────────────────────────────────────────────────────────
 
+export type FutureAppointmentOverrideBody = {
+  overrideFutureAppointment?: boolean;
+  overrideReason?: string;
+};
+
 // Enhanced: useJourneyIntake — daily-ops invalidates ["daily-ops"] keys
 export function useIntake() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (params: {
       appointmentId: string;
-      body: { serviceId?: string; chiefComplaint?: string; notes?: string; roomId?: string };
+      body: FutureAppointmentOverrideBody & {
+        serviceId?: string;
+        chiefComplaint?: string;
+        notes?: string;
+        roomId?: string;
+      };
     }) => {
       const { data } = await api.post(`/api/patient-journey/${params.appointmentId}/intake`, params.body);
       return data;
@@ -228,7 +238,10 @@ export function useIntake() {
 export function useSendToQueue() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (params: { appointmentId: string; body?: { roomId?: string; notes?: string } }) => {
+    mutationFn: async (params: {
+      appointmentId: string;
+      body?: FutureAppointmentOverrideBody & { roomId?: string; notes?: string };
+    }) => {
       const { data } = await api.post(`/api/patient-journey/${params.appointmentId}/send-to-queue`, params.body ?? {});
       return data;
     },
@@ -290,8 +303,14 @@ export function useEnterRoom() {
 export function useStartVisit() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (appointmentId: string) => {
-      const { data } = await api.post(`/api/patient-journey/${appointmentId}/start-visit`);
+    mutationFn: async (params: {
+      appointmentId: string;
+      body?: FutureAppointmentOverrideBody;
+    }) => {
+      const { data } = await api.post(
+        `/api/patient-journey/${params.appointmentId}/start-visit`,
+        params.body ?? {},
+      );
       return data;
     },
     onSuccess: () => {

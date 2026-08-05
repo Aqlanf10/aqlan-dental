@@ -24,6 +24,12 @@ public class DoctorCommissionAdjustment : BaseEntity
     /// <summary>Doctor whose settlement carries this line.</summary>
     public Guid DoctorId { get; set; }
 
+    /// <summary>Branch that earned the original commission.</summary>
+    public Guid BranchId { get; set; }
+
+    /// <summary>Currency of every monetary amount on this correction.</summary>
+    public string Currency { get; set; } = "YER";
+
     /// <summary>The already-paid commission line this corrects.</summary>
     public Guid InvoiceLineItemId { get; set; }
 

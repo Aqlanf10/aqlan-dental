@@ -353,6 +353,46 @@ public class CommissionServiceValidationTests
         result.DoctorId.Should().Be(doctor.Id);
     }
 
+    [Fact]
+    public async Task RecordPayment_DoesNotDebitTreasuryInDifferentCurrency()
+    {
+        await using var db = CreateDb();
+        var branchId = Guid.NewGuid();
+        var patient = new Patient { FirstName = "Currency", LastName = "Guard", BranchId = branchId };
+        var doctor = new Doctor { Name = "Doctor", IsActive = true, BranchId = branchId };
+        db.Branches.Add(new Branch { Id = branchId, Name = "Branch" });
+        db.Patients.Add(patient);
+        db.Doctors.Add(doctor);
+        db.Treasuries.Add(new Treasury
+        {
+            Name = "YER bank", Type = TreasuryType.Bank, Balance = 1_000_000m,
+            BranchId = branchId, Currency = "YER", IsActive = true
+        });
+        var invoice = new Invoice
+        {
+            Patient = patient, InvoiceNumber = "INV-SAR", Currency = "SAR",
+            Status = InvoiceStatus.Issued, IsActive = true
+        };
+        db.Invoices.Add(invoice);
+        db.InvoiceLineItems.Add(new InvoiceLineItem
+        {
+            Invoice = invoice, Description = "Service", Quantity = 1, UnitPrice = 1_000m,
+            TotalPrice = 1_000m, DoctorId = doctor.Id, DoctorCommissionAmount = 300m,
+            DoctorCommissionPercentage = 30m, CommissionStatus = CommissionStatus.Approved, IsActive = true
+        });
+        await db.SaveChangesAsync();
+
+        var request = new RecordCommissionPaymentRequest(
+            doctor.Id, 100m, DateOnly.FromDateTime(DateTime.UtcNow), "bank", null, null, null,
+            branchId, "SAR");
+
+        await CreateService(db).Invoking(service => service.RecordPaymentAsync(request, Guid.NewGuid()))
+            .Should().ThrowAsync<ArgumentException>();
+        db.ChangeTracker.Clear();
+        (await db.Treasuries.SingleAsync(treasury => treasury.Currency == "YER"))
+            .Balance.Should().Be(1_000_000m);
+    }
+
     // ── RecordPayment: correction lines (CORE-FIN-LAB-ADJ) ────────────────────
 
     /// <summary>

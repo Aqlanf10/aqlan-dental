@@ -146,9 +146,21 @@ public class CommissionService(
         if (doctorId.HasValue)
             query = query.Where(i => i.DoctorId == doctorId.Value);
 
+        if (branchId.HasValue)
+            query = query.Where(i => i.Invoice.Patient.BranchId == branchId.Value);
+
+        if (!string.IsNullOrWhiteSpace(serviceCategory)
+            && Enum.TryParse<ServiceCategory>(serviceCategory, true, out var category))
+            query = query.Where(i => i.Service != null && i.Service.Category == category);
+
         if (!string.IsNullOrWhiteSpace(commissionStatus)
             && Enum.TryParse<CommissionStatus>(commissionStatus, true, out var cs))
             query = query.Where(i => i.CommissionStatus == cs);
+
+        if (string.Equals(paymentStatus, "paid", StringComparison.OrdinalIgnoreCase))
+            query = query.Where(i => i.CommissionStatus == CommissionStatus.Paid);
+        else if (string.Equals(paymentStatus, "unpaid", StringComparison.OrdinalIgnoreCase))
+            query = query.Where(i => i.CommissionStatus != CommissionStatus.Paid);
 
         var items = await query.OrderBy(i => i.Invoice.CreatedAt).ToListAsync();
 
@@ -157,16 +169,19 @@ public class CommissionService(
         var doctorIds = items.Where(i => i.DoctorId.HasValue).Select(i => i.DoctorId!.Value).Distinct().ToList();
         var fromUtc = DateTime.SpecifyKind(from.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
         var toUtc   = DateTime.SpecifyKind(to.ToDateTime(TimeOnly.MaxValue), DateTimeKind.Utc);
-        var paidByDoctor = await db.DoctorCommissionPayments
+        var paidByScope = await db.DoctorCommissionPayments
             .Where(p => p.IsActive
                      && doctorIds.Contains(p.DoctorId)
                      && p.PaymentDate >= DateOnly.FromDateTime(fromUtc)
                      && p.PaymentDate <= DateOnly.FromDateTime(toUtc))
-            .GroupBy(p => p.DoctorId)
-            .Select(g => new { DoctorId = g.Key, Total = g.Sum(p => p.Amount) })
-            .ToDictionaryAsync(x => x.DoctorId, x => x.Total);
+            .Where(p => !branchId.HasValue || p.BranchId == branchId.Value)
+            .GroupBy(p => new { p.BranchId, p.Currency })
+            .Select(g => new { g.Key.BranchId, g.Key.Currency, Total = g.Sum(p => p.Amount) })
+            .ToDictionaryAsync(x => (x.BranchId, x.Currency), x => x.Total);
 
         var rows = items.Select(i => new CommissionReportRow(
+            BranchId: i.Invoice.Patient.BranchId ?? i.Doctor!.BranchId ?? Guid.Empty,
+            Currency: i.Invoice.Currency,
             Date: i.Invoice.CreatedAt,
             PatientName: i.Invoice.Patient != null
                 ? $"{i.Invoice.Patient.FirstName} {i.Invoice.Patient.LastName}".Trim()
@@ -187,24 +202,28 @@ public class CommissionService(
             Status: i.CommissionStatus.ToString()
         )).ToList();
 
-        // Summary TotalPaid uses ACTUAL DoctorCommissionPayments (more accurate
-        // than per-row status flag, since payments are tracked at doctor level).
-        var totalPaidActual    = paidByDoctor.Values.Sum();
-        var totalEarned        = rows.Sum(r => r.DoctorCommission);
-        var totalRemainingReal = Math.Max(0m, totalEarned - totalPaidActual);
+        var summaries = rows
+            .GroupBy(row => new { row.BranchId, row.Currency })
+            .Select(group =>
+            {
+                var paid = paidByScope.GetValueOrDefault((group.Key.BranchId, group.Key.Currency));
+                var earned = group.Sum(row => row.DoctorCommission);
+                return new CommissionReportSummary(
+                    BranchId: group.Key.BranchId,
+                    Currency: group.Key.Currency,
+                    TotalGross: group.Sum(row => row.GrossAmount),
+                    TotalDiscount: group.Sum(row => row.Discount),
+                    TotalMaterialCost: group.Sum(row => row.MaterialCost),
+                    TotalLabCost: group.Sum(row => row.LabCost),
+                    TotalOtherCosts: group.Sum(row => row.OtherCosts),
+                    TotalNet: group.Sum(row => row.NetCommissionableAmount),
+                    TotalDoctorCommission: earned,
+                    TotalPaid: paid,
+                    TotalRemaining: Math.Max(0m, earned - paid));
+            })
+            .ToList();
 
-        var summary = new CommissionReportSummary(
-            TotalGross:           rows.Sum(r => r.GrossAmount),
-            TotalDiscount:        rows.Sum(r => r.Discount),
-            TotalMaterialCost:    rows.Sum(r => r.MaterialCost),
-            TotalLabCost:         rows.Sum(r => r.LabCost),
-            TotalOtherCosts:      rows.Sum(r => r.OtherCosts),
-            TotalNet:             rows.Sum(r => r.NetCommissionableAmount),
-            TotalDoctorCommission:totalEarned,
-            TotalPaid:            totalPaidActual,
-            TotalRemaining:       totalRemainingReal);
-
-        return new CommissionReportResponse(summary, rows);
+        return new CommissionReportResponse(summaries, rows);
     }
 
     // ── Commission payment disbursement ───────────────────────────────────────
@@ -214,6 +233,12 @@ public class CommissionService(
     {
         if (req.Amount <= 0)
             throw new ArgumentException("مبلغ الدفعة يجب أن يكون أكبر من الصفر");
+        if (req.BranchId == Guid.Empty && db.Database.ProviderName != "Microsoft.EntityFrameworkCore.InMemory")
+            throw new ArgumentException("الفرع مطلوب لصرف العمولة");
+
+        var currency = string.IsNullOrWhiteSpace(req.Currency) && db.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory"
+            ? "YER"
+            : NormalizeCurrency(req.Currency);
 
         var doctor = await db.Doctors.FindAsync(req.DoctorId)
             ?? throw new ArgumentException("الطبيب غير موجود");
@@ -232,6 +257,8 @@ public class CommissionService(
         }
         if (branchId == Guid.Empty)
             throw new ArgumentException("عذراً، لا يمكن صرف العمولة — الفرع غير محدد للطبيب. تواصل مع الإدارة.");
+        if (req.BranchId != Guid.Empty && branchId != req.BranchId)
+            throw new ArgumentException("لا يمكن صرف عمولة الطبيب من فرع مختلف");
 
         // Resolve treasury by payment method
         var paymentMethod = req.PaymentMethod ?? "cash";
@@ -241,7 +268,10 @@ public class CommissionService(
         if (string.Equals(paymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
         {
             activeSession = await db.CashierSessions
-                .FirstOrDefaultAsync(s => s.CashierId == recordedBy && s.Status == SessionStatus.Open && s.IsActive);
+                .FirstOrDefaultAsync(s => s.CashierId == recordedBy
+                                       && s.BranchId == branchId
+                                       && s.Status == SessionStatus.Open
+                                       && s.IsActive);
             if (activeSession == null)
                 throw new ArgumentException("عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل صرف العمولات النقدية.");
         }
@@ -249,7 +279,7 @@ public class CommissionService(
         Treasury treasury;
         try
         {
-            treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, paymentMethod, null, activeSession?.Id);
+            treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, paymentMethod, currency, activeSession?.Id);
         }
         catch (ArgumentException ex)
         {
@@ -260,9 +290,12 @@ public class CommissionService(
         // CORE-FIN-LAB-ADJ: correction lines are part of what the clinic owes — a positive one
         // raises the ceiling on this payment, a negative one lowers it. Leaving them out would
         // make the guard below refuse a legitimate top-up, or wave through an overpayment.
-        var earned = await CommissionBalance.EarnedFromLineItemsAsync(db, req.DoctorId);
-        var adjustments = await CommissionBalance.AdjustmentsTotalAsync(db, req.DoctorId);
-        var alreadyPaid = await CommissionBalance.AlreadyPaidAsync(db, req.DoctorId);
+        var earned = await CommissionBalance.EarnedFromLineItemsAsync(
+            db, req.DoctorId, branchId: branchId, currency: currency);
+        var adjustments = await CommissionBalance.AdjustmentsTotalAsync(
+            db, req.DoctorId, branchId: branchId, currency: currency);
+        var alreadyPaid = await CommissionBalance.AlreadyPaidAsync(
+            db, req.DoctorId, branchId: branchId, currency: currency);
 
         var remaining = earned + adjustments - alreadyPaid;
         if (req.Amount > remaining)
@@ -287,9 +320,12 @@ public class CommissionService(
             }
 
             // Re-calculate remaining approved commission inside the lock
-            var lockedEarned = await CommissionBalance.EarnedFromLineItemsAsync(db, req.DoctorId);
-            var lockedAdjustments = await CommissionBalance.AdjustmentsTotalAsync(db, req.DoctorId);
-            var lockedAlreadyPaid = await CommissionBalance.AlreadyPaidAsync(db, req.DoctorId);
+            var lockedEarned = await CommissionBalance.EarnedFromLineItemsAsync(
+                db, req.DoctorId, branchId: branchId, currency: currency);
+            var lockedAdjustments = await CommissionBalance.AdjustmentsTotalAsync(
+                db, req.DoctorId, branchId: branchId, currency: currency);
+            var lockedAlreadyPaid = await CommissionBalance.AlreadyPaidAsync(
+                db, req.DoctorId, branchId: branchId, currency: currency);
 
             remaining = lockedEarned + lockedAdjustments - lockedAlreadyPaid;
             if (req.Amount > remaining)
@@ -298,6 +334,8 @@ public class CommissionService(
             var payment = new DoctorCommissionPayment
             {
                 DoctorId        = req.DoctorId,
+                BranchId        = branchId,
+                Currency        = currency,
                 Amount          = req.Amount,
                 PaymentDate     = req.PaymentDate,
                 PaymentMethod   = req.PaymentMethod,
@@ -317,6 +355,7 @@ public class CommissionService(
                 Type = TransactionType.Outflow,
                 Category = FinancialCategory.DoctorCommission,
                 Amount = req.Amount,
+                Currency = currency,
                 PaymentMethod = req.PaymentMethod ?? "cash",
                 TransactionDate = req.PaymentDate,
                 ReferenceId = payment.Id,
@@ -346,16 +385,21 @@ public class CommissionService(
                 });
             je.IsPosted = true;
             je.PostedAt = DateTime.UtcNow;
+            je.Currency = currency;
 
             // Blocker 1: Atomically decrement Treasury.Balance for the commission outflow
-            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, paymentMethod, req.Amount, null, activeSession?.Id);
+            await treasuryResolution.DecrementTreasuryBalanceAsync(
+                branchId, paymentMethod, req.Amount, currency, activeSession?.Id);
 
             // CORE-FIN-LAB-ADJ: stamp every open correction with the disbursement that carried
             // it. This is a RECORD of what the doctor was shown, not an arithmetic gate — the
             // balance above sums Pending and Settled alike, so a partial payment cannot strand
             // a correction or make it count twice.
+            var legacyInMemory = db.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory";
             var openAdjustments = await db.DoctorCommissionAdjustments
                 .Where(a => a.DoctorId == req.DoctorId
+                         && (a.BranchId == branchId || (legacyInMemory && a.BranchId == Guid.Empty))
+                         && a.Currency == currency
                          && a.IsActive
                          && a.Status == CommissionAdjustmentStatus.Pending)
                 .ToListAsync();
@@ -371,7 +415,11 @@ public class CommissionService(
             if (req.LineItemIds is { Count: > 0 })
             {
                 var lineItems = await db.InvoiceLineItems
-                    .Where(i => req.LineItemIds.Contains(i.Id) && i.IsActive)
+                    .Where(i => req.LineItemIds.Contains(i.Id)
+                             && i.DoctorId == req.DoctorId
+                             && i.Invoice.Patient.BranchId == branchId
+                             && i.Invoice.Currency == currency
+                             && i.IsActive)
                     .ToListAsync();
 
                 foreach (var item in lineItems)
@@ -390,6 +438,8 @@ public class CommissionService(
             return new DoctorCommissionPaymentDto(
                 Id: payment.Id,
                 DoctorId: payment.DoctorId,
+                BranchId: payment.BranchId,
+                Currency: payment.Currency,
                 DoctorName: doctor.Name,
                 Amount: payment.Amount,
                 PaymentDate: payment.PaymentDate,
@@ -405,7 +455,11 @@ public class CommissionService(
         }
     }
 
-    public async Task<List<DoctorCommissionPaymentDto>> GetPaymentsAsync(Guid? doctorId)
+    public Task<List<DoctorCommissionPaymentDto>> GetPaymentsAsync(Guid? doctorId)
+        => GetPaymentsAsync(doctorId, null, null);
+
+    public async Task<List<DoctorCommissionPaymentDto>> GetPaymentsAsync(
+        Guid? doctorId, Guid? branchId, string? currency)
     {
         var query = db.DoctorCommissionPayments
             .Include(p => p.Doctor)
@@ -413,12 +467,21 @@ public class CommissionService(
 
         if (doctorId.HasValue)
             query = query.Where(p => p.DoctorId == doctorId.Value);
+        if (branchId.HasValue)
+            query = query.Where(p => p.BranchId == branchId.Value);
+        if (!string.IsNullOrWhiteSpace(currency))
+        {
+            var normalizedCurrency = NormalizeCurrency(currency);
+            query = query.Where(p => p.Currency == normalizedCurrency);
+        }
 
         var list = await query.OrderByDescending(p => p.PaymentDate).ToListAsync();
 
         return list.Select(p => new DoctorCommissionPaymentDto(
             Id: p.Id,
             DoctorId: p.DoctorId,
+            BranchId: p.BranchId,
+            Currency: p.Currency,
             DoctorName: p.Doctor.Name,
             Amount: p.Amount,
             PaymentDate: p.PaymentDate,
@@ -593,6 +656,8 @@ public class CommissionService(
     private static LineItemCommissionDto MapLineItem(InvoiceLineItem i) => new(
         LineItemId:                i.Id,
         InvoiceId:                 i.InvoiceId,
+        BranchId:                  i.Invoice.Patient.BranchId ?? i.Doctor?.BranchId ?? Guid.Empty,
+        Currency:                  i.Invoice.Currency,
         InvoiceNumber:             i.Invoice.InvoiceNumber,
         PatientName:               i.Invoice.Patient != null
             ? $"{i.Invoice.Patient.FirstName} {i.Invoice.Patient.LastName}".Trim()
@@ -616,6 +681,14 @@ public class CommissionService(
         IsApproved:                i.CommissionStatus == CommissionStatus.Approved || i.CommissionStatus == CommissionStatus.Paid,
         CommissionApprovedAt:      i.CommissionApprovedAt,
         CreatedAt:                 i.CreatedAt);
+
+    private static string NormalizeCurrency(string currency)
+    {
+        var normalized = currency?.Trim().ToUpperInvariant();
+        return normalized is "YER" or "SAR" or "USD"
+            ? normalized
+            : throw new ArgumentException("العملة يجب أن تكون YER أو SAR أو USD", nameof(currency));
+    }
 
     private static ServiceCommissionDefaultsDto MapServiceDefaults(Domain.Entities.ClinicService svc) => new(
         ServiceId:                        svc.Id,

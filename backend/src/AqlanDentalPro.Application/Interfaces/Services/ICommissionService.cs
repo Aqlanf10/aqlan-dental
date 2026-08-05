@@ -32,6 +32,8 @@ public interface ICommissionService
 
     Task<DoctorCommissionPaymentDto> RecordPaymentAsync(RecordCommissionPaymentRequest req, Guid recordedBy);
     Task<List<DoctorCommissionPaymentDto>> GetPaymentsAsync(Guid? doctorId);
+    Task<List<DoctorCommissionPaymentDto>> GetPaymentsAsync(
+        Guid? doctorId, Guid? branchId, string? currency);
 
     // ── Service commission defaults ───────────────────────────────────────────
 

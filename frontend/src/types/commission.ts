@@ -5,6 +5,8 @@ export type MaterialCostType = "FixedAmount" | "PercentageOfServicePrice";
 export interface LineItemCommission {
   lineItemId: string;
   invoiceId: string;
+  branchId: string;
+  currency: "YER" | "SAR" | "USD";
   invoiceNumber: string;
   patientName: string;
   serviceName: string;
@@ -39,6 +41,8 @@ export interface UpdateLineItemCommissionRequest {
 }
 
 export interface CommissionReportRow {
+  branchId: string;
+  currency: "YER" | "SAR" | "USD";
   date: string;
   patientName: string;
   invoiceNumber: string;
@@ -58,6 +62,8 @@ export interface CommissionReportRow {
 }
 
 export interface CommissionReportSummary {
+  branchId: string;
+  currency: "YER" | "SAR" | "USD";
   totalGross: number;
   totalDiscount: number;
   totalMaterialCost: number;
@@ -70,13 +76,15 @@ export interface CommissionReportSummary {
 }
 
 export interface CommissionReport {
-  summary: CommissionReportSummary;
+  summaries: CommissionReportSummary[];
   rows: CommissionReportRow[];
 }
 
 export interface DoctorCommissionPayment {
   id: string;
   doctorId: string;
+  branchId: string;
+  currency: "YER" | "SAR" | "USD";
   doctorName: string | null;
   amount: number;
   paymentDate: string;
@@ -98,6 +106,8 @@ export type CommissionAdjustmentStatus = "Pending" | "Settled" | "Cancelled";
 export interface CommissionAdjustment {
   id: string;
   doctorId: string;
+  branchId: string;
+  currency: "YER" | "SAR" | "USD";
   doctorName: string | null;
   invoiceLineItemId: string;
   invoiceId: string;
@@ -129,6 +139,8 @@ export interface CommissionResyncResult {
 
 export interface DoctorSettlementSummary {
   doctorId: string;
+  branchId: string;
+  currency: "YER" | "SAR" | "USD";
   doctorName: string | null;
   earnedFromLineItems: number;
   adjustmentsTotal: number;

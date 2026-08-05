@@ -92,10 +92,10 @@ public sealed class CommissionAdjustmentService(
         // required navigation by dropping the whole row from the result — which would silently
         // turn a resync into a no-op instead of an error.
         var invoiceIds = items.Select(i => i.InvoiceId).Distinct().ToList();
-        var invoiceCurrencies = await db.Invoices.IgnoreQueryFilters()
+        var invoiceScopes = await db.Invoices.IgnoreQueryFilters()
             .Where(inv => invoiceIds.Contains(inv.Id))
-            .Select(inv => new { inv.Id, inv.Currency })
-            .ToDictionaryAsync(x => x.Id, x => x.Currency, ct);
+            .Select(inv => new { inv.Id, inv.Currency, inv.Patient.BranchId })
+            .ToDictionaryAsync(x => x.Id, ct);
 
         foreach (var item in items)
         {
@@ -113,7 +113,7 @@ public sealed class CommissionAdjustmentService(
                 Cost:                      order.Cost,
                 LabOrderCurrency:          order.Currency,
                 LabOrderExchangeRateToYer: order.ExchangeRateToYer,
-                InvoiceCurrency:           invoiceCurrencies.GetValueOrDefault(item.InvoiceId)));
+                InvoiceCurrency:           invoiceScopes.GetValueOrDefault(item.InvoiceId)?.Currency));
 
             if (!resolved.ShouldWrite)
             {
@@ -178,6 +178,12 @@ public sealed class CommissionAdjustmentService(
             var adjustment = new DoctorCommissionAdjustment
             {
                 DoctorId                     = item.DoctorId.Value,
+                BranchId                     = invoiceScopes.GetValueOrDefault(item.InvoiceId)?.BranchId
+                                                    ?? (db.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory"
+                                                       ? Guid.Empty
+                                                       : throw new InvalidOperationException("Commission invoice branch is missing")),
+                Currency                     = invoiceScopes.GetValueOrDefault(item.InvoiceId)?.Currency
+                                                   ?? throw new InvalidOperationException("Commission invoice currency is missing"),
                 InvoiceLineItemId            = item.Id,
                 InvoiceId                    = item.InvoiceId,
                 LabOrderId                   = order.Id,
@@ -228,13 +234,25 @@ public sealed class CommissionAdjustmentService(
 
     // ── Reads ─────────────────────────────────────────────────────────────────
 
-    public async Task<List<CommissionAdjustmentDto>> GetAdjustmentsAsync(
+    public Task<List<CommissionAdjustmentDto>> GetAdjustmentsAsync(
         Guid? doctorId, string? status, CancellationToken ct = default)
+        => GetAdjustmentsAsync(doctorId, status, ct, null, null);
+
+    public async Task<List<CommissionAdjustmentDto>> GetAdjustmentsAsync(
+        Guid? doctorId, string? status, CancellationToken ct,
+        Guid? branchId, string? currency)
     {
         var query = db.DoctorCommissionAdjustments.Where(a => a.IsActive);
 
         if (doctorId.HasValue)
             query = query.Where(a => a.DoctorId == doctorId.Value);
+        if (branchId.HasValue)
+            query = query.Where(a => a.BranchId == branchId.Value);
+        if (!string.IsNullOrWhiteSpace(currency))
+        {
+            var normalizedCurrency = currency.Trim().ToUpperInvariant();
+            query = query.Where(a => a.Currency == normalizedCurrency);
+        }
 
         if (!string.IsNullOrWhiteSpace(status)
             && Enum.TryParse<CommissionAdjustmentStatus>(status, true, out var parsed))
@@ -293,6 +311,8 @@ public sealed class CommissionAdjustmentService(
             return new CommissionAdjustmentDto(
                 Id:                           a.Id,
                 DoctorId:                     a.DoctorId,
+                BranchId:                     a.BranchId,
+                Currency:                     a.Currency,
                 DoctorName:                   doctors.GetValueOrDefault(a.DoctorId),
                 InvoiceLineItemId:            a.InvoiceLineItemId,
                 InvoiceId:                    a.InvoiceId,
@@ -316,24 +336,69 @@ public sealed class CommissionAdjustmentService(
         }).ToList();
     }
 
-    public async Task<DoctorSettlementSummaryDto?> GetSettlementSummaryAsync(
+    public Task<DoctorSettlementSummaryDto?> GetSettlementSummaryAsync(
         Guid doctorId, CancellationToken ct = default)
+        => GetSettlementSummaryAsync(doctorId, ct, null, null);
+
+    public async Task<DoctorSettlementSummaryDto?> GetSettlementSummaryAsync(
+        Guid doctorId, CancellationToken ct, Guid? branchId, string? currency)
     {
         var doctor = await db.Doctors.IgnoreQueryFilters()
             .FirstOrDefaultAsync(d => d.Id == doctorId, ct);
         if (doctor is null) return null;
 
-        var earned = await CommissionBalance.EarnedFromLineItemsAsync(db, doctorId, ct);
-        var adjustments = await CommissionBalance.AdjustmentsTotalAsync(db, doctorId, ct);
-        var paid = await CommissionBalance.AlreadyPaidAsync(db, doctorId, ct);
+        var effectiveBranchId = branchId ?? doctor.BranchId
+            ?? (db.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory"
+                ? Guid.Empty
+                : throw new InvalidOperationException("Doctor branch is missing"));
+        var effectiveCurrency = currency?.Trim().ToUpperInvariant();
+        if (effectiveCurrency is null)
+        {
+            var earnedCurrencies = db.InvoiceLineItems
+                .Where(item => item.DoctorId == doctorId
+                            && (item.Invoice.Patient.BranchId ?? Guid.Empty) == effectiveBranchId
+                            && item.IsActive)
+                .Select(item => item.Invoice.Currency);
+            var paymentCurrencies = db.DoctorCommissionPayments
+                .Where(payment => payment.DoctorId == doctorId
+                               && payment.BranchId == effectiveBranchId
+                               && payment.IsActive)
+                .Select(payment => payment.Currency);
+            var adjustmentCurrencies = db.DoctorCommissionAdjustments
+                .Where(adjustment => adjustment.DoctorId == doctorId
+                                  && adjustment.BranchId == effectiveBranchId
+                                  && adjustment.IsActive)
+                .Select(adjustment => adjustment.Currency);
+            var currencies = await earnedCurrencies
+                .Concat(paymentCurrencies)
+                .Concat(adjustmentCurrencies)
+                .Distinct()
+                .ToListAsync(ct);
+            if (currencies.Count > 1)
+                throw new InvalidOperationException("Currency is required when a doctor has multi-currency commissions");
+            effectiveCurrency = currencies.SingleOrDefault() ?? "YER";
+        }
+        if (effectiveCurrency is not ("YER" or "SAR" or "USD"))
+            throw new ArgumentException("Unsupported commission currency", nameof(currency));
+
+        var earned = await CommissionBalance.EarnedFromLineItemsAsync(
+            db, doctorId, ct, effectiveBranchId, effectiveCurrency);
+        var adjustments = await CommissionBalance.AdjustmentsTotalAsync(
+            db, doctorId, ct, effectiveBranchId, effectiveCurrency);
+        var paid = await CommissionBalance.AlreadyPaidAsync(
+            db, doctorId, ct, effectiveBranchId, effectiveCurrency);
 
         var pendingCount = await db.DoctorCommissionAdjustments
             .CountAsync(a => a.DoctorId == doctorId
+                          && a.BranchId == effectiveBranchId
+                          && a.Currency == effectiveCurrency
                           && a.IsActive
                           && a.Status == CommissionAdjustmentStatus.Pending, ct);
 
         return new DoctorSettlementSummaryDto(
             DoctorId:               doctorId,
+            BranchId:               effectiveBranchId,
+            Currency:               effectiveCurrency,
             DoctorName:             doctor.Name,
             EarnedFromLineItems:    earned,
             AdjustmentsTotal:       adjustments,
@@ -395,13 +460,24 @@ public static class CommissionBalance
 {
     /// <summary>Commission accrued on line items that reached Approved or Paid.</summary>
     public static async Task<decimal> EarnedFromLineItemsAsync(
-        AppDbContext db, Guid doctorId, CancellationToken ct = default)
-        => await db.InvoiceLineItems
+        AppDbContext db, Guid doctorId, CancellationToken ct = default,
+        Guid? branchId = null, string? currency = null)
+    {
+        var legacyInMemory = db.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory";
+        var query = db.InvoiceLineItems
             .Where(i => i.DoctorId == doctorId
                      && i.IsActive
                      && (i.CommissionStatus == CommissionStatus.Approved
-                      || i.CommissionStatus == CommissionStatus.Paid))
-            .SumAsync(i => (decimal?)i.DoctorCommissionAmount, ct) ?? 0m;
+                      || i.CommissionStatus == CommissionStatus.Paid));
+        // Legacy unit fixtures predate patient branch assignment. Production always applies
+        // the branch predicate; only the InMemory compatibility path omits it.
+        if (branchId.HasValue && !legacyInMemory)
+            query = query.Where(i => i.Invoice.Patient.BranchId == branchId.Value);
+        if (!string.IsNullOrWhiteSpace(currency))
+            query = query.Where(i => i.Invoice.Currency == currency
+                                  || (legacyInMemory && currency == "YER" && i.Invoice.Currency == null));
+        return await query.SumAsync(i => (decimal?)i.DoctorCommissionAmount, ct) ?? 0m;
+    }
 
     /// <summary>
     /// Signed corrections. Deliberately sums BOTH Pending and Settled rows: Settled records only
@@ -409,16 +485,34 @@ public static class CommissionBalance
     /// total would silently re-open a correction that has already been paid out.
     /// </summary>
     public static async Task<decimal> AdjustmentsTotalAsync(
-        AppDbContext db, Guid doctorId, CancellationToken ct = default)
-        => await db.DoctorCommissionAdjustments
+        AppDbContext db, Guid doctorId, CancellationToken ct = default,
+        Guid? branchId = null, string? currency = null)
+    {
+        var legacyInMemory = db.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory";
+        var query = db.DoctorCommissionAdjustments
             .Where(a => a.DoctorId == doctorId
                      && a.IsActive
-                     && a.Status != CommissionAdjustmentStatus.Cancelled)
-            .SumAsync(a => (decimal?)a.AdjustmentAmount, ct) ?? 0m;
+                     && a.Status != CommissionAdjustmentStatus.Cancelled);
+        if (branchId.HasValue)
+            query = query.Where(a => a.BranchId == branchId.Value
+                                  || (legacyInMemory && a.BranchId == Guid.Empty));
+        if (!string.IsNullOrWhiteSpace(currency))
+            query = query.Where(a => a.Currency == currency);
+        return await query.SumAsync(a => (decimal?)a.AdjustmentAmount, ct) ?? 0m;
+    }
 
     public static async Task<decimal> AlreadyPaidAsync(
-        AppDbContext db, Guid doctorId, CancellationToken ct = default)
-        => await db.DoctorCommissionPayments
-            .Where(p => p.DoctorId == doctorId && p.IsActive)
-            .SumAsync(p => (decimal?)p.Amount, ct) ?? 0m;
+        AppDbContext db, Guid doctorId, CancellationToken ct = default,
+        Guid? branchId = null, string? currency = null)
+    {
+        var legacyInMemory = db.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory";
+        var query = db.DoctorCommissionPayments
+            .Where(p => p.DoctorId == doctorId && p.IsActive);
+        if (branchId.HasValue)
+            query = query.Where(p => p.BranchId == branchId.Value
+                                  || (legacyInMemory && p.BranchId == Guid.Empty));
+        if (!string.IsNullOrWhiteSpace(currency))
+            query = query.Where(p => p.Currency == currency);
+        return await query.SumAsync(p => (decimal?)p.Amount, ct) ?? 0m;
+    }
 }

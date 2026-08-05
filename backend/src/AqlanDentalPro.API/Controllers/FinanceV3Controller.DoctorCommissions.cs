@@ -19,14 +19,15 @@ public partial class FinanceV3Controller
     public async Task<IActionResult> GetDoctorCommissions(
         [FromQuery] Guid? doctorId,
         [FromQuery] string? from,
-        [FromQuery] string? to)
+        [FromQuery] string? to,
+        [FromQuery(Name = "branchId")] Guid? requestedBranchId = null)
     {
         if (!await CanAsync("finance.commissions", "view")) return Deny();
         // Blocker: Branch isolation guard for non-admin users
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        var branchId = currentUser.IsAdmin ? requestedBranchId : currentUser.BranchId;
 
         // Verify requested doctor belongs to the branch for non-admins
         if (doctorId.HasValue && branchId.HasValue)
@@ -84,17 +85,24 @@ public partial class FinanceV3Controller
 
         var itemsByDoctor = await itemsQuery
             .Where(i => i.DoctorId.HasValue)
-            .GroupBy(i => i.DoctorId!.Value)
+            .GroupBy(i => new
+            {
+                DoctorId = i.DoctorId!.Value,
+                BranchId = i.Invoice.Patient.BranchId ?? Guid.Empty,
+                Currency = i.Invoice.Currency
+            })
             .Select(g => new
             {
-                DoctorId = g.Key,
+                g.Key.DoctorId,
+                g.Key.BranchId,
+                g.Key.Currency,
                 CasesCount = g.Count(),
                 TotalServiceValue = g.Sum(i => i.TotalPrice),
                 CommissionDue = g.Sum(i => i.DoctorCommissionAmount),
                 CommissionPercentageTotal = g.Sum(i => i.DoctorCommissionPercentage)
             })
             .ToDictionaryAsync(
-                x => x.DoctorId,
+                x => (x.DoctorId, x.BranchId, x.Currency),
                 x => new DoctorCommissionAggregate(
                     x.CasesCount,
                     x.TotalServiceValue,
@@ -113,7 +121,9 @@ public partial class FinanceV3Controller
                 InvoiceAppointmentId = i.Invoice.AppointmentId,
                 i.TotalPrice,
                 i.DoctorCommissionAmount,
-                i.DoctorCommissionPercentage
+                i.DoctorCommissionPercentage,
+                BranchId = i.Invoice.Patient.BranchId,
+                i.Invoice.Currency
             })
             .ToListAsync();
 
@@ -164,9 +174,15 @@ public partial class FinanceV3Controller
                     || (doctorId.HasValue && effectiveDoctorId.Value != doctorId.Value))
                     continue;
 
-                var existing = itemsByDoctor.GetValueOrDefault(effectiveDoctorId.Value)
+                var resolvedBranchId = item.BranchId
+                    ?? await db.Doctors.Where(doctor => doctor.Id == effectiveDoctorId.Value)
+                        .Select(doctor => doctor.BranchId)
+                        .FirstOrDefaultAsync()
+                    ?? Guid.Empty;
+                var scope = (effectiveDoctorId.Value, resolvedBranchId, item.Currency);
+                var existing = itemsByDoctor.GetValueOrDefault(scope)
                     ?? new DoctorCommissionAggregate(0, 0m, 0m, 0m);
-                itemsByDoctor[effectiveDoctorId.Value] = existing with
+                itemsByDoctor[scope] = existing with
                 {
                     CasesCount = existing.CasesCount + 1,
                     TotalServiceValue = existing.TotalServiceValue + item.TotalPrice,
@@ -179,7 +195,7 @@ public partial class FinanceV3Controller
         if (doctorId.HasValue)
         {
             itemsByDoctor = itemsByDoctor
-                .Where(pair => pair.Key == doctorId.Value)
+                .Where(pair => pair.Key.Item1 == doctorId.Value)
                 .ToDictionary(pair => pair.Key, pair => pair.Value);
         }
 
@@ -191,7 +207,7 @@ public partial class FinanceV3Controller
 
         if (branchId.HasValue)
         {
-            paymentsQuery = paymentsQuery.Where(p => p.Doctor.BranchId == branchId.Value);
+            paymentsQuery = paymentsQuery.Where(p => p.BranchId == branchId.Value);
         }
 
         if (doctorId.HasValue)
@@ -200,19 +216,23 @@ public partial class FinanceV3Controller
         }
 
         var paymentsByDoctor = await paymentsQuery
-            .GroupBy(p => p.DoctorId)
+            .GroupBy(p => new { p.DoctorId, p.BranchId, p.Currency })
             .Select(g => new
             {
-                DoctorId = g.Key,
+                g.Key.DoctorId,
+                g.Key.BranchId,
+                g.Key.Currency,
                 CommissionPaid = g.Sum(p => p.Amount)
             })
-            .ToDictionaryAsync(x => x.DoctorId);
+            .ToDictionaryAsync(x => (x.DoctorId, x.BranchId, x.Currency));
 
         // 4. Resolve doctor records
-        var doctorIds = itemsByDoctor.Keys
+        var scopes = itemsByDoctor.Keys
             .Concat(paymentsByDoctor.Keys)
             .Distinct()
             .ToList();
+
+        var doctorIds = scopes.Select(scope => scope.Item1).Distinct().ToList();
 
         if (doctorId.HasValue && !doctorIds.Contains(doctorId.Value))
         {
@@ -228,13 +248,14 @@ public partial class FinanceV3Controller
 
         // 5. Build DTOs from the pre-aggregated per-doctor rows
         var resultList = new List<DoctorCommissionSummaryDto>();
-        foreach (var docId in doctorIds)
+        foreach (var scope in scopes)
         {
+            var docId = scope.Item1;
             var doctor = doctorsMap.GetValueOrDefault(docId);
             if (doctor == null) continue; // Skip if doctor doesn't exist in DB or branch
 
-            itemsByDoctor.TryGetValue(docId, out var items);
-            paymentsByDoctor.TryGetValue(docId, out var payments);
+            itemsByDoctor.TryGetValue(scope, out var items);
+            paymentsByDoctor.TryGetValue(scope, out var payments);
 
             var casesCount = items?.CasesCount ?? 0;
             var totalServiceValue = items?.TotalServiceValue ?? 0m;
@@ -248,6 +269,8 @@ public partial class FinanceV3Controller
             resultList.Add(new DoctorCommissionSummaryDto
             {
                 DoctorId = docId,
+                BranchId = scope.Item2,
+                Currency = scope.Item3,
                 DoctorName = doctor.Name,
                 CasesCount = casesCount,
                 TotalServiceValue = totalServiceValue,
@@ -277,14 +300,15 @@ public partial class FinanceV3Controller
     public async Task<IActionResult> GetDoctorCommissionsEarnedFromCollections(
         [FromQuery] Guid? doctorId,
         [FromQuery] string? from,
-        [FromQuery] string? to)
+        [FromQuery] string? to,
+        [FromQuery(Name = "branchId")] Guid? requestedBranchId = null)
     {
         if (!await CanAsync("finance.commissions", "view")) return Deny();
         // Branch isolation guard for non-admin users
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return StatusCode(403, new { message = "ليس لديك فرع معين. تواصل مع الإدارة." });
 
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        var branchId = currentUser.IsAdmin ? requestedBranchId : currentUser.BranchId;
 
         // Verify requested doctor belongs to the branch for non-admins
         if (doctorId.HasValue && branchId.HasValue)
@@ -331,9 +355,12 @@ public partial class FinanceV3Controller
             .Include(i => i.LineItems)
             .Include(i => i.Payments)
             .Where(i => i.IsActive
-                     && i.Payments.Any(p => p.IsActive
-                                          && p.PaymentDate >= fromDate
-                                          && p.PaymentDate <= toDate));
+                     && (i.Payments.Any(p => p.IsActive
+                                           && p.PaymentDate >= fromDate
+                                           && p.PaymentDate <= toDate)
+                      || (!i.Payments.Any(p => p.IsActive)
+                          && i.CreatedAt >= startDateTime
+                          && i.CreatedAt <= endDateTime)));
 
         if (branchId.HasValue)
             invoicesQuery = invoicesQuery.Where(i => i.Patient.BranchId == branchId.Value);
@@ -358,19 +385,24 @@ public partial class FinanceV3Controller
         var commissionPaymentsQuery = db.DoctorCommissionPayments
             .Where(p => p.IsActive && p.PaymentDate >= fromDate && p.PaymentDate <= toDate);
         if (branchId.HasValue)
-            commissionPaymentsQuery = commissionPaymentsQuery.Where(p => p.Doctor.BranchId == branchId.Value);
+            commissionPaymentsQuery = commissionPaymentsQuery.Where(p => p.BranchId == branchId.Value);
         if (doctorId.HasValue)
             commissionPaymentsQuery = commissionPaymentsQuery.Where(p => p.DoctorId == doctorId.Value);
 
         var commissionPayments = await commissionPaymentsQuery.ToListAsync();
 
         // 4. Group by doctor
-        var doctorIds = invoices
-            .SelectMany(i => i.LineItems.Where(l => l.DoctorId.HasValue).Select(l => l.DoctorId!.Value))
+        var scopes = invoices
+            .SelectMany(invoice => invoice.LineItems
+                .Where(line => line.DoctorId.HasValue)
+                .Select(line => (
+                    DoctorId: line.DoctorId!.Value,
+                    BranchId: invoice.Patient.BranchId ?? Guid.Empty,
+                    Currency: invoice.Currency)))
             .Distinct()
             .ToList();
-        if (doctorId.HasValue && !doctorIds.Contains(doctorId.Value))
-            doctorIds.Add(doctorId.Value);
+
+        var doctorIds = scopes.Select(scope => scope.DoctorId).Distinct().ToList();
 
         var doctorsMapQuery = db.Doctors.Where(d => doctorIds.Contains(d.Id));
         if (branchId.HasValue)
@@ -379,13 +411,16 @@ public partial class FinanceV3Controller
 
         // 5. Build results per doctor
         var result = new List<DoctorCommissionEarnedFromCollectionsDto>();
-        foreach (var docId in doctorIds)
+        foreach (var scope in scopes)
         {
+            var docId = scope.DoctorId;
             var doctor = doctorsMap.GetValueOrDefault(docId);
             if (doctor == null) continue;
 
             // For this doctor, collect all line items from invoices
             var docLineItems = invoices
+                .Where(invoice => (invoice.Patient.BranchId ?? Guid.Empty) == scope.BranchId
+                               && invoice.Currency == scope.Currency)
                 .SelectMany(i => i.LineItems.Where(l => l.DoctorId == docId))
                 .ToList();
 
@@ -398,10 +433,14 @@ public partial class FinanceV3Controller
             decimal totalEarnedCommission = 0;
             int casesCount = 0;
 
-            foreach (var invoice in invoices.Where(inv => inv.LineItems.Any(l => l.DoctorId == docId)))
+            foreach (var invoice in invoices.Where(inv => (inv.Patient.BranchId ?? Guid.Empty) == scope.BranchId
+                                                        && inv.Currency == scope.Currency
+                                                        && inv.LineItems.Any(l => l.DoctorId == docId)))
             {
                 var invoiceTotal = invoice.TotalAmount;
-                var invoicePaid = invoice.Payments.Sum(p => p.Amount);
+                var invoicePaid = invoice.Payments
+                    .Where(payment => payment.AccountCurrency == scope.Currency)
+                    .Sum(payment => payment.AppliedAmount > 0 ? payment.AppliedAmount : payment.Amount);
                 var collectionRatio = invoiceTotal > 0 ? Math.Min(1m, invoicePaid / invoiceTotal) : 0m;
 
                 var docItems = invoice.LineItems.Where(l => l.DoctorId == docId).ToList();
@@ -427,13 +466,19 @@ public partial class FinanceV3Controller
                 }
             }
 
-            var commissionPaid = commissionPayments.Where(p => p.DoctorId == docId).Sum(p => p.Amount);
+            var commissionPaid = commissionPayments
+                .Where(payment => payment.DoctorId == docId
+                               && payment.BranchId == scope.BranchId
+                               && payment.Currency == scope.Currency)
+                .Sum(payment => payment.Amount);
             var commissionRemaining = Math.Max(0, totalEarnedCommission - commissionPaid);
             var netCommissionableAmount = Math.Max(0, totalCollected - totalLabCost - totalMaterialCost - totalOtherDirectCosts);
 
             result.Add(new DoctorCommissionEarnedFromCollectionsDto
             {
                 DoctorId = docId,
+                BranchId = scope.BranchId,
+                Currency = scope.Currency,
                 DoctorName = doctor.Name,
                 CasesCount = casesCount,
                 TotalServiceValue = totalServiceValue,

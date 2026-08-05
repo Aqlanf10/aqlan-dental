@@ -7,6 +7,8 @@ namespace AqlanDentalPro.Domain.Entities;
 public class DoctorCommissionPayment : BaseEntity
 {
     public Guid DoctorId { get; set; }
+    public Guid BranchId { get; set; }
+    public string Currency { get; set; } = "YER";
     public decimal Amount { get; set; }
     public DateOnly PaymentDate { get; set; }
     public string? PaymentMethod { get; set; }
@@ -16,4 +18,5 @@ public class DoctorCommissionPayment : BaseEntity
 
     // Navigation
     public Doctor Doctor { get; set; } = null!;
+    public Branch Branch { get; set; } = null!;
 }

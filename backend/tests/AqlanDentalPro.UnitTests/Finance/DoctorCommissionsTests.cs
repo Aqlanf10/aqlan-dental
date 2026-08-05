@@ -692,4 +692,59 @@ public class DoctorCommissionsTests
         list[0].DoctorId.Should().Be(doctorA.Id);
         list[0].CommissionDue.Should().Be(50_000m);
     }
+
+    [Fact]
+    public async Task GetDoctorCommissions_MultiCurrency_ReturnsSeparateRowsAndBalances()
+    {
+        await using var db = CreateDb();
+        var branchId = Guid.NewGuid();
+        var doctor = new Doctor
+        {
+            Id = Guid.NewGuid(), Name = "Multi Currency Doctor", BranchId = branchId,
+            DefaultCommissionPercentage = 20m, UserId = Guid.NewGuid()
+        };
+        var patient = new Patient
+        {
+            Id = Guid.NewGuid(), FirstName = "Patient", LastName = "Currency", BranchId = branchId
+        };
+        db.Doctors.Add(doctor);
+        db.Patients.Add(patient);
+
+        foreach (var scope in new[] { (Currency: "YER", Price: 100_000m, Paid: 5_000m), (Currency: "SAR", Price: 1_000m, Paid: 50m) })
+        {
+            var invoice = new Invoice
+            {
+                Id = Guid.NewGuid(), PatientId = patient.Id, InvoiceNumber = $"INV-{scope.Currency}",
+                Currency = scope.Currency, Status = InvoiceStatus.Issued, CreatedAt = DateTime.UtcNow,
+                IsActive = true
+            };
+            db.Invoices.Add(invoice);
+            db.InvoiceLineItems.Add(new InvoiceLineItem
+            {
+                Id = Guid.NewGuid(), InvoiceId = invoice.Id, DoctorId = doctor.Id,
+                TotalPrice = scope.Price, DoctorCommissionAmount = scope.Price * 0.20m,
+                DoctorCommissionPercentage = 20m, IsActive = true
+            });
+            db.DoctorCommissionPayments.Add(new DoctorCommissionPayment
+            {
+                Id = Guid.NewGuid(), DoctorId = doctor.Id, BranchId = branchId,
+                Currency = scope.Currency, Amount = scope.Paid,
+                PaymentDate = DateOnly.FromDateTime(DateTime.UtcNow), IsActive = true
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var result = await BuildFinanceV3Controller(db).GetDoctorCommissions(
+            doctor.Id,
+            DateTime.UtcNow.AddDays(-1).ToString("yyyy-MM-dd"),
+            DateTime.UtcNow.AddDays(1).ToString("yyyy-MM-dd"),
+            branchId);
+
+        var rows = ((OkObjectResult)result).Value.Should()
+            .BeAssignableTo<List<DoctorCommissionSummaryDto>>().Subject;
+        rows.Should().HaveCount(2);
+        rows.Should().ContainSingle(row => row.Currency == "YER" && row.CommissionRemaining == 15_000m);
+        rows.Should().ContainSingle(row => row.Currency == "SAR" && row.CommissionRemaining == 150m);
+        rows.Should().OnlyContain(row => row.BranchId == branchId);
+    }
 }

@@ -12,12 +12,14 @@ import {
   tokens, KpiCard, SectionHeader, LoadingSkeleton, EmptyState,
   inputStyle, labelStyle, btnPrimary, btnGhost 
 } from "./FinanceSharedUI";
-import { formatYER, formatNumber } from "./FinanceHelpers";
+import { formatMoney, formatNumber } from "./FinanceHelpers";
 import { toast } from "@/stores/toastStore";
 import { CommissionAdjustmentsPanel } from "./CommissionAdjustmentsPanel";
 
 interface DoctorCommissionSummary {
   doctorId: string;
+  branchId: string;
+  currency: string;
   doctorName: string;
   casesCount: number;
   totalServiceValue: number;
@@ -76,26 +78,43 @@ export function CommissionsTab() {
 
   // Aggregated totals for the KPI cards
   const totalCases = data.reduce((sum, item) => sum + item.casesCount, 0);
-  const totalServiceValue = data.reduce((sum, item) => sum + item.totalServiceValue, 0);
-  const totalCommissionDue = data.reduce((sum, item) => sum + item.commissionDue, 0);
-  const totalCommissionPaid = data.reduce((sum, item) => sum + item.commissionPaid, 0);
-  const totalBalance = data.reduce((sum, item) => sum + item.commissionRemaining, 0);
+  const totalsByCurrency = Array.from(
+    data.reduce((totals, item) => {
+      const current = totals.get(item.currency) ?? {
+        currency: item.currency,
+        totalServiceValue: 0,
+        commissionDue: 0,
+        commissionPaid: 0,
+        commissionRemaining: 0,
+      };
+      current.totalServiceValue += item.totalServiceValue;
+      current.commissionDue += item.commissionDue;
+      current.commissionPaid += item.commissionPaid;
+      current.commissionRemaining += item.commissionRemaining;
+      totals.set(item.currency, current);
+      return totals;
+    }, new Map<string, { currency: string; totalServiceValue: number; commissionDue: number; commissionPaid: number; commissionRemaining: number }>()).values(),
+  );
 
   // CSV Export function
   const exportToCsv = () => {
     if (data.length === 0) return;
     const headers = [
       "اسم الطبيب",
+      "الفرع",
+      "العملة",
       "عدد الحالات",
-      "إجمالي الخدمات (ر.ي)",
+      "إجمالي الخدمات",
       "نسبة العمولة (%)",
-      "العمولة المستحقة (ر.ي)",
-      "العمولة المدفوعة (ر.ي)",
-      "الرصيد المتبقي (ر.ي)"
+      "العمولة المستحقة",
+      "العمولة المدفوعة",
+      "الرصيد المتبقي"
     ];
 
     const rows = data.map(item => [
       item.doctorName,
+      item.branchId,
+      item.currency,
       item.casesCount,
       item.totalServiceValue,
       item.commissionPercentage,
@@ -189,37 +208,21 @@ export function CommissionsTab() {
       </form>
 
       {/* ─── Summary Cards ─── */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-1 gap-3">
         <KpiCard
           label="عدد الحالات"
           value={formatNumber(totalCases)}
           icon={<Users className="w-3.5 h-3.5" style={{ color: tokens.textSecondary }} />}
           color={tokens.textPrimary}
         />
-        <KpiCard
-          label="إجمالي الخدمات"
-          value={formatYER(totalServiceValue)}
-          icon={<Wallet className="w-3.5 h-3.5" style={{ color: tokens.brand }} />}
-          color={tokens.brand}
-        />
-        <KpiCard
-          label="العمولة المستحقة"
-          value={formatYER(totalCommissionDue)}
-          icon={<TrendingUp className="w-3.5 h-3.5" style={{ color: tokens.warningBorder }} />}
-          color={tokens.warningBorder}
-        />
-        <KpiCard
-          label="العمولة المدفوعة"
-          value={formatYER(totalCommissionPaid)}
-          icon={<CreditCard className="w-3.5 h-3.5" style={{ color: tokens.successBorder }} />}
-          color={tokens.successBorder}
-        />
-        <KpiCard
-          label="الرصيد المتبقي"
-          value={formatYER(totalBalance)}
-          icon={<Banknote className="w-3.5 h-3.5" style={{ color: tokens.dangerBorder }} />}
-          color={tokens.dangerBorder}
-        />
+        {totalsByCurrency.map((total) => (
+          <div key={total.currency} className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-lg border p-3" style={{ borderColor: tokens.border }}>
+            <KpiCard label={`إجمالي الخدمات — ${total.currency}`} value={formatMoney(total.totalServiceValue, total.currency)} icon={<Wallet className="w-3.5 h-3.5" />} color={tokens.brand} />
+            <KpiCard label={`المستحقة — ${total.currency}`} value={formatMoney(total.commissionDue, total.currency)} icon={<TrendingUp className="w-3.5 h-3.5" />} color={tokens.warningBorder} />
+            <KpiCard label={`المدفوعة — ${total.currency}`} value={formatMoney(total.commissionPaid, total.currency)} icon={<CreditCard className="w-3.5 h-3.5" />} color={tokens.successBorder} />
+            <KpiCard label={`المتبقي — ${total.currency}`} value={formatMoney(total.commissionRemaining, total.currency)} icon={<Banknote className="w-3.5 h-3.5" />} color={tokens.dangerBorder} />
+          </div>
+        ))}
       </div>
 
       {/* ─── Table Section ─── */}
@@ -240,6 +243,7 @@ export function CommissionsTab() {
               <thead>
                 <tr style={{ backgroundColor: tokens.cardHover }}>
                   <th className="text-right px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>اسم الطبيب</th>
+                  <th className="text-right px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>العملة</th>
                   <th className="text-right px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>عدد الحالات</th>
                   <th className="text-right px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>إجمالي الخدمات</th>
                   <th className="text-right px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>نسبة العمولة</th>
@@ -251,17 +255,18 @@ export function CommissionsTab() {
               <tbody>
                 {data.map((row) => (
                   <tr
-                    key={row.doctorId}
+                    key={`${row.doctorId}-${row.branchId}-${row.currency}`}
                     style={{ borderBottom: `1px solid ${tokens.border}` }}
                     className="transition-colors hover:bg-slate-50"
                   >
                     <td className="px-4 py-3 font-medium" style={{ color: tokens.textPrimary }}>{row.doctorName}</td>
+                    <td className="px-4 py-3 font-semibold" style={{ color: tokens.brand }}>{row.currency}</td>
                     <td className="px-4 py-3" style={{ color: tokens.textSecondary }}>{formatNumber(row.casesCount)}</td>
-                    <td className="px-4 py-3" style={{ color: tokens.textSecondary }}>{formatYER(row.totalServiceValue)}</td>
+                    <td className="px-4 py-3" style={{ color: tokens.textSecondary }}>{formatMoney(row.totalServiceValue, row.currency)}</td>
                     <td className="px-4 py-3" style={{ color: tokens.textSecondary }}>{formatNumber(row.commissionPercentage)}%</td>
-                    <td className="px-4 py-3 font-semibold text-purple-700">{formatYER(row.commissionDue)}</td>
-                    <td className="px-4 py-3 text-green-700">{formatYER(row.commissionPaid)}</td>
-                    <td className="px-4 py-3 font-bold" style={{ color: row.commissionRemaining > 0 ? tokens.dangerBorder : tokens.textSecondary }}>{formatYER(row.commissionRemaining)}</td>
+                    <td className="px-4 py-3 font-semibold text-purple-700">{formatMoney(row.commissionDue, row.currency)}</td>
+                    <td className="px-4 py-3 text-green-700">{formatMoney(row.commissionPaid, row.currency)}</td>
+                    <td className="px-4 py-3 font-bold" style={{ color: row.commissionRemaining > 0 ? tokens.dangerBorder : tokens.textSecondary }}>{formatMoney(row.commissionRemaining, row.currency)}</td>
                   </tr>
                 ))}
               </tbody>

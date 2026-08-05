@@ -28,7 +28,9 @@ public record LineItemCommissionDto(
     bool LabCostMissing,
     bool IsApproved,
     DateTime? CommissionApprovedAt,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    Guid BranchId = default,
+    string Currency = "");
 
 // ── Patch commission costs ────────────────────────────────────────────────────
 
@@ -53,7 +55,9 @@ public record RecordCommissionPaymentRequest(
     string? ReferenceNumber,
     string? Notes,
     /// <summary>When provided, marks these line items as Paid.</summary>
-    List<Guid>? LineItemIds);
+    List<Guid>? LineItemIds,
+    [Required] Guid BranchId = default,
+    [Required, StringLength(3)] string Currency = "");
 
 // ── Report ────────────────────────────────────────────────────────────────────
 
@@ -73,7 +77,9 @@ public record CommissionReportRow(
     decimal DoctorCommission,
     decimal PaidCommission,
     decimal RemainingCommission,
-    string Status);
+    string Status,
+    Guid BranchId = default,
+    string Currency = "");
 
 public record CommissionReportSummary(
     decimal TotalGross,
@@ -84,11 +90,17 @@ public record CommissionReportSummary(
     decimal TotalNet,
     decimal TotalDoctorCommission,
     decimal TotalPaid,
-    decimal TotalRemaining);
+    decimal TotalRemaining,
+    Guid BranchId = default,
+    string Currency = "");
 
 public record CommissionReportResponse(
-    CommissionReportSummary Summary,
-    List<CommissionReportRow> Rows);
+    List<CommissionReportSummary> Summaries,
+    List<CommissionReportRow> Rows)
+{
+    public CommissionReportResponse(CommissionReportSummary summary, List<CommissionReportRow> rows)
+        : this([summary], rows) { }
+}
 
 // ── Doctor commission payment DTO ─────────────────────────────────────────────
 
@@ -101,7 +113,9 @@ public record DoctorCommissionPaymentDto(
     string? PaymentMethod,
     string? ReferenceNumber,
     string? Notes,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    Guid BranchId = default,
+    string Currency = "");
 
 // ── Commission adjustments (CORE-FIN-LAB-ADJ) ─────────────────────────────────
 
@@ -130,7 +144,9 @@ public record CommissionAdjustmentDto(
     string Status,
     Guid? SettledByPaymentId,
     DateOnly? SettledOn,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    Guid BranchId = default,
+    string Currency = "");
 
 /// <summary>
 /// Outcome of re-syncing commissions against the real lab cost. <paramref name="Recalculated"/>
@@ -155,7 +171,9 @@ public record DoctorSettlementSummaryDto(
     decimal TotalDue,
     decimal AlreadyPaid,
     decimal Remaining,
-    int PendingAdjustmentCount);
+    int PendingAdjustmentCount,
+    Guid BranchId = default,
+    string Currency = "");
 
 // ── Service commission defaults ───────────────────────────────────────────────
 

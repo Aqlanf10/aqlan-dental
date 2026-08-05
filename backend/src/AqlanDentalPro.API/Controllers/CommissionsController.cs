@@ -144,6 +144,13 @@ public class CommissionsController(
         if (!DateOnly.TryParse(to, out var toDate))
             return BadRequest(new { message = "تاريخ النهاية غير صالح" });
 
+        if (!currentUser.IsAdmin)
+        {
+            if (!currentUser.BranchId.HasValue || currentUser.BranchId == Guid.Empty)
+                return StatusCode(403, new { message = "ليس لديك فرع معين" });
+            branchId = currentUser.BranchId;
+        }
+
         // Doctors can only see their own data unless ViewAllDoctorsCommissions
         if (!currentUser.IsAdmin && currentUser.UserId != null)
         {
@@ -168,6 +175,8 @@ public class CommissionsController(
         if (!await CanAsync("create")) return Deny();
         var userId = currentUser.UserId;
         if (userId == null) return Unauthorized();
+        if (!currentUser.IsAdmin && currentUser.BranchId != req.BranchId)
+            return StatusCode(403, new { message = "لا يمكن صرف عمولة من فرع آخر" });
 
         try
         {
@@ -181,10 +190,20 @@ public class CommissionsController(
     }
 
     [HttpGet("payments")]
-    public async Task<IActionResult> GetPayments([FromQuery] Guid? doctorId)
+    public async Task<IActionResult> GetPayments(
+        [FromQuery] Guid? doctorId,
+        [FromQuery] Guid? branchId = null,
+        [FromQuery] string? currency = null)
     {
         if (!await CanAsync("view")) return Deny();
-        var result = await commissionService.GetPaymentsAsync(doctorId);
+        if (!currentUser.IsAdmin)
+        {
+            if (!currentUser.BranchId.HasValue || currentUser.BranchId == Guid.Empty)
+                return StatusCode(403, new { message = "ليس لديك فرع معين" });
+            branchId = currentUser.BranchId;
+            doctorId = await ScopeToOwnDoctorAsync(doctorId);
+        }
+        var result = await commissionService.GetPaymentsAsync(doctorId, branchId, currency);
         return Ok(result);
     }
 
@@ -239,27 +258,35 @@ public class CommissionsController(
     /// own, mirroring the scoping the commission report already applies.
     /// </summary>
     [HttpGet("adjustments")]
-    public async Task<IActionResult> GetAdjustments([FromQuery] Guid? doctorId, [FromQuery] string? status)
+    public async Task<IActionResult> GetAdjustments(
+        [FromQuery] Guid? doctorId, [FromQuery] string? status,
+        [FromQuery] Guid? branchId, [FromQuery] string? currency)
     {
         if (!await CanAsync("view")) return Deny();
 
         doctorId = await ScopeToOwnDoctorAsync(doctorId);
+        if (!currentUser.IsAdmin)
+            branchId = currentUser.BranchId;
 
-        var result = await adjustmentService.GetAdjustmentsAsync(doctorId, status, HttpContext.RequestAborted);
+        var result = await adjustmentService.GetAdjustmentsAsync(
+            doctorId, status, HttpContext.RequestAborted, branchId, currency);
         return Ok(result);
     }
 
     /// <summary>What the clinic owes this doctor right now, correction lines included.</summary>
     [HttpGet("doctors/{doctorId:guid}/settlement")]
-    public async Task<IActionResult> GetSettlement(Guid doctorId)
+    public async Task<IActionResult> GetSettlement(
+        Guid doctorId, [FromQuery] Guid? branchId, [FromQuery] string? currency)
     {
         if (!await CanAsync("view")) return Deny();
 
         // A doctor asking about someone else's settlement gets their own, not a 403 leak of
         // whether that other doctor exists — same shape as the report endpoint above.
         var scoped = await ScopeToOwnDoctorAsync(doctorId);
+        if (!currentUser.IsAdmin)
+            branchId = currentUser.BranchId;
         var result = await adjustmentService.GetSettlementSummaryAsync(
-            scoped ?? doctorId, HttpContext.RequestAborted);
+            scoped ?? doctorId, HttpContext.RequestAborted, branchId, currency);
 
         return result == null ? NotFound(new { message = "الطبيب غير موجود" }) : Ok(result);
     }
@@ -329,16 +356,21 @@ public class CommissionsController(
     /// correction with the lab order and invoice behind it, and what remains.
     /// </summary>
     [HttpGet("doctors/{doctorId:guid}/settlement/pdf")]
-    public async Task<IActionResult> GetSettlementPdf(Guid doctorId, CancellationToken ct = default)
+    public async Task<IActionResult> GetSettlementPdf(
+        Guid doctorId, [FromQuery] Guid? branchId, [FromQuery] string? currency,
+        CancellationToken ct = default)
     {
         if (!await CanAsync("view")) return Deny();
 
         var scoped = await ScopeToOwnDoctorAsync(doctorId) ?? doctorId;
+        if (!currentUser.IsAdmin)
+            branchId = currentUser.BranchId;
 
-        var summary = await adjustmentService.GetSettlementSummaryAsync(scoped, ct);
+        var summary = await adjustmentService.GetSettlementSummaryAsync(scoped, ct, branchId, currency);
         if (summary is null) return NotFound(new { message = "الطبيب غير موجود" });
 
-        var adjustments = await adjustmentService.GetAdjustmentsAsync(scoped, status: null, ct: ct);
+        var adjustments = await adjustmentService.GetAdjustmentsAsync(
+            scoped, status: null, ct: ct, branchId: branchId, currency: summary.Currency);
         var identity = await FinanceClinicIdentity.ResolveAsync(db, ct);
 
         var document = new DoctorSettlementPdfGenerator(

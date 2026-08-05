@@ -6,7 +6,7 @@ import {
   tokens, SectionHeader, LoadingSkeleton, EmptyState, Modal,
   inputStyle, labelStyle, btnGhost, btnDanger,
 } from "./FinanceSharedUI";
-import { formatYER } from "./FinanceHelpers";
+import { formatMoney } from "./FinanceHelpers";
 import {
   useCommissionAdjustments,
   useBackfillCommissionAdjustments,
@@ -35,7 +35,10 @@ export function CommissionAdjustmentsPanel({ doctorId }: { doctorId?: string }) 
 
   const rows = adjustments ?? [];
   const live = rows.filter((a) => a.status !== "Cancelled");
-  const net = live.reduce((sum, a) => sum + a.adjustmentAmount, 0);
+  const netByCurrency = Array.from(live.reduce((totals, adjustment) => {
+    totals.set(adjustment.currency, (totals.get(adjustment.currency) ?? 0) + adjustment.adjustmentAmount);
+    return totals;
+  }, new Map<string, number>()).entries());
   const pendingCount = rows.filter((a) => a.status === "Pending").length;
 
   const runBackfill = async () => {
@@ -85,14 +88,11 @@ export function CommissionAdjustmentsPanel({ doctorId }: { doctorId?: string }) 
         <SectionHeader title="بنود تسوية العمولات (تغيّر تكلفة المعمل بعد الصرف)" />
 
         <div className="flex items-center gap-3">
-          {live.length > 0 && (
-            <span
-              className="text-xs font-bold"
-              style={{ color: net < 0 ? tokens.dangerBorder : tokens.successBorder }}
-            >
-              صافي التسويات: {formatYER(net)}
+          {netByCurrency.map(([currency, net]) => (
+            <span key={currency} className="text-xs font-bold" style={{ color: net < 0 ? tokens.dangerBorder : tokens.successBorder }}>
+              صافي التسويات ({currency}): {formatMoney(net, currency)}
             </span>
-          )}
+          ))}
           <button
             type="button"
             onClick={runBackfill}
@@ -140,7 +140,7 @@ export function CommissionAdjustmentsPanel({ doctorId }: { doctorId?: string }) 
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ backgroundColor: tokens.cardHover }}>
-                  {["الطبيب", "المريض", "الخدمة", "طلب المعمل", "تكلفة سابقة", "تكلفة حالية",
+                  {["الطبيب", "العملة", "المريض", "الخدمة", "طلب المعمل", "تكلفة سابقة", "تكلفة حالية",
                     "عمولة مصروفة", "العمولة الصحيحة", "الفرق", "الحالة", ""].map((h) => (
                     <th
                       key={h}
@@ -165,20 +165,21 @@ export function CommissionAdjustmentsPanel({ doctorId }: { doctorId?: string }) 
                       <td className="px-4 py-3 font-medium whitespace-nowrap" style={{ color: tokens.textPrimary }}>
                         {a.doctorName ?? "—"}
                       </td>
+                      <td className="px-4 py-3 font-semibold" style={{ color: tokens.brand }}>{a.currency}</td>
                       <td className="px-4 py-3" style={{ color: tokens.textSecondary }}>{a.patientName || "—"}</td>
                       <td className="px-4 py-3" style={{ color: tokens.textSecondary }}>{a.serviceName || "—"}</td>
                       <td className="px-4 py-3 whitespace-nowrap" style={{ color: tokens.textSecondary }}>
                         {a.labOrderNumber ?? "—"}
                       </td>
-                      <td className="px-4 py-3" style={{ color: tokens.textSecondary }}>{formatYER(a.previousLabCost)}</td>
-                      <td className="px-4 py-3" style={{ color: tokens.textSecondary }}>{formatYER(a.currentLabCost)}</td>
-                      <td className="px-4 py-3" style={{ color: tokens.textSecondary }}>{formatYER(a.paidCommissionAmount)}</td>
-                      <td className="px-4 py-3" style={{ color: tokens.textSecondary }}>{formatYER(a.recalculatedCommissionAmount)}</td>
+                      <td className="px-4 py-3" style={{ color: tokens.textSecondary }}>{formatMoney(a.previousLabCost, a.currency)}</td>
+                      <td className="px-4 py-3" style={{ color: tokens.textSecondary }}>{formatMoney(a.currentLabCost, a.currency)}</td>
+                      <td className="px-4 py-3" style={{ color: tokens.textSecondary }}>{formatMoney(a.paidCommissionAmount, a.currency)}</td>
+                      <td className="px-4 py-3" style={{ color: tokens.textSecondary }}>{formatMoney(a.recalculatedCommissionAmount, a.currency)}</td>
                       <td
                         className="px-4 py-3 font-bold whitespace-nowrap"
                         style={{ color: a.adjustmentAmount < 0 ? tokens.dangerBorder : tokens.successBorder }}
                       >
-                        {a.adjustmentAmount > 0 ? "+" : ""}{formatYER(a.adjustmentAmount)}
+                        {a.adjustmentAmount > 0 ? "+" : ""}{formatMoney(a.adjustmentAmount, a.currency)}
                       </td>
                       <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: tokens.textSecondary }}>
                         {a.status === "Pending" ? "بانتظار الصرف"

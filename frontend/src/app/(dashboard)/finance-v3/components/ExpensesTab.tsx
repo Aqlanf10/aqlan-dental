@@ -91,7 +91,7 @@ export function ExpensesTab() {
         title: `عمولة الطبيب: ${payment.doctorName || "غير محدد"}`,
         category: "DoctorCommission",
         amount: payment.amount,
-        currency: "YER",
+        currency: payment.currency,
         paymentMethod: payment.paymentMethod || "cash",
         expenseDate: payment.paymentDate ?? payment.createdAt,
         status: "Paid",

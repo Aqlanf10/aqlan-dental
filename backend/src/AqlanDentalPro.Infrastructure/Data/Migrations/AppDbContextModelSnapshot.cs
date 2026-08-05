@@ -2434,6 +2434,9 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasPrecision(12, 2)
                         .HasColumnType("numeric(12,2)");
 
+                    b.Property<Guid>("BranchId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("CancelReason")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
@@ -2446,6 +2449,11 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.Property<Guid?>("CreatedByUserId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
 
                     b.Property<decimal>("CurrentLabCost")
                         .HasPrecision(12, 2)
@@ -2507,6 +2515,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("BranchId");
+
                     b.HasIndex("InvoiceLineItemId");
 
                     b.HasIndex("LabOrderId");
@@ -2515,7 +2525,12 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.HasIndex("DoctorId", "Status");
 
-                    b.ToTable("DoctorCommissionAdjustments", (string)null);
+                    b.HasIndex("DoctorId", "BranchId", "Currency", "Status");
+
+                    b.ToTable("DoctorCommissionAdjustments", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_DoctorCommissionAdjustments_Currency", "\"Currency\" IN ('YER', 'SAR', 'USD')");
+                        });
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.DoctorCommissionPayment", b =>
@@ -2525,10 +2540,19 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<decimal>("Amount")
-                        .HasColumnType("numeric");
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<Guid>("BranchId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
 
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
@@ -2562,9 +2586,14 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("DoctorId");
+                    b.HasIndex("BranchId");
 
-                    b.ToTable("DoctorCommissionPayments");
+                    b.HasIndex("DoctorId", "BranchId", "Currency", "PaymentDate");
+
+                    b.ToTable("DoctorCommissionPayments", t =>
+                        {
+                            t.HasCheckConstraint("CK_DoctorCommissionPayments_Currency", "\"Currency\" IN ('YER', 'SAR', 'USD')");
+                        });
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.DoctorSchedule", b =>
@@ -9571,6 +9600,12 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.DoctorCommissionAdjustment", b =>
                 {
+                    b.HasOne("AqlanDentalPro.Domain.Entities.Branch", null)
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("AqlanDentalPro.Domain.Entities.Doctor", null)
                         .WithMany()
                         .HasForeignKey("DoctorId")
@@ -9591,11 +9626,19 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.DoctorCommissionPayment", b =>
                 {
+                    b.HasOne("AqlanDentalPro.Domain.Entities.Branch", "Branch")
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("AqlanDentalPro.Domain.Entities.Doctor", "Doctor")
                         .WithMany()
                         .HasForeignKey("DoctorId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Branch");
 
                     b.Navigation("Doctor");
                 });

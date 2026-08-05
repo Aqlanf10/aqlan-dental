@@ -101,12 +101,16 @@ export function useCommissionReport(params: {
   });
 }
 
-export function useCommissionPayments(doctorId?: string) {
+export function useCommissionPayments(doctorId?: string, branchId?: string, currency?: string) {
   return useQuery({
-    queryKey: ["commissions", "payments", doctorId],
+    queryKey: ["commissions", "payments", doctorId, branchId, currency],
     queryFn: async () => {
-      const p = doctorId ? `?doctorId=${doctorId}` : "";
-      const { data } = await api.get<DoctorCommissionPayment[]>(`/api/commissions/payments${p}`);
+      const params = new URLSearchParams();
+      if (doctorId) params.set("doctorId", doctorId);
+      if (branchId) params.set("branchId", branchId);
+      if (currency) params.set("currency", currency);
+      const query = params.toString();
+      const { data } = await api.get<DoctorCommissionPayment[]>(`/api/commissions/payments${query ? `?${query}` : ""}`);
       return data;
     },
   });
@@ -116,7 +120,8 @@ export function useRecordCommissionPayment() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (req: {
-      doctorId: string; amount: number; paymentDate: string;
+      doctorId: string; branchId: string; currency: "YER" | "SAR" | "USD";
+      amount: number; paymentDate: string;
       paymentMethod?: string; referenceNumber?: string; notes?: string;
       lineItemIds?: string[];
     }) => {
@@ -137,13 +142,17 @@ export function useRecordCommissionPayment() {
 export function useCommissionAdjustments(params?: {
   doctorId?: string;
   status?: CommissionAdjustmentStatus;
+  branchId?: string;
+  currency?: string;
 }) {
   return useQuery({
-    queryKey: ["commissions", "adjustments", params?.doctorId ?? null, params?.status ?? null],
+    queryKey: ["commissions", "adjustments", params?.doctorId ?? null, params?.status ?? null, params?.branchId ?? null, params?.currency ?? null],
     queryFn: async () => {
       const p = new URLSearchParams();
       if (params?.doctorId) p.append("doctorId", params.doctorId);
       if (params?.status)   p.append("status", params.status);
+      if (params?.branchId) p.append("branchId", params.branchId);
+      if (params?.currency) p.append("currency", params.currency);
       const qs = p.toString();
       const { data } = await api.get<CommissionAdjustment[]>(
         `/api/commissions/adjustments${qs ? `?${qs}` : ""}`
@@ -154,12 +163,16 @@ export function useCommissionAdjustments(params?: {
 }
 
 /** What the clinic owes one doctor right now, correction lines included. */
-export function useDoctorSettlement(doctorId: string | undefined) {
+export function useDoctorSettlement(doctorId: string | undefined, branchId?: string, currency?: string) {
   return useQuery({
-    queryKey: ["commissions", "settlement", doctorId],
+    queryKey: ["commissions", "settlement", doctorId, branchId, currency],
     queryFn: async () => {
+      const params = new URLSearchParams();
+      if (branchId) params.set("branchId", branchId);
+      if (currency) params.set("currency", currency);
+      const query = params.toString();
       const { data } = await api.get<DoctorSettlementSummary>(
-        `/api/commissions/doctors/${doctorId}/settlement`
+        `/api/commissions/doctors/${doctorId}/settlement${query ? `?${query}` : ""}`
       );
       return data;
     },

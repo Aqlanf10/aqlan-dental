@@ -130,7 +130,7 @@ public class DoctorSettlementPdfGenerator(FinanceClinicIdentity identity, Doctor
 
     private static string? Signed(decimal value) => value == 0 ? null : value < 0 ? Overpaid : Owed;
 
-    private static void Row(
+    private void Row(
         ColumnDescriptor column, string label, decimal value,
         string? colour, bool bold = false, float size = 9)
         => column.Item().Row(row =>
@@ -138,7 +138,7 @@ public class DoctorSettlementPdfGenerator(FinanceClinicIdentity identity, Doctor
             var name = row.RelativeItem().Text(label).FontSize(size);
             if (bold) name.Bold();
 
-            var amount = row.AutoItem().Text($"{value:N2}").FontSize(size);
+            var amount = row.AutoItem().Text($"{value:N2} {model.Summary.Currency}").FontSize(size);
             if (bold) amount.Bold();
             if (colour is not null) amount.FontColor(colour);
         });
@@ -174,14 +174,14 @@ public class DoctorSettlementPdfGenerator(FinanceClinicIdentity identity, Doctor
             Cell(table, a.PatientName, cancelled);
             Cell(table, a.ServiceName, cancelled);
             Cell(table, a.LabOrderNumber ?? "—", cancelled);
-            Cell(table, $"{a.PaidCommissionAmount:N2}", cancelled);
-            Cell(table, $"{a.RecalculatedCommissionAmount:N2}", cancelled);
+            Cell(table, $"{a.PaidCommissionAmount:N2} {a.Currency}", cancelled);
+            Cell(table, $"{a.RecalculatedCommissionAmount:N2} {a.Currency}", cancelled);
 
             // A cancelled line is printed struck-through rather than dropped: the doctor may
             // have seen it on a previous statement, and silently removing it invites the
             // question this document exists to answer.
             var diff = table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(4)
-                .Text($"{(a.AdjustmentAmount > 0 ? "+" : "")}{a.AdjustmentAmount:N2}")
+                .Text($"{(a.AdjustmentAmount > 0 ? "+" : "")}{a.AdjustmentAmount:N2} {a.Currency}")
                 .FontSize(8).Bold();
             if (cancelled) diff.Strikethrough().FontColor(Colors.Grey.Medium);
             else diff.FontColor(a.AdjustmentAmount < 0 ? Overpaid : Owed);

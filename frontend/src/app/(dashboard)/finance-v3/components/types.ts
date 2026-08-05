@@ -340,6 +340,8 @@ export interface ExpenseListItem {
 export interface DoctorCommissionPaymentListItem {
   id: string;
   doctorId: string;
+  branchId: string;
+  currency: "YER" | "SAR" | "USD";
   doctorName?: string | null;
   amount: number;
   paymentDate: string;

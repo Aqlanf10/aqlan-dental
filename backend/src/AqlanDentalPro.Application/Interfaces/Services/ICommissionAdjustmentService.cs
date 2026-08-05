@@ -36,10 +36,15 @@ public interface ICommissionAdjustmentService
     /// <summary>Correction lines, newest first. <paramref name="status"/> is optional.</summary>
     Task<List<CommissionAdjustmentDto>> GetAdjustmentsAsync(
         Guid? doctorId, string? status, CancellationToken ct = default);
+    Task<List<CommissionAdjustmentDto>> GetAdjustmentsAsync(
+        Guid? doctorId, string? status, CancellationToken ct,
+        Guid? branchId, string? currency);
 
     /// <summary>What the clinic owes a doctor right now, corrections included.</summary>
     Task<DoctorSettlementSummaryDto?> GetSettlementSummaryAsync(
         Guid doctorId, CancellationToken ct = default);
+    Task<DoctorSettlementSummaryDto?> GetSettlementSummaryAsync(
+        Guid doctorId, CancellationToken ct, Guid? branchId, string? currency);
 
     /// <summary>
     /// Voids a correction line so it stops counting toward the doctor's balance. The row stays

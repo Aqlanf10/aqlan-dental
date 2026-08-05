@@ -16,11 +16,14 @@ public class DoctorCommissionAdjustmentConfiguration : IEntityTypeConfiguration<
     public void Configure(EntityTypeBuilder<DoctorCommissionAdjustment> builder)
     {
         builder.HasKey(a => a.Id);
-        builder.ToTable("DoctorCommissionAdjustments");
+        builder.ToTable("DoctorCommissionAdjustments", table => table.HasCheckConstraint(
+            "CK_DoctorCommissionAdjustments_Currency",
+            "\"Currency\" IN ('YER', 'SAR', 'USD')"));
 
         builder.Property(a => a.PaidCommissionAmount).HasPrecision(12, 2);
         builder.Property(a => a.RecalculatedCommissionAmount).HasPrecision(12, 2);
         builder.Property(a => a.AdjustmentAmount).HasPrecision(12, 2);
+        builder.Property(a => a.Currency).HasMaxLength(3).IsRequired();
         builder.Property(a => a.PreviousLabCost).HasPrecision(12, 2);
         builder.Property(a => a.CurrentLabCost).HasPrecision(12, 2);
 
@@ -35,6 +38,7 @@ public class DoctorCommissionAdjustmentConfiguration : IEntityTypeConfiguration<
         // The settlement screen reads "what is still open for this doctor", and the
         // idempotency check reads "everything already raised against this line item".
         builder.HasIndex(a => new { a.DoctorId, a.Status });
+        builder.HasIndex(a => new { a.DoctorId, a.BranchId, a.Currency, a.Status });
         builder.HasIndex(a => a.InvoiceLineItemId);
         builder.HasIndex(a => a.LabOrderId);
         builder.HasIndex(a => a.SettledByPaymentId);
@@ -42,6 +46,11 @@ public class DoctorCommissionAdjustmentConfiguration : IEntityTypeConfiguration<
         builder.HasOne<Doctor>()
             .WithMany()
             .HasForeignKey(a => a.DoctorId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne<Branch>()
+            .WithMany()
+            .HasForeignKey(a => a.BranchId)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne<InvoiceLineItem>()

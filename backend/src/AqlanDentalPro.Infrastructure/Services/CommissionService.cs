@@ -239,9 +239,21 @@ public class CommissionService(
         var currency = string.IsNullOrWhiteSpace(req.Currency) && db.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory"
             ? "YER"
             : NormalizeCurrency(req.Currency);
+        var idempotencyKey = req.IdempotencyKey?.Trim() ?? string.Empty;
+        if (idempotencyKey.Length > 100)
+            throw new ArgumentException("مفتاح منع تكرار الدفع أطول من الحد المسموح");
+        if (idempotencyKey.Length == 0)
+        {
+            if (db.Database.ProviderName != "Microsoft.EntityFrameworkCore.InMemory")
+                throw new ArgumentException("مفتاح منع تكرار الدفع مطلوب");
+            idempotencyKey = $"test-{Guid.NewGuid():N}";
+        }
 
         var doctor = await db.Doctors.FindAsync(req.DoctorId)
             ?? throw new ArgumentException("الطبيب غير موجود");
+        var paymentMethod = string.IsNullOrWhiteSpace(req.PaymentMethod)
+            ? "cash"
+            : req.PaymentMethod.Trim().ToLowerInvariant();
 
         // FIX: Determine valid BranchId from doctor — never write Guid.Empty
         var branchId = doctor.BranchId ?? Guid.Empty;
@@ -260,9 +272,25 @@ public class CommissionService(
         if (req.BranchId != Guid.Empty && branchId != req.BranchId)
             throw new ArgumentException("لا يمكن صرف عمولة الطبيب من فرع مختلف");
 
-        // Resolve treasury by payment method
-        var paymentMethod = req.PaymentMethod ?? "cash";
+        // A retry returns the original payment before re-validating mutable state such as
+        // the cashier session or the now-reduced outstanding balance.
+        var replay = await db.DoctorCommissionPayments
+            .Include(payment => payment.Doctor)
+            .FirstOrDefaultAsync(payment => payment.BranchId == branchId
+                                         && payment.IdempotencyKey == idempotencyKey
+                                         && payment.IsActive);
+        if (replay != null)
+        {
+            if (replay.DoctorId != req.DoctorId
+                || replay.Currency != currency
+                || replay.Amount != req.Amount
+                || replay.PaymentDate != req.PaymentDate
+                || !string.Equals(replay.PaymentMethod, paymentMethod, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("مفتاح منع التكرار مستخدم لدفعة مختلفة");
+            return MapPayment(replay);
+        }
 
+        // Resolve treasury by payment method
         // Blocker 2: Require open cashier session for cash commission payments
         CashierSession? activeSession = null;
         if (string.Equals(paymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
@@ -314,9 +342,34 @@ public class CommissionService(
             // Uses a stable bigint derived from the doctor Guid (not .NET GetHashCode).
             if (useTx)
             {
+                // The unique key is scoped to the branch, not to the doctor. Locking the
+                // request identity first also serialises the edge case where two different
+                // doctors are accidentally submitted with the same key.
+                await db.Database.ExecuteSqlRawAsync(
+                    "SELECT pg_advisory_xact_lock(hashtextextended({0}, 0))",
+                    $"{branchId:N}:{idempotencyKey}");
                 var doctorLockKey = StableLockKeyHelper.StableGuidToLong(req.DoctorId);
                 await db.Database.ExecuteSqlRawAsync(
                     "SELECT pg_advisory_xact_lock({0})", doctorLockKey);
+            }
+
+            var existingPayment = await db.DoctorCommissionPayments
+                .Include(payment => payment.Doctor)
+                .FirstOrDefaultAsync(payment => payment.BranchId == branchId
+                                             && payment.IdempotencyKey == idempotencyKey
+                                             && payment.IsActive);
+            if (existingPayment != null)
+            {
+                if (existingPayment.DoctorId != req.DoctorId
+                    || existingPayment.Currency != currency
+                    || existingPayment.Amount != req.Amount
+                    || existingPayment.PaymentDate != req.PaymentDate
+                    || !string.Equals(existingPayment.PaymentMethod, paymentMethod, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException(
+                        "مفتاح منع التكرار مستخدم لدفعة مختلفة");
+
+                if (useTx) await tx!.CommitAsync();
+                return MapPayment(existingPayment);
             }
 
             // Re-calculate remaining approved commission inside the lock
@@ -336,9 +389,10 @@ public class CommissionService(
                 DoctorId        = req.DoctorId,
                 BranchId        = branchId,
                 Currency        = currency,
+                IdempotencyKey  = idempotencyKey,
                 Amount          = req.Amount,
                 PaymentDate     = req.PaymentDate,
-                PaymentMethod   = req.PaymentMethod,
+                PaymentMethod   = paymentMethod,
                 ReferenceNumber = req.ReferenceNumber,
                 Notes           = req.Notes,
                 PaidBy          = recordedBy,
@@ -356,7 +410,7 @@ public class CommissionService(
                 Category = FinancialCategory.DoctorCommission,
                 Amount = req.Amount,
                 Currency = currency,
-                PaymentMethod = req.PaymentMethod ?? "cash",
+                PaymentMethod = paymentMethod,
                 TransactionDate = req.PaymentDate,
                 ReferenceId = payment.Id,
                 ReferenceNumber = req.ReferenceNumber ?? $"COM-{doctor.Id.ToString()[..4]}",
@@ -391,62 +445,165 @@ public class CommissionService(
             await treasuryResolution.DecrementTreasuryBalanceAsync(
                 branchId, paymentMethod, req.Amount, currency, activeSession?.Id);
 
-            // CORE-FIN-LAB-ADJ: stamp every open correction with the disbursement that carried
-            // it. This is a RECORD of what the doctor was shown, not an arithmetic gate — the
-            // balance above sums Pending and Settled alike, so a partial payment cannot strand
-            // a correction or make it count twice.
+            // Allocate the exact disbursement append-only. Status is derived from allocation
+            // totals; a partial payment can no longer mark a full commission line as Paid.
             var legacyInMemory = db.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory";
+            var requestedLineIds = req.LineItemIds?.Distinct().ToList();
+            var lineQuery = db.InvoiceLineItems
+                .Where(item => item.DoctorId == req.DoctorId
+                            && item.CommissionStatus == CommissionStatus.Approved
+                            && item.IsActive);
+            // Production must match both branch and currency. A few long-standing InMemory
+            // fixtures predate Patient/Branch assignment; keep their compatibility carve-out
+            // isolated to the non-relational provider, exactly as CommissionBalance does.
+            if (!legacyInMemory)
+                lineQuery = lineQuery.Where(item => item.Invoice.Patient.BranchId == branchId
+                                                  && item.Invoice.Currency == currency);
+            else
+                lineQuery = lineQuery.Where(item => item.Invoice.Currency == currency
+                                                  || (currency == "YER" && item.Invoice.Currency == null));
+            if (requestedLineIds is { Count: > 0 })
+                lineQuery = lineQuery.Where(item => requestedLineIds.Contains(item.Id));
+
+            var lineItems = await lineQuery.OrderBy(item => item.CreatedAt).ToListAsync();
+            if (requestedLineIds is { Count: > 0 } && lineItems.Count != requestedLineIds.Count)
+                throw new ArgumentException("تتضمن الدفعة سطر عمولة غير معتمد أو من فرع/عملة مختلفة");
+
+            var lineIds = lineItems.Select(item => item.Id).ToList();
+            var priorLineAllocations = await db.DoctorCommissionPaymentAllocations
+                .Where(allocation => allocation.InvoiceLineItemId.HasValue
+                                  && lineIds.Contains(allocation.InvoiceLineItemId.Value)
+                                  && allocation.IsActive)
+                .GroupBy(allocation => allocation.InvoiceLineItemId!.Value)
+                .Select(group => new { LineId = group.Key, Amount = group.Sum(x => x.Amount) })
+                .ToDictionaryAsync(row => row.LineId, row => row.Amount);
+
             var openAdjustments = await db.DoctorCommissionAdjustments
                 .Where(a => a.DoctorId == req.DoctorId
                          && (a.BranchId == branchId || (legacyInMemory && a.BranchId == Guid.Empty))
                          && a.Currency == currency
                          && a.IsActive
                          && a.Status == CommissionAdjustmentStatus.Pending)
+                .OrderBy(a => a.CreatedAt)
                 .ToListAsync();
 
-            foreach (var adjustment in openAdjustments)
+            var amountToAllocate = req.Amount;
+            // A negative correction is a non-cash offset against the next settlement.
+            // Apply it to the oldest open earned lines before allocating the cash amount,
+            // otherwise a fully-settled line would remain incorrectly marked Approved.
+            var negativeOffsetRemaining = Math.Abs(openAdjustments
+                .Where(a => a.AdjustmentAmount < 0)
+                .Sum(a => a.AdjustmentAmount));
+            foreach (var item in lineItems)
             {
-                adjustment.Status             = CommissionAdjustmentStatus.Settled;
-                adjustment.SettledByPaymentId = payment.Id;
-                adjustment.SettledOn          = req.PaymentDate;
-            }
-
-            // Mark specified line items as Paid
-            if (req.LineItemIds is { Count: > 0 })
-            {
-                var lineItems = await db.InvoiceLineItems
-                    .Where(i => req.LineItemIds.Contains(i.Id)
-                             && i.DoctorId == req.DoctorId
-                             && i.Invoice.Patient.BranchId == branchId
-                             && i.Invoice.Currency == currency
-                             && i.IsActive)
-                    .ToListAsync();
-
-                foreach (var item in lineItems)
+                var grossOutstanding = Math.Max(0m,
+                    item.DoctorCommissionAmount - priorLineAllocations.GetValueOrDefault(item.Id));
+                var offsetApplied = Math.Min(grossOutstanding, negativeOffsetRemaining);
+                negativeOffsetRemaining -= offsetApplied;
+                var outstanding = grossOutstanding - offsetApplied;
+                var allocated = Math.Min(outstanding, amountToAllocate);
+                if (outstanding == 0)
                 {
-                    if (item.CommissionStatus == CommissionStatus.Approved)
-                        item.CommissionStatus = CommissionStatus.Paid;
+                    item.CommissionStatus = CommissionStatus.Paid;
+                    continue;
                 }
+                if (allocated <= 0) continue;
+
+                db.DoctorCommissionPaymentAllocations.Add(new DoctorCommissionPaymentAllocation
+                {
+                    PaymentId = payment.Id,
+                    InvoiceLineItemId = item.Id,
+                    Amount = allocated
+                });
+                amountToAllocate -= allocated;
+
+                if (allocated == outstanding)
+                    item.CommissionStatus = CommissionStatus.Paid;
+                if (amountToAllocate == 0) break;
             }
+
+            // Negative corrections offset the settlement amount rather than consume cash.
+            // Once this disbursement is committed they have been carried by this settlement.
+            foreach (var adjustment in openAdjustments.Where(a => a.AdjustmentAmount < 0))
+            {
+                adjustment.Status = CommissionAdjustmentStatus.Settled;
+                adjustment.SettledByPaymentId = payment.Id;
+                adjustment.SettledOn = req.PaymentDate;
+            }
+
+            var positiveAdjustmentIds = openAdjustments
+                .Where(a => a.AdjustmentAmount > 0)
+                .Select(a => a.Id)
+                .ToList();
+            var priorAdjustmentAllocations = await db.DoctorCommissionPaymentAllocations
+                .Where(allocation => allocation.CommissionAdjustmentId.HasValue
+                                  && positiveAdjustmentIds.Contains(allocation.CommissionAdjustmentId.Value)
+                                  && allocation.IsActive)
+                .GroupBy(allocation => allocation.CommissionAdjustmentId!.Value)
+                .Select(group => new { AdjustmentId = group.Key, Amount = group.Sum(x => x.Amount) })
+                .ToDictionaryAsync(row => row.AdjustmentId, row => row.Amount);
+
+            foreach (var adjustment in openAdjustments.Where(a => a.AdjustmentAmount > 0))
+            {
+                var outstanding = Math.Max(0m,
+                    adjustment.AdjustmentAmount - priorAdjustmentAllocations.GetValueOrDefault(adjustment.Id));
+                var allocated = Math.Min(outstanding, amountToAllocate);
+                if (allocated <= 0) continue;
+
+                db.DoctorCommissionPaymentAllocations.Add(new DoctorCommissionPaymentAllocation
+                {
+                    PaymentId = payment.Id,
+                    CommissionAdjustmentId = adjustment.Id,
+                    Amount = allocated
+                });
+                amountToAllocate -= allocated;
+
+                if (allocated == outstanding)
+                {
+                    adjustment.Status = CommissionAdjustmentStatus.Settled;
+                    adjustment.SettledByPaymentId = payment.Id;
+                    adjustment.SettledOn = req.PaymentDate;
+                }
+                if (amountToAllocate == 0) break;
+            }
+
+            if (amountToAllocate != 0)
+                throw new InvalidOperationException(
+                    "تعذر تخصيص كامل مبلغ الدفعة إلى عمولات أو تسويات مستحقة");
+
+            // A negative correction is a doctor-level contra balance. With two partial
+            // disbursements it may have been stamped Settled by the first payment, so the
+            // second payment must derive final line status from the aggregate balance rather
+            // than trying to apply that correction a second time to a specific line. Once the
+            // scoped position is exactly zero, every remaining Approved line is economically
+            // settled and can be closed without inventing another cash allocation.
+            if (remaining - req.Amount == 0)
+            {
+                var unsettledLines = db.InvoiceLineItems
+                    .Where(item => item.DoctorId == req.DoctorId
+                                && item.CommissionStatus == CommissionStatus.Approved
+                                && item.IsActive);
+                if (!legacyInMemory)
+                    unsettledLines = unsettledLines.Where(item =>
+                        item.Invoice.Patient.BranchId == branchId
+                        && item.Invoice.Currency == currency);
+                else
+                    unsettledLines = unsettledLines.Where(item => item.Invoice.Currency == currency
+                        || (currency == "YER" && item.Invoice.Currency == null));
+
+                foreach (var unsettledLine in await unsettledLines.ToListAsync())
+                    unsettledLine.CommissionStatus = CommissionStatus.Paid;
+            }
+
+            // Audit belongs to the same transaction as payment, treasury and journal.
+            await LogAuditAsync(payment.Id, "RecordCommissionPayment", recordedBy,
+                $"DoctorId={req.DoctorId} BranchId={branchId} Currency={currency} Amount={req.Amount} " +
+                $"Method={paymentMethod} IdempotencyKey={idempotencyKey}");
 
             await db.SaveChangesAsync();
             if (useTx) await tx!.CommitAsync();
 
-            await LogAuditAsync(payment.Id, "RecordCommissionPayment", recordedBy,
-                $"DoctorId={req.DoctorId} Amount={req.Amount} Method={req.PaymentMethod}");
-
-            return new DoctorCommissionPaymentDto(
-                Id: payment.Id,
-                DoctorId: payment.DoctorId,
-                BranchId: payment.BranchId,
-                Currency: payment.Currency,
-                DoctorName: doctor.Name,
-                Amount: payment.Amount,
-                PaymentDate: payment.PaymentDate,
-                PaymentMethod: payment.PaymentMethod,
-                ReferenceNumber: payment.ReferenceNumber,
-                Notes: payment.Notes,
-                CreatedAt: payment.CreatedAt);
+            return MapPayment(payment, doctor.Name);
         }
         catch
         {
@@ -689,6 +846,20 @@ public class CommissionService(
             ? normalized
             : throw new ArgumentException("العملة يجب أن تكون YER أو SAR أو USD", nameof(currency));
     }
+
+    private static DoctorCommissionPaymentDto MapPayment(
+        DoctorCommissionPayment payment, string? doctorName = null) => new(
+        Id: payment.Id,
+        DoctorId: payment.DoctorId,
+        BranchId: payment.BranchId,
+        Currency: payment.Currency,
+        DoctorName: doctorName ?? payment.Doctor?.Name,
+        Amount: payment.Amount,
+        PaymentDate: payment.PaymentDate,
+        PaymentMethod: payment.PaymentMethod,
+        ReferenceNumber: payment.ReferenceNumber,
+        Notes: payment.Notes,
+        CreatedAt: payment.CreatedAt);
 
     private static ServiceCommissionDefaultsDto MapServiceDefaults(Domain.Entities.ClinicService svc) => new(
         ServiceId:                        svc.Id,

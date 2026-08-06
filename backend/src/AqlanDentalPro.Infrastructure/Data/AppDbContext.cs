@@ -103,6 +103,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<PurchaseOrderLineItem> PurchaseOrderLineItems => Set<PurchaseOrderLineItem>();
     public DbSet<InventoryAdjustment> InventoryAdjustments => Set<InventoryAdjustment>();
     public DbSet<DoctorCommissionPayment> DoctorCommissionPayments => Set<DoctorCommissionPayment>();
+    public DbSet<DoctorCommissionPaymentAllocation> DoctorCommissionPaymentAllocations => Set<DoctorCommissionPaymentAllocation>();
 
     // CORE-FIN-LAB-ADJ — signed correction lines raised when the actual cost behind an
     // already-PAID commission changes. Paid history is never rewritten; it is corrected here.

@@ -57,7 +57,8 @@ public record RecordCommissionPaymentRequest(
     /// <summary>When provided, marks these line items as Paid.</summary>
     List<Guid>? LineItemIds,
     [Required] Guid BranchId = default,
-    [Required, StringLength(3)] string Currency = "");
+    [Required, StringLength(3)] string Currency = "",
+    [StringLength(100)] string IdempotencyKey = "");
 
 // ── Report ────────────────────────────────────────────────────────────────────
 

@@ -56,6 +56,7 @@ public static class ServiceRegistrationConfiguration
         // helpers (MapPayment, NormalizeCurrency) live in FinanceMappers and are used by
         // both FinanceService (write) and FinanceReadService (read).
         services.AddScoped<IFinanceReadService, FinanceReadService>();
+        services.AddScoped<IPartyAccountStatementService, PartyAccountStatementService>();
         // TD-021 PR A3+A4: contract service extracted from the former FinanceService. Owns
         // the full contracts cluster: reads, UpdateContract, CreateContract (down payment
         // via IPaymentService), and UpdateContractStatus (cancellation reversals).

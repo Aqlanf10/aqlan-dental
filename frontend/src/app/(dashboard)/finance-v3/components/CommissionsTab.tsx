@@ -15,6 +15,7 @@ import {
 import { formatMoney, formatNumber } from "./FinanceHelpers";
 import { toast } from "@/stores/toastStore";
 import { CommissionAdjustmentsPanel } from "./CommissionAdjustmentsPanel";
+import { PartyAccountStatementPanel } from "./PartyAccountStatementPanel";
 
 interface DoctorCommissionSummary {
   doctorId: string;
@@ -139,6 +140,12 @@ export function CommissionsTab() {
 
   return (
     <div className="p-5 space-y-6">
+      {selectedDoctorId && (
+        <section className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
+          <h3 className="mb-3 text-sm font-bold" style={{ color: tokens.textPrimary }}>كشف حساب الطبيب — مدين / دائن حسب العملة</h3>
+          <PartyAccountStatementPanel partyType="doctor" partyId={selectedDoctorId} />
+        </section>
+      )}
       {/* ─── Filter Form ─── */}
       <form onSubmit={handleApplyFilters} className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border, boxShadow: tokens.shadow2 }}>
         <div className="flex items-center gap-2 mb-3">

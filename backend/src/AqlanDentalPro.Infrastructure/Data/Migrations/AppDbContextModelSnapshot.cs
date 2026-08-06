@@ -2566,6 +2566,11 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<string>("Notes")
                         .HasColumnType("text");
 
@@ -2588,11 +2593,66 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.HasIndex("BranchId");
 
+                    b.HasIndex("BranchId", "IdempotencyKey")
+                        .IsUnique();
+
                     b.HasIndex("DoctorId", "BranchId", "Currency", "PaymentDate");
 
                     b.ToTable("DoctorCommissionPayments", t =>
                         {
                             t.HasCheckConstraint("CK_DoctorCommissionPayments_Currency", "\"Currency\" IN ('YER', 'SAR', 'USD')");
+                        });
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.DoctorCommissionPaymentAllocation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<Guid?>("CommissionAdjustmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("InvoiceLineItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("PaymentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CommissionAdjustmentId");
+                    b.HasIndex("InvoiceLineItemId");
+                    b.HasIndex("PaymentId", "CommissionAdjustmentId")
+                        .IsUnique()
+                        .HasFilter("\"CommissionAdjustmentId\" IS NOT NULL");
+                    b.HasIndex("PaymentId", "InvoiceLineItemId")
+                        .IsUnique()
+                        .HasFilter("\"InvoiceLineItemId\" IS NOT NULL");
+
+                    b.ToTable("DoctorCommissionPaymentAllocations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_DoctorCommissionPaymentAllocations_ExactlyOneTarget", "(\"InvoiceLineItemId\" IS NOT NULL) <> (\"CommissionAdjustmentId\" IS NOT NULL)");
+                            t.HasCheckConstraint("CK_DoctorCommissionPaymentAllocations_PositiveAmount", "\"Amount\" > 0");
                         });
                 });
 
@@ -9641,6 +9701,31 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Navigation("Branch");
 
                     b.Navigation("Doctor");
+
+                    b.Navigation("Allocations");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.DoctorCommissionPaymentAllocation", b =>
+                {
+                    b.HasOne("AqlanDentalPro.Domain.Entities.DoctorCommissionAdjustment", "CommissionAdjustment")
+                        .WithMany()
+                        .HasForeignKey("CommissionAdjustmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("AqlanDentalPro.Domain.Entities.InvoiceLineItem", "InvoiceLineItem")
+                        .WithMany()
+                        .HasForeignKey("InvoiceLineItemId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("AqlanDentalPro.Domain.Entities.DoctorCommissionPayment", "Payment")
+                        .WithMany("Allocations")
+                        .HasForeignKey("PaymentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CommissionAdjustment");
+                    b.Navigation("InvoiceLineItem");
+                    b.Navigation("Payment");
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.DoctorSchedule", b =>

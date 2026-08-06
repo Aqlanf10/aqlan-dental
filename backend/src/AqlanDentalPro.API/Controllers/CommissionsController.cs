@@ -178,14 +178,23 @@ public class CommissionsController(
         if (!currentUser.IsAdmin && currentUser.BranchId != req.BranchId)
             return StatusCode(403, new { message = "لا يمكن صرف عمولة من فرع آخر" });
 
+        var idempotencyKey = Request.Headers["Idempotency-Key"].FirstOrDefault()?.Trim();
+        if (string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 100)
+            return BadRequest(new { message = "مفتاح منع تكرار الدفع Idempotency-Key مطلوب وبحد أقصى 100 حرف" });
+
         try
         {
-            var result = await commissionService.RecordPaymentAsync(req, userId.Value);
+            var result = await commissionService.RecordPaymentAsync(
+                req with { IdempotencyKey = idempotencyKey }, userId.Value);
             return Created(string.Empty, result);
         }
         catch (ArgumentException)
         {
             return BadRequest(new { message = "بيانات دفعة العمولة غير صالحة" });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { message = ex.Message });
         }
     }
 

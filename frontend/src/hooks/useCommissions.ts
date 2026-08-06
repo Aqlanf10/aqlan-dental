@@ -125,7 +125,9 @@ export function useRecordCommissionPayment() {
       paymentMethod?: string; referenceNumber?: string; notes?: string;
       lineItemIds?: string[];
     }) => {
-      const { data } = await api.post<DoctorCommissionPayment>("/api/commissions/payments", req);
+      const { data } = await api.post<DoctorCommissionPayment>("/api/commissions/payments", req, {
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+      });
       return data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["commissions"] }),

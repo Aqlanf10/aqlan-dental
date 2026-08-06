@@ -503,6 +503,28 @@ public class CommissionServiceValidationTests
     }
 
     [Fact]
+    public async Task RecordPayment_NegativeAdjustmentAcrossTwoPartialPayments_ClosesTheLineAtZeroBalance()
+    {
+        // 3,000 earned - 1,000 correction = 2,000 payable. The correction is stamped by
+        // the first 1,000 payment; the second 1,000 must still close the line rather than
+        // leave it Approved because only 2,000 of cash allocations exist against 3,000 gross.
+        await using var db = CreateDb();
+        var doctor = await SeedDoctorWithAdjustmentAsync(db, adjustmentAmount: -1_000m);
+        var service = CreateService(db);
+
+        var first = PayRequest(doctor.Id, 1_000m) with { IdempotencyKey = "negative-partial-1" };
+        var second = PayRequest(doctor.Id, 1_000m) with { IdempotencyKey = "negative-partial-2" };
+
+        await service.RecordPaymentAsync(first, Guid.NewGuid());
+        (await db.InvoiceLineItems.SingleAsync()).CommissionStatus.Should().Be(CommissionStatus.Approved);
+
+        await service.RecordPaymentAsync(second, Guid.NewGuid());
+        (await db.InvoiceLineItems.SingleAsync()).CommissionStatus.Should().Be(CommissionStatus.Paid);
+        (await db.DoctorCommissionPayments.SumAsync(x => x.Amount)).Should().Be(2_000m);
+        (await db.DoctorCommissionPaymentAllocations.SumAsync(x => x.Amount)).Should().Be(2_000m);
+    }
+
+    [Fact]
     public async Task RecordPayment_CancelledAdjustment_DoesNotCountTowardTheBalance()
     {
         await using var db = CreateDb();

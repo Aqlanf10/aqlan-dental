@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { DollarSign, FlaskConical, X } from "lucide-react";
+import { BookOpen, DollarSign, FlaskConical, X } from "lucide-react";
 import api from "@/lib/api";
 import { extractErrorMessage } from "@/lib/errors";
 import { toast } from "@/stores/toastStore";
@@ -15,6 +15,7 @@ import type { Treasury } from "@/app/(dashboard)/finance-v3/components/types";
 import { cn } from "@/lib/utils";
 import { formatMoney, formatCurrencyAmounts } from "@/app/(dashboard)/finance-v3/components/FinanceHelpers";
 import { QueryErrorBanner } from "@/components/shared/QueryErrorBanner";
+import { PartyAccountStatementPanel } from "@/app/(dashboard)/finance-v3/components/PartyAccountStatementPanel";
 
 /* ─── Status helpers ────────────────────────────────────────────────────────── */
 const statusLabel: Record<string, string> = {
@@ -253,6 +254,7 @@ export function LabPayablesPanel() {
   const [selectedPayable, setSelectedPayable] = useState<LabPayable | null>(
     null
   );
+  const [statementLab, setStatementLab] = useState<LabPayable | null>(null);
 
   const canView = useHasPermission(PERMISSION_KEYS.LAB_PAYABLES_VIEW);
   const canEdit = useHasPermission(PERMISSION_KEYS.LAB_PAYABLES_MANAGE);
@@ -425,6 +427,16 @@ export function LabPayablesPanel() {
                         {p.dueDate ?? "—"}
                       </td>
                       <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                        {p.labId && (
+                          <button
+                            onClick={() => setStatementLab(p)}
+                            className="px-3 py-1.5 border border-cyan-200 text-cyan-800 text-xs font-medium rounded-lg hover:bg-cyan-50 transition-colors"
+                          >
+                            <BookOpen className="inline w-3.5 h-3.5 ml-1" />
+                            كشف الحساب
+                          </button>
+                        )}
                         {p.status !== "paid" && canEdit && (
                           <button
                             onClick={() => setSelectedPayable(p)}
@@ -433,6 +445,7 @@ export function LabPayablesPanel() {
                             تسجيل دفعة
                           </button>
                         )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -471,6 +484,24 @@ export function LabPayablesPanel() {
             payable={selectedPayable}
             onClose={() => setSelectedPayable(null)}
           />
+        )}
+
+        {statementLab?.labId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/50" onClick={() => setStatementLab(null)} />
+            <div className="relative max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold">كشف حساب المعمل — {statementLab.labName}</h3>
+                  <p className="text-xs text-gray-500">مدين / دائن مفصول حسب العملة</p>
+                </div>
+                <button onClick={() => setStatementLab(null)} className="text-gray-500 hover:text-gray-800">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <PartyAccountStatementPanel partyType="lab" partyId={statementLab.labId} />
+            </div>
+          </div>
         )}
       </div>
     </ErrorBoundary>

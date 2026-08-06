@@ -42,6 +42,7 @@ import {
   btnGhost,
 } from "./FinanceSharedUI";
 import { formatMoney, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
+import { PartyAccountStatementPanel } from "./PartyAccountStatementPanel";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 9: Suppliers — الموردون والمعامل
@@ -539,6 +540,7 @@ export function SuppliersTab() {
           <LoadingSkeleton rows={4} />
         ) : statementData ? (
           <div className="space-y-4">
+            <PartyAccountStatementPanel partyType="supplier" partyId={showStatement?.id} />
             {/* Statement summary */}
             <div className="rounded-md p-4 grid grid-cols-2 sm:grid-cols-3 gap-4" style={{ backgroundColor: tokens.cardHover, border: `1px solid ${tokens.border}` }}>
               <div>

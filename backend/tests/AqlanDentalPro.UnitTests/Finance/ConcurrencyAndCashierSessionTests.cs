@@ -472,10 +472,29 @@ public class ConcurrencyAndCashierSessionTests
                 PaymentMethod: "cash",
                 ReferenceNumber: null,
                 Notes: null,
-                LineItemIds: new List<Guid> { lineItem.Id }
+                LineItemIds: new List<Guid> { lineItem.Id },
+                IdempotencyKey: "commission-payment-1"
             ), adminId);
 
         firstPayment.Amount.Should().Be(8_000m, "first commission payment should succeed");
+        lineItem.CommissionStatus.Should().Be(CommissionStatus.Approved,
+            "a partial allocation must not mark the whole commission line paid");
+        (await db.DoctorCommissionPaymentAllocations.SingleAsync()).Amount.Should().Be(8_000m);
+
+        var replay = await commissionService.RecordPaymentAsync(
+            new Application.DTOs.Commission.RecordCommissionPaymentRequest(
+                DoctorId: doctor.Id,
+                Amount: 8_000m,
+                PaymentDate: DateOnly.FromDateTime(DateTime.Today),
+                PaymentMethod: "cash",
+                ReferenceNumber: null,
+                Notes: null,
+                LineItemIds: new List<Guid> { lineItem.Id },
+                IdempotencyKey: "commission-payment-1"
+            ), adminId);
+        replay.Id.Should().Be(firstPayment.Id, "the same idempotency key returns the original payment");
+        (await db.DoctorCommissionPayments.CountAsync()).Should().Be(1);
+        (await db.DoctorCommissionPaymentAllocations.CountAsync()).Should().Be(1);
 
         // Second payment of 5,000 — should fail (only 2,000 remaining)
         var act = () => commissionService.RecordPaymentAsync(
@@ -486,7 +505,8 @@ public class ConcurrencyAndCashierSessionTests
                 PaymentMethod: "cash",
                 ReferenceNumber: null,
                 Notes: null,
-                LineItemIds: null
+                LineItemIds: null,
+                IdempotencyKey: "commission-payment-2"
             ), adminId);
 
         await act.Should().ThrowAsync<ArgumentException>("payment exceeding remaining commission must be rejected");

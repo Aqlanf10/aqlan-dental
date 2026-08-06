@@ -193,6 +193,7 @@ export interface RemakeLabOrderRequest {
 // Lab Sprint 5 — Payables
 export interface LabPayable {
   id: string;
+  labId?: string;
   labOrderId: string;
   labName?: string;
   orderNumber?: string;

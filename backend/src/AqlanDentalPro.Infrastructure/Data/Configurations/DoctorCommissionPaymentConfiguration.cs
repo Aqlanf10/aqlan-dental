@@ -13,6 +13,10 @@ public sealed class DoctorCommissionPaymentConfiguration : IEntityTypeConfigurat
             "\"Currency\" IN ('YER', 'SAR', 'USD')"));
         builder.Property(payment => payment.Amount).HasPrecision(18, 2);
         builder.Property(payment => payment.Currency).HasMaxLength(3).IsRequired();
+        builder.Property(payment => payment.IdempotencyKey).HasMaxLength(100).IsRequired();
+
+        builder.HasIndex(payment => new { payment.BranchId, payment.IdempotencyKey })
+            .IsUnique();
 
         builder.HasIndex(payment => new
         {

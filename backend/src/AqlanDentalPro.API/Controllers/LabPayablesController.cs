@@ -61,6 +61,7 @@ public class LabPayablesController(
             .Select(p => new
             {
                 p.Id,
+                LabId = (Guid?)p.LabId,
                 // Widened to Guid? so this projection matches the orphan-bill one below
                 // exactly — Concat of two anonymous types requires identical shapes.
                 LabOrderId = (Guid?)p.LabOrderId,
@@ -117,6 +118,7 @@ public class LabPayablesController(
             .Select(b => new
             {
                 Id = b.Id,
+                LabId = db.Labs.Where(l => l.SupplierId == b.SupplierId).Select(l => (Guid?)l.Id).FirstOrDefault(),
                 LabOrderId = (Guid?)null,
                 LabName = db.Labs.Where(l => l.SupplierId == b.SupplierId).Select(l => l.Name).FirstOrDefault()
                           ?? db.Suppliers.Where(sup => sup.Id == b.SupplierId).Select(sup => sup.Name).FirstOrDefault()

@@ -13,6 +13,7 @@ import { toast } from "@/stores/toastStore";
 import type { PatientBalance, PatientBalanceDetail } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, tokens, inputStyle, btnPrimary, btnGhost } from "./FinanceSharedUI";
 import { formatYER } from "./FinanceHelpers";
+import { PartyAccountStatementPanel } from "./PartyAccountStatementPanel";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 2: Patient Accounts
@@ -72,6 +73,7 @@ export function PatientAccountsTab() {
       <Modal open={!!selected} onClose={() => { setSelected(null); setShowPayment(false); }} title={selected?.patientName ?? "تفاصيل الحساب"} wide>
         {detailLoading ? <LoadingSkeleton rows={4} /> : selected ? (
           <div className="space-y-4">
+            <PartyAccountStatementPanel partyType="patient" partyId={selected.patientId} />
             <div className="grid grid-cols-2 gap-3">
               <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>رقم المريض</p><p className="text-sm font-bold" style={{ color: tokens.textPrimary }}>{selected.patientNumber}</p></div>
               <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>إجمالي الفواتير</p><p className="text-sm font-bold" style={{ color: tokens.textPrimary }}>{formatYER(selected.totalInvoiced)}</p></div>

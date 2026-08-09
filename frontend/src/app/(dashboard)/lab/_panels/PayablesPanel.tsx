@@ -330,7 +330,9 @@ export function LabPayablesPanel() {
         {/* Filter bar */}
         <div className="flex items-center gap-3 flex-wrap">
           <span className="text-sm text-gray-500">الحالة:</span>
-          <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+          {/* CORE-LAB-021: same fix as the orders list — the pill group scrolls within
+              itself instead of widening the page. */}
+          <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit max-w-full overflow-x-auto">
             {[
               { value: "", label: "الكل" },
               { value: "pending", label: "قيد الانتظار" },

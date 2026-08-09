@@ -167,7 +167,12 @@ export function LabOrdersPanel() {
               className="w-full border border-gray-200 rounded-lg pr-9 pl-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
           </div>
-          <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+          {/* CORE-LAB-021: eleven status pills in a flex row that neither wrapped nor
+              scrolled came to roughly 770px, so on a phone the group pushed the whole page
+              into horizontal scrolling and the last statuses — ملغى, إعادة صناعة, مرتجع —
+              could not be reached at all. The reports tabs already solved this; the same
+              three classes are used here so the module behaves consistently. */}
+          <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit max-w-full overflow-x-auto">
             {STATUS_FILTERS.map((f) => (
               <button
                 key={f.value}

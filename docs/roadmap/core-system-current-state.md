@@ -1,9 +1,16 @@
 # Core System Current State
 
-- Status: Phase 0 audit baseline
-- Baseline date: 2026-07-17
-- Baseline commit: `73a8c3e4` (`origin/main`)
+- Status: Phase 0 audit baseline — **refreshed 2026-08-09**
+- Refresh commit: `908937f1` (`origin/main`)
+- Original baseline: 2026-07-17 at `73a8c3e4`
 - Spec: `specs/011-core-system-stabilization/`
+
+> **How to read this document.** Sections 1–16 were written against the July
+> baseline. Section 19 records what was re-verified on 2026-08-09 and supersedes
+> anything it contradicts. A claim is only marked closed here if it was checked
+> against the code or a CI log on the refresh date — three weeks of merges had
+> made several statements below wrong in both directions, and copying them
+> forward unchecked is how an audit stops being evidence.
 
 ## 1. Executive Summary
 
@@ -266,3 +273,142 @@ authorization because `AppointmentAccess` already includes Reception.
 
 Critical findings remain visible and may be handled only through a documented
 incident-priority exception or their owning phase. No cephalometry work resumes.
+
+---
+
+## 19. Baseline Refresh — 2026-08-09
+
+Re-verified at `908937f1`. Everything in this section is backed by a CI log or a
+file read on the refresh date; where something could not be checked it is said so
+rather than carried over.
+
+### 19.1 Automated verification baseline
+
+| Check | July baseline | 2026-08-09 | Evidence |
+|---|---|---|---|
+| Backend Release build | Pass | Pass, 0 errors | CI job `Backend — Build & Test` |
+| Backend unit tests | 2,429 / 2,429 | **2,861 / 2,861** | CI log `Total tests: 2861` |
+| Backend **integration** tests | *did not exist as a gate* | **32 / 32, now blocking** | CI log `Test Run Successful` |
+| Backend coverage | 8.28% lines / 37.28% branches | **8.33% lines / 40.98% branches** | CI notice on run 31340948233 |
+| Frontend tests | 383 / 383 | **574 / 574** | local + CI |
+| Frontend type check / lint / build | Pass | Pass | CI job `Frontend` |
+| Authenticated journey E2E | Not proven | **Still not proven** | see 19.2 |
+
+### 19.2 The E2E job proves less than it appears to — unchanged in three weeks
+
+`E2E_API_URL` is set, so the job runs. The four credential secrets are **empty**:
+
+```
+E2E_API_URL: ***
+E2E_STAFF_PHONE:
+E2E_STAFF_PASSWORD:
+E2E_PORTAL_USERNAME:
+E2E_PORTAL_PASSWORD:
+...
+4 skipped
+1 passed (4.3s)
+```
+
+The single passing test is `staging-smoke.spec.ts` — "deployed frontend serves the
+staff login surface". **A green E2E tick therefore proves that a login page renders,
+and nothing else.** Staff login, the ceph workflow, portal login and the voice
+recorder are all skipped, and skipping is indistinguishable from passing on the
+checks list. `CORE-F-009` is unchanged and is the reason `CORE-P1-S5` is now the
+recommended first slice.
+
+### 19.3 New finding — unit test results have never been uploaded
+
+`CORE-F-013` (Low, CI hygiene). The unit test step writes to `backend/TestResults`,
+but the upload step asks for `backend/tests/AqlanDentalPro.UnitTests/TestResults`:
+
+```
+##[warning]No files were found with the provided path:
+backend/tests/AqlanDentalPro.UnitTests/TestResults/**/*.trx. No artifacts will be uploaded.
+```
+
+The same class of path mismatch was found and fixed for the integration artifact in
+PR #812. Coverage uploads correctly; only the `.trx` is lost. Harmless to the build,
+but it means no per-test history exists for the backend suite.
+
+### 19.4 Findings closed since the baseline
+
+- **`CORE-F-001` — cross-route duplicate visit. Closed, with executed evidence.**
+  `CrossRouteVisitIdempotencyTests.ConcurrentStartVisit_ViaAppointmentRouteAndQueueRoute_ExactlyOneVisitCreated`
+  races both routes against a real PostgreSQL container and passes. Worth stating
+  precisely: the test existed before, but the integration job carried
+  `continue-on-error` and every test in it was failing behind a green tick, so it had
+  never actually run. It runs now (PR #812), which is what turns this from an
+  assertion into evidence.
+- **`CORE-F-003` — queue reorder contract. Closed.** `buildQueueReorderPayload` now
+  returns a bare array and `clinicQueueReorder.test.ts` names CORE-F-003 and asserts
+  the payload has no `orders` wrapper.
+- **`CORE-F-006` — Reception appointment access. Closed.** `routePermissions.ts:101-102`
+  lists `Reception` on both `/appointments/recall` and `/appointments`, matching the
+  backend. Section 5's "confirmed mismatch" is stale and superseded here.
+- **`CORE-F-007` — mixed-currency totals. Partially closed.** Lab reports, supplier
+  balances, lab payables, commissions and party statements are per-currency
+  (CORE-LAB-010/011, CORE-XMOD-001, CORE-FIN-LAB-ADJ, W07, CORE-LAB-020). The PDF and
+  notification paths named in section 12 were **not** re-checked and stay open.
+
+### 19.5 `CORE-F-002` is worse than the baseline recorded
+
+Section 14 is numerically out of date and understated the problem.
+
+| | July | 2026-08-09 |
+|---|---:|---:|
+| Migration classes | 93 | **108** |
+| Without `[Migration]` | 16 with it | **41 without it** |
+| `StartupDatabaseMaintenance.cs` | ~5,330 lines | **5,890 lines** |
+| `Ensure*` DDL methods | not counted | **48** |
+| Swallowing `catch` + `LogWarning` | not counted | **29** |
+
+`CLAUDE.md` still says 31 migrations lack the attribute; the real figure is 41 and
+it grew while nobody was counting.
+
+The severity is no longer theoretical. Three defects of exactly this shape were found
+and fixed on 2026-08-09 (PR #812), all of them invisible because the DDL runs inside a
+`catch` that logs a warning and continues:
+
+1. `JournalEntryNumberSequences` existed only inside migration
+   `20260802010000_HardenJournalLedger`, was not an EF entity, and so was absent from
+   the `GenerateCreateScript` baseline a fresh database is built from. **A new
+   production database could not post a single journal entry** — every reservation
+   failed with 42P01.
+2. The ledger balance and closed-period triggers cannot be expressed in an EF model
+   and were likewise missing from any fresh database.
+3. The service-packages hotfix referenced a column and a table that do not exist
+   (`TreatmentPackageId`, `InventoryItems`), threw 42703 on **every boot**, and
+   silently skipped everything after it — so `ServiceConsumables`' foreign keys and
+   `ClinicServices."Color"` were never applied to any database that needed them.
+
+The general lesson for the phased-removal plan: **29 swallowing catches mean the
+startup path can be broken for months without any signal.** Any future work here
+should make failures visible before it makes them fewer.
+
+### 19.6 Open work at refresh time
+
+- Paused cephalometry drafts `#697`, `#698`, `#699` — unchanged, still draft.
+- `#799` (Codex playbook, docs) and `#783` (lab/finance, branch `مستقبل`) are open
+  non-cephalometry PRs. The July statement that none existed no longer holds.
+- The `CORE-LAB` audit closed on 2026-08-09 (`CORE-LAB-001..021`).
+
+### 19.7 Findings status after refresh
+
+| ID | Severity | Status |
+|---|---|---|
+| CORE-F-001 | Critical | **Closed** — proven by an executed concurrency test |
+| CORE-F-002 | Critical | **Open, severity confirmed by three real defects** |
+| CORE-F-003 | High | **Closed** — regression test in place |
+| CORE-F-004 | High | Open — not re-verified |
+| CORE-F-005 | High | Open — `VIP` still in the queue enum and UI labels |
+| CORE-F-006 | High | **Closed** |
+| CORE-F-007 | High | Partially closed — PDFs and notifications unverified |
+| CORE-F-008 | High | Open — not re-verified |
+| CORE-F-009 | High | **Open, unchanged** — 4 of 5 E2E tests skipped |
+| CORE-F-010 | High | Open — 8.33% / 40.98%, gate still `continue-on-error` |
+| CORE-F-011 | Medium | Open — not re-verified |
+| CORE-F-012 | Medium | Open — lab lifecycle states, not re-verified |
+| CORE-F-013 | Low | **New** — unit `.trx` artifact never uploaded |
+
+"Not re-verified" means exactly that: the July finding stands unchallenged, and no
+one should read it as either confirmed or fixed today.

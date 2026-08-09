@@ -1,4 +1,6 @@
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
+using AqlanDentalPro.Application.Common;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Infrastructure.Services;
@@ -98,6 +100,8 @@ public class SuppliersController(
     // CORE-XMOD-001 — per-currency balances derived from the bills, because
     // Supplier.Balance is a single scalar that cannot represent YER, SAR and USD.
     SupplierBalanceReader balanceReader,
+    // CORE-LAB-020 — shared with the lab workspace so both screens age a bill identically.
+    SupplierAgingReader agingReader,
     ICurrentUserService currentUser) : ControllerBase
 {
     // ─── 1. GET /api/suppliers — List all suppliers ──────────────────────
@@ -397,6 +401,62 @@ public class SuppliersController(
             .Where(x => x.Stored != x.Correct)
             .OrderByDescending(x => Math.Abs(x.Stored - x.Correct))
             .ToList();
+    }
+
+    /// <summary>
+    /// CORE-LAB-020 — ageing of every unpaid supplier bill, per supplier and per currency.
+    /// <para>
+    /// A balance says how much is owed; this says how long it has been owed, which is the figure
+    /// that decides who gets paid first. Bucket boundaries are credit terms and come from
+    /// Settings, and they are echoed back with the data so a report can never be drawn with
+    /// headers that describe different periods from the amounts beneath them.
+    /// </para>
+    /// </summary>
+    /// <param name="type">Optional supplier type filter, e.g. <c>DentalLab</c>.</param>
+    [HttpGet("aging")]
+    public async Task<IActionResult> GetAging(
+        [FromQuery] string? type,
+        [FromQuery] Guid? branchId,
+        CancellationToken ct = default)
+    {
+        SupplierType? supplierType = null;
+        if (!string.IsNullOrWhiteSpace(type))
+        {
+            if (!Enum.TryParse<SupplierType>(type, ignoreCase: true, out var parsed))
+                return BadRequest(new { message = "نوع المورد غير معروف" });
+            supplierType = parsed;
+        }
+
+        var settings = new FinanceSettingsReader(db);
+        var buckets = new SupplierAgingReader.AgingBuckets(
+            await settings.GetIntAsync(FinanceSettingsKeys.PayablesAgingBucket1Days, ct),
+            await settings.GetIntAsync(FinanceSettingsKeys.PayablesAgingBucket2Days, ct),
+            await settings.GetIntAsync(FinanceSettingsKeys.PayablesAgingBucket3Days, ct));
+
+        var asOf = ClinicTimeProvider.ClinicToday();
+        var rows = await agingReader.GetAsync(asOf, buckets, supplierType, branchId, ct);
+
+        return Ok(new
+        {
+            asOf,
+            buckets = new { buckets.Bucket1Days, buckets.Bucket2Days, buckets.Bucket3Days },
+            data = rows,
+            totals = rows
+                .GroupBy(r => r.Currency)
+                .Select(g => new
+                {
+                    currency = g.Key,
+                    notYetDue = g.Sum(r => r.NotYetDue),
+                    bucket1 = g.Sum(r => r.Bucket1),
+                    bucket2 = g.Sum(r => r.Bucket2),
+                    bucket3 = g.Sum(r => r.Bucket3),
+                    bucket4Plus = g.Sum(r => r.Bucket4Plus),
+                    noDueDate = g.Sum(r => r.NoDueDate),
+                    total = g.Sum(r => r.Total),
+                })
+                .OrderByDescending(t => t.total)
+                .ToList(),
+        });
     }
 
     /// <summary>Read-only: which suppliers' legacy YER scalar disagrees with their bills.</summary>

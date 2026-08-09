@@ -19,7 +19,10 @@ public class LabReportsController(
     ICurrentUserService currentUser,
     // CORE-XMOD-001 — the same derivation the suppliers screen uses, so the two
     // cannot report a different balance for the same lab.
-    SupplierBalanceReader balanceReader) : ControllerBase
+    SupplierBalanceReader balanceReader,
+    // CORE-LAB-020 — same reader the suppliers screen uses, so the two cannot
+    // report a different age for the same unpaid bill.
+    SupplierAgingReader agingReader) : ControllerBase
 {
     /// <summary>
     /// CORE-LAB-010: money in this module is never a single scalar. A lab order carries its own
@@ -117,6 +120,60 @@ public class LabReportsController(
 
         var accounts = await GetLabAccountsAsync(ct);
         return Ok(new { data = accounts });
+    }
+
+    /// <summary>
+    /// CORE-LAB-020 — how old the clinic's unpaid lab bills are, per lab and per currency.
+    /// <para>
+    /// The payables screen already answers "how much do we owe this lab". It cannot answer "for
+    /// how long", and that is the question behind <i>تراكم التراكيب</i>: an amount inside its
+    /// credit terms is routine, the same amount ninety days past due is a lab that is about to
+    /// refuse the next case. Bucket boundaries come from Settings and are echoed back, so the
+    /// column headers can never describe different periods from the numbers under them.
+    /// </para>
+    /// <para>
+    /// Hard-scoped to <see cref="SupplierType.DentalLab"/>. The same reader serves the suppliers
+    /// screen for every vendor, but that screen is AdminOnly — a lab-reports viewer must not
+    /// learn what the clinic owes its landlord through this route.
+    /// </para>
+    /// </summary>
+    [HttpGet("lab-aging")]
+    public async Task<IActionResult> GetLabAging([FromQuery] Guid? branchId, CancellationToken ct = default)
+    {
+        if (!await CanViewReportsAsync()) return Forbid();
+
+        var settings = new FinanceSettingsReader(db);
+        var buckets = new SupplierAgingReader.AgingBuckets(
+            await settings.GetIntAsync(FinanceSettingsKeys.PayablesAgingBucket1Days, ct),
+            await settings.GetIntAsync(FinanceSettingsKeys.PayablesAgingBucket2Days, ct),
+            await settings.GetIntAsync(FinanceSettingsKeys.PayablesAgingBucket3Days, ct));
+
+        var asOf = ClinicTimeProvider.ClinicToday();
+        var rows = await agingReader.GetAsync(asOf, buckets, SupplierType.DentalLab, branchId, ct);
+
+        return Ok(new
+        {
+            asOf,
+            buckets = new { buckets.Bucket1Days, buckets.Bucket2Days, buckets.Bucket3Days },
+            data = rows,
+            // Per-currency column totals. Folded the same way as every other total in this
+            // controller, which is to say never across currencies.
+            totals = rows
+                .GroupBy(r => r.Currency)
+                .Select(g => new
+                {
+                    currency = g.Key,
+                    notYetDue = g.Sum(r => r.NotYetDue),
+                    bucket1 = g.Sum(r => r.Bucket1),
+                    bucket2 = g.Sum(r => r.Bucket2),
+                    bucket3 = g.Sum(r => r.Bucket3),
+                    bucket4Plus = g.Sum(r => r.Bucket4Plus),
+                    noDueDate = g.Sum(r => r.NoDueDate),
+                    total = g.Sum(r => r.Total),
+                })
+                .OrderByDescending(t => t.total)
+                .ToList(),
+        });
     }
 
     /// <summary>Lab costs report — total costs per lab, per currency.</summary>

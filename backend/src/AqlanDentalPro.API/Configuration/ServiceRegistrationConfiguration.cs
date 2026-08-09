@@ -107,6 +107,7 @@ public static class ServiceRegistrationConfiguration
         // CORE-XMOD-001: one derivation of a supplier's per-currency balance, shared by the
         // suppliers screen and the lab accounts view so they cannot report different numbers.
         services.AddScoped<SupplierBalanceReader>();
+        services.AddScoped<SupplierAgingReader>();
         // CORE-FIN-LAB-ADJ: keeps doctor commissions in step with the ACTUAL lab cost —
         // recalculating unpaid ones in place and raising separate correction lines for
         // commissions that were already paid out.

@@ -71,6 +71,20 @@ public static class FinanceSettingsKeys
     /// <summary>On-time percentage below which a lab is flagged red.</summary>
     public const string LabOnTimeRateWarn = "finance.lab.on_time_rate_warn";
 
+    // ── Payables ageing buckets (CORE-LAB-020) ──────────────────────────────
+    // Where one ageing bucket ends and the next begins is a credit-terms decision, not a
+    // display constant: a lab billing net-30 and a materials vendor billing net-60 do not
+    // become "late" on the same day. The defaults below are the 30/60/90 convention.
+
+    /// <summary>Days past due at which the first ageing bucket ends.</summary>
+    public const string PayablesAgingBucket1Days = "finance.payables.aging_bucket_1_days";
+
+    /// <summary>Days past due at which the second ageing bucket ends.</summary>
+    public const string PayablesAgingBucket2Days = "finance.payables.aging_bucket_2_days";
+
+    /// <summary>Days past due at which the third ageing bucket ends; beyond it is the last bucket.</summary>
+    public const string PayablesAgingBucket3Days = "finance.payables.aging_bucket_3_days";
+
     /// <summary>
     /// All finance keys mapped to their default values. Defaults are chosen to
     /// preserve the current hardcoded/seeded behavior — changing a setting from
@@ -99,6 +113,10 @@ public static class FinanceSettingsKeys
         [LabTurnaroundDaysTarget]             = "7",
         [LabOnTimeRateGood]                   = "90",
         [LabOnTimeRateWarn]                   = "70",
+
+        [PayablesAgingBucket1Days]            = "30",
+        [PayablesAgingBucket2Days]            = "60",
+        [PayablesAgingBucket3Days]            = "90",
     };
 
     /// <summary>True if <paramref name="key"/> is a known finance setting.</summary>

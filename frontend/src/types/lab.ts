@@ -350,6 +350,55 @@ export interface LabPerformanceThresholds {
   onTimeRateWarn: number;
 }
 
+// ── Payables ageing (CORE-LAB-020) ──────────────────────────────────────────
+
+/**
+ * How long the clinic has owed a supplier, not just how much. Currency is part of the row's
+ * identity — two rows for one lab billing in YER and SAR is correct, and adding them would
+ * produce a figure that is not money in any currency.
+ */
+export interface SupplierAgingRow {
+  supplierId: string;
+  supplierName: string;
+  supplierType: string;
+  currency: "YER" | "SAR" | "USD";
+  notYetDue: number;
+  bucket1: number;
+  bucket2: number;
+  bucket3: number;
+  bucket4Plus: number;
+  /** Outstanding on bills carrying no agreed due date — reported apart, never as "current". */
+  noDueDate: number;
+  total: number;
+  openBills: number;
+  oldestOverdueDays: number | null;
+}
+
+/** Bucket boundaries in days, echoed by the server so headers cannot contradict the data. */
+export interface SupplierAgingBuckets {
+  bucket1Days: number;
+  bucket2Days: number;
+  bucket3Days: number;
+}
+
+export interface SupplierAgingTotals {
+  currency: "YER" | "SAR" | "USD";
+  notYetDue: number;
+  bucket1: number;
+  bucket2: number;
+  bucket3: number;
+  bucket4Plus: number;
+  noDueDate: number;
+  total: number;
+}
+
+export interface SupplierAgingReport {
+  asOf: string;
+  buckets: SupplierAgingBuckets;
+  data: SupplierAgingRow[];
+  totals: SupplierAgingTotals[];
+}
+
 export interface LabDashboardData {
   kpis: LabDashboardKPIs;
   statusDistribution: StatusDistributionItem[];

@@ -53,6 +53,32 @@ public class TestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
     public const string TestJwtIssuer = "AqlanDentalPro";
     public const string TestJwtAudience = "AqlanDentalProClient";
 
+    /// <summary>
+    /// Publishes the JWT settings as environment variables before any host is built.
+    /// <para>
+    /// <c>ConfigureAppConfiguration</c> below is applied when the host is <i>built</i>, but
+    /// <c>AddJwtAuthentication</c> reads <c>Jwt:SecretKey</c> eagerly while services are still
+    /// being registered — so it never saw the in-memory override and validated every request
+    /// against the placeholder key in appsettings.json. Tests signed with
+    /// <see cref="TestJwtSecret"/> therefore came back 401 no matter what they did. The
+    /// connection string escaped this because <c>UseNpgsql</c> resolves it inside a callback
+    /// that runs after the build.
+    /// </para>
+    /// <para>
+    /// Environment variables are part of the default configuration <c>WebApplication.CreateBuilder</c>
+    /// assembles, so they are visible to those eager reads. They are process-wide, which is
+    /// safe here only because all three values are constants — the per-container connection
+    /// string is deliberately NOT set this way, since test classes run in parallel and would
+    /// overwrite each other's.
+    /// </para>
+    /// </summary>
+    static TestWebAppFactory()
+    {
+        Environment.SetEnvironmentVariable("Jwt__SecretKey", TestJwtSecret);
+        Environment.SetEnvironmentVariable("Jwt__Issuer", TestJwtIssuer);
+        Environment.SetEnvironmentVariable("Jwt__Audience", TestJwtAudience);
+    }
+
     private readonly PostgreSqlContainer _dbContainer = new PostgreSqlBuilder()
         .WithImage("postgres:16-alpine")
         .WithDatabase("aqlan_integration_tests")
@@ -143,10 +169,58 @@ public class TestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        // Idempotent — if the startup maintenance already migrated the DB,
-        // this is a no-op. Belt-and-braces so test code never sees a half-
-        // migrated schema regardless of how the app booted.
-        await db.Database.MigrateAsync();
+        // CORE-CI-001: VERIFY, do not rebuild.
+        //
+        // Building the host above runs StartupDatabaseMaintenance, and on an empty container
+        // that succeeds: it creates the whole schema from the EF model and stamps the
+        // migration history. Anything that then tries to create the schema again fails —
+        // MigrateAsync did, and so did an earlier attempt of mine, with
+        // 42P07 relation "BackupRecords" already exists.
+        //
+        // So the only thing left to do here is confirm the schema really is present. Without
+        // that confirmation a future regression in startup maintenance would surface as every
+        // test failing on unrelated-looking symptoms instead of one clear message.
+        await AssertSchemaPresentAsync(db);
+    }
+
+    /// <summary>
+    /// Fails loudly if the schema is missing, naming the cause, instead of letting every test
+    /// fail later on a symptom.
+    /// </summary>
+    private static async Task AssertSchemaPresentAsync(AppDbContext db)
+    {
+        // WAIT for the schema, do not merely check for it. Two CI runs of the same fixture
+        // produced opposite errors — one collided with an existing table, the next found no
+        // schema at all — which is the signature of a race, not a deterministic bug.
+        //
+        // StartupDatabaseMaintenance does not finish before the host is usable. It awaits the
+        // baseline, then deliberately runs the hotfix pipeline in the BACKGROUND under a boot
+        // budget so Railway's health check cannot time out (see its own comment: "if it is
+        // still running when the budget expires, boot continues ... while the pipeline
+        // finishes in the background"). So the moment Services.CreateScope() returns, the
+        // schema may be half-built — and every hotfix is individually try/caught, so nothing
+        // surfaces. Polling is the honest way to synchronise with that.
+        await db.Database.OpenConnectionAsync();
+
+        var deadline = DateTime.UtcNow.AddSeconds(90);
+        while (true)
+        {
+            using (var checkCmd = db.Database.GetDbConnection().CreateCommand())
+            {
+                checkCmd.CommandText =
+                    "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Users')";
+                if (await checkCmd.ExecuteScalarAsync() is bool ok && ok) return;
+            }
+
+            if (DateTime.UtcNow >= deadline)
+                throw new InvalidOperationException(
+                    "Integration test database still has no schema after 90s — "
+                    + "StartupDatabaseMaintenance never finished its baseline. Every step in it is "
+                    + "wrapped in try/catch and only logs a warning, so check the host logs for the "
+                    + "swallowed exception. No test can be trusted.");
+
+            await Task.Delay(500);
+        }
     }
 
     /// <summary>
@@ -168,18 +242,50 @@ public class TestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
     /// <c>IAsyncLifetime.InitializeAsync</c> so tests start from a clean slate.
     /// </summary>
     /// <remarks>
-    /// <see cref="DatabaseFacade.EnsureDeletedAsync"/> + <see cref="MigrateAsync"/>
-    /// is preferred over <see cref="DatabaseFacade.EnsureCreatedAsync"/> because
-    /// the latter bypasses the migration history and would diverge from the real
-    /// production schema (no <c>__EFMigrationsHistory</c> table, different index
-    /// names, etc.).
+    /// CORE-CI-001: rebuilt from the EF model rather than by replaying migrations. The old
+    /// comment here argued that MigrateAsync stays closer to "the real production schema" —
+    /// but for an EMPTY database production does not replay the chain either. It cannot: 31
+    /// hand-written migrations carry no [Migration] attribute, so EF cannot even see them.
+    /// Building from the model is what production does for a fresh database, not a shortcut
+    /// around it.
     /// </remarks>
     public async Task ResetDatabaseAsync()
     {
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        await db.Database.EnsureDeletedAsync();
-        await db.Database.MigrateAsync();
+
+        // CORE-CI-001: TRUNCATE, do not drop and recreate.
+        //
+        // Dropping meant rebuilding, and rebuilding from the EF model alone is not enough:
+        // several tables in this system exist only because a startup hotfix creates them with
+        // CREATE TABLE IF NOT EXISTS, and are not in the model at all. EnsureCreated therefore
+        // produced a schema the application could not run against —
+        // 42P01 relation "JournalEntryNumberSequences" does not exist.
+        //
+        // The container's schema is already correct: StartupDatabaseMaintenance built the
+        // baseline and then applied every hotfix. Emptying it keeps all of that and is much
+        // faster than recreating it per test class.
+        await db.Database.OpenConnectionAsync();
+
+        using var truncateCmd = db.Database.GetDbConnection().CreateCommand();
+        truncateCmd.CommandTimeout = 300;
+        truncateCmd.CommandText = """
+            DO $$
+            DECLARE tables text;
+            BEGIN
+                SELECT string_agg(format('%I.%I', schemaname, tablename), ', ')
+                INTO tables
+                FROM pg_tables
+                WHERE schemaname = 'public' AND tablename <> '__EFMigrationsHistory';
+
+                IF tables IS NOT NULL THEN
+                    EXECUTE 'TRUNCATE TABLE ' || tables || ' RESTART IDENTITY CASCADE';
+                END IF;
+            END $$;
+            """;
+        await truncateCmd.ExecuteNonQueryAsync();
+
+        await AssertSchemaPresentAsync(db);
     }
 
     /// <summary>

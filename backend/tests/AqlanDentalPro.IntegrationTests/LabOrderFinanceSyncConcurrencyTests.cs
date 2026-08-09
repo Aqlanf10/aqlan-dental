@@ -48,6 +48,19 @@ public class LabOrderFinanceSyncConcurrencyTests : IClassFixture<TestWebAppFacto
         var branch = new Branch { Name = "فرع اختبار تزامن المعامل" };
         db.Branches.Add(branch);
 
+        // The sync posts a journal entry stamped with PerformedBy, and JournalEntries has a
+        // foreign key to Users. A made-up Guid made every racer die on 23503 before it ever
+        // reached the advisory lock, so the race under test never actually ran.
+        var user = new User
+        {
+            Username = $"lab.sync.{Guid.NewGuid():N}"[..20],
+            Email = $"{Guid.NewGuid():N}@test.local",
+            PasswordHash = "not-a-real-hash",
+            Role = UserRole.Admin,
+            IsActive = true,
+        };
+        db.Users.Add(user);
+
         var patient = new Patient
         {
             PatientNumber = $"P-{Guid.NewGuid():N}"[..12],
@@ -85,7 +98,7 @@ public class LabOrderFinanceSyncConcurrencyTests : IClassFixture<TestWebAppFacto
 
         _branchId = branch.Id;
         _orderId = order.Id;
-        _userId = Guid.NewGuid();
+        _userId = user.Id;
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
@@ -96,6 +109,8 @@ public class LabOrderFinanceSyncConcurrencyTests : IClassFixture<TestWebAppFacto
     /// transaction ends, so a caller without one would release the lock immediately and the
     /// race would be back.
     /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentBag<string> _racerErrors = new();
+
     private async Task<bool> SyncOnceAsync()
     {
         using var scope = _factory.Services.CreateScope();
@@ -109,6 +124,7 @@ public class LabOrderFinanceSyncConcurrencyTests : IClassFixture<TestWebAppFacto
             var result = await sync.SyncAsync(order, _branchId, _userId);
             if (!result.Ok)
             {
+                _racerErrors.Add($"sync refused: {result.Error}");
                 await tx.RollbackAsync();
                 return false;
             }
@@ -117,11 +133,14 @@ public class LabOrderFinanceSyncConcurrencyTests : IClassFixture<TestWebAppFacto
             await tx.CommitAsync();
             return true;
         }
-        catch
+        catch (Exception ex)
         {
             await tx.RollbackAsync();
             // A racer losing to a unique constraint is an acceptable outcome; the assertion
-            // that matters is how many bills exist at the end, not how each racer fared.
+            // that matters is how many bills exist at the end, not how each racer fared. The
+            // message is still recorded, so "every racer failed" reports WHY instead of just
+            // saying no one won.
+            _racerErrors.Add($"{ex.GetType().Name}: {ex.Message}");
             return false;
         }
     }
@@ -132,7 +151,9 @@ public class LabOrderFinanceSyncConcurrencyTests : IClassFixture<TestWebAppFacto
         var results = await Task.WhenAll(
             Enumerable.Range(0, Racers).Select(_ => Task.Run(SyncOnceAsync)));
 
-        results.Should().Contain(true, "at least one racer must succeed or nothing was tested");
+        results.Should().Contain(true,
+            "at least one racer must succeed or nothing was tested. Racer failures: {0}",
+            string.Join(" | ", _racerErrors.Distinct().Take(3)));
 
         await using var db = await _factory.CreateDbContextAsync();
 

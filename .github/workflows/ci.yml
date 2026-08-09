@@ -124,10 +124,15 @@ jobs:
         # transitions, patient access control) plus schema-drift detection between the
         # EF model and the live database. This job has NEVER run before in CI (the
         # project existed but was not wired in — see docs/agent-audit/c-08-startup-maintenance-audit.md
-        # section 6). continue-on-error is set so a first-run failure surfaces as a
-        # warning without blocking merges; once this job is observed green for a few
-        # consecutive runs, remove continue-on-error to make it a blocking gate.
-        continue-on-error: true
+        # section 6).
+        #
+        # CORE-CI-001 — this step is now a real gate.
+        #
+        # It carried continue-on-error from the day it was wired in, which meant the job
+        # reported success while all 32 tests failed underneath it. All 32 pass now, so the
+        # line is gone and a failure here fails the build. If this step ever goes red, the
+        # answer is to fix what it caught — restoring continue-on-error would put the repo
+        # back to reporting a green tick over a suite that does not run.
         run: >
           dotnet test tests/AqlanDentalPro.IntegrationTests/AqlanDentalPro.IntegrationTests.csproj
           --no-restore --no-build --configuration Release
@@ -140,7 +145,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: backend-integration-test-results
-          path: backend/tests/AqlanDentalPro.IntegrationTests/TestResults/**/*.trx
+          # CORE-CI-001: --results-directory is ./TestResults relative to the `backend`
+          # working directory, so results land in backend/TestResults — not under the test
+          # project. Every run logged "No files were found" regardless of outcome.
+          path: backend/TestResults/**/*.trx
           retention-days: 7
           if-no-files-found: ignore
 

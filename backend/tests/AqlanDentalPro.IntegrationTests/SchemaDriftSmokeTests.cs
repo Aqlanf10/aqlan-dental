@@ -352,13 +352,26 @@ public class SchemaDriftSmokeTests : IClassFixture<TestWebAppFactory>, IAsyncLif
             var tableName = entityType.GetTableName();
             if (string.IsNullOrEmpty(tableName)) continue;
 
-            var schema = entityType.GetSchema() ?? "public";
-            if (schema != "public") continue;
+            // GetSchema() returns null when the entity uses the provider default, and the
+            // store object is keyed on that null — asking for Table(name, "public") matches
+            // nothing, so every GetColumnName call returned null and this set came back
+            // empty. "public" is only the right answer when comparing against
+            // information_schema; it is the wrong key for EF's own lookup.
+            var schema = entityType.GetSchema();
+            if ((schema ?? "public") != "public") continue;
 
+            var storeObject = StoreObjectIdentifier.Table(tableName, schema);
             foreach (var property in entityType.GetProperties())
             {
-                var columnName = property.GetColumnName(StoreObjectIdentifier.Table(tableName, schema));
+                var columnName = property.GetColumnName(storeObject);
                 if (string.IsNullOrEmpty(columnName)) continue;
+
+                // UseXminAsConcurrencyToken maps a property onto PostgreSQL's own xmin,
+                // a system column every table has implicitly. It is deliberately hidden
+                // from information_schema, so demanding it here would fail forever on a
+                // perfectly correct schema.
+                if (columnName == "xmin") continue;
+
                 columns.Add((tableName, columnName));
             }
         }
@@ -383,15 +396,41 @@ public class SchemaDriftSmokeTests : IClassFixture<TestWebAppFactory>, IAsyncLif
             if (entityType.IsOwned()) continue;
             if (entityType.FindPrimaryKey() is null) continue; // keyless entities
 
+            var table = entityType.GetTableName();
+            if (string.IsNullOrEmpty(table)) continue;
+            if ((entityType.GetSchema() ?? "public") != "public") continue;
+
             foreach (var fk in entityType.GetForeignKeys())
             {
-                var constraintName = fk.GetConstraintName();
-                if (string.IsNullOrEmpty(constraintName)) continue;
-                fks.Add(constraintName);
+                var principal = fk.PrincipalEntityType.GetTableName();
+                if (string.IsNullOrEmpty(principal)) continue;
+
+                fks.Add(DescribeForeignKey(
+                    table,
+                    fk.Properties.Select(p => p.GetColumnName(
+                        StoreObjectIdentifier.Table(table, entityType.GetSchema()))),
+                    principal));
             }
         }
         return fks;
     }
+
+    /// <summary>
+    /// Identifies a foreign key by what it constrains — the referencing table, its columns,
+    /// and the table referenced — rather than by name.
+    /// <para>
+    /// Names cannot be compared directly. PostgreSQL caps identifiers at 63 bytes and simply
+    /// cuts anything longer; Npgsql truncates to the same limit but marks the cut with a
+    /// trailing '~'. So the very same foreign key is called
+    /// <c>..._RelatedTreatment~</c> when EF creates it and <c>..._RelatedTreatmentP</c> when
+    /// a startup DDL block creates it, and a name comparison reports drift where the schema
+    /// is in fact identical. Comparing the shape ignores the cosmetic difference while still
+    /// failing loudly if a foreign key is genuinely absent.
+    /// </para>
+    /// </summary>
+    private static string DescribeForeignKey(
+        string table, IEnumerable<string?> columns, string principalTable) =>
+        $"{table}({string.Join(",", columns.Where(c => !string.IsNullOrEmpty(c)).OrderBy(c => c, StringComparer.Ordinal))}) -> {principalTable}";
 
     // ───────────────────────────────────────────────────────────────────────
     //  Database introspection helpers (query information_schema / pg_constraint)
@@ -445,18 +484,32 @@ public class SchemaDriftSmokeTests : IClassFixture<TestWebAppFactory>, IAsyncLif
 
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT conname
-            FROM pg_constraint
-            JOIN pg_namespace ON pg_namespace.oid = pg_constraint.connamespace
-            WHERE pg_namespace.nspname = 'public'
-              AND pg_constraint.contype = 'f'
-            ORDER BY conname;
+            SELECT
+                child.relname                                       AS table_name,
+                (
+                    SELECT string_agg(att.attname, ',' ORDER BY att.attname)
+                    FROM unnest(con.conkey) AS k(attnum)
+                    JOIN pg_attribute att
+                      ON att.attrelid = con.conrelid AND att.attnum = k.attnum
+                )                                                   AS column_names,
+                parent.relname                                      AS principal_table
+            FROM pg_constraint con
+            JOIN pg_namespace ns    ON ns.oid = con.connamespace
+            JOIN pg_class child     ON child.oid = con.conrelid
+            JOIN pg_class parent    ON parent.oid = con.confrelid
+            WHERE ns.nspname = 'public'
+              AND con.contype = 'f';
             """;
 
         var fks = new HashSet<string>(StringComparer.Ordinal);
         await using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
-            fks.Add(reader.GetString(0));
+        {
+            var columns = reader.IsDBNull(1)
+                ? Array.Empty<string>()
+                : reader.GetString(1).Split(',');
+            fks.Add(DescribeForeignKey(reader.GetString(0), columns, reader.GetString(2)));
+        }
         return fks;
     }
 }

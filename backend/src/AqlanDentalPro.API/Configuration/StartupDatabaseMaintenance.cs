@@ -164,6 +164,8 @@ public static class StartupDatabaseMaintenance
         await EnsureOrthodonticAiLogsSchemaAsync(app);
         await EnsureRadiologyOrdersSchemaAsync(app);
         await EnsureCommissionAdjustmentsSchemaAsync(app);
+        await EnsureJournalEntryNumberSequenceTableAsync(app);
+        await EnsureJournalLedgerGuardsAsync(app);
         await EnsurePhotoAnalysisSchemaAsync(app);
         await EnsureCephAnalysisVersionsSchemaAsync(app);
         await EnsureCephApprovalColumnsAsync(app);
@@ -295,7 +297,32 @@ public static class StartupDatabaseMaintenance
                 {
                     logger.LogInformation("Empty database detected — creating full schema from the current EF model (baseline)");
                     var createScript = db.Database.GenerateCreateScript();
-                    await db.Database.ExecuteSqlRawAsync(createScript);
+
+                    // CORE-CI-001: executed through raw ADO, NOT ExecuteSqlRawAsync.
+                    //
+                    // That overload runs the statement through String.Format to bind its
+                    // parameters, so every brace in the DDL is read as a format placeholder. A
+                    // generated schema contains them, and this threw:
+                    //
+                    //   System.FormatException: Failure to parse near offset 65445.
+                    //                           Expected an ASCII digit.
+                    //
+                    // The catch below logs and lets startup continue, so the failure was silent:
+                    // a genuinely EMPTY production database would come up with NO baseline at
+                    // all. The hotfix pipeline then creates a handful of tables of its own via
+                    // CREATE TABLE IF NOT EXISTS, which is why the result looks like a partial
+                    // schema rather than an obviously broken one. Existing databases never hit
+                    // this path, which is why it went unnoticed.
+                    //
+                    // Found because the integration suite could not build its schema either —
+                    // it depends on this exact code — once the CI job stopped reporting success
+                    // for a run in which all 32 tests failed.
+                    await using (var createCmd = db.Database.GetDbConnection().CreateCommand())
+                    {
+                        createCmd.CommandText = createScript;
+                        createCmd.CommandTimeout = 600;
+                        await createCmd.ExecuteNonQueryAsync();
+                    }
 
                     await db.Database.ExecuteSqlRawAsync("""
                         CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
@@ -1948,6 +1975,258 @@ public static class StartupDatabaseMaintenance
         {
             app.Services.GetRequiredService<ILogger<Program>>()
                 .LogWarning(ex, "DoctorCommissionAdjustments schema hotfix failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// The per-day counter <c>JournalEntryService</c> reserves entry numbers from.
+    /// <para>
+    /// It is created by migration 20260802010000_HardenJournalLedger and by nothing else —
+    /// it is not an EF entity, so it is absent from the model and therefore absent from the
+    /// <c>GenerateCreateScript</c> baseline that brand-new databases are built from. A fresh
+    /// database consequently had no counter at all and every attempt to post a journal entry
+    /// failed with 42P01, which means no invoice, payment, supplier bill or lab sync could
+    /// reach the ledger. Recreated here with exactly the migration's definition so both paths
+    /// converge.
+    /// </para>
+    /// </summary>
+    private static async Task EnsureJournalEntryNumberSequenceTableAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS "JournalEntryNumberSequences" (
+                    "EntryDate" date NOT NULL,
+                    "LastSequence" integer NOT NULL,
+                    CONSTRAINT "PK_JournalEntryNumberSequences" PRIMARY KEY ("EntryDate"),
+                    CONSTRAINT "CK_JournalEntryNumberSequences_Positive" CHECK ("LastSequence" > 0)
+                );
+                """);
+
+            // Backfill from any entry numbers that predate the counter, so the first
+            // reservation after this runs cannot hand out a number already in use. The
+            // migration does the same INSERT; here it must also survive re-running, hence
+            // ON CONFLICT taking the larger of the two.
+            await db.Database.ExecuteSqlRawAsync("""
+                INSERT INTO "JournalEntryNumberSequences" ("EntryDate", "LastSequence")
+                SELECT
+                    to_date(substring(entry."EntryNumber" from 4 for 8), 'YYYYMMDD'),
+                    MAX(substring(entry."EntryNumber" from '([0-9]+)$')::integer)
+                FROM "JournalEntries" entry
+                -- Written out digit by digit on purpose: ExecuteSqlRawAsync puts the
+                -- statement through String.Format, so a '{8}' quantifier would be read as
+                -- a format placeholder and throw before PostgreSQL ever sees the SQL.
+                WHERE entry."EntryNumber" ~ '^JE-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9]+$'
+                GROUP BY to_date(substring(entry."EntryNumber" from 4 for 8), 'YYYYMMDD')
+                ON CONFLICT ("EntryDate") DO UPDATE
+                    SET "LastSequence" = GREATEST(
+                        "JournalEntryNumberSequences"."LastSequence",
+                        EXCLUDED."LastSequence");
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "JournalEntryNumberSequences schema hotfix failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// Reinstalls the PL/pgSQL guards migration 20260802010000_HardenJournalLedger added:
+    /// the balance check on every entry, and the refusal to touch a closed accounting period.
+    /// <para>
+    /// Triggers and functions cannot be expressed in an EF model, so unlike the unique
+    /// indexes and the debit/credit CHECK — which EF does emit — they are absent from the
+    /// <c>GenerateCreateScript</c> baseline a fresh database is built from. On such a
+    /// database the ledger would accept an unbalanced entry, or a posting backdated into a
+    /// closed period, with nothing but application code standing in the way. That is exactly
+    /// the guarantee W11 exists to make, so it is restored here rather than left to whichever
+    /// path created the database.
+    /// </para>
+    /// <para>
+    /// Every statement is written to be safe to re-run: functions use CREATE OR REPLACE and
+    /// each trigger is dropped first. The migration's preflight — which RAISEs on pre-existing
+    /// invalid rows — is deliberately not repeated: it is a one-time gate for the upgrade, and
+    /// re-running it on every boot would turn historical data into a startup failure.
+    /// </para>
+    /// </summary>
+    private static async Task EnsureJournalLedgerGuardsAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE OR REPLACE FUNCTION validate_journal_entry_balance(target_entry_id uuid)
+                RETURNS void AS $$
+                DECLARE
+                    line_count integer;
+                    debit_total numeric;
+                    credit_total numeric;
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM "JournalEntries" WHERE "Id" = target_entry_id) THEN
+                        RETURN;
+                    END IF;
+
+                    SELECT COUNT(*), COALESCE(SUM("Debit"), 0), COALESCE(SUM("Credit"), 0)
+                    INTO line_count, debit_total, credit_total
+                    FROM "JournalLines"
+                    WHERE "JournalEntryId" = target_entry_id;
+
+                    IF line_count < 2 OR debit_total <> credit_total THEN
+                        RAISE EXCEPTION
+                            'Journal entry % must have at least two lines and balance (debit %, credit %)',
+                            target_entry_id, debit_total, credit_total
+                            USING ERRCODE = '23514';
+                    END IF;
+                END;
+                $$ LANGUAGE plpgsql;
+
+                CREATE OR REPLACE FUNCTION enforce_journal_entry_balance_from_entry()
+                RETURNS trigger AS $$
+                BEGIN
+                    PERFORM validate_journal_entry_balance(CASE WHEN TG_OP = 'DELETE' THEN OLD."Id" ELSE NEW."Id" END);
+                    IF TG_OP = 'DELETE' THEN
+                        RETURN OLD;
+                    END IF;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+
+                CREATE OR REPLACE FUNCTION enforce_journal_entry_balance_from_line()
+                RETURNS trigger AS $$
+                BEGIN
+                    IF TG_OP IN ('UPDATE', 'DELETE') THEN
+                        PERFORM validate_journal_entry_balance(OLD."JournalEntryId");
+                    END IF;
+                    IF TG_OP IN ('INSERT', 'UPDATE')
+                       AND (TG_OP <> 'UPDATE' OR NEW."JournalEntryId" IS DISTINCT FROM OLD."JournalEntryId") THEN
+                        PERFORM validate_journal_entry_balance(NEW."JournalEntryId");
+                    END IF;
+                    IF TG_OP = 'DELETE' THEN
+                        RETURN OLD;
+                    END IF;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+
+                CREATE OR REPLACE FUNCTION journal_date_is_closed(target_branch_id uuid, target_date date)
+                RETURNS boolean AS $$
+                BEGIN
+                    RETURN EXISTS (
+                        SELECT 1
+                        FROM "AccountingPeriods" period
+                        WHERE period."IsActive" = TRUE
+                          AND period."Status" = 'Closed'
+                          AND period."BranchId" = target_branch_id
+                          AND target_date BETWEEN period."StartDate" AND period."EndDate"
+                    );
+                END;
+                $$ LANGUAGE plpgsql STABLE;
+
+                CREATE OR REPLACE FUNCTION prevent_closed_period_journal_entry_change()
+                RETURNS trigger AS $$
+                BEGIN
+                    IF TG_OP = 'UPDATE'
+                       AND OLD."ReversedByEntryId" IS NULL
+                       AND NEW."ReversedByEntryId" IS NOT NULL
+                       AND (to_jsonb(NEW) - 'ReversedByEntryId' - 'UpdatedAt')
+                           = (to_jsonb(OLD) - 'ReversedByEntryId' - 'UpdatedAt')
+                       AND EXISTS (
+                           SELECT 1
+                           FROM "JournalEntries" reversal
+                           WHERE reversal."Id" = NEW."ReversedByEntryId"
+                             AND reversal."ReversalOfEntryId" = OLD."Id"
+                             AND reversal."IsReversal" = TRUE
+                             AND NOT journal_date_is_closed(reversal."BranchId", reversal."EntryDate")
+                       ) THEN
+                        RETURN NEW;
+                    END IF;
+
+                    IF TG_OP IN ('UPDATE', 'DELETE')
+                       AND journal_date_is_closed(OLD."BranchId", OLD."EntryDate") THEN
+                        RAISE EXCEPTION 'Cannot modify or delete a journal entry in a closed accounting period'
+                            USING ERRCODE = '23514';
+                    END IF;
+
+                    IF TG_OP IN ('INSERT', 'UPDATE')
+                       AND journal_date_is_closed(NEW."BranchId", NEW."EntryDate") THEN
+                        RAISE EXCEPTION 'Cannot insert or move a journal entry into a closed accounting period'
+                            USING ERRCODE = '23514';
+                    END IF;
+
+                    IF TG_OP = 'DELETE' THEN
+                        RETURN OLD;
+                    END IF;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+
+                CREATE OR REPLACE FUNCTION prevent_closed_period_journal_line_change()
+                RETURNS trigger AS $$
+                DECLARE
+                    old_is_closed boolean := FALSE;
+                    new_is_closed boolean := FALSE;
+                BEGIN
+                    IF TG_OP IN ('UPDATE', 'DELETE') THEN
+                        SELECT journal_date_is_closed(entry."BranchId", entry."EntryDate")
+                        INTO old_is_closed
+                        FROM "JournalEntries" entry
+                        WHERE entry."Id" = OLD."JournalEntryId";
+                    END IF;
+
+                    IF TG_OP IN ('INSERT', 'UPDATE') THEN
+                        SELECT journal_date_is_closed(entry."BranchId", entry."EntryDate")
+                        INTO new_is_closed
+                        FROM "JournalEntries" entry
+                        WHERE entry."Id" = NEW."JournalEntryId";
+                    END IF;
+
+                    IF COALESCE(old_is_closed, FALSE) OR COALESCE(new_is_closed, FALSE) THEN
+                        RAISE EXCEPTION 'Cannot modify journal lines in a closed accounting period'
+                            USING ERRCODE = '23514';
+                    END IF;
+
+                    IF TG_OP = 'DELETE' THEN
+                        RETURN OLD;
+                    END IF;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+
+                DROP TRIGGER IF EXISTS journal_entries_balance_guard ON "JournalEntries";
+                CREATE CONSTRAINT TRIGGER journal_entries_balance_guard
+                    AFTER INSERT OR UPDATE ON "JournalEntries"
+                    DEFERRABLE INITIALLY DEFERRED
+                    FOR EACH ROW EXECUTE FUNCTION enforce_journal_entry_balance_from_entry();
+
+                DROP TRIGGER IF EXISTS journal_lines_balance_guard ON "JournalLines";
+                CREATE CONSTRAINT TRIGGER journal_lines_balance_guard
+                    AFTER INSERT OR UPDATE OR DELETE ON "JournalLines"
+                    DEFERRABLE INITIALLY DEFERRED
+                    FOR EACH ROW EXECUTE FUNCTION enforce_journal_entry_balance_from_line();
+
+                DROP TRIGGER IF EXISTS journal_entries_closed_period_guard ON "JournalEntries";
+                CREATE TRIGGER journal_entries_closed_period_guard
+                    BEFORE INSERT OR UPDATE OR DELETE ON "JournalEntries"
+                    FOR EACH ROW EXECUTE FUNCTION prevent_closed_period_journal_entry_change();
+
+                DROP TRIGGER IF EXISTS journal_lines_closed_period_guard ON "JournalLines";
+                CREATE TRIGGER journal_lines_closed_period_guard
+                    BEFORE INSERT OR UPDATE OR DELETE ON "JournalLines"
+                    FOR EACH ROW EXECUTE FUNCTION prevent_closed_period_journal_line_change();
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "Journal ledger guard hotfix failed (non-fatal)");
         }
     }
 
@@ -5406,9 +5685,17 @@ public static class StartupDatabaseMaintenance
             }
 
             await db.Database.ExecuteSqlRawAsync("""
+                -- The column is "PackageId" — this block used to say "TreatmentPackageId",
+                -- which is the name of no column in this table. Migration
+                -- 20260713000000_AddServicePackagesConsumables creates the table with
+                -- "PackageId", so CREATE TABLE IF NOT EXISTS no-ops and the CREATE INDEX
+                -- below then threw 42703 on every single boot. The exception is swallowed
+                -- by the catch at the end of this method, so nothing after it ran either:
+                -- ServiceConsumables' two foreign keys and ClinicServices."Color" have never
+                -- been applied to any database that needed them.
                 CREATE TABLE IF NOT EXISTS "TreatmentPackageServices" (
                     "Id" uuid NOT NULL DEFAULT gen_random_uuid(),
-                    "TreatmentPackageId" uuid NOT NULL,
+                    "PackageId" uuid NOT NULL,
                     "ClinicServiceId" uuid NOT NULL,
                     "Quantity" integer NOT NULL DEFAULT 1,
                     "OverridePrice" numeric(12,2) NULL,
@@ -5418,12 +5705,12 @@ public static class StartupDatabaseMaintenance
                     "DeletedBy" uuid NULL,
                     CONSTRAINT "PK_TreatmentPackageServices" PRIMARY KEY ("Id")
                 );
-                CREATE INDEX IF NOT EXISTS "IX_TreatmentPackageServices_TreatmentPackageId" ON "TreatmentPackageServices" ("TreatmentPackageId");
+                CREATE INDEX IF NOT EXISTS "IX_TreatmentPackageServices_PackageId" ON "TreatmentPackageServices" ("PackageId");
                 CREATE INDEX IF NOT EXISTS "IX_TreatmentPackageServices_ClinicServiceId" ON "TreatmentPackageServices" ("ClinicServiceId");
                 DO $$ BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_TreatmentPackageServices_TreatmentPackages_TreatmentPackageId') THEN
-                        ALTER TABLE "TreatmentPackageServices" ADD CONSTRAINT "FK_TreatmentPackageServices_TreatmentPackages_TreatmentPackageId"
-                            FOREIGN KEY ("TreatmentPackageId") REFERENCES "TreatmentPackages"("Id") ON DELETE CASCADE;
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_TreatmentPackageServices_TreatmentPackages_PackageId') THEN
+                        ALTER TABLE "TreatmentPackageServices" ADD CONSTRAINT "FK_TreatmentPackageServices_TreatmentPackages_PackageId"
+                            FOREIGN KEY ("PackageId") REFERENCES "TreatmentPackages"("Id") ON DELETE CASCADE;
                     END IF;
                 END $$;
                 DO $$ BEGIN
@@ -5453,16 +5740,19 @@ public static class StartupDatabaseMaintenance
                             FOREIGN KEY ("ClinicServiceId") REFERENCES "ClinicServices"("Id") ON DELETE CASCADE;
                     END IF;
                 END $$;
+                -- The inventory table is "Inventory" (InventoryConfiguration.ToTable), not
+                -- "InventoryItems", and the migration names this constraint
+                -- FK_ServiceConsumables_Inventory_InventoryItemId. Under the old names the
+                -- guard never matched, so the ALTER ran every boot and threw 42P01.
                 DO $$ BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ServiceConsumables_InventoryItems_InventoryItemId') THEN
-                        ALTER TABLE "ServiceConsumables" ADD CONSTRAINT "FK_ServiceConsumables_InventoryItems_InventoryItemId"
-                            FOREIGN KEY ("InventoryItemId") REFERENCES "InventoryItems"("Id") ON DELETE CASCADE;
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ServiceConsumables_Inventory_InventoryItemId') THEN
+                        ALTER TABLE "ServiceConsumables" ADD CONSTRAINT "FK_ServiceConsumables_Inventory_InventoryItemId"
+                            FOREIGN KEY ("InventoryItemId") REFERENCES "Inventory"("Id") ON DELETE RESTRICT;
                     END IF;
                 END $$;
 
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'Color') THEN
-                    ALTER TABLE "ClinicServices" ADD COLUMN "Color" character varying(20) NULL;
-                END IF;
+                -- Was a bare IF/END IF at statement level, which is PL/pgSQL and not SQL.
+                ALTER TABLE "ClinicServices" ADD COLUMN IF NOT EXISTS "Color" character varying(20) NULL;
                 """);
         }
         catch (Exception ex)

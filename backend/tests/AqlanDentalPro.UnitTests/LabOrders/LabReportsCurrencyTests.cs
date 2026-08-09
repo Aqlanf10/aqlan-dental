@@ -46,7 +46,8 @@ public class LabReportsCurrencyTests
 
         // The real reader against the same in-memory db — a mock would let the shared
         // derivation drift away from what these tests assert about it.
-        return new LabReportsController(db, currentUser.Object, new SupplierBalanceReader(db));
+        return new LabReportsController(
+            db, currentUser.Object, new SupplierBalanceReader(db), new SupplierAgingReader(db));
     }
 
     private static Guid SeedLab(AppDbContext db, string name, out Guid supplierId)

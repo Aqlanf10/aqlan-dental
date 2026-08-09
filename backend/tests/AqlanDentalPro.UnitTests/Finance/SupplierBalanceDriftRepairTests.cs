@@ -39,6 +39,7 @@ public class SupplierBalanceDriftRepairTests
             db,
             new Mock<ILogger<SuppliersController>>().Object,
             new SupplierBalanceReader(db),
+            new SupplierAgingReader(db),
             currentUser.Object);
     }
 

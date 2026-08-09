@@ -2,19 +2,20 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FlaskConical, DollarSign, TrendingUp, AlertTriangle } from "lucide-react";
+import { FlaskConical, DollarSign, TrendingUp, AlertTriangle, Clock } from "lucide-react";
 import api from "@/lib/api";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import type {
   LabCostReportItem, LabPerformanceItem, LabPerformanceSummary,
   LabPayable, LabDebtSummary, LabCurrencyAmount, LabPerformanceThresholds,
+  SupplierAgingReport, SupplierAgingRow, SupplierAgingBuckets,
 } from "@/types/lab";
 import { QueryErrorBanner } from "@/components/shared/QueryErrorBanner";
 import { formatCurrencyAmounts, formatMoney } from "@/app/(dashboard)/finance-v3/components/FinanceHelpers";
 import { cn } from "@/lib/utils";
 
-type TabType = "costs" | "performance" | "debts";
+type TabType = "costs" | "performance" | "debts" | "aging";
 
 export function LabReportsPanel() {
   const [tab, setTab] = useState<TabType>("costs");
@@ -71,10 +72,22 @@ export function LabReportsPanel() {
     enabled: tab === "debts",
   });
 
+  // CORE-LAB-020: "ديون المعامل" answers how much is owed. This answers for how long, which is
+  // the figure that decides who gets paid first when the work is piling up.
+  const { data: agingData, isLoading: agingLoading, isError: agingError, refetch: refetchAging } = useQuery({
+    queryKey: ["lab-aging"],
+    queryFn: async () => {
+      const res = await api.get<SupplierAgingReport>("/api/reports/lab-aging");
+      return res.data;
+    },
+    enabled: tab === "aging",
+  });
+
   const tabs: Array<{ key: TabType; label: string; icon: React.ReactNode }> = [
     { key: "costs", label: "تكاليف المعامل", icon: <DollarSign className="w-4 h-4" /> },
     { key: "performance", label: "أداء المعامل", icon: <TrendingUp className="w-4 h-4" /> },
     { key: "debts", label: "ديون المعامل", icon: <AlertTriangle className="w-4 h-4" /> },
+    { key: "aging", label: "أعمار المستحقات", icon: <Clock className="w-4 h-4" /> },
   ];
 
   return (
@@ -359,7 +372,125 @@ export function LabReportsPanel() {
             </div>
           </div>
         )}
+
+        {tab === "aging" && (
+          <div className="space-y-4">
+            {agingLoading ? (
+              <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+                <TableSkeleton rows={4} cols={8} />
+              </div>
+            ) : agingError ? (
+              <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+                <QueryErrorBanner
+                  text="تعذر تحميل أعمار المستحقات — تحقق من الاتصال وحاول مجددًا"
+                  onRetry={() => refetchAging()}
+                />
+              </div>
+            ) : (agingData?.data ?? []).length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col items-center py-12 text-gray-400">
+                <Clock className="w-10 h-10 mb-3" />
+                <p className="font-medium">لا توجد مستحقات غير مسددة</p>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-gray-500">
+                  حتى تاريخ {agingData!.asOf} — الفترات محسوبة من تاريخ استحقاق كل فاتورة وتُضبط من الإعدادات.
+                </p>
+
+                {/* Totals per currency. Never one figure: a bucket holding riyals and dollars
+                    is not a sum of anything. */}
+                {(agingData?.totals ?? []).map((t) => (
+                  <div key={t.currency} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+                    <p className="text-xs text-gray-500 mb-3">الإجمالي بعملة {t.currency}</p>
+                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                      {agingColumns(agingData!.buckets).map((col) => (
+                        <div key={col.key}>
+                          <p className="text-[11px] text-gray-500">{col.label}</p>
+                          <p className={cn("text-sm font-bold mt-0.5", col.tone)}>
+                            {formatMoney(t[col.key], t.currency)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-b border-gray-100">
+                        <tr>
+                          <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">المختبر</th>
+                          <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">العملة</th>
+                          {agingColumns(agingData!.buckets).map((col) => (
+                            <th key={col.key} className="text-right px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">
+                              {col.label}
+                            </th>
+                          ))}
+                          <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">الإجمالي</th>
+                          <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">أقدم تأخر</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {(agingData?.data ?? []).map((row: SupplierAgingRow) => (
+                          <tr key={`${row.supplierId}-${row.currency}`} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 font-medium text-gray-900">{row.supplierName}</td>
+                            <td className="px-4 py-3 text-gray-500 text-xs">{row.currency}</td>
+                            {agingColumns(agingData!.buckets).map((col) => (
+                              <td key={col.key} className={cn("px-4 py-3 whitespace-nowrap", row[col.key] > 0 ? col.tone : "text-gray-300")}>
+                                {formatMoney(row[col.key], row.currency)}
+                              </td>
+                            ))}
+                            <td className="px-4 py-3 font-bold text-gray-900 whitespace-nowrap">
+                              {formatMoney(row.total, row.currency)}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              {row.oldestOverdueDays === null ? (
+                                <span className="text-gray-400 text-xs">—</span>
+                              ) : (
+                                <span className={cn(
+                                  "px-2 py-0.5 rounded-full text-xs font-medium",
+                                  row.oldestOverdueDays > agingData!.buckets.bucket3Days ? "bg-red-100 text-red-700" :
+                                  row.oldestOverdueDays > agingData!.buckets.bucket1Days ? "bg-amber-100 text-amber-700" :
+                                  "bg-gray-100 text-gray-600",
+                                )}>
+                                  {row.oldestOverdueDays} يوم
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </ErrorBoundary>
   );
+}
+
+/**
+ * The ageing columns, labelled from the boundaries the server actually used.
+ * <p>
+ * Deliberately derived rather than written out: hardcoding "٣١–٦٠ يوم" would keep saying 60
+ * after the owner changed the terms to net-45, and a header that contradicts the number under
+ * it is worse than no report at all.
+ */
+export function agingColumns(buckets: SupplierAgingBuckets): Array<{
+  key: "notYetDue" | "bucket1" | "bucket2" | "bucket3" | "bucket4Plus" | "noDueDate";
+  label: string;
+  tone: string;
+}> {
+  return [
+    { key: "notYetDue",   label: "لم يستحق بعد",                                          tone: "text-gray-700" },
+    { key: "bucket1",     label: `١–${buckets.bucket1Days} يوم`,                          tone: "text-amber-600" },
+    { key: "bucket2",     label: `${buckets.bucket1Days + 1}–${buckets.bucket2Days} يوم`, tone: "text-orange-600" },
+    { key: "bucket3",     label: `${buckets.bucket2Days + 1}–${buckets.bucket3Days} يوم`, tone: "text-red-600" },
+    { key: "bucket4Plus", label: `أكثر من ${buckets.bucket3Days} يوم`,                    tone: "text-red-700" },
+    { key: "noDueDate",   label: "بلا تاريخ استحقاق",                                     tone: "text-gray-500" },
+  ];
 }

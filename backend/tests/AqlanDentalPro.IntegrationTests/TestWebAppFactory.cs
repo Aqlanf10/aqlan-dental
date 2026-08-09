@@ -143,79 +143,36 @@ public class TestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        await BuildSchemaFromModelAsync(db);
+        // CORE-CI-001: VERIFY, do not rebuild.
+        //
+        // Building the host above runs StartupDatabaseMaintenance, and on an empty container
+        // that succeeds: it creates the whole schema from the EF model and stamps the
+        // migration history. Anything that then tries to create the schema again fails —
+        // MigrateAsync did, and so did an earlier attempt of mine, with
+        // 42P07 relation "BackupRecords" already exists.
+        //
+        // So the only thing left to do here is confirm the schema really is present. Without
+        // that confirmation a future regression in startup maintenance would surface as every
+        // test failing on unrelated-looking symptoms instead of one clear message.
+        await AssertSchemaPresentAsync(db);
     }
 
     /// <summary>
-    /// CORE-CI-001 — builds the test schema the way production builds a fresh one.
-    /// <para>
-    /// This used to be <c>MigrateAsync()</c>, described as an idempotent no-op on the
-    /// assumption that startup maintenance had already prepared the database. Neither half
-    /// held. <c>StartupDatabaseMaintenance</c> wraps every step in try/catch and logs a
-    /// warning, so when it fails it fails silently — leaving <c>MigrateAsync</c> as the only
-    /// thing actually creating the schema. And it cannot: CLAUDE.md records that 31
-    /// hand-written migrations carry no <c>[Migration]</c> attribute, so the chain is
-    /// unreplayable on an empty database. It threw here, and all 32 integration tests died
-    /// before their first assertion — while the CI job reported success, because the step
-    /// carried continue-on-error.
-    /// </para>
-    /// <para>
-    /// The replacement is not a shortcut: <c>EnsureFreshDatabaseMigratedAsync</c> does exactly
-    /// this for a genuinely empty production database — schema from the EF model, then the
-    /// discoverable migrations stamped as applied. So the schema under test is produced the
-    /// same way production's is, and a drift between model and database surfaces here.
-    /// </para>
+    /// Fails loudly if the schema is missing, naming the cause, instead of letting every test
+    /// fail later on a symptom.
     /// </summary>
-    private static async Task BuildSchemaFromModelAsync(AppDbContext db)
+    private static async Task AssertSchemaPresentAsync(AppDbContext db)
     {
         await db.Database.OpenConnectionAsync();
-
-        // Raw ADO, not ExecuteSqlRawAsync: that overload runs the statement through
-        // String.Format to bind parameters, and a generated schema contains braces (defaults,
-        // jsonb literals) which are then read as format placeholders and throw.
-        var createScript = db.Database.GenerateCreateScript();
-        using (var createCmd = db.Database.GetDbConnection().CreateCommand())
-        {
-            createCmd.CommandText = createScript;
-            createCmd.CommandTimeout = 600;
-            await createCmd.ExecuteNonQueryAsync();
-        }
-
-        // Stamp the history exactly as the production baseline does, so anything that later
-        // consults it does not try to replay the unreplayable chain on top.
-        using (var historyCmd = db.Database.GetDbConnection().CreateCommand())
-        {
-            historyCmd.CommandText = """
-                CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
-                    "MigrationId" character varying(150) NOT NULL,
-                    "ProductVersion" character varying(32) NOT NULL,
-                    CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId")
-                );
-                """;
-            await historyCmd.ExecuteNonQueryAsync();
-        }
-
-        var productVersion = Microsoft.EntityFrameworkCore.Infrastructure.ProductInfo.GetVersion();
-        foreach (var migrationId in db.Database.GetMigrations())
-        {
-            using var stampCmd = db.Database.GetDbConnection().CreateCommand();
-            stampCmd.CommandText =
-                """INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES (@id, @ver) ON CONFLICT DO NOTHING""";
-            var idParam = stampCmd.CreateParameter(); idParam.ParameterName = "id"; idParam.Value = migrationId;
-            var verParam = stampCmd.CreateParameter(); verParam.ParameterName = "ver"; verParam.Value = productVersion;
-            stampCmd.Parameters.Add(idParam);
-            stampCmd.Parameters.Add(verParam);
-            await stampCmd.ExecuteNonQueryAsync();
-        }
-
-        // Verify rather than assume. Without this, a future regression in schema creation
-        // would surface as 32 tests failing on unrelated-looking symptoms.
         using var checkCmd = db.Database.GetDbConnection().CreateCommand();
         checkCmd.CommandText =
             "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Users')";
+
         if (await checkCmd.ExecuteScalarAsync() is not bool ok || !ok)
             throw new InvalidOperationException(
-                "Integration test database has no schema after the create script ran — no test can be trusted.");
+                "Integration test database has no schema — StartupDatabaseMaintenance did not "
+                + "build the baseline. Every step in it is wrapped in try/catch and only logs a "
+                + "warning, so check the host logs for the swallowed exception. No test can be trusted.");
     }
 
     /// <summary>
@@ -240,15 +197,27 @@ public class TestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
     /// CORE-CI-001: rebuilt from the EF model rather than by replaying migrations. The old
     /// comment here argued that MigrateAsync stays closer to "the real production schema" —
     /// but for an EMPTY database production does not replay the chain either. It cannot: 31
-    /// hand-written migrations carry no [Migration] attribute. <c>BuildSchemaFromModelAsync</c>
-    /// mirrors the production baseline, history stamp included, so the two agree.
+    /// hand-written migrations carry no [Migration] attribute, so EF cannot even see them.
+    /// Building from the model is what production does for a fresh database, not a shortcut
+    /// around it.
     /// </remarks>
     public async Task ResetDatabaseAsync()
     {
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await db.Database.EnsureDeletedAsync();
-        await BuildSchemaFromModelAsync(db);
+        // CORE-CI-001: VERIFY, do not rebuild.
+        //
+        // Building the host above runs StartupDatabaseMaintenance, and on an empty container
+        // that succeeds: it creates the whole schema from the EF model and stamps the
+        // migration history. Anything that then tries to create the schema again fails —
+        // MigrateAsync did, and so did an earlier attempt of mine, with
+        // 42P07 relation "BackupRecords" already exists.
+        //
+        // So the only thing left to do here is confirm the schema really is present. Without
+        // that confirmation a future regression in startup maintenance would surface as every
+        // test failing on unrelated-looking symptoms instead of one clear message.
+        await AssertSchemaPresentAsync(db);
     }
 
     /// <summary>

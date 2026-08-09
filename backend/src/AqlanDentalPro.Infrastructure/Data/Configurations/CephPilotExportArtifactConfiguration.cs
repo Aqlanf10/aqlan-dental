@@ -8,7 +8,14 @@ public sealed class CephPilotExportArtifactConfiguration : IEntityTypeConfigurat
 {
     public void Configure(EntityTypeBuilder<CephPilotExportArtifact> builder)
     {
-        builder.ToTable("CephPilotExportArtifacts");
+        // Mirrors migration 20260718000000_AddCephPilotFoundation. Keeps WebCeph exports
+        // comparator-only at the database level on a fresh database too — the point of the
+        // constraint is that no code path, including a future one, can quietly promote a
+        // comparator artifact into a gold standard.
+        builder.ToTable("CephPilotExportArtifacts", table =>
+            table.HasCheckConstraint(
+                "CK_CephPilotExportArtifacts_ComparatorOnly",
+                "\"IsComparatorOnly\" = TRUE"));
         builder.Property(item => item.ArtifactType).HasConversion<string>().HasMaxLength(40).IsRequired();
         builder.Property(item => item.StorageKey).HasMaxLength(180).IsRequired();
         builder.Property(item => item.Sha256).HasMaxLength(64).IsFixedLength().IsRequired();

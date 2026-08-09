@@ -8,7 +8,15 @@ public sealed class CephPilotCaseConfiguration : IEntityTypeConfiguration<CephPi
 {
     public void Configure(EntityTypeBuilder<CephPilotCase> builder)
     {
-        builder.ToTable("CephPilotCases");
+        // Mirrors migration 20260718000000_AddCephPilotFoundation so a fresh database, which
+        // is built from the EF model rather than by replaying migrations, gets the same
+        // guarantee. This one is the de-identification gate: it is what stops a case being
+        // marked Ready — and therefore shown to a reviewer — before someone has confirmed
+        // the radiograph carries no patient identity and the calibration is known.
+        builder.ToTable("CephPilotCases", table =>
+            table.HasCheckConstraint(
+                "CK_CephPilotCases_ReadyRequiresGate",
+                "\"Status\" <> 'Ready' OR (\"MmPerPixel\" IS NOT NULL AND \"DeIdentificationConfirmed\" = TRUE AND \"PixelInspectionConfirmed\" = TRUE AND \"NoBarcodeOrQrConfirmed\" = TRUE AND \"LegalBasisConfirmed\" = TRUE AND \"MetadataSanitized\" = TRUE AND \"OrientationConfirmed\" = TRUE)"));
         builder.Property(item => item.CaseCode).HasMaxLength(30).IsRequired();
         builder.Property(item => item.SourceType).HasConversion<string>().HasMaxLength(50).IsRequired();
         builder.Property(item => item.SourceReference).HasMaxLength(80);

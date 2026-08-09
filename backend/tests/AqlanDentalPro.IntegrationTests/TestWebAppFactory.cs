@@ -143,10 +143,79 @@ public class TestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        // Idempotent — if the startup maintenance already migrated the DB,
-        // this is a no-op. Belt-and-braces so test code never sees a half-
-        // migrated schema regardless of how the app booted.
-        await db.Database.MigrateAsync();
+        await BuildSchemaFromModelAsync(db);
+    }
+
+    /// <summary>
+    /// CORE-CI-001 — builds the test schema the way production builds a fresh one.
+    /// <para>
+    /// This used to be <c>MigrateAsync()</c>, described as an idempotent no-op on the
+    /// assumption that startup maintenance had already prepared the database. Neither half
+    /// held. <c>StartupDatabaseMaintenance</c> wraps every step in try/catch and logs a
+    /// warning, so when it fails it fails silently — leaving <c>MigrateAsync</c> as the only
+    /// thing actually creating the schema. And it cannot: CLAUDE.md records that 31
+    /// hand-written migrations carry no <c>[Migration]</c> attribute, so the chain is
+    /// unreplayable on an empty database. It threw here, and all 32 integration tests died
+    /// before their first assertion — while the CI job reported success, because the step
+    /// carried continue-on-error.
+    /// </para>
+    /// <para>
+    /// The replacement is not a shortcut: <c>EnsureFreshDatabaseMigratedAsync</c> does exactly
+    /// this for a genuinely empty production database — schema from the EF model, then the
+    /// discoverable migrations stamped as applied. So the schema under test is produced the
+    /// same way production's is, and a drift between model and database surfaces here.
+    /// </para>
+    /// </summary>
+    private static async Task BuildSchemaFromModelAsync(AppDbContext db)
+    {
+        await db.Database.OpenConnectionAsync();
+
+        // Raw ADO, not ExecuteSqlRawAsync: that overload runs the statement through
+        // String.Format to bind parameters, and a generated schema contains braces (defaults,
+        // jsonb literals) which are then read as format placeholders and throw.
+        var createScript = db.Database.GenerateCreateScript();
+        using (var createCmd = db.Database.GetDbConnection().CreateCommand())
+        {
+            createCmd.CommandText = createScript;
+            createCmd.CommandTimeout = 600;
+            await createCmd.ExecuteNonQueryAsync();
+        }
+
+        // Stamp the history exactly as the production baseline does, so anything that later
+        // consults it does not try to replay the unreplayable chain on top.
+        using (var historyCmd = db.Database.GetDbConnection().CreateCommand())
+        {
+            historyCmd.CommandText = """
+                CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
+                    "MigrationId" character varying(150) NOT NULL,
+                    "ProductVersion" character varying(32) NOT NULL,
+                    CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId")
+                );
+                """;
+            await historyCmd.ExecuteNonQueryAsync();
+        }
+
+        var productVersion = Microsoft.EntityFrameworkCore.Infrastructure.ProductInfo.GetVersion();
+        foreach (var migrationId in db.Database.GetMigrations())
+        {
+            using var stampCmd = db.Database.GetDbConnection().CreateCommand();
+            stampCmd.CommandText =
+                """INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES (@id, @ver) ON CONFLICT DO NOTHING""";
+            var idParam = stampCmd.CreateParameter(); idParam.ParameterName = "id"; idParam.Value = migrationId;
+            var verParam = stampCmd.CreateParameter(); verParam.ParameterName = "ver"; verParam.Value = productVersion;
+            stampCmd.Parameters.Add(idParam);
+            stampCmd.Parameters.Add(verParam);
+            await stampCmd.ExecuteNonQueryAsync();
+        }
+
+        // Verify rather than assume. Without this, a future regression in schema creation
+        // would surface as 32 tests failing on unrelated-looking symptoms.
+        using var checkCmd = db.Database.GetDbConnection().CreateCommand();
+        checkCmd.CommandText =
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Users')";
+        if (await checkCmd.ExecuteScalarAsync() is not bool ok || !ok)
+            throw new InvalidOperationException(
+                "Integration test database has no schema after the create script ran — no test can be trusted.");
     }
 
     /// <summary>
@@ -168,18 +237,18 @@ public class TestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
     /// <c>IAsyncLifetime.InitializeAsync</c> so tests start from a clean slate.
     /// </summary>
     /// <remarks>
-    /// <see cref="DatabaseFacade.EnsureDeletedAsync"/> + <see cref="MigrateAsync"/>
-    /// is preferred over <see cref="DatabaseFacade.EnsureCreatedAsync"/> because
-    /// the latter bypasses the migration history and would diverge from the real
-    /// production schema (no <c>__EFMigrationsHistory</c> table, different index
-    /// names, etc.).
+    /// CORE-CI-001: rebuilt from the EF model rather than by replaying migrations. The old
+    /// comment here argued that MigrateAsync stays closer to "the real production schema" —
+    /// but for an EMPTY database production does not replay the chain either. It cannot: 31
+    /// hand-written migrations carry no [Migration] attribute. <c>BuildSchemaFromModelAsync</c>
+    /// mirrors the production baseline, history stamp included, so the two agree.
     /// </remarks>
     public async Task ResetDatabaseAsync()
     {
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await db.Database.EnsureDeletedAsync();
-        await db.Database.MigrateAsync();
+        await BuildSchemaFromModelAsync(db);
     }
 
     /// <summary>

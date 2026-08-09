@@ -227,18 +227,38 @@ public class TestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        await db.Database.EnsureDeletedAsync();
-        // CORE-CI-001: VERIFY, do not rebuild.
+
+        // CORE-CI-001: TRUNCATE, do not drop and recreate.
         //
-        // Building the host above runs StartupDatabaseMaintenance, and on an empty container
-        // that succeeds: it creates the whole schema from the EF model and stamps the
-        // migration history. Anything that then tries to create the schema again fails —
-        // MigrateAsync did, and so did an earlier attempt of mine, with
-        // 42P07 relation "BackupRecords" already exists.
+        // Dropping meant rebuilding, and rebuilding from the EF model alone is not enough:
+        // several tables in this system exist only because a startup hotfix creates them with
+        // CREATE TABLE IF NOT EXISTS, and are not in the model at all. EnsureCreated therefore
+        // produced a schema the application could not run against —
+        // 42P01 relation "JournalEntryNumberSequences" does not exist.
         //
-        // So the only thing left to do here is confirm the schema really is present. Without
-        // that confirmation a future regression in startup maintenance would surface as every
-        // test failing on unrelated-looking symptoms instead of one clear message.
+        // The container's schema is already correct: StartupDatabaseMaintenance built the
+        // baseline and then applied every hotfix. Emptying it keeps all of that and is much
+        // faster than recreating it per test class.
+        await db.Database.OpenConnectionAsync();
+
+        using var truncateCmd = db.Database.GetDbConnection().CreateCommand();
+        truncateCmd.CommandTimeout = 300;
+        truncateCmd.CommandText = """
+            DO $$
+            DECLARE tables text;
+            BEGIN
+                SELECT string_agg(format('%I.%I', schemaname, tablename), ', ')
+                INTO tables
+                FROM pg_tables
+                WHERE schemaname = 'public' AND tablename <> '__EFMigrationsHistory';
+
+                IF tables IS NOT NULL THEN
+                    EXECUTE 'TRUNCATE TABLE ' || tables || ' RESTART IDENTITY CASCADE';
+                END IF;
+            END $$;
+            """;
+        await truncateCmd.ExecuteNonQueryAsync();
+
         await AssertSchemaPresentAsync(db);
     }
 

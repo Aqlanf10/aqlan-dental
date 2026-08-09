@@ -295,7 +295,32 @@ public static class StartupDatabaseMaintenance
                 {
                     logger.LogInformation("Empty database detected — creating full schema from the current EF model (baseline)");
                     var createScript = db.Database.GenerateCreateScript();
-                    await db.Database.ExecuteSqlRawAsync(createScript);
+
+                    // CORE-CI-001: executed through raw ADO, NOT ExecuteSqlRawAsync.
+                    //
+                    // That overload runs the statement through String.Format to bind its
+                    // parameters, so every brace in the DDL is read as a format placeholder. A
+                    // generated schema contains them, and this threw:
+                    //
+                    //   System.FormatException: Failure to parse near offset 65445.
+                    //                           Expected an ASCII digit.
+                    //
+                    // The catch below logs and lets startup continue, so the failure was silent:
+                    // a genuinely EMPTY production database would come up with NO baseline at
+                    // all. The hotfix pipeline then creates a handful of tables of its own via
+                    // CREATE TABLE IF NOT EXISTS, which is why the result looks like a partial
+                    // schema rather than an obviously broken one. Existing databases never hit
+                    // this path, which is why it went unnoticed.
+                    //
+                    // Found because the integration suite could not build its schema either —
+                    // it depends on this exact code — once the CI job stopped reporting success
+                    // for a run in which all 32 tests failed.
+                    await using (var createCmd = db.Database.GetDbConnection().CreateCommand())
+                    {
+                        createCmd.CommandText = createScript;
+                        createCmd.CommandTimeout = 600;
+                        await createCmd.ExecuteNonQueryAsync();
+                    }
 
                     await db.Database.ExecuteSqlRawAsync("""
                         CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (

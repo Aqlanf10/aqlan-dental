@@ -1,10 +1,11 @@
 # Core System Execution Checklist
 
-- Last updated: 2026-07-24 (continuation audit)
+- Last updated: 2026-08-09 (CORE-00 baseline refresh)
 - Current phase: 1
-- Current branch: `codex/core-p1-s3-route-role-manifest`
-- Current PR: pending
+- Current branch: `claude/core00-baseline-refresh-049`
+- Current PR: CORE-00 refresh
 - Rule: update this file after every core-system PR.
+- Refresh evidence: `core-system-current-state.md` §19, verified at `908937f1`.
 
 ## Current Snapshot
 
@@ -20,6 +21,13 @@
 - [x] PR #700 backend coverage recorded: 8.28% lines and 37.28% branches.
 - [x] PR #700 E2E evidence recorded: 1 public smoke passed and 4 authenticated tests skipped.
 - [x] PR #700 merged to `main` as `da6e1e54`.
+- [x] 2026-08-09 refresh at `908937f1`: backend unit 2,861 / 2,861; backend integration
+      **32 / 32 and now a blocking gate**; frontend 574 / 574; coverage 8.33% lines /
+      40.98% branches.
+- [ ] E2E still proves only that a login page renders — credential secrets are empty,
+      so 4 of 5 Playwright tests skip while the job reports success (`CORE-F-009`).
+- [x] `CORE-CI-001` (PR #812): integration gate made real; `continue-on-error` removed.
+- [x] `CORE-LAB` audit closed (`CORE-LAB-001..021`), PRs #813 and #814.
 - [x] PR #701 aligned Reception appointment navigation and merged as `260cc4c1`.
 - [x] PR #702 locked canonical route ownership and merged as `c3183d40`.
 - [ ] Authenticated end-to-end patient journey is verified.
@@ -27,9 +35,9 @@
 
 ## Finding Register
 
-- [ ] `CORE-F-001` Critical: prove and repair cross-route visit idempotency.
-- [ ] `CORE-F-002` Critical: establish safe EF/startup schema ownership transition.
-- [~] `CORE-F-003` High: align queue reorder frontend/backend request contract. (FIXED 2026-07-24, branch `fix/core-f-003-queue-reorder-contract`, pending CI/merge.)
+- [x] `CORE-F-001` Critical: prove and repair cross-route visit idempotency. (CLOSED 2026-08-09 — `CrossRouteVisitIdempotencyTests` races both routes against real PostgreSQL and passes. It had existed but never executed: the integration gate carried `continue-on-error` and all 32 tests were failing behind a green tick until PR #812.)
+- [ ] `CORE-F-002` Critical: establish safe EF/startup schema ownership transition. (SEVERITY CONFIRMED 2026-08-09 — 108 migrations, 41 without `[Migration]`; 5,890-line startup DDL, 48 `Ensure*` methods, 29 swallowing catches. Three real defects found and fixed in PR #812, one of which left a fresh production database unable to post any journal entry.)
+- [x] `CORE-F-003` High: align queue reorder frontend/backend request contract. (CLOSED — `buildQueueReorderPayload` returns a bare array; `clinicQueueReorder.test.ts` pins it.)
 - [ ] `CORE-F-004` High: guard and audit queue priority/reorder actions.
 - [ ] `CORE-F-005` High: remove VIP and implement controlled emergency behavior.
 - [x] `CORE-F-006` High: align Reception appointment route access.

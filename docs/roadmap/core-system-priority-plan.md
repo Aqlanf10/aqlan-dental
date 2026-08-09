@@ -1,6 +1,6 @@
 # Core System Priority Plan
 
-- Status: Proposed by Phase 0 audit
+- Status: Proposed by Phase 0 audit — refreshed 2026-08-09 at `908937f1`
 - Spec: `specs/011-core-system-stabilization/`
 - Operating journey: Patients -> Appointments -> Check-in -> Queue -> Doctor clinic -> Lab -> Accounting -> Next appointment
 
@@ -22,12 +22,23 @@
 
 The following findings are release blockers even though their owning feature phases
 occur later. They may enter an incident-priority PR after Phase 0 when reproduction
-is complete:
+is complete.
 
-- `CORE-F-001`: cross-route duplicate visit risk.
-- `CORE-F-002`: migration/startup schema ownership risk for deployment changes.
-- `CORE-F-003`: queue reorder request contract mismatch.
-- `CORE-F-007`: mixed-currency totals presented without valid currency semantics.
+**Updated 2026-08-09** — see `core-system-current-state.md` §19 for the evidence:
+
+- ~~`CORE-F-001`: cross-route duplicate visit risk.~~ **Closed.** An executed
+  concurrency test now races both routes against real PostgreSQL. It only became
+  evidence once the integration gate stopped reporting success while every test in
+  it failed (PR #812).
+- `CORE-F-002`: migration/startup schema ownership. **Still open and now the single
+  largest risk on this list.** Three defects of this shape were found on 2026-08-09,
+  one of which left a fresh production database unable to post any journal entry at
+  all. 29 swallowing `catch` blocks are why none of them surfaced.
+- ~~`CORE-F-003`: queue reorder request contract mismatch.~~ **Closed** with a
+  regression test.
+- `CORE-F-007`: mixed-currency totals. **Partially closed** — reports, balances,
+  payables, commissions and statements are per-currency; PDFs and notifications were
+  not re-checked and remain open.
 
 An exception PR must remain narrowly scoped and may not be used to start unrelated
 work from a later phase.
@@ -80,12 +91,44 @@ authenticated Reception smoke test is recorded or labeled `Needs runtime verific
 
 ### Proposed Remaining Phase 1 Order
 
+**Reordered 2026-08-09.** `CORE-P1-S5` is promoted to next because the refresh proved
+it is not a hypothetical: with the credential secrets empty, four of the five
+Playwright tests skip and the job reports success, so the checks list currently
+presents "a login page rendered" as if it were journey verification. Every other
+slice's exit evidence is weakened while that is true — including the runtime
+verification `CORE-P1-S1` and `CORE-P1-S2` still owe.
+
+- **`CORE-P1-S5` (next): make skipped E2E distinguishable from executed E2E.**
+  - Fail the job, or emit an unmistakable non-green signal, when `E2E_API_URL` is set
+    but the credential secrets are absent — the current combination is the worst one,
+    because it looks like a configured, running, passing suite.
+  - Report executed/skipped counts into the job summary so the checks list cannot
+    imply coverage the run did not have.
+  - Do **not** weaken the tests to make them pass without credentials, and do not
+    commit credentials. If the owner chooses not to provide staging credentials, the
+    honest outcome is a job that says plainly it verified nothing.
+  - Ships with `CORE-F-013` (unit `.trx` upload path) since it is the same file, one
+    line, and the same class of defect: CI reporting something other than reality.
+  - Exit: a run with no credentials is visibly not a passing journey; a run with
+    credentials executes and reports the authenticated tests.
 - `CORE-P1-S2`: Create a checked canonical route/owner inventory and redirect tests.
 - `CORE-P1-S3`: Remove policy drift by deriving sidebar and route guards from one
   frontend route manifest while retaining server authorization as authority.
 - `CORE-P1-S4`: Document and test backend policy ownership for each canonical route.
-- `CORE-P1-S5`: Add a CI signal that distinguishes executed authenticated E2E from
-  skipped E2E; a skipped flow must not be presented as journey verification.
+
+### Deployment Safety Track — `CORE-F-002`
+
+Not a Phase 1 slice, but it now has enough evidence to be planned rather than
+observed. The phased-removal plan in
+`docs/agent-audit/c-08-startup-maintenance-audit.md` still governs; the refresh adds
+one ordering constraint to it:
+
+> Make the startup DDL's failures **visible** before making them fewer.
+
+29 `catch { LogWarning }` blocks are why a hotfix could fail on every boot since it
+was written without anyone noticing, and why a fresh database could reach production
+with no journal-number table. Any consolidation that begins by moving DDL around,
+without first surfacing failure, risks repeating this silently.
 
 ## Metrics
 

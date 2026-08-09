@@ -163,16 +163,38 @@ public class TestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
     /// </summary>
     private static async Task AssertSchemaPresentAsync(AppDbContext db)
     {
+        // WAIT for the schema, do not merely check for it. Two CI runs of the same fixture
+        // produced opposite errors — one collided with an existing table, the next found no
+        // schema at all — which is the signature of a race, not a deterministic bug.
+        //
+        // StartupDatabaseMaintenance does not finish before the host is usable. It awaits the
+        // baseline, then deliberately runs the hotfix pipeline in the BACKGROUND under a boot
+        // budget so Railway's health check cannot time out (see its own comment: "if it is
+        // still running when the budget expires, boot continues ... while the pipeline
+        // finishes in the background"). So the moment Services.CreateScope() returns, the
+        // schema may be half-built — and every hotfix is individually try/caught, so nothing
+        // surfaces. Polling is the honest way to synchronise with that.
         await db.Database.OpenConnectionAsync();
-        using var checkCmd = db.Database.GetDbConnection().CreateCommand();
-        checkCmd.CommandText =
-            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Users')";
 
-        if (await checkCmd.ExecuteScalarAsync() is not bool ok || !ok)
-            throw new InvalidOperationException(
-                "Integration test database has no schema — StartupDatabaseMaintenance did not "
-                + "build the baseline. Every step in it is wrapped in try/catch and only logs a "
-                + "warning, so check the host logs for the swallowed exception. No test can be trusted.");
+        var deadline = DateTime.UtcNow.AddSeconds(90);
+        while (true)
+        {
+            using (var checkCmd = db.Database.GetDbConnection().CreateCommand())
+            {
+                checkCmd.CommandText =
+                    "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Users')";
+                if (await checkCmd.ExecuteScalarAsync() is bool ok && ok) return;
+            }
+
+            if (DateTime.UtcNow >= deadline)
+                throw new InvalidOperationException(
+                    "Integration test database still has no schema after 90s — "
+                    + "StartupDatabaseMaintenance never finished its baseline. Every step in it is "
+                    + "wrapped in try/catch and only logs a warning, so check the host logs for the "
+                    + "swallowed exception. No test can be trusted.");
+
+            await Task.Delay(500);
+        }
     }
 
     /// <summary>

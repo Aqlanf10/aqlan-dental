@@ -126,20 +126,13 @@ jobs:
         # project existed but was not wired in — see docs/agent-audit/c-08-startup-maintenance-audit.md
         # section 6).
         #
-        # CORE-CI-001 — READ THIS BEFORE TRUSTING THIS CHECK.
+        # CORE-CI-001 — this step is now a real gate.
         #
-        # This step is NOT a gate. continue-on-error means the job reports success even when
-        # every test in it fails, and that is exactly what has been happening: all 32
-        # integration tests have failed since the job was wired in, and every run showed a
-        # green tick. Do not read a tick here as "the integration tests pass".
-        #
-        # It is kept non-blocking only because the suite is not green yet and turning it into
-        # a gate today would stop all other work. The remaining blocker is NOT in the tests:
-        # JournalEntryNumberSequences exists only in migration 20260802010000_HardenJournalLedger
-        # and is in neither the EF model nor the startup DDL, so a fresh database never gets it.
-        #
-        # REMOVE THIS LINE the moment the suite is green. Until then, check the log, not the tick.
-        continue-on-error: true
+        # It carried continue-on-error from the day it was wired in, which meant the job
+        # reported success while all 32 tests failed underneath it. All 32 pass now, so the
+        # line is gone and a failure here fails the build. If this step ever goes red, the
+        # answer is to fix what it caught — restoring continue-on-error would put the repo
+        # back to reporting a green tick over a suite that does not run.
         run: >
           dotnet test tests/AqlanDentalPro.IntegrationTests/AqlanDentalPro.IntegrationTests.csproj
           --no-restore --no-build --configuration Release

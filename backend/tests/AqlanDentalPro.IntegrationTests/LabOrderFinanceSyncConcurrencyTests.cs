@@ -48,6 +48,19 @@ public class LabOrderFinanceSyncConcurrencyTests : IClassFixture<TestWebAppFacto
         var branch = new Branch { Name = "فرع اختبار تزامن المعامل" };
         db.Branches.Add(branch);
 
+        // The sync posts a journal entry stamped with PerformedBy, and JournalEntries has a
+        // foreign key to Users. A made-up Guid made every racer die on 23503 before it ever
+        // reached the advisory lock, so the race under test never actually ran.
+        var user = new User
+        {
+            Username = $"lab.sync.{Guid.NewGuid():N}"[..20],
+            Email = $"{Guid.NewGuid():N}@test.local",
+            PasswordHash = "not-a-real-hash",
+            Role = UserRole.Admin,
+            IsActive = true,
+        };
+        db.Users.Add(user);
+
         var patient = new Patient
         {
             PatientNumber = $"P-{Guid.NewGuid():N}"[..12],
@@ -85,7 +98,7 @@ public class LabOrderFinanceSyncConcurrencyTests : IClassFixture<TestWebAppFacto
 
         _branchId = branch.Id;
         _orderId = order.Id;
-        _userId = Guid.NewGuid();
+        _userId = user.Id;
     }
 
     public Task DisposeAsync() => Task.CompletedTask;

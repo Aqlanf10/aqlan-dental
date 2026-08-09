@@ -53,6 +53,32 @@ public class TestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
     public const string TestJwtIssuer = "AqlanDentalPro";
     public const string TestJwtAudience = "AqlanDentalProClient";
 
+    /// <summary>
+    /// Publishes the JWT settings as environment variables before any host is built.
+    /// <para>
+    /// <c>ConfigureAppConfiguration</c> below is applied when the host is <i>built</i>, but
+    /// <c>AddJwtAuthentication</c> reads <c>Jwt:SecretKey</c> eagerly while services are still
+    /// being registered — so it never saw the in-memory override and validated every request
+    /// against the placeholder key in appsettings.json. Tests signed with
+    /// <see cref="TestJwtSecret"/> therefore came back 401 no matter what they did. The
+    /// connection string escaped this because <c>UseNpgsql</c> resolves it inside a callback
+    /// that runs after the build.
+    /// </para>
+    /// <para>
+    /// Environment variables are part of the default configuration <c>WebApplication.CreateBuilder</c>
+    /// assembles, so they are visible to those eager reads. They are process-wide, which is
+    /// safe here only because all three values are constants — the per-container connection
+    /// string is deliberately NOT set this way, since test classes run in parallel and would
+    /// overwrite each other's.
+    /// </para>
+    /// </summary>
+    static TestWebAppFactory()
+    {
+        Environment.SetEnvironmentVariable("Jwt__SecretKey", TestJwtSecret);
+        Environment.SetEnvironmentVariable("Jwt__Issuer", TestJwtIssuer);
+        Environment.SetEnvironmentVariable("Jwt__Audience", TestJwtAudience);
+    }
+
     private readonly PostgreSqlContainer _dbContainer = new PostgreSqlBuilder()
         .WithImage("postgres:16-alpine")
         .WithDatabase("aqlan_integration_tests")

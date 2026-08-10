@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import CephPilotPage from "@/app/(dashboard)/ceph/pilot/page";
 import api from "@/lib/api";
 
@@ -78,6 +78,12 @@ describe("CephPilotPage", () => {
 
     expect(await screen.findByRole("heading", { name: "المراجعة السيفالومترية المعمّاة" })).toBeInTheDocument();
     expect(await screen.findByText("PILOT-001")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "بدء المراجعة المعمّاة" })).toBeEnabled();
+
+    // The case list and the button's enabled state settle from two different loads, so a
+    // synchronous assertion here raced the second one and failed roughly one run in three.
+    // Waiting for the state is the fix; asserting the button merely exists would have made
+    // the test pass without checking the thing it is named after.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "بدء المراجعة المعمّاة" })).toBeEnabled());
   });
 });

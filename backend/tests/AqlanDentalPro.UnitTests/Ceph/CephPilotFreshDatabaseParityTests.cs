@@ -31,15 +31,35 @@ namespace AqlanDentalPro.UnitTests.Ceph;
 /// </summary>
 public sealed class CephPilotFreshDatabaseParityTests
 {
-    private sealed class MigrationProbe : AddCephPilotFoundation
+    private sealed class FoundationProbe : AddCephPilotFoundation
     {
-        public IReadOnlyList<MigrationOperation> Operations()
+        public IReadOnlyList<MigrationOperation> Operations() => Probe.Run(Up);
+    }
+
+    private sealed class BlindedReviewProbe : AddCephPilotBlindedReviews
+    {
+        public IReadOnlyList<MigrationOperation> Operations() => Probe.Run(Up);
+    }
+
+    private static class Probe
+    {
+        public static IReadOnlyList<MigrationOperation> Run(Action<MigrationBuilder> up)
         {
             var builder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
-            Up(builder);
+            up(builder);
             return builder.Operations;
         }
     }
+
+    /// <summary>
+    /// Every Pilot migration, so a later stage adding a constraint is covered without anyone
+    /// remembering to extend this file. Three stages have now added check constraints and all
+    /// three forgot the model; the fourth should not depend on someone noticing.
+    /// </summary>
+    private static IEnumerable<AddCheckConstraintOperation> AllPilotCheckOperations() =>
+        new FoundationProbe().Operations()
+            .Concat(new BlindedReviewProbe().Operations())
+            .OfType<AddCheckConstraintOperation>();
 
     private static AppDbContext NewModelContext() =>
         new(new DbContextOptionsBuilder<AppDbContext>()
@@ -60,13 +80,14 @@ public sealed class CephPilotFreshDatabaseParityTests
         "CephPilotProjects",
         "CephPilotCases",
         "CephPilotExportArtifacts",
+        "CephPilotReviewSessions",
+        "CephPilotReviewPoints",
     ];
 
     [Fact]
     public void EveryPilotCheckConstraintInTheMigrationIsAlsoInTheEfModel()
     {
-        var fromMigration = new MigrationProbe().Operations()
-            .OfType<AddCheckConstraintOperation>()
+        var fromMigration = AllPilotCheckOperations()
             .Where(op => PilotTables.Contains(op.Table))
             .Select(op => op.Name)
             .ToHashSet(StringComparer.Ordinal);
@@ -98,6 +119,8 @@ public sealed class CephPilotFreshDatabaseParityTests
     [InlineData("CK_CephPilotProjects_BlindingEnabled")]
     [InlineData("CK_CephPilotCases_ReadyRequiresGate")]
     [InlineData("CK_CephPilotExportArtifacts_ComparatorOnly")]
+    [InlineData("CK_CephPilotReviewSessions_RatifiedVersion")]
+    [InlineData("CK_CephPilotReviewPoints_CoordinateContract")]
     public void TheFreshDatabaseScriptCarriesTheConstraint(string constraintName)
     {
         using var db = NewModelContext();
@@ -115,8 +138,7 @@ public sealed class CephPilotFreshDatabaseParityTests
         // Matching names is not enough: a model constraint with the same name but weaker SQL
         // would pass the test above while leaving a fresh database less protected than an
         // upgraded one — the failure mode hardest to notice.
-        var migrationSql = new MigrationProbe().Operations()
-            .OfType<AddCheckConstraintOperation>()
+        var migrationSql = AllPilotCheckOperations()
             .Where(op => PilotTables.Contains(op.Table))
             .ToDictionary(op => op.Name, op => Normalize(op.Sql), StringComparer.Ordinal);
 

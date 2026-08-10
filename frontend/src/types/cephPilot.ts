@@ -20,6 +20,42 @@ export interface CephPilotProject {
   revision: number;
   caseCount: number;
   readyCaseCount: number;
+  myReviewerSlot?: "A" | "B" | "Adjudicator" | "Admin";
+}
+
+export type CephPilotContourDecision =
+  | "NotApplicable"
+  | "SingleContour"
+  | "ReceptorSideContour"
+  | "Unresolvable";
+
+export interface CephPilotReviewPoint {
+  landmarkKey: string;
+  isCore: boolean;
+  visibility: "Visible" | "NotVisible";
+  xCoordPx?: number | null;
+  yCoordPx?: number | null;
+  contourDecision: CephPilotContourDecision;
+  annotatedAt?: string;
+}
+
+export interface CephPilotReviewSession {
+  id: string;
+  caseId: string;
+  reviewerSlot: "A" | "B";
+  status: "Draft" | "Submitted";
+  landmarkDefinitionVersion: string;
+  toolVersion: string;
+  startedAt: string;
+  lastSavedAt?: string | null;
+  submittedAt?: string | null;
+  revision: number;
+  caseCode: string;
+  imageWidth: number;
+  imageHeight: number;
+  mmPerPixel: number;
+  coreLandmarkCount: number;
+  points: CephPilotReviewPoint[];
 }
 
 export interface CephPilotCase {

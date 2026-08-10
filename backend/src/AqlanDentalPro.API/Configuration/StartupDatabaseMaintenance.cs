@@ -164,6 +164,7 @@ public static class StartupDatabaseMaintenance
         await EnsureOrthodonticAiLogsSchemaAsync(app);
         await EnsureRadiologyOrdersSchemaAsync(app);
         await EnsureCommissionAdjustmentsSchemaAsync(app);
+        await EnsureCommissionAllocationGuardsAsync(app);
         await EnsureJournalEntryNumberSequenceTableAsync(app);
         await EnsureJournalLedgerGuardsAsync(app);
         await EnsurePhotoAnalysisSchemaAsync(app);
@@ -2227,6 +2228,168 @@ public static class StartupDatabaseMaintenance
         {
             app.Services.GetRequiredService<ILogger<Program>>()
                 .LogWarning(ex, "Journal ledger guard hotfix failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// The database-level guards migration 20260806010000_AddAtomicCommissionAllocations added
+    /// around doctor commission payments (W07).
+    /// <para>
+    /// Same class of gap as the journal guards fixed in PR #812, in a different module and about
+    /// money rather than bookkeeping. Triggers and PL/pgSQL functions cannot be expressed in an
+    /// EF model, so they are absent from the <c>GenerateCreateScript</c> baseline a brand-new
+    /// database is built from. On such a database nothing at the database level stopped a
+    /// commission payment being allocated beyond its own amount, an allocation being edited after
+    /// the fact, or a payment being left partly allocated — the application checks would still be
+    /// there, but the backstop W07 exists to provide would not.
+    /// </para>
+    /// <para>
+    /// Copied verbatim from the migration rather than shared with it: the migration has already
+    /// been applied to production and is not edited. Every statement is safe to re-run —
+    /// functions use CREATE OR REPLACE and each trigger is dropped first.
+    /// <see cref="AqlanDentalPro.UnitTests"/> asserts that every function and trigger any
+    /// migration creates is also named here, so the next one cannot be forgotten.
+    /// </para>
+    /// </summary>
+    private static async Task EnsureCommissionAllocationGuardsAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!db.Database.IsRelational()) return;
+
+            // Nothing to guard until the allocations table exists; on an upgraded database the
+            // migration creates both together.
+            var tableExists = false;
+            await using (var probe = db.Database.GetDbConnection().CreateCommand())
+            {
+                if (probe.Connection!.State != System.Data.ConnectionState.Open)
+                    await probe.Connection.OpenAsync();
+                probe.CommandText =
+                    "SELECT to_regclass('public.\"DoctorCommissionPaymentAllocations\"') IS NOT NULL";
+                tableExists = (bool)(await probe.ExecuteScalarAsync() ?? false);
+            }
+            if (!tableExists) return;
+
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE OR REPLACE FUNCTION enforce_commission_allocation_ceiling()
+                            RETURNS trigger AS $$
+                            DECLARE
+                                target_total numeric(18,2);
+                                allocated_total numeric(18,2);
+                                payment_total numeric(18,2);
+                                payment_doctor uuid;
+                                payment_branch uuid;
+                                payment_currency character varying(3);
+                                target_doctor uuid;
+                                target_branch uuid;
+                                target_currency character varying(3);
+                            BEGIN
+                                SELECT "Amount", "DoctorId", "BranchId", "Currency"
+                                INTO payment_total, payment_doctor, payment_branch, payment_currency
+                                FROM "DoctorCommissionPayments"
+                                WHERE "Id" = NEW."PaymentId"
+                                FOR UPDATE;
+                                IF payment_total IS NULL THEN
+                                    RAISE EXCEPTION 'commission allocation payment does not exist';
+                                END IF;
+
+                                SELECT COALESCE(SUM("Amount"), 0) INTO allocated_total
+                                FROM "DoctorCommissionPaymentAllocations"
+                                WHERE "PaymentId" = NEW."PaymentId"
+                                  AND "IsActive" = TRUE
+                                  AND "Id" <> NEW."Id";
+                                IF allocated_total + NEW."Amount" > payment_total THEN
+                                    RAISE EXCEPTION 'commission allocation exceeds payment amount';
+                                END IF;
+
+                                IF NEW."InvoiceLineItemId" IS NOT NULL THEN
+                                    SELECT line."DoctorCommissionAmount", line."DoctorId", patient."BranchId", invoice."Currency"
+                                    INTO target_total, target_doctor, target_branch, target_currency
+                                    FROM "InvoiceLineItems" line
+                                    JOIN "Invoices" invoice ON invoice."Id" = line."InvoiceId"
+                                    JOIN "Patients" patient ON patient."Id" = invoice."PatientId"
+                                    WHERE line."Id" = NEW."InvoiceLineItemId"
+                                      AND line."IsActive" = TRUE
+                                      AND line."CommissionStatus" IN (2, 3)
+                                    FOR UPDATE;
+                                    SELECT COALESCE(SUM("Amount"), 0) INTO allocated_total
+                                    FROM "DoctorCommissionPaymentAllocations"
+                                    WHERE "InvoiceLineItemId" = NEW."InvoiceLineItemId"
+                                      AND "IsActive" = TRUE
+                                      AND "Id" <> NEW."Id";
+                                ELSE
+                                    SELECT GREATEST("AdjustmentAmount", 0), "DoctorId", "BranchId", "Currency"
+                                    INTO target_total, target_doctor, target_branch, target_currency
+                                    FROM "DoctorCommissionAdjustments"
+                                    WHERE "Id" = NEW."CommissionAdjustmentId"
+                                      AND "IsActive" = TRUE
+                                      AND "Status" IN ('Pending', 'Settled')
+                                      AND "AdjustmentAmount" > 0
+                                    FOR UPDATE;
+                                    SELECT COALESCE(SUM("Amount"), 0) INTO allocated_total
+                                    FROM "DoctorCommissionPaymentAllocations"
+                                    WHERE "CommissionAdjustmentId" = NEW."CommissionAdjustmentId"
+                                      AND "IsActive" = TRUE
+                                      AND "Id" <> NEW."Id";
+                                END IF;
+
+                                IF target_total IS NULL OR allocated_total + NEW."Amount" > target_total THEN
+                                    RAISE EXCEPTION 'commission allocation exceeds target outstanding amount';
+                                END IF;
+                                IF payment_doctor IS DISTINCT FROM target_doctor
+                                   OR payment_branch IS DISTINCT FROM target_branch
+                                   OR payment_currency IS DISTINCT FROM target_currency THEN
+                                    RAISE EXCEPTION 'commission allocation target is outside payment doctor/branch/currency scope';
+                                END IF;
+                                RETURN NEW;
+                            END;
+                            $$ LANGUAGE plpgsql;
+
+                            DROP TRIGGER IF EXISTS "TR_DoctorCommissionPaymentAllocations_Ceiling" ON "DoctorCommissionPaymentAllocations";
+                CREATE TRIGGER "TR_DoctorCommissionPaymentAllocations_Ceiling"
+                            BEFORE INSERT OR UPDATE ON "DoctorCommissionPaymentAllocations"
+                            FOR EACH ROW EXECUTE FUNCTION enforce_commission_allocation_ceiling();
+
+                            CREATE OR REPLACE FUNCTION prevent_commission_allocation_mutation()
+                            RETURNS trigger AS $$
+                            BEGIN
+                                RAISE EXCEPTION 'commission payment allocations are append-only';
+                            END;
+                            $$ LANGUAGE plpgsql;
+
+                            DROP TRIGGER IF EXISTS "TR_DoctorCommissionPaymentAllocations_Immutable" ON "DoctorCommissionPaymentAllocations";
+                CREATE TRIGGER "TR_DoctorCommissionPaymentAllocations_Immutable"
+                            BEFORE UPDATE OR DELETE ON "DoctorCommissionPaymentAllocations"
+                            FOR EACH ROW EXECUTE FUNCTION prevent_commission_allocation_mutation();
+
+                            CREATE OR REPLACE FUNCTION enforce_commission_payment_fully_allocated()
+                            RETURNS trigger AS $$
+                            DECLARE
+                                allocated_total numeric(18,2);
+                            BEGIN
+                                SELECT COALESCE(SUM("Amount"), 0) INTO allocated_total
+                                FROM "DoctorCommissionPaymentAllocations"
+                                WHERE "PaymentId" = NEW."Id" AND "IsActive" = TRUE;
+                                IF allocated_total <> NEW."Amount" THEN
+                                    RAISE EXCEPTION 'commission payment must be fully allocated';
+                                END IF;
+                                RETURN NEW;
+                            END;
+                            $$ LANGUAGE plpgsql;
+
+                            DROP TRIGGER IF EXISTS "TR_DoctorCommissionPayments_FullyAllocated" ON "DoctorCommissionPayments";
+                CREATE CONSTRAINT TRIGGER "TR_DoctorCommissionPayments_FullyAllocated"
+                            AFTER INSERT OR UPDATE OF "Amount" ON "DoctorCommissionPayments"
+                            DEFERRABLE INITIALLY DEFERRED
+                            FOR EACH ROW EXECUTE FUNCTION enforce_commission_payment_fully_allocated();
+                """);
+        }
+        catch (Exception ex)
+        {
+            app.Services.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "Commission allocation guard hotfix failed (non-fatal)");
         }
     }
 

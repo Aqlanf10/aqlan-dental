@@ -5,6 +5,8 @@ Constraint: each PR is independently reviewable, updates specs/governance, inclu
 
 Implementation status: PR 1 was merged as #690, PR 2 as #691, landmark statistics as #692, frozen clinical geometry as #693, and advanced measurement/repeatability calculators as #694. Independent statistics/clinical review and a locked study remain outstanding. PR 4 model/inference lineage is active in SEQ-56; none of these stages alone establishes clinical accuracy.
 
+The clinical Pilot delivery is tracked separately under SEQ-57 onward. Its first PR registers `ADP-LM-LAT-v1.0` and creates patient-independent, private staging for account-owned exports. Later PRs add blinded annotation, adjudication, manifest release, and only then comparator/model evaluation. WebCeph export staging is interoperability evidence, not a Gold Standard or training-label source.
+
 ## Product direction
 
 Aqlan's own workflow is primary: upload, quality/orientation check, calibration, native AI draft, grouped doctor review, deterministic analysis, approval, and report. WebCeph import remains under migration/interoperability and is not the path to Aqlan accuracy.

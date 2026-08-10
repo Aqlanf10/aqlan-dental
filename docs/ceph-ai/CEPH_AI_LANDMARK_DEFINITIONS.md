@@ -3,6 +3,8 @@
 Definition set: `ADP-LM-LAT-v1`
 Status: engineering baseline requiring formal orthodontist ratification before gold-standard annotation or model training
 
+> Historical baseline notice: new blinded Pilot projects use the separately ratified `ADP-LM-LAT-v1.0` release in `docs/ceph-ai/ratified/`. Existing analyses and benchmark contracts pinned to `ADP-LM-LAT-v1` remain unchanged.
+
 ## Coordinate and contour convention
 
 - Original image coordinates: `(0,0)` is top-left; X increases right and Y increases down.

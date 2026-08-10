@@ -614,6 +614,24 @@
 - **معيار الخروج:** مُحقَّق — البوابة حقيقية، و32/32 و2861/2861، ولا هجرة جديدة ولا تعديل
   على هجرة تاريخية (كل DDL مُضاف إضافي وآمن التكرار).
 
+### 🟡 SEQ-57 — Ratified blinded Pilot and WebCeph export staging foundation
+- **Spec:** `CEPH-REQ-031`, `CEPH-TASK-023`.
+- Register the independently approved `ADP-LM-LAT-v1.0` definition without changing historic `ADP-LM-LAT-v1` analyses.
+- Add only the project, case, reviewer-assignment, private image, and account-owned official-export staging needed for the first de-identified Pilot case.
+- WebCeph remains a hidden, unreviewed comparator. No browser scraping, automatic patient creation, annotation UI, Gold Standard, training, or accuracy claim belongs to this PR.
+- **Exit:** additive migration, authorization/privacy/state/upload tests, full ceph/build/encoding gates, one approved live staging case only after owner preview/login consent, and a review PR that is not auto-merged.
+
+- **⚠️ رُفع التجميد بقرار مالك مباشر 2026-08-09.** التجميد السيفالومتري في `CORE-00`
+  كان **قرار المالك نفسه**، وله وحده رفعه — وقد وجّه صراحةً باستئناف الطيار
+  (‏#697 ← #698 ← #699). يُسجَّل هنا بدل تجاوزه بصمت.
+- **إعادة البناء لا rebase:** الفروع الثلاثة مبنية على `73a8c3e4` وهو **ليس سلفًا**
+  لـ`main` (الدمج يتم بـsquash)، فسلسلتها تحوي كوميتات مدموجة أصلًا بهيئة أخرى.
+  نُقل التغيير الفعلي (كوميت واحد) عبر cherry-pick على `main` الحالي.
+- **فحص إلزامي عند الاستئناف (درس #812):** هجرة الطيار تضيف قيود CHECK على مستوى
+  القاعدة. ما لا يُعبَّر عنه في نموذج EF **لا يصل إلى قاعدة بيانات جديدة** لأن خط
+  الأساس يُبنى من `GenerateCreateScript` — وهذا بالضبط نمط `CORE-F-002`. يجب التحقق
+  من كل قيد قبل الدمج.
+
 ---
 
 ## آلية التحديث

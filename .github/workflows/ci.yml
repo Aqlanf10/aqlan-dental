@@ -84,7 +84,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: backend-test-results
-          path: backend/tests/AqlanDentalPro.UnitTests/TestResults/**/*.trx
+          # CORE-F-013: the tests write to backend/TestResults (see --results-directory on the
+          # test step); this path pointed at a directory that has never existed, so every run
+          # logged "No files were found" and no unit .trx was ever uploaded.
+          path: backend/TestResults/**/*.trx
           retention-days: 7
 
       - name: Upload coverage report
@@ -242,6 +245,78 @@ jobs:
           E2E_PORTAL_USERNAME: ${{ secrets.E2E_PORTAL_USERNAME }}
           E2E_PORTAL_PASSWORD: ${{ secrets.E2E_PORTAL_PASSWORD }}
         run: npx playwright test
+
+      # CORE-P1-S5 — say what this job actually verified.
+      #
+      # The problem this solves is not a failing test, it is a passing one. E2E_API_URL is set
+      # but the four credential secrets are empty, so four of the five Playwright tests skip
+      # and the job reports success. On the checks list "E2E — Playwright ✅" then stands for
+      # "a login page rendered", while reading exactly like "the patient journey works".
+      # Skipping is indistinguishable from passing, and that is the whole defect.
+      #
+      # This step always runs and always writes the counts into the run summary, so the claim
+      # the job supports is legible without opening the log. Whether a credential-less run
+      # should FAIL is the clinic owner's call, not CI's: set the repository variable
+      # E2E_REQUIRE_AUTHENTICATED to "true" once staging credentials exist, and an unverified
+      # journey becomes a red build. Until then it is a loud warning rather than a surprise
+      # red main.
+      - name: Report what E2E actually verified
+        if: always() && steps.gate.outputs.enabled == 'true'
+        env:
+          E2E_REQUIRE_AUTHENTICATED: ${{ vars.E2E_REQUIRE_AUTHENTICATED }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, sys
+
+          report = pathlib.Path("playwright-report/results.json")
+          if not report.exists():
+              print("::warning::No Playwright JSON report — cannot state what E2E verified.")
+              raise SystemExit(0)
+
+          data = json.loads(report.read_text(encoding="utf-8"))
+
+          rows = []
+          def walk(suite):
+              for spec in suite.get("specs", []):
+                  for test in spec.get("tests", []):
+                      status = test.get("status", "unknown")
+                      rows.append((spec.get("title", "?"), status))
+              for child in suite.get("suites", []):
+                  walk(child)
+          for suite in data.get("suites", []):
+              walk(suite)
+
+          executed = [t for t in rows if t[1] not in ("skipped",)]
+          skipped = [t for t in rows if t[1] == "skipped"]
+
+          summary = pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"])
+          with summary.open("a", encoding="utf-8") as fh:
+              fh.write("## E2E — what this run verified\n\n")
+              if skipped:
+                  fh.write(
+                      f"**The authenticated patient journey was NOT verified.** "
+                      f"{len(skipped)} of {len(rows)} tests were skipped because their "
+                      f"credentials are absent, so a green tick here does not mean the journey "
+                      f"works.\n\n")
+              else:
+                  fh.write(f"All {len(rows)} tests executed.\n\n")
+              fh.write("| Test | Result |\n|---|---|\n")
+              for title, status in rows:
+                  fh.write(f"| {title} | {'⏭️ skipped' if status == 'skipped' else status} |\n")
+
+          print(f"::notice::E2E executed {len(executed)} test(s), skipped {len(skipped)}.")
+
+          if skipped:
+              required = (os.environ.get("E2E_REQUIRE_AUTHENTICATED") or "").lower() == "true"
+              message = (
+                  f"{len(skipped)} E2E test(s) skipped — the authenticated patient journey is "
+                  f"NOT verified by this run.")
+              if required:
+                  print(f"::error::{message} E2E_REQUIRE_AUTHENTICATED is set, so this is a failure.")
+                  sys.exit(1)
+              print(f"::warning::{message} Set the repository variable "
+                    f"E2E_REQUIRE_AUTHENTICATED=true once staging credentials exist to make this fail.")
+          PY
 
       - name: Upload Playwright report
         if: always()

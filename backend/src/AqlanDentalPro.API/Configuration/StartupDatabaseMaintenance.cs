@@ -4911,10 +4911,19 @@ public static class StartupDatabaseMaintenance
                             INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260604000000_AddSuppliersAndPurchases', '8.0');
                         END IF;
 
-                        IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260608000000_AddRolePermissionUniqueIndex')
+                        -- These two were missing their THEN and END IF. PL/pgSQL parses the
+                        -- whole DO block up front, so the syntax error meant NOTHING in this
+                        -- block ever ran — every DELETE and every INSERT above included. The
+                        -- reconciliation that exists to repair __EFMigrationsHistory before
+                        -- MigrateAsync has therefore never once executed, and the catch below
+                        -- correctly predicted the consequence it could not prevent.
+                        IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260608000000_AddRolePermissionUniqueIndex') THEN
                             INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260608000000_AddRolePermissionUniqueIndex', '8.0');
-                        IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260609000000_AddEmailLog')
+                        END IF;
+
+                        IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260609000000_AddEmailLog') THEN
                             INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260609000000_AddEmailLog', '8.0');
+                        END IF;
                     END $$;
                 """);
                 logger.LogInformation("Migration history reconciliation completed — cleaned incorrect records and inserted verified records");

@@ -25,7 +25,12 @@ export default defineConfig({
   forbidOnly: !CI,
   retries: CI ? 1 : 0,
   workers: CI ? 1 : undefined,
-  reporter: CI ? [["html"], ["list"]] : [["list"]],
+  // CORE-P1-S5: the JSON report is what lets CI say how many tests actually ran. Without it
+  // a run where every authenticated test skipped is indistinguishable, on the checks list,
+  // from one where they all passed.
+  reporter: CI
+    ? [["html"], ["list"], ["json", { outputFile: "playwright-report/results.json" }]]
+    : [["list"]],
   outputDir: "playwright-test-output",
   use: {
     baseURL,

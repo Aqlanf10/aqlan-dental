@@ -38,7 +38,12 @@ test("VoiceRecorder mic button is visible in dashboard messages", async ({ page 
 
   await page.fill('input[name="username"]', staffPhone);
   await page.fill('input[name="password"]', staffPassword);
-  await page.click('button[type="submit"]');
+  // The login page renders TWO submit buttons — staff ("دخول إلى لوحة التحكم") and
+  // patient portal ("دخول إلى بوابة المريض") — so a bare button[type="submit"] is
+  // ambiguous and Playwright's strict mode rejects it. This spec had been failing on
+  // exactly that for an unknown length of time without anyone knowing, because the
+  // whole suite skipped for want of credentials.
+  await page.getByRole("button", { name: "دخول إلى لوحة التحكم" }).click();
   await page.waitForLoadState("networkidle");
 
   // 2. Navigate to messages.

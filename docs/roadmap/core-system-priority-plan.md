@@ -98,7 +98,7 @@ presents "a login page rendered" as if it were journey verification. Every other
 slice's exit evidence is weakened while that is true — including the runtime
 verification `CORE-P1-S1` and `CORE-P1-S2` still owe.
 
-- **`CORE-P1-S5` (next): make skipped E2E distinguishable from executed E2E.**
+- **`CORE-P1-S5` (implemented 2026-08-10): make skipped E2E distinguishable from executed E2E.**
   - Fail the job, or emit an unmistakable non-green signal, when `E2E_API_URL` is set
     but the credential secrets are absent — the current combination is the worst one,
     because it looks like a configured, running, passing suite.
@@ -111,6 +111,12 @@ verification `CORE-P1-S1` and `CORE-P1-S2` still owe.
     line, and the same class of defect: CI reporting something other than reality.
   - Exit: a run with no credentials is visibly not a passing journey; a run with
     credentials executes and reports the authenticated tests.
+  - **Status 2026-08-10:** shipped. Every run writes an executed/skipped table to the job
+    summary and raises a warning annotation when the journey did not run. Enforcement sits
+    behind the repository variable `E2E_REQUIRE_AUTHENTICATED`, defaulting to off. That
+    default is deliberate and not a softening: making a credential-less run red today would
+    turn `main` red for a condition only the owner can resolve. The switch is the decision
+    point, and until it is flipped `CORE-F-009` stays open — the journey is still unverified.
 - `CORE-P1-S2`: Create a checked canonical route/owner inventory and redirect tests.
 - `CORE-P1-S3`: Remove policy drift by deriving sidebar and route guards from one
   frontend route manifest while retaining server authorization as authority.

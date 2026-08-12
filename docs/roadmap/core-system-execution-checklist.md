@@ -24,8 +24,31 @@
 - [x] 2026-08-09 refresh at `908937f1`: backend unit 2,861 / 2,861; backend integration
       **32 / 32 and now a blocking gate**; frontend 574 / 574; coverage 8.33% lines /
       40.98% branches.
-- [ ] E2E still proves only that a login page renders — credential secrets are empty,
-      so 4 of 5 Playwright tests skip while the job reports success (`CORE-F-009`).
+- [~] `CORE-F-009` / `CORE-P1-S5`: the run now states what it verified. Every E2E run writes
+      an executed/skipped table into the job summary and annotates a warning when the
+      authenticated journey did not run, so a green tick can no longer be read as journey
+      verification. Turning that warning into a failure is a one-variable change
+      (`E2E_REQUIRE_AUTHENTICATED=true`) and is the owner's call, because it depends on
+      staging credentials existing. **The journey itself is still unverified.**
+- [x] `CORE-F-013`: unit `.trx` upload path corrected to `backend/TestResults`.
+- [x] **Ephemeral E2E stack (2026-08-12).** CI now stands up PostgreSQL + API + frontend inside
+      the runner, seeds them and drives the real staff login. Needs no secrets and no staging.
+      The authenticated staff login journey therefore executes on every PR for the first time.
+- [ ] `CORE-F-014` (High): after a full page navigation the dashboard can hang on
+      "جارٍ تحميل النظام..." instead of resolving or redirecting to /login. Access tokens are
+      in-memory since W04, so a hard navigation depends on the silent refresh; when that does
+      not complete the layout's `isReady` gate never flips and the user sees a spinner forever.
+      Found by running `ceph-runtime.spec.ts`, which had never executed.
+- [ ] `CORE-F-015` (Low): `voice-recorder.spec.ts` assumes an existing conversation and cannot
+      pass against a from-scratch instance. Needs a seeded fixture, not a product change.
+- [x] **Two E2E specs were silently broken.** `ceph-runtime` and `voice-recorder` clicked
+      `button[type="submit"]`, which matches BOTH the staff and patient-portal buttons on the
+      login page; Playwright strict mode rejects it. They had been failing for an unknown
+      period because the suite skipped for want of credentials. Fixed to target the staff
+      button by name.
+- [ ] **Misleading log:** with `ENABLE_STARTUP_DB_MAINTENANCE` unset/false a fresh database
+      gets ZERO users, yet startup still logs "SEC-03: Admin initial password has been set."
+      Nobody can log in to such a deployment. Reported, not fixed.
 - [x] `CORE-CI-001` (PR #812): integration gate made real; `continue-on-error` removed.
 - [x] `CORE-LAB` audit closed (`CORE-LAB-001..021`), PRs #813 and #814.
 - [x] PR #701 aligned Reception appointment navigation and merged as `260cc4c1`.

@@ -34,13 +34,26 @@
 - [x] **Ephemeral E2E stack (2026-08-12).** CI now stands up PostgreSQL + API + frontend inside
       the runner, seeds them and drives the real staff login. Needs no secrets and no staging.
       The authenticated staff login journey therefore executes on every PR for the first time.
-- [ ] `CORE-F-014` (High): after a full page navigation the dashboard can hang on
+- [x] `CORE-F-014` (High) **FIXED**: the boot gate is now bounded and always terminates —
+      every path ends in either app readiness or a redirect to /login. Root cause: the layout
+      awaited `fetchMe()` and only then set `isReady`, with no timeout and no `finally`; axios
+      has no timeout configured and the 401 refresh interceptor parks concurrent callers in a
+      queue that drains only when the refresh answers, so a refresh that never settled left the
+      spinner up forever. Regression tests in `src/__tests__/lib/sessionBoot.test.ts` (a check
+      that never settles must not hang) plus an E2E hard-reload spec. Was:
+      after a full page navigation the dashboard can hang on
       "جارٍ تحميل النظام..." instead of resolving or redirecting to /login. Access tokens are
       in-memory since W04, so a hard navigation depends on the silent refresh; when that does
       not complete the layout's `isReady` gate never flips and the user sees a spinner forever.
       Found by running `ceph-runtime.spec.ts`, which had never executed.
-- [ ] `CORE-F-015` (Low): `voice-recorder.spec.ts` assumes an existing conversation and cannot
-      pass against a from-scratch instance. Needs a seeded fixture, not a product change.
+- [x] `CORE-F-015` **FIXED**: `voice-recorder.spec.ts` now creates its own conversation through
+      the API before touching the UI, so it depends on no pre-existing data and cannot skip
+      silently. It also opens that specific thread rather than "whatever is first", so it cannot
+      pass against an unrelated conversation.
+- [ ] **Known limit of the ephemeral stack:** it runs over plain HTTP, and the refresh cookie is
+      `Secure`, so the browser never sends it. Any FULL page navigation therefore loses the
+      session and lands on /login. `ceph-runtime.spec.ts` uses `page.goto` throughout and stays
+      excluded for that reason — a property of running without TLS, not a product defect.
 - [x] **Two E2E specs were silently broken.** `ceph-runtime` and `voice-recorder` clicked
       `button[type="submit"]`, which matches BOTH the staff and patient-portal buttons on the
       login page; Playwright strict mode rejects it. They had been failing for an unknown

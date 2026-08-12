@@ -360,7 +360,9 @@ jobs:
           POSTGRES_DB: aqlan_e2e
         ports: ["5433:5432"]
         options: >-
-          --health-cmd "pg_isready -U e2e"
+          # -d matters: without it pg_isready probes a database named "e2e", which does not
+          # exist, and the service log fills with FATAL lines that read like a broken stack.
+          --health-cmd "pg_isready -U e2e -d aqlan_e2e"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
@@ -372,6 +374,9 @@ jobs:
       E2E_STAFF_PHONE: admin
       E2E_STAFF_PASSWORD: Ephemeral!Runner2026
       E2E_API_URL: http://localhost:3000
+      # The voice-recorder spec creates its own conversation through the API rather than
+      # relying on whatever data happens to exist (CORE-F-015).
+      E2E_BACKEND_URL: http://localhost:5080
 
     steps:
       - uses: actions/checkout@v4
@@ -435,14 +440,16 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       # Only the specs verified to pass against a from-scratch stack run here.
-      # ceph-runtime and voice-recorder are deliberately excluded and tracked as
-      # CORE-F-014 / CORE-F-015: the first hangs on the dashboard's loading gate after a
-      # full page navigation, the second needs an existing conversation that a brand-new
-      # instance does not have. Listing them explicitly beats a green job that quietly
-      # skipped them — the exact failure this whole slice exists to remove.
+      #
+      # ceph-runtime remains excluded, and for a reason worth stating: it navigates with
+      # page.goto, which is a full page load. Access tokens are in-memory since W04 and the
+      # refresh cookie is Secure, so over this stack's plain HTTP the browser never sends it
+      # and any full navigation lands on /login. That is a property of running without TLS,
+      # not a product defect, and papering over it by weakening the spec would be worse than
+      # excluding it. Naming it here beats a green job that quietly skipped it.
       - name: Run the authenticated journey
         working-directory: frontend
-        run: npx playwright test playwright-tests/auth.spec.ts playwright-tests/staging-smoke.spec.ts
+        run: npx playwright test playwright-tests/auth.spec.ts playwright-tests/staging-smoke.spec.ts playwright-tests/dashboard-reload.spec.ts playwright-tests/voice-recorder.spec.ts
 
       - name: Upload API log on failure
         if: failure()

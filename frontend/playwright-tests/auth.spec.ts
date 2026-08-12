@@ -43,7 +43,9 @@ test("staff can log in and reach a dashboard route", async ({ page }) => {
   //    via react-hook-form as "username" and accepts username OR phone.
   await page.fill('input[name="username"]', staffPhone);
   await page.fill('input[name="password"]', staffPassword);
-  await page.click('button[type="submit"]');
+  // Target the staff button by name: the page also carries a patient-portal submit
+  // button, and a bare button[type="submit"] is ambiguous under strict mode.
+  await page.getByRole("button", { name: "دخول إلى لوحة التحكم" }).click();
 
   // 3. Assert redirect away from /login to a dashboard route. Role-based
   //    defaults: Admin/Reception/Assistant/BranchManager → /daily-operations,

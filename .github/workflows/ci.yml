@@ -335,3 +335,120 @@ jobs:
           path: frontend/playwright-test-output/
           retention-days: 7
           if-no-files-found: ignore
+
+  # ── Authenticated journey against a stack this job builds itself ──────────────
+  #
+  # CORE-P1-S5 / CORE-F-009. The `e2e` job above can only test a deployed staging
+  # environment, and its authenticated specs skip because the credential secrets are
+  # empty — which is why nobody noticed that two of those specs had rotted into
+  # failure. This job needs no secrets and no staging: it stands up PostgreSQL, the
+  # API and the frontend inside the runner, seeds them, and drives the real login.
+  #
+  # Everything it touches is disposable and synthetic. No production data, no secrets,
+  # and the password below is meaningful only to a container that is destroyed minutes
+  # later.
+  e2e-ephemeral:
+    name: E2E — Authenticated journey (ephemeral stack)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: e2e
+          POSTGRES_PASSWORD: e2e
+          POSTGRES_DB: aqlan_e2e
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      # The seed password the API boots with, and the password the account ends up on
+      # after the mandatory first-login change. Both are throwaway by construction.
+      E2E_SEED_PASSWORD: Ephemeral!Seed2026
+      E2E_STAFF_PHONE: admin
+      E2E_STAFF_PASSWORD: Ephemeral!Runner2026
+      E2E_API_URL: http://localhost:3000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Start the API
+        working-directory: backend
+        env:
+          ASPNETCORE_ENVIRONMENT: Testing
+          ASPNETCORE_URLS: http://localhost:5080
+          ConnectionStrings__DefaultConnection: "Host=localhost;Port=5433;Database=aqlan_e2e;Username=e2e;Password=e2e"
+          Jwt__SecretKey: "ephemeral-e2e-jwt-secret-0123456789-abcdefghijklmnopqrs"
+          ADMIN_DEFAULT_PASSWORD: ${{ env.E2E_SEED_PASSWORD }}
+          # Required: with maintenance off, a fresh database is created with ZERO users and
+          # nobody can log in, while the log still says the admin password "has been set".
+          ENABLE_STARTUP_DB_MAINTENANCE: "true"
+        run: |
+          nohup dotnet run --project src/AqlanDentalPro.API/AqlanDentalPro.API.csproj \
+            -c Release --no-launch-profile > "$RUNNER_TEMP/api.log" 2>&1 &
+          for i in $(seq 1 60); do
+            sleep 5
+            if [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5080/health)" = "200" ]; then
+              echo "API healthy after $((i * 5))s"; exit 0
+            fi
+          done
+          echo "API did not become healthy"; tail -50 "$RUNNER_TEMP/api.log"; exit 1
+
+      - name: Prepare the staff account
+        env:
+          API_URL: http://localhost:5080
+          E2E_STAFF_USERNAME: ${{ env.E2E_STAFF_PHONE }}
+        run: scripts/e2e/prepare-e2e-account.sh
+
+      - name: Build and start the frontend
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:5080
+        run: |
+          npm ci
+          npm run build
+          nohup npx next start -p 3000 > "$RUNNER_TEMP/frontend.log" 2>&1 &
+          for i in $(seq 1 30); do
+            sleep 3
+            if [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/login)" = "200" ]; then
+              echo "Frontend up after $((i * 3))s"; exit 0
+            fi
+          done
+          echo "Frontend did not start"; tail -50 "$RUNNER_TEMP/frontend.log"; exit 1
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      # Only the specs verified to pass against a from-scratch stack run here.
+      # ceph-runtime and voice-recorder are deliberately excluded and tracked as
+      # CORE-F-014 / CORE-F-015: the first hangs on the dashboard's loading gate after a
+      # full page navigation, the second needs an existing conversation that a brand-new
+      # instance does not have. Listing them explicitly beats a green job that quietly
+      # skipped them — the exact failure this whole slice exists to remove.
+      - name: Run the authenticated journey
+        working-directory: frontend
+        run: npx playwright test playwright-tests/auth.spec.ts playwright-tests/staging-smoke.spec.ts
+
+      - name: Upload API log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ephemeral-api-log
+          path: ${{ runner.temp }}/api.log
+          retention-days: 7
+          if-no-files-found: ignore

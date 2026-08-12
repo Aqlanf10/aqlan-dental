@@ -23,7 +23,12 @@ async function login(page: Page) {
   await page.goto("/login");
   await page.locator('input[name="username"]').fill(staffPhone!);
   await page.locator('input[name="password"]').fill(staffPassword!);
-  await page.locator('button[type="submit"]').click();
+  // The login page renders TWO submit buttons — staff ("دخول إلى لوحة التحكم") and
+  // patient portal ("دخول إلى بوابة المريض") — so a bare button[type="submit"] is
+  // ambiguous and Playwright's strict mode rejects it. This spec had been failing on
+  // exactly that for an unknown length of time without anyone knowing, because the
+  // whole suite skipped for want of credentials.
+  await page.getByRole("button", { name: "دخول إلى لوحة التحكم" }).click();
   await page.waitForURL(url => !url.pathname.startsWith("/login"), { timeout: 30_000 });
 }
 

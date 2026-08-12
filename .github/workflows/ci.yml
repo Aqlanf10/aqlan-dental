@@ -359,9 +359,15 @@ jobs:
           POSTGRES_PASSWORD: e2e
           POSTGRES_DB: aqlan_e2e
         ports: ["5433:5432"]
+        # `options` is a folded scalar whose entire contents are appended verbatim to
+        # `docker create`. A '#' line inside it is NOT a comment — it becomes part of the
+        # command and breaks it with "invalid reference format" before the container starts.
+        # Explanations therefore belong out here.
+        #
+        # -d matters on the health command: without it pg_isready probes a database named
+        # after the user ("e2e"), which does not exist, and the service log fills with FATAL
+        # lines that read like a broken stack even though the check passes.
         options: >-
-          # -d matters: without it pg_isready probes a database named "e2e", which does not
-          # exist, and the service log fills with FATAL lines that read like a broken stack.
           --health-cmd "pg_isready -U e2e -d aqlan_e2e"
           --health-interval 5s
           --health-timeout 5s

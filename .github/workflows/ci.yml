@@ -457,6 +457,69 @@ jobs:
         working-directory: frontend
         run: npx playwright test playwright-tests/auth.spec.ts playwright-tests/staging-smoke.spec.ts playwright-tests/dashboard-reload.spec.ts playwright-tests/voice-recorder.spec.ts
 
+      # Playwright exits 0 when every test skips, so a green step is not by itself evidence
+      # that the journey ran — that is the exact confusion this job exists to remove, and it
+      # would be absurd for the job to reproduce it. This asserts the counts.
+      - name: Assert the journey actually executed
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, sys
+
+          report = pathlib.Path("frontend/playwright-report/results.json")
+          if not report.exists():
+              print("::error::No Playwright JSON report — cannot prove the journey ran.")
+              sys.exit(1)
+
+          rows = []
+          def walk(suite):
+              for spec in suite.get("specs", []):
+                  for test in spec.get("tests", []):
+                      rows.append((spec.get("title", "?"), test.get("status", "unknown")))
+              for child in suite.get("suites", []):
+                  walk(child)
+          for suite in json.loads(report.read_text(encoding="utf-8")).get("suites", []):
+              walk(suite)
+
+          executed = [t for t in rows if t[1] != "skipped"]
+          skipped = [t for t in rows if t[1] == "skipped"]
+
+          summary = pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"])
+          with summary.open("a", encoding="utf-8") as fh:
+              fh.write("## Authenticated journey (ephemeral stack)\n\n")
+              fh.write(f"Executed **{len(executed)}**, skipped **{len(skipped)}**.\n\n")
+              fh.write("| Test | Result |\n|---|---|\n")
+              for title, status in rows:
+                  fh.write(f"| {title} | {status} |\n")
+
+          # This stack supplies its own credentials, so nothing here has an excuse to skip.
+          if skipped:
+              print(f"::error::{len(skipped)} test(s) skipped in a stack that provides its own "
+                    f"credentials — a skip here means the fixture or the wiring is broken.")
+              sys.exit(1)
+
+          expected = int(os.environ["EXPECTED_TEST_COUNT"])
+          if len(executed) < expected:
+              print(f"::error::Expected at least {expected} executed tests, saw {len(executed)}. "
+                    f"A shrinking suite must not pass silently.")
+              sys.exit(1)
+
+          print(f"::notice::Authenticated journey executed {len(executed)} test(s), none skipped.")
+          PY
+        env:
+          # Bump alongside the spec list above; the point is that a spec quietly dropping out
+          # fails the build instead of shrinking the evidence.
+          EXPECTED_TEST_COUNT: "4"
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ephemeral-playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Upload API log on failure
         if: failure()
         uses: actions/upload-artifact@v4

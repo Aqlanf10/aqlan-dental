@@ -14,6 +14,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useSignalRMessaging } from "@/hooks/useSignalRMessaging";
 import { isRouteAllowed } from "@/lib/routePermissions";
+import { resolveSessionBoot } from "@/lib/sessionBoot";
 
 export default function DashboardLayout({
   children,
@@ -44,18 +45,31 @@ export default function DashboardLayout({
           isLoading: false,
         });
         router.replace("/login");
-        setIsReady(true);
-        return;
+        return; // the finally below opens the gate
       }
 
-      await fetchMe();
-      if (!useAuthStore.getState().isAuthenticated) {
-        router.push("/login");
+      // CORE-F-014: this used to be a bare `await fetchMe()` followed by
+      // `setIsReady(true)`. If the call never settled — no axios timeout is configured, and
+      // the 401 refresh interceptor parks concurrent requests in a queue that only drains
+      // when the refresh itself answers — the gate below never opened and the user sat on
+      // "جارٍ تحميل النظام..." indefinitely, with no error and no way out. A hard reload is
+      // the common trigger, because access tokens are in-memory since W04 and a reload
+      // therefore always depends on the silent refresh.
+      const outcome = await resolveSessionBoot({
+        fetchMe,
+        isAuthenticated: () => useAuthStore.getState().isAuthenticated,
+      });
+
+      if (outcome.status === "redirect-to-login") {
+        // Deliberately not clearing the session here: a stalled network is not proof that
+        // the session is invalid, and wiping it would log out a user whose connection merely
+        // hiccuped. If the session is in fact fine, /login sends them back.
+        router.replace("/login");
       }
-      setIsReady(true);
     };
 
-    void validateSession();
+    // Whatever happens above, the gate opens. Leaving it shut is the actual defect.
+    void validateSession().finally(() => setIsReady(true));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const userRole = user?.role ?? null;

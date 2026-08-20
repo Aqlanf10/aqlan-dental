@@ -17,6 +17,7 @@ import type {
 import type { PatientListItem } from "@/types/patient";
 import { cn } from "@/lib/utils";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
+import { ExchangeRateField } from "@/components/lab/ExchangeRateField";
 
 interface Props {
   onClose: () => void;
@@ -287,10 +288,11 @@ export function NewLabOrderModal({ onClose, initialPatient }: Props) {
                 </select>
               </div>
               {form.currency !== "YER" && (
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-gray-700">سعر الصرف الفعلي: 1 {form.currency} = كم YER؟</label>
-                  <input type="number" min="0.000001" step="0.000001" value={form.exchangeRateToYer ?? ""} onChange={(event) => set("exchangeRateToYer", event.target.value === "" ? undefined : Number(event.target.value))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" dir="ltr" />
-                </div>
+                <ExchangeRateField
+                  currency={form.currency ?? "YER"}
+                  value={form.exchangeRateToYer}
+                  onChange={(rate) => set("exchangeRateToYer", rate)}
+                />
               )}
             </div>
           </div>

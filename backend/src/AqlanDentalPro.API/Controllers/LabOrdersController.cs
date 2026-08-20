@@ -2,6 +2,7 @@ using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.API.Services;
+using AqlanDentalPro.Application.Common;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -436,6 +437,138 @@ public class LabOrdersController(
 
         return Ok(dto);
     }
+
+    /// <summary>بحث عن أمر مختبر برقم الطلب (مسح رمز QR أو إدخال يدوي)</summary>
+    /// <remarks>
+    /// <para>
+    /// LABINV-REQ-008. Resolves the code printed on the lab order slip to the order itself,
+    /// so a box arriving back from the lab can be matched to its record by scanning instead
+    /// of searching. The code is the existing <c>OrderNumber</c> — no new identifier and no
+    /// new column.
+    /// </para>
+    /// <para>
+    /// <b>This is a permission-checked read, not a shortcut.</b> It runs the same three
+    /// gates as <c>GET /{id}</c>: the <c>lab_orders.view</c> permission, the branch scope
+    /// inside <c>LabOrderQueryService</c>, and the per-patient doctor gate. Holding a
+    /// printed slip grants nothing that the user's own role does not already grant.
+    /// </para>
+    /// <para>
+    /// <b>Every failure returns the same 404.</b> Not found, another branch's order, and a
+    /// patient this doctor may not see are indistinguishable from outside. A scanner is an
+    /// enumeration surface: separating "does not exist" from "not yours" would let anyone
+    /// with one slip discover which other order numbers are real, and for a sequential
+    /// numbering scheme that is the whole book.
+    /// </para>
+    /// </remarks>
+    [HttpGet("lookup")]
+    public async Task<IActionResult> LookupByCode([FromQuery] string? code, CancellationToken ct = default)
+    {
+        if (!await CanAsync("view")) return Forbid();
+
+        var trimmed = (code ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+            return BadRequest(new { message = "لم يُقرأ أي رمز — أعد المسح أو أدخل رقم الطلب يدويًا" });
+
+        // Guard against a decode that produced a whole URL or a long payload rather than an
+        // order number. Bounded before it reaches the database.
+        if (trimmed.Length > 64)
+            return NotFound(new { message = NotFoundMessage });
+
+        var id = await queryService.FindIdByOrderNumberAsync(trimmed, ct);
+        if (id is null) return NotFound(new { message = NotFoundMessage });
+
+        LabOrderDetailDto? dto;
+        try
+        {
+            dto = await queryService.GetByIdAsync(id.Value);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error resolving scanned lab order code {Code}: {ErrorType} — {ErrorMsg}", trimmed, ex.GetType().Name, ex.InnerException?.Message ?? ex.Message);
+            return StatusCode(500, new { message = "حدث خطأ أثناء البحث عن أمر المختبر" });
+        }
+
+        if (dto is null) return NotFound(new { message = NotFoundMessage });
+
+        // Same per-patient gate as GetById — but collapsed into the shared 404 so the
+        // response cannot be used to confirm that the order exists.
+        if (await DenyIfDoctorCannotAccess(dto.PatientId) is not null)
+            return NotFound(new { message = NotFoundMessage });
+
+        return Ok(dto);
+    }
+
+    /// <summary>تجهيز رسالة واتساب لإرسال تفاصيل الطلب إلى المعمل</summary>
+    /// <remarks>
+    /// <para>
+    /// LABINV-REQ-009. Returns the lab's number and a ready message; the browser opens
+    /// WhatsApp with them. The server never sends anything — the clinic's WhatsApp account
+    /// stays out of the backend entirely.
+    /// </para>
+    /// <para>
+    /// Composed here rather than in the browser because clinic identity must come from
+    /// <c>Settings</c>. The alternative in practice is a component with the clinic's name
+    /// written into it as a literal, which is exactly what this system forbids — and which
+    /// would keep sending the old name after a rename.
+    /// </para>
+    /// <para>
+    /// A lab with no phone number on file is an Arabic error, not a half-formed link. A
+    /// <c>wa.me/</c> URL with an empty number opens WhatsApp to nothing and looks like the
+    /// message was sent.
+    /// </para>
+    /// </remarks>
+    [HttpGet("{id:guid}/whatsapp-message")]
+    public async Task<IActionResult> GetWhatsAppMessage(Guid id, CancellationToken ct = default)
+    {
+        if (!await CanAsync("view")) return Forbid();
+
+        var order = await db.LabOrders
+            .Include(o => o.Patient)
+            .Include(o => o.Doctor)
+            .Include(o => o.Lab)
+            .Include(o => o.Items).ThenInclude(i => i.WorkType)
+            .FirstOrDefaultAsync(o => o.Id == id, ct);
+
+        if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
+
+        var denied = await DenyIfDoctorCannotAccess(order.PatientId);
+        if (denied is not null) return denied;
+
+        var phone = !string.IsNullOrWhiteSpace(order.Lab?.WhatsApp)
+            ? order.Lab!.WhatsApp!
+            : order.Lab?.Phone;
+
+        if (string.IsNullOrWhiteSpace(phone))
+        {
+            return BadRequest(new
+            {
+                message = order.Lab is null
+                    ? "هذا الطلب غير مرتبط بمعمل مسجّل — اربطه بمعمل أولًا لإرسال التفاصيل"
+                    : $"لا يوجد رقم واتساب أو هاتف للمعمل «{order.Lab.Name}» — أضِفه من الإعدادات ← المعامل",
+            });
+        }
+
+        var settings = new FinanceSettingsReader(db);
+        var includePatientName = await settings.GetBoolAsync(
+            FinanceSettingsKeys.LabWhatsAppIncludePatientName, ct);
+
+        var clinic = await FinanceClinicIdentity.ResolveAsync(db, ct);
+        var message = LabOrderDispatchMessage.Compose(
+            order, order.Items.ToList(), clinic, includePatientName);
+
+        return Ok(new
+        {
+            phone,
+            labName = order.Lab?.Name,
+            message,
+        });
+    }
+
+    /// <summary>
+    /// One message for every lookup failure. Written once so a later edit cannot
+    /// accidentally reintroduce a distinguishable response.
+    /// </summary>
+    private const string NotFoundMessage = "لا يوجد أمر مختبر بهذا الرمز ضمن صلاحياتك";
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateLabOrderRequest req)

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, FlaskConical, Clock, CheckCircle2, XCircle, Package, Search, FileText, RotateCcw, RefreshCw, Printer, Download } from "lucide-react";
+import { Plus, FlaskConical, Clock, CheckCircle2, XCircle, Package, Search, FileText, RotateCcw, RefreshCw, Printer, Download, ScanLine } from "lucide-react";
 import api from "@/lib/api";
 import { downloadPdfFromApi, printPdfFromApi } from "@/lib/pdfDownload";
 import { toast } from "@/stores/toastStore";
@@ -13,6 +13,8 @@ import { TableSkeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import type { LabOrder, LabOrderStatus } from "@/types/lab";
 import { NewLabOrderModal } from "@/components/lab/NewLabOrderModal";
+import { ScanOrderDialog } from "@/components/lab/ScanOrderDialog";
+import { SendToLabButton } from "@/components/lab/SendToLabButton";
 import { cn, localDateString } from "@/lib/utils";
 import { extractErrorMessage } from "@/lib/errors";
 import { QueryErrorBanner } from "@/components/shared/QueryErrorBanner";
@@ -79,6 +81,7 @@ export function LabOrdersPanel() {
   const [search, setSearch] = useState("");
   const [page, setPage]     = useState(1);
   const [showNew, setShowNew] = useState(false);
+  const [showScan, setShowScan] = useState(false);
   // CORE-LAB-003: /lab could advance a draft's status but never edit it, so a draft
   // missing its lab/cost had no way to become complete.
   const [editOrder, setEditOrder] = useState<LabOrder | null>(null);
@@ -147,13 +150,24 @@ export function LabOrdersPanel() {
               </p>
             )}
           </div>
-          <button
-            onClick={() => setShowNew(true)}
-            className="flex items-center gap-2 bg-cyan-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-cyan-800 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            طلب جديد
-          </button>
+          <div className="flex items-center gap-2">
+            {/* LABINV-REQ-008 — the receiving end of "تراكم التراكيب": a box arrives and
+                the fastest way to reach its record is to scan the slip taped to it. */}
+            <button
+              onClick={() => setShowScan(true)}
+              className="flex items-center gap-2 border border-cyan-200 text-cyan-800 px-4 py-2 rounded-lg text-sm font-medium hover:bg-cyan-50 transition-colors"
+            >
+              <ScanLine className="w-4 h-4" />
+              مسح رمز
+            </button>
+            <button
+              onClick={() => setShowNew(true)}
+              className="flex items-center gap-2 bg-cyan-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-cyan-800 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              طلب جديد
+            </button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -273,6 +287,11 @@ export function LabOrdersPanel() {
                               {NEXT_STATUS_LABELS[nextStatus] ?? "تقدّم"} ←
                             </button>
                           )}
+                          {/* LABINV-REQ-009 — the alternative is retyping the case into
+                              WhatsApp by hand, which is where tooth numbers and shades get
+                              transposed. Sits next to Print because both are "get this to
+                              the lab". */}
+                          <SendToLabButton orderId={order.id} />
                           {/* Download PDF button — sends Authorization token */}
                           <button
                             type="button"
@@ -347,6 +366,21 @@ export function LabOrdersPanel() {
       </div>
 
       {showNew && <NewLabOrderModal onClose={() => setShowNew(false)} />}
+
+      {/* Resolving to the list filtered by the order number — rather than to a detail
+          route that does not exist — puts the scanned order in front of the user with
+          every status action already attached to its row. */}
+      {showScan && (
+        <ScanOrderDialog
+          onClose={() => setShowScan(false)}
+          onResolved={(order) => {
+            setShowScan(false);
+            setStatusFilter("");
+            setPage(1);
+            setSearch(order.orderNumber ?? "");
+          }}
+        />
+      )}
 
       {/* CORE-LAB-003: complete an incomplete draft (lab + cost) and send it. */}
       {editOrder && (

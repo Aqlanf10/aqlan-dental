@@ -68,6 +68,37 @@ public class LabOrderQueryService
             : query.Where(_ => false);
     }
 
+    /// <summary>
+    /// LABINV-REQ-008 — resolves a scanned order number to its id, or null.
+    ///
+    /// <para>
+    /// Deliberately goes through <see cref="ScopedOrders"/> like every other read here, so
+    /// a code belonging to another branch resolves to null rather than to an order the
+    /// scanner's user may not see. The caller must turn null into the same response it
+    /// gives for a code that matches nothing at all: a scanner is an enumeration surface,
+    /// and distinguishing "not yours" from "does not exist" would let anyone holding a
+    /// printed slip probe which order numbers are real.
+    /// </para>
+    ///
+    /// <para>
+    /// Matching is case-insensitive and ignores surrounding whitespace, because the code
+    /// arrives from a camera decode or a barcode wedge, not from a form.
+    /// </para>
+    /// </summary>
+    public async Task<Guid?> FindIdByOrderNumberAsync(string orderNumber, CancellationToken ct = default)
+    {
+        var code = (orderNumber ?? string.Empty).Trim();
+        if (code.Length == 0) return null;
+
+        var match = await ScopedOrders()
+            .Where(order => order.OrderNumber != null
+                         && order.OrderNumber.ToLower() == code.ToLower())
+            .Select(order => (Guid?)order.Id)
+            .FirstOrDefaultAsync(ct);
+
+        return match;
+    }
+
     // ─── GET /api/lab-orders ────────────────────────────────────────────────
 
     /// <summary>

@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Save, Send } from "lucide-react";
 import api from "@/lib/api";
+import { ExchangeRateField } from "@/components/lab/ExchangeRateField";
 import { extractErrorMessage } from "@/lib/errors";
 import { toast } from "@/stores/toastStore";
 import type { LabOrder } from "@/types/lab";
@@ -212,20 +213,11 @@ export function EditLabOrderModal({ order, open, onClose, invalidateKeys = [] }:
           </div>
 
           {needsRate && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                سعر الصرف الفعلي: 1 {currency} = كم YER؟
-              </label>
-              <input
-                type="number"
-                min="0.000001"
-                step="0.000001"
-                value={rate}
-                onChange={(e) => setRate(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                dir="ltr"
-              />
-            </div>
+            <ExchangeRateField
+              currency={currency}
+              value={rate === "" ? undefined : Number(rate)}
+              onChange={(next) => setRate(next === undefined ? "" : String(next))}
+            />
           )}
 
           <div className="grid grid-cols-2 gap-3">

@@ -86,6 +86,58 @@ public static class FinanceSettingsKeys
     public const string PayablesAgingBucket3Days = "finance.payables.aging_bucket_3_days";
 
     /// <summary>
+    /// LABINV-REQ-009 — include the patient's name in the WhatsApp message sent to the lab.
+    ///
+    /// <para>
+    /// Defaults to true because the printed work order that travels with the case already
+    /// carries the name, and the practical alternative is a staff member typing the same
+    /// details into WhatsApp by hand. The feature standardises an exposure that already
+    /// exists rather than creating one.
+    /// </para>
+    /// <para>
+    /// It is still a setting, because WhatsApp is not paper: the message persists on a
+    /// third-party server and on a technician's personal phone. A clinic that would rather
+    /// send only the order number can turn this off and the lab matches the case from the
+    /// printed slip instead.
+    /// </para>
+    /// </summary>
+    public const string LabWhatsAppIncludePatientName = "finance.lab.whatsapp_include_patient_name";
+
+    /// <summary>
+    /// LABINV-REQ-007 — comma-separated shade guide offered when ordering lab work.
+    /// Empty falls back to VITA Classical in the UI. Lives in Settings because a clinic
+    /// that works to a different guide must not have to change source code to say so.
+    /// </summary>
+    public const string LabShadeGuide = "finance.lab.shade_guide";
+
+    // ── Exchange rates (LABINV-REQ-010) ─────────────────────────────────────
+    // Why these live in Settings and are NOT fetched from a public FX API:
+    //
+    // Yemen has a split currency market. The rate in Sanaa and the rate in Aden are
+    // different currencies in practice — around 535 vs 1,950 rial to the dollar. Public
+    // FX APIs return the Central Bank's official rate, which matches neither market and
+    // is roughly a quarter of the Aden street rate. Wiring such a feed into a path that
+    // sets lab cost — and therefore the doctor's commission — would import a wrong
+    // number automatically and confidently. The owner sets the market rate; the system
+    // only makes sure the same rate is used everywhere and says how old it is.
+
+    /// <summary>Active market whose rates are offered by default: "sanaa" | "aden" | "custom".</summary>
+    public const string FxMarket = "finance.fx.market";
+
+    public const string FxSanaaUsdToYer = "finance.fx.sanaa.usd_to_yer";
+    public const string FxSanaaSarToYer = "finance.fx.sanaa.sar_to_yer";
+    public const string FxAdenUsdToYer  = "finance.fx.aden.usd_to_yer";
+    public const string FxAdenSarToYer  = "finance.fx.aden.sar_to_yer";
+    public const string FxCustomUsdToYer = "finance.fx.custom.usd_to_yer";
+    public const string FxCustomSarToYer = "finance.fx.custom.sar_to_yer";
+
+    /// <summary>Clinic-local date (yyyy-MM-dd) the rates were last reviewed. Empty = never.</summary>
+    public const string FxRatesUpdatedOn = "finance.fx.rates_updated_on";
+
+    /// <summary>Days after which the stored rate is shown as stale and must be reviewed.</summary>
+    public const string FxStaleAfterDays = "finance.fx.stale_after_days";
+
+    /// <summary>
     /// All finance keys mapped to their default values. Defaults are chosen to
     /// preserve the current hardcoded/seeded behavior — changing a setting from
     /// the UI is the only way to alter production behavior.
@@ -113,6 +165,25 @@ public static class FinanceSettingsKeys
         [LabTurnaroundDaysTarget]             = "7",
         [LabOnTimeRateGood]                   = "90",
         [LabOnTimeRateWarn]                   = "70",
+
+        // Exchange rates. The two market defaults reproduce the rates the clinic's own
+        // Android lab app shipped with, so adopting this feature changes no number the
+        // clinic was already using. "rates_updated_on" is deliberately empty: the system
+        // must not claim these were reviewed today when nobody has reviewed them.
+        // Empty = the UI's built-in VITA Classical guide. Storing the list here would
+        // freeze a copy that silently diverges from the UI default over time.
+        [LabShadeGuide]                       = "",
+        [LabWhatsAppIncludePatientName]       = "true",
+
+        [FxMarket]                            = "sanaa",
+        [FxSanaaUsdToYer]                     = "535",
+        [FxSanaaSarToYer]                     = "142",
+        [FxAdenUsdToYer]                      = "1950",
+        [FxAdenSarToYer]                      = "515",
+        [FxCustomUsdToYer]                    = "535",
+        [FxCustomSarToYer]                    = "142",
+        [FxRatesUpdatedOn]                    = "",
+        [FxStaleAfterDays]                    = "14",
 
         [PayablesAgingBucket1Days]            = "30",
         [PayablesAgingBucket2Days]            = "60",

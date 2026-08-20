@@ -183,6 +183,69 @@ public class SettingsController(AppDbContext db, ICurrentUserService currentUser
         return Ok(result);
     }
 
+    /// <summary>دليل درجات اللون المعتمد لأوامر المختبر (متاح لجميع الموظفين)</summary>
+    /// <remarks>
+    /// LABINV-REQ-007. Served from a StaffOnly route rather than <c>GET /finance</c>
+    /// because that route requires <c>ReportsAccess</c> (Admin/Accountant) and the people
+    /// who actually order lab work — reception and nursing — do not hold it. Reading the
+    /// guide through a route they cannot call would have left the picker permanently
+    /// empty for its only users.
+    ///
+    /// An empty stored value means "use the client's built-in VITA Classical guide"; the
+    /// list is not duplicated here so the two cannot drift apart.
+    /// </remarks>
+    [HttpGet("lab-shade-guide")]
+    [Authorize(Policy = "StaffOnly")]
+    public async Task<IActionResult> GetLabShadeGuide(CancellationToken ct = default)
+    {
+        var settings = new FinanceSettingsReader(db);
+        var raw = await settings.GetAsync(FinanceSettingsKeys.LabShadeGuide, ct);
+
+        var shades = raw
+            .Split([',', '،'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return Ok(new { shades });
+    }
+
+    /// <summary>أسعار الصرف المعتمدة حاليًا (متاح لجميع الموظفين)</summary>
+    /// <remarks>
+    /// <para>
+    /// LABINV-REQ-010. Read access is <c>StaffOnly</c>, not Admin: the person creating a lab
+    /// order in a foreign currency is reception or a nurse, and they are exactly who used to
+    /// type the rate by hand. Writing the rates stays Admin-only through <c>PUT /finance</c>.
+    /// </para>
+    /// <para>
+    /// The response always carries <c>isStale</c> and <c>updatedOn</c>. A rate that nobody has
+    /// reviewed is still returned — withholding it only sends the user back to guessing — but
+    /// the caller must present it as unreviewed rather than as current.
+    /// </para>
+    /// </remarks>
+    [HttpGet("exchange-rates")]
+    [Authorize(Policy = "StaffOnly")]
+    public async Task<IActionResult> GetExchangeRates([FromQuery] string? market, CancellationToken ct = default)
+    {
+        var resolver = new ExchangeRateResolver(db);
+        var snapshot = await resolver.GetAsync(market, ct);
+
+        return Ok(new
+        {
+            market = snapshot.Market,
+            marketLabel = snapshot.MarketLabel,
+            baseCurrency = ExchangeRateResolver.BaseCurrency,
+            currencies = ExchangeRateResolver.SupportedCurrencies,
+            ratesToYer = snapshot.RatesToYer,
+            updatedOn = snapshot.UpdatedOn,
+            ageInDays = snapshot.AgeInDays,
+            staleAfterDays = snapshot.StaleAfterDays,
+            isStale = snapshot.IsStale,
+            markets = ExchangeRateResolver.KnownMarkets
+                .Select(m => new { key = m, label = ExchangeRateResolver.MarketLabelAr(m) })
+                .ToList(),
+        });
+    }
+
     /// <summary>تحديث إعدادات المالية (المدير فقط — دفعات)</summary>
     /// <remarks>
     /// Accepts a partial dict of <c>{ "finance.xxx": "value", ... }</c>. Unknown
@@ -327,6 +390,48 @@ public class SettingsController(AppDbContext db, ICurrentUserService currentUser
                 var r = raw.ToLowerInvariant();
                 if (r is not "true" and not "false")
                     return "قيمة غير صالحة — يُتوقع true أو false";
+                return null;
+            }
+            // LABINV-REQ-010 — exchange rates feed order cost and therefore commission,
+            // so a malformed value here is a money bug, not a display bug.
+            case FinanceSettingsKeys.FxMarket:
+            {
+                if (!ExchangeRateResolver.KnownMarkets.Contains(raw.ToLowerInvariant()))
+                    return "السوق غير معروف — القيم المقبولة: sanaa أو aden أو custom";
+                return null;
+            }
+            case FinanceSettingsKeys.FxSanaaUsdToYer:
+            case FinanceSettingsKeys.FxSanaaSarToYer:
+            case FinanceSettingsKeys.FxAdenUsdToYer:
+            case FinanceSettingsKeys.FxAdenSarToYer:
+            case FinanceSettingsKeys.FxCustomUsdToYer:
+            case FinanceSettingsKeys.FxCustomSarToYer:
+            {
+                if (!decimal.TryParse(raw, out var rate))
+                    return "قيمة غير صالحة — يُتوقع رقم";
+                // Zero or negative is rejected rather than stored: a zero rate makes every
+                // foreign-currency lab order cost nothing, and it would do so quietly.
+                if (rate <= 0m)
+                    return "سعر الصرف يجب أن يكون أكبر من صفر";
+                return null;
+            }
+            case FinanceSettingsKeys.FxStaleAfterDays:
+            {
+                if (!int.TryParse(raw, out var days))
+                    return "قيمة غير صالحة — يُتوقع عدد أيام";
+                if (days < 1 || days > 365)
+                    return "مدة مراجعة سعر الصرف يجب أن تكون بين يوم واحد و 365 يومًا";
+                return null;
+            }
+            case FinanceSettingsKeys.FxRatesUpdatedOn:
+            {
+                // Empty is meaningful: "never reviewed". It must stay settable so the owner
+                // can reset the review clock rather than being forced to claim a false date.
+                if (string.IsNullOrWhiteSpace(raw)) return null;
+                if (!DateOnly.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture, out var d))
+                    return "تاريخ غير صالح — الصيغة المتوقعة yyyy-MM-dd";
+                if (d > ClinicTimeProvider.ClinicToday())
+                    return "لا يمكن أن يكون تاريخ مراجعة سعر الصرف في المستقبل";
                 return null;
             }
             case FinanceSettingsKeys.PaymentMethodsDefaultVisibility:

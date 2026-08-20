@@ -437,6 +437,72 @@ public class LabOrdersController(
         return Ok(dto);
     }
 
+    /// <summary>بحث عن أمر مختبر برقم الطلب (مسح رمز QR أو إدخال يدوي)</summary>
+    /// <remarks>
+    /// <para>
+    /// LABINV-REQ-008. Resolves the code printed on the lab order slip to the order itself,
+    /// so a box arriving back from the lab can be matched to its record by scanning instead
+    /// of searching. The code is the existing <c>OrderNumber</c> — no new identifier and no
+    /// new column.
+    /// </para>
+    /// <para>
+    /// <b>This is a permission-checked read, not a shortcut.</b> It runs the same three
+    /// gates as <c>GET /{id}</c>: the <c>lab_orders.view</c> permission, the branch scope
+    /// inside <c>LabOrderQueryService</c>, and the per-patient doctor gate. Holding a
+    /// printed slip grants nothing that the user's own role does not already grant.
+    /// </para>
+    /// <para>
+    /// <b>Every failure returns the same 404.</b> Not found, another branch's order, and a
+    /// patient this doctor may not see are indistinguishable from outside. A scanner is an
+    /// enumeration surface: separating "does not exist" from "not yours" would let anyone
+    /// with one slip discover which other order numbers are real, and for a sequential
+    /// numbering scheme that is the whole book.
+    /// </para>
+    /// </remarks>
+    [HttpGet("lookup")]
+    public async Task<IActionResult> LookupByCode([FromQuery] string? code, CancellationToken ct = default)
+    {
+        if (!await CanAsync("view")) return Forbid();
+
+        var trimmed = (code ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+            return BadRequest(new { message = "لم يُقرأ أي رمز — أعد المسح أو أدخل رقم الطلب يدويًا" });
+
+        // Guard against a decode that produced a whole URL or a long payload rather than an
+        // order number. Bounded before it reaches the database.
+        if (trimmed.Length > 64)
+            return NotFound(new { message = NotFoundMessage });
+
+        var id = await queryService.FindIdByOrderNumberAsync(trimmed, ct);
+        if (id is null) return NotFound(new { message = NotFoundMessage });
+
+        LabOrderDetailDto? dto;
+        try
+        {
+            dto = await queryService.GetByIdAsync(id.Value);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error resolving scanned lab order code {Code}: {ErrorType} — {ErrorMsg}", trimmed, ex.GetType().Name, ex.InnerException?.Message ?? ex.Message);
+            return StatusCode(500, new { message = "حدث خطأ أثناء البحث عن أمر المختبر" });
+        }
+
+        if (dto is null) return NotFound(new { message = NotFoundMessage });
+
+        // Same per-patient gate as GetById — but collapsed into the shared 404 so the
+        // response cannot be used to confirm that the order exists.
+        if (await DenyIfDoctorCannotAccess(dto.PatientId) is not null)
+            return NotFound(new { message = NotFoundMessage });
+
+        return Ok(dto);
+    }
+
+    /// <summary>
+    /// One message for every lookup failure. Written once so a later edit cannot
+    /// accidentally reintroduce a distinguishable response.
+    /// </summary>
+    private const string NotFoundMessage = "لا يوجد أمر مختبر بهذا الرمز ضمن صلاحياتك";
+
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateLabOrderRequest req)
     {

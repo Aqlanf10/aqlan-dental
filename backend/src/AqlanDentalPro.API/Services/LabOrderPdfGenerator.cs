@@ -3,6 +3,7 @@ using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Services;
+using QRCoder;
 
 namespace AqlanDentalPro.API.Services;
 
@@ -77,26 +78,70 @@ public static class LabOrderPdfGenerator
         });
     }
 
+    /// <summary>
+    /// LABINV-REQ-008 — the scannable tracking code on the lab order slip.
+    ///
+    /// <para>
+    /// <b>What was here before:</b> a decorative strip of bars whose widths came from
+    /// <c>value.Aggregate(17, (c, ch) =&gt; c * 31 + ch)</c> — a string hash. It was
+    /// labelled "LAB TRACKING", it looked exactly like a barcode, and it encoded nothing.
+    /// No reader on earth could decode it. That is worse than printing no code at all:
+    /// staff scan it, get nothing, and conclude the scanner is broken rather than that the
+    /// barcode is fake.
+    /// </para>
+    ///
+    /// <para>
+    /// It is now a real QR code carrying the order number, produced by QRCoder. A phone
+    /// camera resolves it, and the lab lookup screen turns it into the order — subject to
+    /// the same permissions as every other read.
+    /// </para>
+    ///
+    /// <para>
+    /// The order number is printed underneath unchanged. A smudged or torn label must
+    /// still be usable by typing, and the human-readable code is what makes that possible.
+    /// </para>
+    /// </summary>
     private static void ComposeTrackingCode(IContainer container, string value)
     {
-        var seed = Math.Abs(value.Aggregate(17, (current, ch) => (current * 31) + ch));
-        var bars = Enumerable.Range(0, 36)
-            .Select(index => ((seed >> (index % 24)) + index) % 3 != 0)
-            .ToArray();
+        var qrPng = TryRenderQrPng(value);
 
         container.Border(1).BorderColor(Colors.Grey.Lighten2).Padding(4).Column(column =>
         {
             column.Item().AlignCenter().Text("LAB TRACKING").FontSize(7).FontColor(Colors.Grey.Darken1);
-            column.Item().PaddingVertical(3).Height(28).Row(row =>
+
+            if (qrPng is not null)
             {
-                foreach (var isBlack in bars)
-                {
-                    row.ConstantItem(2).Background(isBlack ? Colors.Black : Colors.White);
-                    row.ConstantItem(1).Background(Colors.White);
-                }
-            });
+                column.Item().PaddingVertical(3).AlignCenter().Width(72).Image(qrPng);
+            }
+
             column.Item().AlignCenter().Text(value).FontSize(8).Bold().FontFamily(FontName);
         });
+    }
+
+    /// <summary>
+    /// Renders the order number as a QR PNG, or null if it cannot be produced.
+    /// </summary>
+    /// <remarks>
+    /// Returning null rather than throwing keeps a QR failure from taking down the whole
+    /// work order: the slip is what the lab physically works from, and printing it without
+    /// a code is recoverable, while not printing it at all stops the case.
+    /// </remarks>
+    private static byte[]? TryRenderQrPng(string value)
+    {
+        try
+        {
+            using var generator = new QRCodeGenerator();
+            // ECC level Q: a lab slip gets handled, taped to a box, and occasionally
+            // stained. Q tolerates about 25% damage, which is the realistic condition
+            // this label is read in.
+            using var data = generator.CreateQrCode(value, QRCodeGenerator.ECCLevel.Q);
+            var png = new PngByteQRCode(data);
+            return png.GetGraphic(8);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private static void ComposeContent(IContainer container, LabOrder order, List<LabOrderItem> items)

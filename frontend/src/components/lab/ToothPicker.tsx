@@ -86,35 +86,40 @@ export function ToothPicker({ value, onChange, label = "اختيار الأسن�
   const clear = () => onChange(formatToothValue([], extras));
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-2">
-        <input
-          className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm"
-          placeholder="الأسنان"
-          aria-label="رقم الأسنان"
-          value={value ?? ""}
-          onChange={(e) => onChange(e.target.value)}
-          dir="ltr"
-        />
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          aria-label={label}
-          title={label}
-          className={cn(
-            "shrink-0 rounded-lg border px-2.5 py-2 transition-colors",
-            open
-              ? "border-cyan-500 bg-cyan-50 text-cyan-700"
-              : "border-gray-200 text-gray-500 hover:text-cyan-700 hover:border-cyan-300",
-          )}
-        >
-          <Grid3x3 className="h-4 w-4" aria-hidden />
-        </button>
-      </div>
+    // `relative` anchors the expanded chart, which is absolutely positioned. This field
+    // lives in a 2-of-12 grid cell next to five others; an inline panel would either be
+    // squeezed to nothing or push the whole row apart.
+    <div className="relative">
+      {/* The trigger sits inside the input rather than beside it. Placing it beside the
+          input cost ~36px of an already narrow cell and crushed the text box. */}
+      <input
+        className="w-full border border-gray-200 rounded-lg px-3 py-2 ps-9 text-sm"
+        placeholder="الأسنان"
+        aria-label="رقم الأسنان"
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        dir="ltr"
+      />
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-label={label}
+        title={label}
+        className={cn(
+          "absolute top-1/2 -translate-y-1/2 rounded-md p-1.5 transition-colors",
+          open ? "bg-cyan-50 text-cyan-700" : "text-gray-400 hover:text-cyan-700",
+        )}
+        style={{ insetInlineStart: "0.25rem" }}
+      >
+        <Grid3x3 className="h-4 w-4" aria-hidden />
+      </button>
 
       {open && (
-        <div className="rounded-xl border border-gray-200 bg-white p-3 space-y-2">
+        <div
+          className="absolute z-30 mt-1 w-[34rem] max-w-[92vw] rounded-xl border border-gray-200 bg-white p-3 space-y-2 shadow-lg"
+          style={{ insetInlineStart: 0 }}
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-gray-600">
               ترقيم FDI — اضغط السن لتحديده
@@ -214,7 +219,7 @@ function ToothButton({
       aria-pressed={active}
       aria-label={`السن ${tooth}`}
       className={cn(
-        "h-8 w-8 shrink-0 rounded-md border text-xs font-semibold tabular-nums transition-colors",
+        "h-7 w-7 shrink-0 rounded-md border text-[11px] font-semibold tabular-nums transition-colors",
         active
           ? "border-cyan-600 bg-cyan-600 text-white"
           : "border-gray-200 bg-white text-gray-700 hover:border-cyan-400 hover:text-cyan-700",

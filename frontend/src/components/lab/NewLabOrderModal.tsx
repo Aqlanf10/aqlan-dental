@@ -18,6 +18,8 @@ import type { PatientListItem } from "@/types/patient";
 import { cn } from "@/lib/utils";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
 import { ExchangeRateField } from "@/components/lab/ExchangeRateField";
+import { ShadePicker } from "@/components/lab/ShadePicker";
+import { ToothPicker } from "@/components/lab/ToothPicker";
 
 interface Props {
   onClose: () => void;
@@ -264,8 +266,20 @@ export function NewLabOrderModal({ onClose, initialPatient }: Props) {
                   <option value="">نوع العمل</option>
                   {workTypes.map((type) => <option key={type.id} value={type.id}>{type.nameAr || type.name}</option>)}
                 </select>
-                <input className="md:col-span-2 border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="الأسنان" aria-label="رقم الأسنان" value={item.toothNumber ?? ""} onChange={(e) => updateItem(item.key, { toothNumber: e.target.value })} />
-                <input className="md:col-span-2 border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="الظل" aria-label="الظل (اللون)" value={item.shade ?? ""} onChange={(e) => updateItem(item.key, { shade: e.target.value })} />
+                <div className="md:col-span-2">
+                  <ToothPicker
+                    value={item.toothNumber ?? ""}
+                    onChange={(next) => updateItem(item.key, { toothNumber: next })}
+                    label={`اختيار أسنان البند ${index + 1}`}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <ShadePicker
+                    value={item.shade ?? ""}
+                    onChange={(next) => updateItem(item.key, { shade: next })}
+                    label={`اختيار لون البند ${index + 1}`}
+                  />
+                </div>
                 <input className="md:col-span-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" type="number" min="1" aria-label="العدد" value={item.unitsCount ?? 1} onChange={(e) => updateItem(item.key, { unitsCount: Number(e.target.value) })} />
                 <input className="md:col-span-2 border border-gray-200 rounded-lg px-3 py-2 text-sm" type="number" min="0" step="0.01" placeholder="سعر الوحدة" aria-label="سعر الوحدة" value={item.unitPrice ?? ""} onChange={(e) => updateItem(item.key, { unitPrice: e.target.value === "" ? undefined : Number(e.target.value) })} />
                 <div className="md:col-span-1 flex items-center text-sm font-bold text-gray-700">{Number(item.totalPrice ?? 0).toLocaleString()}</div>

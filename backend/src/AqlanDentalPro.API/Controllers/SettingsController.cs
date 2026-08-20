@@ -183,6 +183,32 @@ public class SettingsController(AppDbContext db, ICurrentUserService currentUser
         return Ok(result);
     }
 
+    /// <summary>دليل درجات اللون المعتمد لأوامر المختبر (متاح لجميع الموظفين)</summary>
+    /// <remarks>
+    /// LABINV-REQ-007. Served from a StaffOnly route rather than <c>GET /finance</c>
+    /// because that route requires <c>ReportsAccess</c> (Admin/Accountant) and the people
+    /// who actually order lab work — reception and nursing — do not hold it. Reading the
+    /// guide through a route they cannot call would have left the picker permanently
+    /// empty for its only users.
+    ///
+    /// An empty stored value means "use the client's built-in VITA Classical guide"; the
+    /// list is not duplicated here so the two cannot drift apart.
+    /// </remarks>
+    [HttpGet("lab-shade-guide")]
+    [Authorize(Policy = "StaffOnly")]
+    public async Task<IActionResult> GetLabShadeGuide(CancellationToken ct = default)
+    {
+        var settings = new FinanceSettingsReader(db);
+        var raw = await settings.GetAsync(FinanceSettingsKeys.LabShadeGuide, ct);
+
+        var shades = raw
+            .Split([',', '،'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return Ok(new { shades });
+    }
+
     /// <summary>أسعار الصرف المعتمدة حاليًا (متاح لجميع الموظفين)</summary>
     /// <remarks>
     /// <para>

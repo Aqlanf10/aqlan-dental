@@ -85,6 +85,13 @@ public static class FinanceSettingsKeys
     /// <summary>Days past due at which the third ageing bucket ends; beyond it is the last bucket.</summary>
     public const string PayablesAgingBucket3Days = "finance.payables.aging_bucket_3_days";
 
+    /// <summary>
+    /// LABINV-REQ-007 — comma-separated shade guide offered when ordering lab work.
+    /// Empty falls back to VITA Classical in the UI. Lives in Settings because a clinic
+    /// that works to a different guide must not have to change source code to say so.
+    /// </summary>
+    public const string LabShadeGuide = "finance.lab.shade_guide";
+
     // ── Exchange rates (LABINV-REQ-010) ─────────────────────────────────────
     // Why these live in Settings and are NOT fetched from a public FX API:
     //
@@ -145,6 +152,10 @@ public static class FinanceSettingsKeys
         // Android lab app shipped with, so adopting this feature changes no number the
         // clinic was already using. "rates_updated_on" is deliberately empty: the system
         // must not claim these were reviewed today when nobody has reviewed them.
+        // Empty = the UI's built-in VITA Classical guide. Storing the list here would
+        // freeze a copy that silently diverges from the UI default over time.
+        [LabShadeGuide]                       = "",
+
         [FxMarket]                            = "sanaa",
         [FxSanaaUsdToYer]                     = "535",
         [FxSanaaSarToYer]                     = "142",

@@ -71,6 +71,15 @@ and branch isolation — none of that is touched.
 - `LABINV-REQ-011`: Consumables attributable to a lab order SHALL be recordable against
   that order through the existing inventory owner APIs. No inventory write may bypass
   `InventoryController`, and no second consumption ledger may be created.
+  **Corrected 2026-08-20:** an earlier draft of this requirement also demanded that the
+  material cost be reflected in the order cost. That was wrong. Materials the clinic
+  consumes are not part of what the clinic owes the lab, so folding them into
+  `LabOrder.TotalCost` would inflate both the supplier bill and the lab-cost deduction
+  inside the doctor's commission. They are a clinic-side cost, reported beside the order
+  and never written into it.
+  **Status: blocked.** The design requires an `InventoryAdjustment.LabOrderId` column and
+  `dotnet ef migrations add` fails on a clean tree — see
+  `docs/audits/EF_MIGRATION_TOOLING_BLOCKER_2026-08-20.md` and `CORE-EF-001` in the queue.
 
 ### Acceptance Criteria (Chairside Parity)
 
@@ -84,8 +93,9 @@ and branch isolation — none of that is touched.
 - WHEN a lab order is sent to WhatsApp THEN clinic identity SHALL be read from
   `Settings`, and the absence of a lab phone number SHALL produce an Arabic error, not
   a half-formed link.
-- WHEN consumables are recorded against a lab order THEN inventory balances and the
-  order cost SHALL both reflect it, through existing owner APIs only.
+- WHEN consumables are recorded against a lab order THEN inventory balances SHALL reflect
+  it through existing owner APIs only, and the material cost SHALL be reported beside the
+  order WITHOUT being written into `LabOrder.TotalCost` (see the correction above).
 
 ### Forbidden (Chairside Parity)
 

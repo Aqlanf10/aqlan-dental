@@ -30,6 +30,10 @@ Each task is an independently mergeable slice.
   Arabic error.
 - `LABINV-TASK-011` — `LABINV-REQ-011` consumables against a lab order via owner APIs.
   **Strong model.** Touches inventory and cost; needs runtime verification.
+  **BLOCKED (2026-08-20)** on `CORE-EF-001`: the design needs an
+  `InventoryAdjustment.LabOrderId` column and `dotnet ef migrations add` fails on a clean
+  tree. Do not work around it by encoding the id inside the free-text `Reason` — that
+  breaks the first time the wording is edited and cannot be queried.
 
 Runtime verification required for `LABINV-TASK-006`, `LABINV-TASK-009`, and
 `LABINV-TASK-011` before their exit criteria can be claimed.

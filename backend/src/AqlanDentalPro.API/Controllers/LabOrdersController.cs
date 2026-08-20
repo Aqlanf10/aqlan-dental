@@ -2,6 +2,7 @@ using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.API.Services;
+using AqlanDentalPro.Application.Common;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -495,6 +496,72 @@ public class LabOrdersController(
             return NotFound(new { message = NotFoundMessage });
 
         return Ok(dto);
+    }
+
+    /// <summary>تجهيز رسالة واتساب لإرسال تفاصيل الطلب إلى المعمل</summary>
+    /// <remarks>
+    /// <para>
+    /// LABINV-REQ-009. Returns the lab's number and a ready message; the browser opens
+    /// WhatsApp with them. The server never sends anything — the clinic's WhatsApp account
+    /// stays out of the backend entirely.
+    /// </para>
+    /// <para>
+    /// Composed here rather than in the browser because clinic identity must come from
+    /// <c>Settings</c>. The alternative in practice is a component with the clinic's name
+    /// written into it as a literal, which is exactly what this system forbids — and which
+    /// would keep sending the old name after a rename.
+    /// </para>
+    /// <para>
+    /// A lab with no phone number on file is an Arabic error, not a half-formed link. A
+    /// <c>wa.me/</c> URL with an empty number opens WhatsApp to nothing and looks like the
+    /// message was sent.
+    /// </para>
+    /// </remarks>
+    [HttpGet("{id:guid}/whatsapp-message")]
+    public async Task<IActionResult> GetWhatsAppMessage(Guid id, CancellationToken ct = default)
+    {
+        if (!await CanAsync("view")) return Forbid();
+
+        var order = await db.LabOrders
+            .Include(o => o.Patient)
+            .Include(o => o.Doctor)
+            .Include(o => o.Lab)
+            .Include(o => o.Items).ThenInclude(i => i.WorkType)
+            .FirstOrDefaultAsync(o => o.Id == id, ct);
+
+        if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
+
+        var denied = await DenyIfDoctorCannotAccess(order.PatientId);
+        if (denied is not null) return denied;
+
+        var phone = !string.IsNullOrWhiteSpace(order.Lab?.WhatsApp)
+            ? order.Lab!.WhatsApp!
+            : order.Lab?.Phone;
+
+        if (string.IsNullOrWhiteSpace(phone))
+        {
+            return BadRequest(new
+            {
+                message = order.Lab is null
+                    ? "هذا الطلب غير مرتبط بمعمل مسجّل — اربطه بمعمل أولًا لإرسال التفاصيل"
+                    : $"لا يوجد رقم واتساب أو هاتف للمعمل «{order.Lab.Name}» — أضِفه من الإعدادات ← المعامل",
+            });
+        }
+
+        var settings = new FinanceSettingsReader(db);
+        var includePatientName = await settings.GetBoolAsync(
+            FinanceSettingsKeys.LabWhatsAppIncludePatientName, ct);
+
+        var clinic = await FinanceClinicIdentity.ResolveAsync(db, ct);
+        var message = LabOrderDispatchMessage.Compose(
+            order, order.Items.ToList(), clinic, includePatientName);
+
+        return Ok(new
+        {
+            phone,
+            labName = order.Lab?.Name,
+            message,
+        });
     }
 
     /// <summary>

@@ -14,6 +14,7 @@ import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import type { LabOrder, LabOrderStatus } from "@/types/lab";
 import { NewLabOrderModal } from "@/components/lab/NewLabOrderModal";
 import { ScanOrderDialog } from "@/components/lab/ScanOrderDialog";
+import { SendToLabButton } from "@/components/lab/SendToLabButton";
 import { cn, localDateString } from "@/lib/utils";
 import { extractErrorMessage } from "@/lib/errors";
 import { QueryErrorBanner } from "@/components/shared/QueryErrorBanner";
@@ -286,6 +287,11 @@ export function LabOrdersPanel() {
                               {NEXT_STATUS_LABELS[nextStatus] ?? "تقدّم"} ←
                             </button>
                           )}
+                          {/* LABINV-REQ-009 — the alternative is retyping the case into
+                              WhatsApp by hand, which is where tooth numbers and shades get
+                              transposed. Sits next to Print because both are "get this to
+                              the lab". */}
+                          <SendToLabButton orderId={order.id} />
                           {/* Download PDF button — sends Authorization token */}
                           <button
                             type="button"

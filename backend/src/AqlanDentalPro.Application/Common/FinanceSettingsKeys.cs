@@ -86,6 +86,24 @@ public static class FinanceSettingsKeys
     public const string PayablesAgingBucket3Days = "finance.payables.aging_bucket_3_days";
 
     /// <summary>
+    /// LABINV-REQ-009 — include the patient's name in the WhatsApp message sent to the lab.
+    ///
+    /// <para>
+    /// Defaults to true because the printed work order that travels with the case already
+    /// carries the name, and the practical alternative is a staff member typing the same
+    /// details into WhatsApp by hand. The feature standardises an exposure that already
+    /// exists rather than creating one.
+    /// </para>
+    /// <para>
+    /// It is still a setting, because WhatsApp is not paper: the message persists on a
+    /// third-party server and on a technician's personal phone. A clinic that would rather
+    /// send only the order number can turn this off and the lab matches the case from the
+    /// printed slip instead.
+    /// </para>
+    /// </summary>
+    public const string LabWhatsAppIncludePatientName = "finance.lab.whatsapp_include_patient_name";
+
+    /// <summary>
     /// LABINV-REQ-007 — comma-separated shade guide offered when ordering lab work.
     /// Empty falls back to VITA Classical in the UI. Lives in Settings because a clinic
     /// that works to a different guide must not have to change source code to say so.
@@ -155,6 +173,7 @@ public static class FinanceSettingsKeys
         // Empty = the UI's built-in VITA Classical guide. Storing the list here would
         // freeze a copy that silently diverges from the UI default over time.
         [LabShadeGuide]                       = "",
+        [LabWhatsAppIncludePatientName]       = "true",
 
         [FxMarket]                            = "sanaa",
         [FxSanaaUsdToYer]                     = "535",

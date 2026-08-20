@@ -1554,6 +1554,328 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.ToTable("CephNorms", (string)null);
                 });
 
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.CephPilotCase", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CalibrationSource")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("CaseCode")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int>("CaseSequence")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("DeIdentificationConfirmed")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DeviceCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<int>("ImageHeight")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ImageSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .IsFixedLength();
+
+                    b.Property<string>("ImageStorageKey")
+                        .IsRequired()
+                        .HasMaxLength(180)
+                        .HasColumnType("character varying(180)");
+
+                    b.Property<int>("ImageWidth")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("LegalBasisConfirmed")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("MetadataSanitized")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("MigrationDecision")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<decimal?>("MmPerPixel")
+                        .HasPrecision(12, 8)
+                        .HasColumnType("numeric(12,8)");
+
+                    b.Property<bool>("NoBarcodeOrQrConfirmed")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Orientation")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<bool>("OrientationConfirmed")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("PatientGroupToken")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .IsFixedLength();
+
+                    b.Property<bool>("PixelInspectionConfirmed")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("QualityCategory")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SiteCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("SkeletalCategory")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("SourceReference")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("SourceType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Split")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("VerticalCategory")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "CaseCode")
+                        .IsUnique();
+
+                    b.HasIndex("ProjectId", "CaseSequence")
+                        .IsUnique();
+
+                    b.HasIndex("ProjectId", "ImageSha256")
+                        .IsUnique();
+
+                    b.HasIndex("ProjectId", "Status", "IsActive");
+
+                    b.ToTable("CephPilotCases", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_CephPilotCases_ReadyRequiresGate", "\"Status\" <> 'Ready' OR (\"MmPerPixel\" IS NOT NULL AND \"DeIdentificationConfirmed\" = TRUE AND \"PixelInspectionConfirmed\" = TRUE AND \"NoBarcodeOrQrConfirmed\" = TRUE AND \"LegalBasisConfirmed\" = TRUE AND \"MetadataSanitized\" = TRUE AND \"OrientationConfirmed\" = TRUE)");
+                        });
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.CephPilotExportArtifact", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ArtifactType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<Guid>("CaseId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ImportStatus")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsComparatorOnly")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .IsFixedLength();
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(180)
+                        .HasColumnType("character varying(180)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CaseId", "ArtifactType", "IsActive");
+
+                    b.HasIndex("CaseId", "ArtifactType", "Sha256")
+                        .IsUnique();
+
+                    b.ToTable("CephPilotExportArtifacts", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_CephPilotExportArtifacts_ComparatorOnly", "\"IsComparatorOnly\" = TRUE");
+                        });
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.CephPilotProject", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AdjudicatorUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DatasetVersion")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsAiHidden")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsWebCephHidden")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("LandmarkDefinitionVersion")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime?>("LockedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<Guid>("ReviewerAUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ReviewerBUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AdjudicatorUserId");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("ReviewerAUserId", "Status", "IsActive");
+
+                    b.HasIndex("ReviewerBUserId", "Status", "IsActive");
+
+                    b.ToTable("CephPilotProjects", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_CephPilotProjects_BlindingEnabled", "\"IsAiHidden\" = TRUE AND \"IsWebCephHidden\" = TRUE");
+
+                            t.HasCheckConstraint("CK_CephPilotProjects_DistinctReviewers", "\"ReviewerAUserId\" <> \"ReviewerBUserId\" AND (\"AdjudicatorUserId\" IS NULL OR (\"AdjudicatorUserId\" <> \"ReviewerAUserId\" AND \"AdjudicatorUserId\" <> \"ReviewerBUserId\"))");
+
+                            t.HasCheckConstraint("CK_CephPilotProjects_RatifiedVersion", "\"LandmarkDefinitionVersion\" = 'ADP-LM-LAT-v1.0'");
+                        });
+                });
+
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.CephVtoScenario", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2563,13 +2885,13 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<Guid>("DoctorId")
                         .HasColumnType("uuid");
 
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
                     b.Property<string>("IdempotencyKey")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Notes")
                         .HasColumnType("text");
@@ -2590,8 +2912,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("BranchId");
 
                     b.HasIndex("BranchId", "IdempotencyKey")
                         .IsUnique();
@@ -2641,17 +2961,21 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CommissionAdjustmentId");
+
                     b.HasIndex("InvoiceLineItemId");
+
                     b.HasIndex("PaymentId", "CommissionAdjustmentId")
                         .IsUnique()
                         .HasFilter("\"CommissionAdjustmentId\" IS NOT NULL");
+
                     b.HasIndex("PaymentId", "InvoiceLineItemId")
                         .IsUnique()
                         .HasFilter("\"InvoiceLineItemId\" IS NOT NULL");
 
-                    b.ToTable("DoctorCommissionPaymentAllocations", null, t =>
+                    b.ToTable("DoctorCommissionPaymentAllocations", t =>
                         {
                             t.HasCheckConstraint("CK_DoctorCommissionPaymentAllocations_ExactlyOneTarget", "(\"InvoiceLineItemId\" IS NOT NULL) <> (\"CommissionAdjustmentId\" IS NOT NULL)");
+
                             t.HasCheckConstraint("CK_DoctorCommissionPaymentAllocations_PositiveAmount", "\"Amount\" > 0");
                         });
                 });
@@ -9423,6 +9747,54 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Navigation("Analysis");
                 });
 
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.CephPilotCase", b =>
+                {
+                    b.HasOne("AqlanDentalPro.Domain.Entities.CephPilotProject", "Project")
+                        .WithMany("Cases")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.CephPilotExportArtifact", b =>
+                {
+                    b.HasOne("AqlanDentalPro.Domain.Entities.CephPilotCase", "Case")
+                        .WithMany("ExportArtifacts")
+                        .HasForeignKey("CaseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Case");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.CephPilotProject", b =>
+                {
+                    b.HasOne("AqlanDentalPro.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("AdjudicatorUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("AqlanDentalPro.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AqlanDentalPro.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("ReviewerAUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AqlanDentalPro.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("ReviewerBUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.CephVtoScenario", b =>
                 {
                     b.HasOne("AqlanDentalPro.Domain.Entities.CephAnalysis", "Analysis")
@@ -9701,8 +10073,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Navigation("Branch");
 
                     b.Navigation("Doctor");
-
-                    b.Navigation("Allocations");
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.DoctorCommissionPaymentAllocation", b =>
@@ -9724,7 +10094,9 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("CommissionAdjustment");
+
                     b.Navigation("InvoiceLineItem");
+
                     b.Navigation("Payment");
                 });
 
@@ -11322,6 +11694,16 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Navigation("Measurements");
                 });
 
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.CephPilotCase", b =>
+                {
+                    b.Navigation("ExportArtifacts");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.CephPilotProject", b =>
+                {
+                    b.Navigation("Cases");
+                });
+
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.ClinicService", b =>
                 {
                     b.Navigation("Consumables");
@@ -11353,6 +11735,11 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Navigation("PrimaryPatients");
 
                     b.Navigation("Schedules");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.DoctorCommissionPayment", b =>
+                {
+                    b.Navigation("Allocations");
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.Inventory", b =>

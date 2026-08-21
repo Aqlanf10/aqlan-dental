@@ -1,3 +1,4 @@
+using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -78,6 +79,56 @@ public static class SuperAdminBootstrap
                     extra.Username);
             }
 
+            // Mirror every known permission resource into an explicit SuperAdmin row with
+            // every action enabled. This keeps /api/auth/me/permissions and the existing
+            // frontend permission hooks working after the owner role is promoted.
+            var resources = await db.RolePermissions
+                .IgnoreQueryFilters()
+                .Select(p => p.Resource)
+                .Distinct()
+                .ToListAsync();
+
+            var superAdminPermissions = await db.RolePermissions
+                .IgnoreQueryFilters()
+                .Where(p => p.Role == nameof(UserRole.SuperAdmin))
+                .ToDictionaryAsync(p => p.Resource);
+
+            foreach (var resource in resources)
+            {
+                if (!superAdminPermissions.TryGetValue(resource, out var permission))
+                {
+                    db.RolePermissions.Add(new RolePermission
+                    {
+                        Role = nameof(UserRole.SuperAdmin),
+                        Resource = resource,
+                        CanView = true,
+                        CanCreate = true,
+                        CanEdit = true,
+                        CanDelete = true,
+                        CanExport = true,
+                        CanApprove = true
+                    });
+                    changed = true;
+                    continue;
+                }
+
+                if (!permission.CanView || !permission.CanCreate || !permission.CanEdit
+                    || !permission.CanDelete || !permission.CanExport || !permission.CanApprove)
+                {
+                    permission.CanView = true;
+                    permission.CanCreate = true;
+                    permission.CanEdit = true;
+                    permission.CanDelete = true;
+                    permission.CanExport = true;
+                    permission.CanApprove = true;
+                    permission.IsActive = true;
+                    permission.DeletedAt = null;
+                    permission.DeletedBy = null;
+                    permission.UpdatedAt = DateTime.UtcNow;
+                    changed = true;
+                }
+            }
+
             if (changed)
             {
                 owner.UpdatedAt = DateTime.UtcNow;
@@ -92,7 +143,7 @@ public static class SuperAdminBootstrap
         catch (Exception ex)
         {
             // Do not make a transient database outage prevent the process from starting;
-            // authorization still denies SuperAdmin-only operations until a valid token exists.
+            // authorization still denies owner-only operations unless a valid owner token exists.
             app.Logger.LogError(ex, "SEC: failed to verify the SuperAdmin owner invariant at startup.");
         }
     }

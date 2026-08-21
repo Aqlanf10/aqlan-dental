@@ -10,8 +10,57 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/messages")]
 [Authorize(Policy = "StaffOnly")]
-public class MessagesController(IMessagingService messagingService, AppDbContext db, ILogger<MessagesController> logger) : ControllerBase
+public class MessagesController(
+    IMessagingService messagingService,
+    AppDbContext db,
+    ICurrentUserService currentUser,
+    IPatientAccessService patientAccess,
+    ILogger<MessagesController> logger) : ControllerBase
 {
+    /// <summary>
+    /// MOBILE-03: fail closed before any patient-linked messaging operation.
+    /// MessagingService intentionally uses IgnoreQueryFilters in several places so it can
+    /// reactivate old participants. That must never become a branch/doctor IDOR surface.
+    /// Return 404 for inaccessible patients so callers cannot enumerate patients in other branches.
+    /// </summary>
+    private async Task<IActionResult?> DenyIfPatientInaccessible(Guid patientId)
+    {
+        var patient = await db.Patients
+            .IgnoreQueryFilters()
+            .Where(p => p.Id == patientId && p.IsActive)
+            .Select(p => new { p.Id, p.BranchId })
+            .FirstOrDefaultAsync();
+
+        if (patient is null)
+            return NotFound(new { message = "المريض غير موجود" });
+
+        if (!currentUser.IsAdmin)
+        {
+            if (!currentUser.BranchId.HasValue
+                || currentUser.BranchId.Value == Guid.Empty
+                || !patient.BranchId.HasValue
+                || patient.BranchId.Value != currentUser.BranchId.Value)
+            {
+                logger.LogWarning(
+                    "Messaging patient branch access denied: user {UserId} attempted patient {PatientId}",
+                    currentUser.UserId,
+                    patientId);
+                return NotFound(new { message = "المريض غير موجود" });
+            }
+        }
+
+        if (patientAccess.IsDoctor && !await patientAccess.CanAccessPatientAsync(patientId))
+        {
+            logger.LogWarning(
+                "Messaging patient doctor access denied: user {UserId} attempted patient {PatientId}",
+                currentUser.UserId,
+                patientId);
+            return NotFound(new { message = "المريض غير موجود" });
+        }
+
+        return null;
+    }
+
     /// <summary>فحص حالة جداول المراسلة (Admin فقط)</summary>
     [HttpGet("schema-status")]
     [Authorize(Policy = "AdminOnly")]
@@ -39,6 +88,7 @@ public class MessagesController(IMessagingService messagingService, AppDbContext
             return StatusCode(500, new { error = "حدث خطأ أثناء فحص حالة قاعدة البيانات" });
         }
     }
+
     /// <summary>جلب محادثاتي</summary>
     [HttpGet("conversations")]
     public async Task<ActionResult<object>> GetConversations(
@@ -76,8 +126,21 @@ public class MessagesController(IMessagingService messagingService, AppDbContext
     [HttpPost("conversations")]
     public async Task<ActionResult<ConversationDetailDto>> CreateConversation([FromBody] CreateConversationRequest request)
     {
-        var result = await messagingService.CreateConversationAsync(request);
-        return CreatedAtAction(nameof(GetConversation), new { conversationId = result.Id }, result);
+        if (request.PatientId.HasValue)
+        {
+            var denied = await DenyIfPatientInaccessible(request.PatientId.Value);
+            if (denied != null) return denied;
+        }
+
+        try
+        {
+            var result = await messagingService.CreateConversationAsync(request);
+            return CreatedAtAction(nameof(GetConversation), new { conversationId = result.Id }, result);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "ليس لديك صلاحية إنشاء هذه المحادثة" });
+        }
     }
 
     /// <summary>إرسال رسالة في محادثة</summary>
@@ -137,6 +200,9 @@ public class MessagesController(IMessagingService messagingService, AppDbContext
     [HttpPost("conversations/patient/{patientId:guid}")]
     public async Task<ActionResult<ConversationDetailDto>> GetOrCreatePatientFacingConversation(Guid patientId)
     {
+        var denied = await DenyIfPatientInaccessible(patientId);
+        if (denied != null) return denied;
+
         try
         {
             var result = await messagingService.GetOrCreatePatientFacingConversationAsync(patientId);
@@ -156,6 +222,9 @@ public class MessagesController(IMessagingService messagingService, AppDbContext
     [HttpPost("internal-patient/{patientId:guid}")]
     public async Task<ActionResult<ConversationDetailDto>> GetOrCreateInternalPatientConversation(Guid patientId)
     {
+        var denied = await DenyIfPatientInaccessible(patientId);
+        if (denied != null) return denied;
+
         try
         {
             var result = await messagingService.GetOrCreatePatientConversationAsync(patientId);
@@ -203,6 +272,9 @@ public class MessagesController(IMessagingService messagingService, AppDbContext
     [HttpGet("patient/{patientId:guid}")]
     public async Task<ActionResult<ConversationDetailDto>> GetInternalPatientConversation(Guid patientId)
     {
+        var denied = await DenyIfPatientInaccessible(patientId);
+        if (denied != null) return denied;
+
         try
         {
             var result = await messagingService.GetPatientConversationAsync(patientId);

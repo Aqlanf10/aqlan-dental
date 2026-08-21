@@ -51,6 +51,9 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="appointments-new" options={{ href: null, title: "حجز موعد" }} />
       <Tabs.Screen name="message-detail" options={{ href: null, title: "المحادثة" }} />
       <Tabs.Screen name="notifications" options={{ href: null, title: "الإشعارات" }} />
+      <Tabs.Screen name="visits" options={{ href: null, title: "الزيارات السريرية" }} />
+      <Tabs.Screen name="visit-detail" options={{ href: null, title: "تفاصيل الزيارة" }} />
+      <Tabs.Screen name="visit-editor" options={{ href: null, title: "السجل السريري" }} />
     </Tabs>
   );
 }

@@ -46,8 +46,11 @@ export default function AppTabsLayout() {
         name="appointments"
         options={{ title: "المواعيد", tabBarIcon: icon("◷") }}
       />
+      <Tabs.Screen name="messages" options={{ title: "الرسائل", tabBarIcon: icon("✉") }} />
       <Tabs.Screen name="account" options={{ title: "حسابي", tabBarIcon: icon("●") }} />
       <Tabs.Screen name="appointments-new" options={{ href: null, title: "حجز موعد" }} />
+      <Tabs.Screen name="message-detail" options={{ href: null, title: "المحادثة" }} />
+      <Tabs.Screen name="notifications" options={{ href: null, title: "الإشعارات" }} />
     </Tabs>
   );
 }

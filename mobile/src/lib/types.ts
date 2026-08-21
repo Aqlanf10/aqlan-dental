@@ -170,6 +170,115 @@ export type AppointmentMutationInput = {
   packageId?: string | null;
 };
 
+export type ConversationParticipant = {
+  userId: string;
+  username: string;
+  displayName?: string | null;
+  role?: string | null;
+  avatarInitials?: string | null;
+  color?: string | null;
+  isAdmin: boolean;
+};
+
+export type MessageAttachment = {
+  id: string;
+  messageId: string;
+  fileUrl: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+};
+
+export type ConversationMessage = {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  senderName: string;
+  senderInitials?: string | null;
+  senderColor?: string | null;
+  content: string;
+  attachmentUrl?: string | null;
+  attachmentName?: string | null;
+  attachmentType?: string | null;
+  attachments: MessageAttachment[];
+  replyToId?: string | null;
+  replyToContent?: string | null;
+  replyToSenderName?: string | null;
+  isSystemMessage: boolean;
+  isEdited: boolean;
+  editedAt?: string | null;
+  isReadByMe: boolean;
+  readCount: number;
+  createdAt: string;
+};
+
+export type ConversationListItem = {
+  id: string;
+  title: string;
+  isGroup: boolean;
+  conversationType: string;
+  patientId?: string | null;
+  patientName?: string | null;
+  patientNumber?: string | null;
+  lastMessageAt?: string | null;
+  lastMessagePreview?: string | null;
+  unreadCount: number;
+  otherParticipant?: ConversationParticipant | null;
+  participants: ConversationParticipant[];
+  recipientType?: string | null;
+  recipientUserId?: string | null;
+};
+
+export type ConversationListResponse = {
+  data: ConversationListItem[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages?: number;
+  hasNextPage?: boolean;
+  hasPreviousPage?: boolean;
+};
+
+export type ConversationDetail = {
+  id: string;
+  title: string;
+  isGroup: boolean;
+  conversationType: string;
+  patientId?: string | null;
+  patientName?: string | null;
+  patientNumber?: string | null;
+  patientPhone?: string | null;
+  participants: ConversationParticipant[];
+  messages: ConversationMessage[];
+  createdAt: string;
+  recipientType?: string | null;
+  recipientUserId?: string | null;
+};
+
+export type MessagingUnreadCount = {
+  totalUnread: number;
+  unreadConversations: number;
+};
+
+export type NotificationItem = {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  isRead: boolean;
+  relatedEntity?: string | null;
+  relatedId?: string | null;
+  createdAt: string;
+};
+
+export type NotificationsResponse = {
+  data: NotificationItem[];
+  total: number;
+  unreadCount: number;
+  page: number;
+  pageSize: number;
+};
+
 export type DashboardStats = {
   appointmentsToday: number;
   newPatientsToday: number;

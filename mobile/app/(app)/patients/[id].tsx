@@ -2,7 +2,7 @@ import { useSession } from "@/auth/SessionProvider";
 import { Card, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/components/ui";
 import { apiRequest } from "@/lib/api";
 import { fullPatientName } from "@/lib/format";
-import type { PatientProfile } from "@/lib/types";
+import type { ConversationDetail, PatientProfile } from "@/lib/types";
 import { colors, spacing } from "@/theme";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
@@ -14,6 +14,8 @@ export default function PatientDetailsScreen() {
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
   const [patient, setPatient] = useState<PatientProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [communicationError, setCommunicationError] = useState<string | null>(null);
+  const [messagingAction, setMessagingAction] = useState<"internal" | "patient" | null>(null);
   const [loading, setLoading] = useState(true);
   // MOBILE-02 safety: reception receives an operational profile that intentionally omits
   // occupation/referralSource. Until the API exposes a partial operational update contract,
@@ -36,6 +38,27 @@ export default function PatientDetailsScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function openPatientConversation(kind: "internal" | "patient") {
+    if (!patient || messagingAction) return;
+
+    setMessagingAction(kind);
+    setCommunicationError(null);
+    try {
+      const path =
+        kind === "patient"
+          ? `/api/messages/conversations/patient/${patient.id}`
+          : `/api/messages/internal-patient/${patient.id}`;
+      const conversation = await apiRequest<ConversationDetail>(path, { method: "POST" });
+      router.push({ pathname: "/(app)/message-detail", params: { id: conversation.id } });
+    } catch (err) {
+      setCommunicationError(
+        err instanceof Error ? err.message : "تعذر فتح المحادثة المرتبطة بالمريض"
+      );
+    } finally {
+      setMessagingAction(null);
+    }
+  }
 
   if (loading) {
     return (
@@ -112,6 +135,7 @@ export default function PatientDetailsScreen() {
       ) : null}
 
       <SectionTitle>إجراءات سريعة</SectionTitle>
+      {communicationError ? <StateMessage title="تعذر فتح المحادثة" message={communicationError} /> : null}
       <PrimaryButton
         title="حجز موعد جديد"
         onPress={() =>
@@ -129,6 +153,18 @@ export default function PatientDetailsScreen() {
             params: { patientId: patient.id, patientName }
           })
         }
+      />
+      <PrimaryButton
+        title="محادثة داخلية حول المريض"
+        loading={messagingAction === "internal"}
+        disabled={messagingAction !== null}
+        onPress={() => void openPatientConversation("internal")}
+      />
+      <PrimaryButton
+        title="مراسلة المريض — مرئية للمريض"
+        loading={messagingAction === "patient"}
+        disabled={messagingAction !== null}
+        onPress={() => void openPatientConversation("patient")}
       />
       {canEdit && !patient.isLimitedView ? (
         <PrimaryButton

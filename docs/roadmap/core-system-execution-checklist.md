@@ -122,7 +122,8 @@
       queue-display middleware; seven opt-in controllers hardened to deny by default. See
       `core-system-route-policy-ownership.md`.
 - [ ] `CORE-P1-S5` Distinguish executed and skipped authenticated E2E in CI.
-- [~] Phase 1 exit gate: **evidence complete 2026-08-21, approval is the owner's.** The gate
+- [x] Phase 1 exit gate **APPROVED by the owner, 2026-08-21.** Evidence below.
+- [x] Phase 1 exit gate evidence complete 2026-08-21. The gate
       reads "no competing active owner routes; sidebar/guards/server policy agree". The first
       half was settled by `CORE-P1-S2`. The second is now enforced by a shared contract,
       `contracts/route-policy-map.json`, that both sides verify against — the backend proving
@@ -133,7 +134,11 @@
 ## Phase 2 - Settings, Identity, Language, Printing
 
 - [ ] Define central settings and identity schema.
-- [ ] Resolve runtime logo and text identity from one source.
+- [~] Resolve runtime logo and text identity from one source. **Text identity done
+      2026-08-21** (`CORE-REQ-006`): three independent readers with three disagreeing
+      fallbacks collapsed onto `FinanceClinicIdentity`, and the `clinic.*` keys — which were
+      **absent from every database** because they seeded only into an empty Settings table —
+      now seed additively. Logo resolution is not yet unified and stays open.
 - [ ] Implement Arabic RTL and English LTR application contracts.
 - [ ] Implement independent print-language selection.
 - [ ] Migrate supported print generators to one identity/currency contract.

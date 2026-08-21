@@ -741,10 +741,18 @@ public class SmsService : ISmsService
         await _db.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// CORE-REQ-006 — the clinic's name for outbound SMS, from the one resolver.
+    /// </summary>
+    /// <remarks>
+    /// This used to read the key itself and fall back to "عيادة أقلان لطب الأسنان" — which is
+    /// not the clinic's name and misspells the owner's. Because clinic.name was in fact absent
+    /// from the database, that fallback was what patients actually received.
+    /// </remarks>
     private async Task<string> GetClinicNameAsync()
     {
-        var setting = await _db.Settings.FirstOrDefaultAsync(s => s.Key == "clinic.name");
-        return setting?.Value ?? "عيادة أقلان لطب الأسنان";
+        var clinic = await FinanceClinicIdentity.ResolveAsync(_db);
+        return clinic.Name;
     }
 
     private static string BuildPatientDisplayName(Patient? patient)

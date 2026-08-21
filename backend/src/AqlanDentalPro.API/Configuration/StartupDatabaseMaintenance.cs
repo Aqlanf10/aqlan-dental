@@ -152,6 +152,7 @@ public static class StartupDatabaseMaintenance
         await EnsureReminderTrackingColumnsAsync(app);
         await EnsureInvoicesAndMigrationHistoryAsync(app);
         await EnsureAdminPasswordResetAsync(app);
+        await EnsureClinicIdentitySettingsSeedAsync(app);
         await EnsureWebsiteSettingsSeedAsync(app);
         await EnsurePatientJourneyColumnsAsync(app);
         await EnsurePatientJourneyPermissionsAsync(app);
@@ -1699,6 +1700,93 @@ public static class StartupDatabaseMaintenance
             resetLogger2.LogWarning(ex, "SEC-03: Admin password reset failed (non-fatal)");
         }
 
+    }
+
+    /// <summary>
+    /// CORE-REQ-006 — the clinic.* identity keys, seeded additively.
+    ///
+    /// <para>
+    /// These keys are the owner's mandated report identity: the centre's full name, the lead
+    /// doctor and their title and credentials, and the contact details every PDF footer reads.
+    /// They were defined only in <c>DbSeeder.SeedSettingsAsync</c>, which runs behind
+    /// <c>if (!await context.Settings.AnyAsync())</c> — i.e. only when the Settings table is
+    /// completely empty.
+    /// </para>
+    /// <para>
+    /// <b>That condition is never true in practice.</b> The website seed below and the
+    /// finance sentinel seeder both insert rows on any database, so by the time the clinic
+    /// keys would be considered the table already has content and the whole block is skipped
+    /// forever. Verified on two real databases: 62 settings rows present, <c>website.*</c>
+    /// among them, and <b>zero</b> <c>clinic.*</c> keys.
+    /// </para>
+    /// <para>
+    /// The consequence was not cosmetic. With the keys absent every document fell back to its
+    /// own default, and the defaults disagreed: cephalometric reports printed an <b>empty</b>
+    /// clinic name, the lab work order printed the generic "مركز طب الأسنان", SMS to patients
+    /// said "عيادة أقلان لطب الأسنان" — a misspelling of the owner's name — and only finance
+    /// receipts carried the real one.
+    /// </para>
+    /// <para>
+    /// Seeded additively, key by key, exactly like the website block: an administrator who has
+    /// edited any of these keeps their value, and a database that has them is untouched.
+    /// </para>
+    /// </summary>
+    private static async Task EnsureClinicIdentitySettingsSeedAsync(WebApplication app)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db     = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+            var clinicDefaults = new Dictionary<string, string>
+            {
+                ["clinic.name"]                       = "مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان",
+                ["clinic.location"]                   = "تعز، اليمن — شارع التحرير الأعلى",
+                ["clinic.phones"]                     = "04-253028 · 770-245745 · 711-752823",
+                ["clinic.currency"]                   = "YER",
+                ["clinic.lead_doctor"]                = "د. عقلان الكامل",
+                ["clinic.lead_doctor_title"]          = "أخصائي تقويم الأسنان",
+                ["clinic.lead_doctor_credentials"]    = "جامعة مانيلا المركزية — الفلبين",
+            };
+
+            // Matched by key, not by category: a key inserted under a different category by an
+            // older path must still count as present, or this would create a duplicate.
+            var existingKeys = await db.Settings
+                .Where(s => clinicDefaults.Keys.Contains(s.Key))
+                .Select(s => s.Key)
+                .ToListAsync();
+
+            var added = 0;
+            foreach (var (key, value) in clinicDefaults)
+            {
+                if (existingKeys.Contains(key)) continue;
+
+                db.Settings.Add(new AqlanDentalPro.Domain.Entities.Setting
+                {
+                    Key = key,
+                    Value = value,
+                    Category = "clinic",
+                    UpdatedAt = DateTime.UtcNow
+                });
+                added++;
+            }
+
+            if (added > 0)
+            {
+                await db.SaveChangesAsync();
+                logger.LogInformation("Clinic identity settings seeded ({Count} new keys)", added);
+            }
+            else
+            {
+                logger.LogInformation("Clinic identity settings already present, no seeding needed");
+            }
+        }
+        catch (Exception ex)
+        {
+            var logger2 = app.Services.GetRequiredService<ILogger<Program>>();
+            logger2.LogWarning(ex, "Clinic identity settings seed hotfix failed (non-fatal)");
+        }
     }
 
     /// <summary>

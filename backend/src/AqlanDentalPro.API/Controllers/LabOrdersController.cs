@@ -1749,9 +1749,14 @@ public class LabOrdersController(
 
         try
         {
-            var clinicName = await db.Settings.Where(s => s.Key == "clinic.name").Select(s => s.Value).FirstOrDefaultAsync() ?? "مركز طب الأسنان";
-            var clinicPhone = await db.Settings.Where(s => s.Key == "clinic.phones").Select(s => s.Value).FirstOrDefaultAsync() ?? "";
-            var clinicAddress = await db.Settings.Where(s => s.Key == "clinic.location").Select(s => s.Value).FirstOrDefaultAsync() ?? "";
+            // CORE-REQ-006 — identity comes from the one resolver, not from three ad-hoc
+            // queries with their own fallback. This used to fall back to "مركز طب الأسنان",
+            // a name that is not this clinic's, on the one document that physically leaves
+            // the building and reaches an outside lab.
+            var clinic = await FinanceClinicIdentity.ResolveAsync(db);
+            var clinicName = clinic.Name;
+            var clinicPhone = clinic.Phones;
+            var clinicAddress = clinic.Location;
 
             // CLIN-12: CPU-bound PDF generation is offloaded to the thread pool
             // (GenerateAsync wraps Task.Run) so the request thread is released.

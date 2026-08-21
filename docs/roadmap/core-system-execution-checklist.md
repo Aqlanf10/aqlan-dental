@@ -24,12 +24,20 @@
 - [x] 2026-08-09 refresh at `908937f1`: backend unit 2,861 / 2,861; backend integration
       **32 / 32 and now a blocking gate**; frontend 574 / 574; coverage 8.33% lines /
       40.98% branches.
-- [~] `CORE-F-009` / `CORE-P1-S5`: the run now states what it verified. Every E2E run writes
-      an executed/skipped table into the job summary and annotates a warning when the
-      authenticated journey did not run, so a green tick can no longer be read as journey
-      verification. Turning that warning into a failure is a one-variable change
-      (`E2E_REQUIRE_AUTHENTICATED=true`) and is the owner's call, because it depends on
-      staging credentials existing. **The journey itself is still unverified.**
+- [x] `CORE-P1-S5`: **closed 2026-08-21.** The line below it — "the journey itself is still
+      unverified" — was written on 2026-08-10 and was already stale two days later, when the
+      ephemeral-stack job landed. Corrected against a CI run rather than restated: run 2528 on
+      `main` (`bb277263`) executed every authenticated spec with **0 skipped**, in a job that
+      is blocking and fails on any skip. The staff login journey is verified on every push.
+- [~] `CORE-F-009`, **narrowed, not closed.** What remains true is only the second half: with
+      the credential secrets empty the deployed-staging job executes 1 test and skips 5, and
+      still reports success. Same run, verbatim from the log: `E2E executed 1 test(s),
+      skipped 5.` So the *deployed staging environment* is unverified — the journey is not.
+      Two changes on 2026-08-21 stop that green tick from being read as more than it is: the
+      job is renamed from "E2E — Playwright" to **"E2E — Deployed staging smoke"**, and its
+      warning now names the blocking job that does verify the journey. Turning the warning
+      into a failure remains `E2E_REQUIRE_AUTHENTICATED=true` and remains the owner's call,
+      because it depends on staging credentials existing.
 - [x] `CORE-F-013`: unit `.trx` upload path corrected to `backend/TestResults`.
 - [x] **Ephemeral E2E stack (2026-08-12).** CI now stands up PostgreSQL + API + frontend inside
       the runner, seeds them and drives the real staff login. Needs no secrets and no staging.

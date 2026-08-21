@@ -117,6 +117,12 @@ verification `CORE-P1-S1` and `CORE-P1-S2` still owe.
     default is deliberate and not a softening: making a credential-less run red today would
     turn `main` red for a condition only the owner can resolve. The switch is the decision
     point, and until it is flipped `CORE-F-009` stays open — the journey is still unverified.
+  - **Status 2026-08-21: closed.** The sentence above stopped being true on 2026-08-12, when
+    the ephemeral-stack job landed and began executing the authenticated journey with no
+    secrets. Verified against CI rather than assumed: run 2528 on `main` executed every
+    authenticated spec with 0 skipped, in a blocking job that fails on any skip. `CORE-F-009`
+    narrows to the deployed-staging job alone, whose green tick is now named for what it
+    verifies ("E2E — Deployed staging smoke"). See the execution checklist for the evidence.
 - `CORE-P1-S2`: Create a checked canonical route/owner inventory and redirect tests.
 - `CORE-P1-S3`: Remove policy drift by deriving sidebar and route guards from one
   frontend route manifest while retaining server authorization as authority.

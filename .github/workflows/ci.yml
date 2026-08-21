@@ -199,7 +199,12 @@ jobs:
           NEXT_PUBLIC_API_URL: http://localhost:5000
 
   e2e:
-    name: E2E — Playwright
+    # CORE-P1-S5. Named for what it verifies, not for the tool it uses. "E2E — Playwright ✅"
+    # in the checks list read like "the patient journey works" while standing for "a login
+    # page rendered": with the credential secrets empty this job executes 1 test and skips 5,
+    # and still reports success. The authenticated journey is covered by the ephemeral-stack
+    # job below, which is blocking and cannot skip.
+    name: E2E — Deployed staging smoke
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -314,8 +319,12 @@ jobs:
               if required:
                   print(f"::error::{message} E2E_REQUIRE_AUTHENTICATED is set, so this is a failure.")
                   sys.exit(1)
-              print(f"::warning::{message} Set the repository variable "
-                    f"E2E_REQUIRE_AUTHENTICATED=true once staging credentials exist to make this fail.")
+              print(f"::warning::{message} The authenticated journey IS verified by the "
+                    f"'E2E - Authenticated journey (ephemeral stack)' job, which is blocking "
+                    f"and supplies its own credentials; what is unverified here is the "
+                    f"DEPLOYED staging environment. Set the repository variable "
+                    f"E2E_REQUIRE_AUTHENTICATED=true once staging credentials exist to make "
+                    f"this fail.")
           PY
 
       - name: Upload Playwright report

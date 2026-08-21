@@ -9,6 +9,7 @@ import api from "@/lib/api";
 import { useUnreadCount } from "@/hooks/useMessaging";
 import { TopbarSearch } from "@/components/layout/TopbarSearch";
 import { TopbarNotifications } from "@/components/layout/TopbarNotifications";
+import { LanguageSwitcher } from "@/components/shared/LanguageSwitcher";
 
 /* ─── Live Clock — matches ZIP ─────────────────────────────────────────────── */
 // FE-31: Wrapped in React.memo so the parent Topbar does not re-render every second
@@ -99,6 +100,8 @@ export function Topbar() {
         </button>
 
         <TopbarSearch />
+        {/* CORE-REQ-006: one click between Arabic and English, beside the other global controls. */}
+        <LanguageSwitcher />
         <TopbarNotifications />
         <UserMenu user={user} router={router} />
       </div>

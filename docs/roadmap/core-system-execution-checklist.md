@@ -157,10 +157,23 @@
       so nothing changes for a clinic that has not chosen. The Arabic lead-doctor block comes
       from the same `clinic.*` rows the PDFs read, so a printed form and a printed PDF cannot
       name the doctor differently.
-- [ ] Implement Arabic RTL and English LTR **application** contracts. **Not started, and not a
-      slice.** The dashboard's strings are Arabic literals inline across the whole app; making
-      the interface bilingual is a phase of its own, not a step inside this one. Recorded as
-      such rather than half-done.
+- [~] Implement Arabic RTL and English LTR application contracts. **Foundation done and proved
+      on a live surface, 2026-08-21; the bulk of the migration is measured and outstanding.**
+      - **Done:** locale + direction contract (`src/i18n/`), a `LocaleProvider` that writes
+        `lang`/`dir` onto `<html>`, a one-click switcher in the topbar, and translation with an
+        **Arabic fallback** so an untranslated key renders today's exact text — the property
+        that makes migrating incrementally safe. Proved end-to-end against a running app:
+        `dir` rtl→ltr, `lang` ar→en, sidebar labels translated, no horizontal overflow.
+      - **Measured and outstanding — two separate bodies of work:**
+        1. **~7,880 Arabic strings across 419 files.** Additive: each screen keeps working
+           until it is migrated. Best done per module, with clinical and financial terms
+           reviewed rather than machine-translated.
+        2. **~418 physical CSS direction utilities** (`text-right` ×207, `text-left` ×50,
+           `pr-9` ×41, `pl-3` ×36, `flex-row-reverse` ×7 …) that do **not** follow `dir` and
+           must become logical properties (`text-start`, `ps-*`, `pe-*`). 156 logical
+           utilities are already in use, so the pattern is established. Until this is done the
+           text translates but the chrome stays physically right-to-left — confirmed visually,
+           not assumed.
 - [ ] Migrate supported print generators to one identity/currency contract.
 - [ ] Phase 2 exit gate approved.
 

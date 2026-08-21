@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useT } from "@/i18n/LocaleProvider";
 import {
   LayoutDashboard, Users, GitBranch, Activity,
   Stethoscope, Scissors, ArrowLeftRight, Wallet,
@@ -55,6 +56,21 @@ type NavGroup = {
 
 type NavItem = NavLeaf & { section?: string };
 type NavEntry = (NavItem & { kind?: "leaf" }) | (NavGroup & { section?: string });
+
+/**
+ * CORE-REQ-006 — the translation key for a navigation route.
+ *
+ * Derived from the href rather than stored on each of the forty entries, so the array below is
+ * untouched and an entry with no key yet simply keeps its Arabic label. That is the migration
+ * property this whole system is built on: translating a screen is additive, and a screen nobody
+ * has reached yet keeps working exactly as it does today.
+ */
+export function navKeyFor(href: string): string {
+  if (href === "/") return "nav.dashboard";
+  const segment = href.replace(/^\//, "").split("/")[0];
+  const camel = segment.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+  return `nav.${camel}`;
+}
 
 /* ─── Navigation definition ─────────────────────────────────────────────────── */
 export const NAV: NavEntry[] = [
@@ -315,6 +331,7 @@ function NavGroupItem({
 /* ─── Sidebar ───────────────────────────────────────────────────────────────── */
 export function Sidebar() {
   const pathname  = usePathname();
+  const t = useT();
   const router    = useRouter();
   const { user, logout } = useAuthStore();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -410,7 +427,7 @@ export function Sidebar() {
             const unreadCount = leaf.href === "/messages" ? unreadData?.totalUnread : undefined;
 
             // Dynamically customize labels for Doctor roles
-            let label = leaf.label;
+            let label = t(navKeyFor(leaf.href), leaf.label);
             if (leaf.href === "/schedule" && ["GeneralDentist", "OralSurgeon", "Orthodontist"].includes(userRole)) {
               label = "مواعيدي";
             } else if (leaf.href === "/patients" && ["GeneralDentist", "OralSurgeon", "Orthodontist"].includes(userRole)) {

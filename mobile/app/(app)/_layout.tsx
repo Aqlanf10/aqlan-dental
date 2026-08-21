@@ -13,7 +13,14 @@ export default function AppTabsLayout() {
 
   if (isLoading) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background }}>
+      <View
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: colors.background
+        }}
+      >
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
@@ -35,8 +42,12 @@ export default function AppTabsLayout() {
     >
       <Tabs.Screen name="home" options={{ title: "الرئيسية", tabBarIcon: icon("⌂") }} />
       <Tabs.Screen name="patients" options={{ title: "المرضى", tabBarIcon: icon("♙") }} />
-      <Tabs.Screen name="appointments" options={{ title: "المواعيد", tabBarIcon: icon("◷") }} />
+      <Tabs.Screen
+        name="appointments"
+        options={{ title: "المواعيد", tabBarIcon: icon("◷") }}
+      />
       <Tabs.Screen name="account" options={{ title: "حسابي", tabBarIcon: icon("●") }} />
+      <Tabs.Screen name="appointments-new" options={{ href: null, title: "حجز موعد" }} />
     </Tabs>
   );
 }

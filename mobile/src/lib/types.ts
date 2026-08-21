@@ -37,6 +37,18 @@ export type PaginatedResponse<T> = {
   totalPages?: number;
 };
 
+export type DoctorSummary = {
+  id: string;
+  name: string;
+  specialty?: string | null;
+  color?: string | null;
+  branchId?: string | null;
+  branchName?: string | null;
+  isActive: boolean;
+  defaultClinicRoomId?: string | null;
+  defaultRoomName?: string | null;
+};
+
 export type PatientListItem = {
   id: string;
   patientNumber: string;
@@ -99,6 +111,23 @@ export type PatientProfile = {
   isLimitedView?: boolean;
 };
 
+export type PatientMutationInput = {
+  firstName: string;
+  middleName?: string | null;
+  lastName: string;
+  dateOfBirth?: string | null;
+  gender?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  whatsApp?: string | null;
+  address?: string | null;
+  occupation?: string | null;
+  referralSource?: string | null;
+  primaryDoctorId?: string | null;
+  medicalHistory?: MedicalHistory | null;
+  dentalHistory?: DentalHistory | null;
+};
+
 export type Appointment = {
   id: string;
   patientId: string;
@@ -120,6 +149,25 @@ export type Appointment = {
   calledAt?: string | null;
   inRoomAt?: string | null;
   packageName?: string | null;
+};
+
+export type AppointmentMutationInput = {
+  patientId: string;
+  doctorId: string;
+  appointmentDate: string;
+  startTime: string;
+  durationMinutes: number;
+  appointmentType: string;
+  specialty?: string | null;
+  notes?: string | null;
+  serviceId?: string | null;
+  clinicRoomId?: string | null;
+  orthoCaseId?: string | null;
+  companionName?: string | null;
+  companionPhone?: string | null;
+  companionRelationship?: string | null;
+  appointmentColor?: string | null;
+  packageId?: string | null;
 };
 
 export type DashboardStats = {

@@ -3,7 +3,7 @@ import { apiRequest } from "@/lib/api";
 import { appointmentStatusLabel, isoDateLocal } from "@/lib/format";
 import type { Appointment } from "@/lib/types";
 import { colors, radius, spacing } from "@/theme";
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 
@@ -60,21 +60,45 @@ export default function AppointmentsScreen() {
     <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />}>
       {patientName ? <Text style={styles.filter}>مواعيد: {patientName}</Text> : null}
 
+      <PrimaryButton
+        title="حجز موعد جديد"
+        onPress={() =>
+          router.push({
+            pathname: "/(app)/appointments-new",
+            params: patientId
+              ? { patientId, patientName: patientName ?? "", date: dateText }
+              : { date: dateText }
+          })
+        }
+      />
+
       <View style={styles.dateBar}>
-        <Pressable onPress={() => moveDay(-1)} style={styles.dateButton}><Text style={styles.dateButtonText}>اليوم السابق</Text></Pressable>
+        <Pressable onPress={() => moveDay(-1)} style={styles.dateButton}>
+          <Text style={styles.dateButtonText}>اليوم السابق</Text>
+        </Pressable>
         <View style={styles.dateCenter}>
           <Text style={styles.date}>{dateText}</Text>
-          <Pressable onPress={() => setDate(new Date())}><Text style={styles.today}>اليوم</Text></Pressable>
+          <Pressable onPress={() => setDate(new Date())}>
+            <Text style={styles.today}>اليوم</Text>
+          </Pressable>
         </View>
-        <Pressable onPress={() => moveDay(1)} style={styles.dateButton}><Text style={styles.dateButtonText}>اليوم التالي</Text></Pressable>
+        <Pressable onPress={() => moveDay(1)} style={styles.dateButton}>
+          <Text style={styles.dateButtonText}>اليوم التالي</Text>
+        </Pressable>
       </View>
 
       {loading ? (
         <ActivityIndicator size="large" color={colors.primary} />
       ) : error && appointments.length === 0 ? (
-        <StateMessage title="تعذر تحميل المواعيد" message={error} action={<PrimaryButton title="إعادة المحاولة" onPress={() => void load()} />} />
+        <StateMessage
+          title="تعذر تحميل المواعيد"
+          message={error}
+          action={<PrimaryButton title="إعادة المحاولة" onPress={() => void load()} />}
+        />
       ) : appointments.length === 0 ? (
-        <Card><Text style={styles.empty}>لا توجد مواعيد في هذا اليوم.</Text></Card>
+        <Card>
+          <Text style={styles.empty}>لا توجد مواعيد في هذا اليوم.</Text>
+        </Card>
       ) : (
         appointments.map((item) => (
           <Card key={item.id}>
@@ -85,7 +109,9 @@ export default function AppointmentsScreen() {
                 <Text style={styles.meta}>{item.patientNumber}</Text>
               </View>
             </View>
-            <Text style={styles.time}>{item.startTime} – {item.endTime}</Text>
+            <Text style={styles.time}>
+              {item.startTime} – {item.endTime}
+            </Text>
             <Text style={styles.meta}>د. {item.doctorName}</Text>
             {item.appointmentType ? <Text style={styles.meta}>{item.appointmentType}</Text> : null}
             {item.roomName ? <Text style={styles.meta}>الغرفة: {item.roomName}</Text> : null}
@@ -97,17 +123,55 @@ export default function AppointmentsScreen() {
 }
 
 const styles = StyleSheet.create({
-  filter: { color: colors.primary, backgroundColor: colors.primarySoft, borderRadius: radius.sm, padding: spacing.sm, textAlign: "right", fontWeight: "700" },
-  dateBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
-  dateButton: { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: radius.sm, paddingVertical: spacing.sm, paddingHorizontal: spacing.sm },
+  filter: {
+    color: colors.primary,
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+    textAlign: "right",
+    fontWeight: "700"
+  },
+  dateBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm
+  },
+  dateButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm
+  },
   dateButtonText: { color: colors.primary, fontSize: 12, fontWeight: "700" },
   dateCenter: { alignItems: "center" },
   date: { color: colors.text, fontWeight: "800" },
   today: { color: colors.primary, fontSize: 12, marginTop: 4 },
-  appointmentHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: spacing.md },
+  appointmentHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: spacing.md
+  },
   patient: { color: colors.text, fontSize: 17, fontWeight: "800", textAlign: "right" },
-  status: { color: colors.primary, backgroundColor: colors.primarySoft, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, fontSize: 12, fontWeight: "700" },
-  time: { color: colors.text, fontSize: 16, fontWeight: "700", marginTop: spacing.md, textAlign: "right" },
+  status: {
+    color: colors.primary,
+    backgroundColor: colors.primarySoft,
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    fontSize: 12,
+    fontWeight: "700"
+  },
+  time: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "700",
+    marginTop: spacing.md,
+    textAlign: "right"
+  },
   meta: { color: colors.muted, marginTop: 4, textAlign: "right" },
   empty: { color: colors.muted, textAlign: "center" }
 });

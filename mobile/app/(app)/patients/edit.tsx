@@ -15,13 +15,17 @@ export default function EditPatientScreen() {
   const [patient, setPatient] = useState<PatientProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const canEdit = user?.role === "Admin" || user?.role === "Reception";
+  const canEdit = user?.role === "Admin";
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       if (!id) {
         setError("معرّف المريض غير موجود.");
+        setLoading(false);
+        return;
+      }
+      if (!canEdit) {
         setLoading(false);
         return;
       }
@@ -38,14 +42,14 @@ export default function EditPatientScreen() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [canEdit, id]);
 
   if (!canEdit) {
     return (
       <Screen>
         <StateMessage
           title="غير مصرح"
-          message="تعديل بيانات المريض متاح للمدير والاستقبال وفق سياسة الخادم."
+          message="تعديل الملف الكامل متاح للمدير فقط في نسخة الموبايل الحالية حتى لا تُمسح حقول لا يعرضها الخادم لحساب الاستقبال."
         />
       </Screen>
     );

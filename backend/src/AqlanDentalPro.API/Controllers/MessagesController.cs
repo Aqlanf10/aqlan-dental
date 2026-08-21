@@ -17,13 +17,7 @@ public class MessagesController(
     IPatientAccessService patientAccess,
     ILogger<MessagesController> logger) : ControllerBase
 {
-    /// <summary>
-    /// MOBILE-03: fail closed before any patient-linked messaging operation.
-    /// MessagingService intentionally uses IgnoreQueryFilters in several places so it can
-    /// reactivate old participants. That must never become a branch/doctor IDOR surface.
-    /// Return 404 for inaccessible patients so callers cannot enumerate patients in other branches.
-    /// </summary>
-    private async Task<ActionResult?> DenyIfPatientInaccessible(Guid patientId)
+    private async Task<bool> CanAccessPatientAsync(Guid patientId, bool logDenied = true)
     {
         var patient = await db.Patients
             .IgnoreQueryFilters()
@@ -32,41 +26,136 @@ public class MessagesController(
             .FirstOrDefaultAsync();
 
         if (patient is null)
-            return NotFound(new { message = "المريض غير موجود" });
+            return false;
 
-        if (!currentUser.IsAdmin)
+        if (currentUser.IsAdmin)
+            return true;
+
+        if (!currentUser.BranchId.HasValue
+            || currentUser.BranchId.Value == Guid.Empty
+            || !patient.BranchId.HasValue
+            || patient.BranchId.Value != currentUser.BranchId.Value)
         {
-            if (!currentUser.BranchId.HasValue
-                || currentUser.BranchId.Value == Guid.Empty
-                || !patient.BranchId.HasValue
-                || patient.BranchId.Value != currentUser.BranchId.Value)
+            if (logDenied)
             {
                 logger.LogWarning(
                     "Messaging patient branch access denied: user {UserId} attempted patient {PatientId}",
                     currentUser.UserId,
                     patientId);
-                return NotFound(new { message = "المريض غير موجود" });
             }
+            return false;
         }
 
         if (patientAccess.IsDoctor && !await patientAccess.CanAccessPatientAsync(patientId))
         {
-            logger.LogWarning(
-                "Messaging patient doctor access denied: user {UserId} attempted patient {PatientId}",
-                currentUser.UserId,
-                patientId);
-            return NotFound(new { message = "المريض غير موجود" });
+            if (logDenied)
+            {
+                logger.LogWarning(
+                    "Messaging patient doctor access denied: user {UserId} attempted patient {PatientId}",
+                    currentUser.UserId,
+                    patientId);
+            }
+            return false;
         }
 
-        return null;
+        return true;
     }
 
     /// <summary>
-    /// StaffToPatient is an internal staff conversation about a patient, not a portal conversation.
-    /// Older MessagingService behavior added the patient's linked messaging User as a participant,
-    /// which could make that user receive generic "new message" notifications even though the portal
-    /// correctly refuses to expose StaffToPatient conversations. Deactivate that participant before
-    /// loading or sending internal messages. PatientFacing conversations are intentionally untouched.
+    /// Fail closed before any patient-linked messaging operation. Return 404 for inaccessible
+    /// patients so callers cannot enumerate patients in other branches or outside doctor access.
+    /// </summary>
+    private async Task<ActionResult?> DenyIfPatientInaccessible(Guid patientId)
+    {
+        return await CanAccessPatientAsync(patientId)
+            ? null
+            : NotFound(new { message = "المريض غير موجود" });
+    }
+
+    private async Task DeactivateCurrentUserMembershipAsync(Guid conversationId)
+    {
+        var userId = currentUser.UserId;
+        if (!userId.HasValue || userId.Value == Guid.Empty)
+            return;
+
+        var participant = await db.ConversationParticipants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(cp => cp.ConversationId == conversationId
+                                    && cp.UserId == userId.Value
+                                    && cp.IsActive);
+        if (participant is null)
+            return;
+
+        participant.IsActive = false;
+        participant.DeletedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Existing conversation membership must never outlive patient access. A branch move or a
+    /// doctor/patient unlink therefore revokes the stale participant row and returns the same 404
+    /// used by patient-id routes.
+    /// </summary>
+    private async Task<ActionResult?> DenyIfConversationPatientInaccessible(Guid conversationId)
+    {
+        var patientId = await db.Conversations
+            .IgnoreQueryFilters()
+            .Where(c => c.Id == conversationId && c.IsActive)
+            .Select(c => c.PatientId)
+            .FirstOrDefaultAsync();
+
+        if (!patientId.HasValue)
+            return null;
+
+        var denied = await DenyIfPatientInaccessible(patientId.Value);
+        if (denied is not null)
+            await DeactivateCurrentUserMembershipAsync(conversationId);
+
+        return denied;
+    }
+
+    /// <summary>
+    /// Prune stale patient-conversation memberships before list/count/stat queries so a user who
+    /// lost patient access cannot continue seeing the conversation through a persistent participant row.
+    /// </summary>
+    private async Task DeactivateInaccessiblePatientMembershipsAsync()
+    {
+        if (currentUser.IsAdmin)
+            return;
+
+        var userId = currentUser.UserId;
+        if (!userId.HasValue || userId.Value == Guid.Empty)
+            return;
+
+        var memberships = await (
+            from cp in db.ConversationParticipants.IgnoreQueryFilters()
+            join c in db.Conversations.IgnoreQueryFilters() on cp.ConversationId equals c.Id
+            where cp.UserId == userId.Value
+                  && cp.IsActive
+                  && c.IsActive
+                  && c.PatientId.HasValue
+            select new { Participant = cp, PatientId = c.PatientId!.Value })
+            .ToListAsync();
+
+        var changed = false;
+        foreach (var membership in memberships)
+        {
+            if (await CanAccessPatientAsync(membership.PatientId, logDenied: false))
+                continue;
+
+            membership.Participant.IsActive = false;
+            membership.Participant.DeletedAt = DateTime.UtcNow;
+            changed = true;
+        }
+
+        if (changed)
+            await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// StaffToPatient is an internal staff conversation about a patient. Older service behavior
+    /// added the patient's linked messaging User as a participant, which could make that user
+    /// receive generic new-message notifications. PatientFacing conversations are untouched.
     /// </summary>
     private async Task EnsureInternalConversationIsStaffOnlyAsync(Guid conversationId)
     {
@@ -147,6 +236,7 @@ public class MessagesController(
         [FromQuery] string? type = null,
         [FromQuery] bool? hasUnread = null)
     {
+        await DeactivateInaccessiblePatientMembershipsAsync();
         var result = await messagingService.GetMyConversationsAsync(page, pageSize, search, type, hasUnread);
         return Ok(new { result.Data, result.TotalCount, result.Page, result.PageSize, result.TotalPages, result.HasNextPage, result.HasPreviousPage });
     }
@@ -160,6 +250,9 @@ public class MessagesController(
     {
         try
         {
+            var denied = await DenyIfConversationPatientInaccessible(conversationId);
+            if (denied is not null) return denied;
+
             await EnsureInternalConversationIsStaffOnlyAsync(conversationId);
             var result = await messagingService.GetConversationAsync(conversationId, page, pageSize);
             if (result == null) return NotFound(new { message = "المحادثة غير موجودة أو ليس لديك صلاحية الوصول" });
@@ -201,8 +294,9 @@ public class MessagesController(
     {
         try
         {
-            // Privacy boundary: scrub legacy patient participants before the service enumerates
-            // recipients for notifications/push on an internal StaffToPatient conversation.
+            var denied = await DenyIfConversationPatientInaccessible(conversationId);
+            if (denied is not null) return denied;
+
             await EnsureInternalConversationIsStaffOnlyAsync(conversationId);
             var result = await messagingService.SendMessageAsync(conversationId, request);
             return Ok(result);
@@ -228,6 +322,9 @@ public class MessagesController(
     [HttpPost("conversations/{conversationId:guid}/read")]
     public async Task<IActionResult> MarkAsRead(Guid conversationId)
     {
+        var denied = await DenyIfConversationPatientInaccessible(conversationId);
+        if (denied is not null) return denied;
+
         await messagingService.MarkAsReadAsync(conversationId);
         return NoContent();
     }
@@ -236,6 +333,7 @@ public class MessagesController(
     [HttpGet("unread-count")]
     public async Task<ActionResult<UnreadCountDto>> GetUnreadCount()
     {
+        await DeactivateInaccessiblePatientMembershipsAsync();
         var result = await messagingService.GetUnreadCountAsync();
         return Ok(result);
     }
@@ -244,6 +342,9 @@ public class MessagesController(
     [HttpPost("conversations/{conversationId:guid}/leave")]
     public async Task<IActionResult> LeaveConversation(Guid conversationId)
     {
+        var denied = await DenyIfConversationPatientInaccessible(conversationId);
+        if (denied is not null) return denied;
+
         await messagingService.LeaveConversationAsync(conversationId);
         return NoContent();
     }
@@ -298,6 +399,9 @@ public class MessagesController(
     public async Task<ActionResult<MessageDto>> EditMessage(
         Guid conversationId, Guid messageId, [FromBody] EditMessageRequest request)
     {
+        var denied = await DenyIfConversationPatientInaccessible(conversationId);
+        if (denied is not null) return denied;
+
         var (success, error, message) = await messagingService.EditMessageAsync(conversationId, messageId, request);
         if (!success)
         {
@@ -311,6 +415,9 @@ public class MessagesController(
     [HttpDelete("conversations/{conversationId:guid}/messages/{messageId:guid}")]
     public async Task<IActionResult> DeleteMessage(Guid conversationId, Guid messageId)
     {
+        var denied = await DenyIfConversationPatientInaccessible(conversationId);
+        if (denied is not null) return denied;
+
         var result = await messagingService.DeleteMessageAsync(conversationId, messageId);
         if (!result) return StatusCode(StatusCodes.Status403Forbidden, new { message = "ليس لديك صلاحية الوصول." });
         return NoContent();
@@ -320,6 +427,7 @@ public class MessagesController(
     [HttpGet("stats")]
     public async Task<ActionResult<MessagingStatsDto>> GetStats()
     {
+        await DeactivateInaccessiblePatientMembershipsAsync();
         var result = await messagingService.GetStatsAsync();
         return Ok(result);
     }
@@ -361,6 +469,9 @@ public class MessagesController(
 
         try
         {
+            var denied = await DenyIfConversationPatientInaccessible(conversationId);
+            if (denied is not null) return denied;
+
             await EnsureInternalConversationIsStaffOnlyAsync(conversationId);
             var messages = await messagingService.PollNewMessagesAsync(conversationId, sinceDate);
             return Ok(new { messages });

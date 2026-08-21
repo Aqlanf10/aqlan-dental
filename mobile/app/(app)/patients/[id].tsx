@@ -15,7 +15,10 @@ export default function PatientDetailsScreen() {
   const [patient, setPatient] = useState<PatientProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const canEdit = user?.role === "Admin" || user?.role === "Reception";
+  // MOBILE-02 safety: reception receives an operational profile that intentionally omits
+  // occupation/referralSource. Until the API exposes a partial operational update contract,
+  // only Admin may use the full-profile PUT editor so hidden values cannot be erased.
+  const canEdit = user?.role === "Admin";
 
   const load = useCallback(async () => {
     if (!id) return;

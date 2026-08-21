@@ -2,9 +2,9 @@ import { useSession } from "@/auth/SessionProvider";
 import { colors } from "@/theme";
 import { Redirect, Tabs } from "expo-router";
 import React from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, Text, View, type ColorValue } from "react-native";
 
-const icon = (value: string) => ({ color }: { color: string }) => (
+const icon = (value: string) => ({ color }: { color: ColorValue }) => (
   <Text style={{ color, fontSize: 18 }}>{value}</Text>
 );
 

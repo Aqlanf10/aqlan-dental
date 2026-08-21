@@ -77,9 +77,15 @@ and branch isolation — none of that is touched.
   `LabOrder.TotalCost` would inflate both the supplier bill and the lab-cost deduction
   inside the doctor's commission. They are a clinic-side cost, reported beside the order
   and never written into it.
-  **Status: blocked.** The design requires an `InventoryAdjustment.LabOrderId` column and
-  `dotnet ef migrations add` fails on a clean tree — see
-  `docs/audits/EF_MIGRATION_TOOLING_BLOCKER_2026-08-20.md` and `CORE-EF-001` in the queue.
+  **Status: done (2026-08-21).** Unblocked by `CORE-EF-001`. Implemented as
+  `InventoryAdjustment.LabOrderId` (nullable, mirroring `PurchaseOrderLineItemId`), a write
+  path on the owner API (`POST /api/inventory/consume-lab-order`, `AdminOnly`) and a
+  read-beside path on the lab API (`GET /api/lab-orders/{id}/consumables`, `StaffOnly`,
+  permission-checked). Material cost is computed on read and stored nowhere. Verified at
+  runtime against PostgreSQL: stock moved 20 → 17 while the order's `Cost` and `TotalCost`
+  stayed at 40,000; over-consumption, a duplicated item and an unknown order were each
+  refused in Arabic with stock unchanged; reception got 403 on the write and 200 on the
+  read; anonymous got 401.
 
 ### Acceptance Criteria (Chairside Parity)
 

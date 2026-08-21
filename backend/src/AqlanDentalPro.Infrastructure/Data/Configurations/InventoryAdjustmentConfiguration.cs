@@ -22,11 +22,17 @@ public class InventoryAdjustmentConfiguration : IEntityTypeConfiguration<Invento
         // Nullable FK fields
         builder.Property(a => a.PurchaseOrderLineItemId).IsRequired(false);
         builder.Property(a => a.AdjustedBy).IsRequired(false);
+        builder.Property(a => a.LabOrderId).IsRequired(false);
 
         // Indexes
         builder.HasIndex(a => a.InventoryItemId);
         builder.HasIndex(a => a.AdjustmentType);
         builder.HasIndex(a => a.CreatedAt);
+
+        // LABINV-REQ-011. Filtered: only a small minority of adjustments belong to a lab
+        // order, and the only query that uses this column asks for one order's rows.
+        builder.HasIndex(a => a.LabOrderId)
+            .HasFilter("\"LabOrderId\" IS NOT NULL");
 
         // Relationships
         builder.HasOne(a => a.InventoryItem)

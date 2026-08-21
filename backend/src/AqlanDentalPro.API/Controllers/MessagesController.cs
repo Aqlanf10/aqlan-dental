@@ -61,6 +61,56 @@ public class MessagesController(
         return null;
     }
 
+    /// <summary>
+    /// StaffToPatient is an internal staff conversation about a patient, not a portal conversation.
+    /// Older MessagingService behavior added the patient's linked messaging User as a participant,
+    /// which could make that user receive generic "new message" notifications even though the portal
+    /// correctly refuses to expose StaffToPatient conversations. Deactivate that participant before
+    /// loading or sending internal messages. PatientFacing conversations are intentionally untouched.
+    /// </summary>
+    private async Task EnsureInternalConversationIsStaffOnlyAsync(Guid conversationId)
+    {
+        var conversation = await db.Conversations
+            .IgnoreQueryFilters()
+            .Where(c => c.Id == conversationId
+                     && c.IsActive
+                     && c.ConversationType == "StaffToPatient"
+                     && c.PatientId.HasValue)
+            .Select(c => new { PatientId = c.PatientId!.Value })
+            .FirstOrDefaultAsync();
+
+        if (conversation is null)
+            return;
+
+        var linkedPatientUserId = await db.PatientAccounts
+            .IgnoreQueryFilters()
+            .Where(a => a.PatientId == conversation.PatientId
+                     && a.IsActive
+                     && a.LinkedUserId.HasValue)
+            .Select(a => a.LinkedUserId)
+            .FirstOrDefaultAsync();
+
+        if (!linkedPatientUserId.HasValue)
+            return;
+
+        var patientParticipant = await db.ConversationParticipants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(cp => cp.ConversationId == conversationId
+                                    && cp.UserId == linkedPatientUserId.Value);
+
+        if (patientParticipant is null || !patientParticipant.IsActive)
+            return;
+
+        patientParticipant.IsActive = false;
+        patientParticipant.DeletedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        logger.LogInformation(
+            "Removed patient-linked participant {PatientUserId} from internal conversation {ConversationId}",
+            linkedPatientUserId.Value,
+            conversationId);
+    }
+
     /// <summary>فحص حالة جداول المراسلة (Admin فقط)</summary>
     [HttpGet("schema-status")]
     [Authorize(Policy = "AdminOnly")]
@@ -110,6 +160,7 @@ public class MessagesController(
     {
         try
         {
+            await EnsureInternalConversationIsStaffOnlyAsync(conversationId);
             var result = await messagingService.GetConversationAsync(conversationId, page, pageSize);
             if (result == null) return NotFound(new { message = "المحادثة غير موجودة أو ليس لديك صلاحية الوصول" });
             return Ok(result);
@@ -134,6 +185,8 @@ public class MessagesController(
         try
         {
             var result = await messagingService.CreateConversationAsync(request);
+            if (string.Equals(result.ConversationType, "StaffToPatient", StringComparison.OrdinalIgnoreCase))
+                await EnsureInternalConversationIsStaffOnlyAsync(result.Id);
             return CreatedAtAction(nameof(GetConversation), new { conversationId = result.Id }, result);
         }
         catch (UnauthorizedAccessException)
@@ -148,6 +201,9 @@ public class MessagesController(
     {
         try
         {
+            // Privacy boundary: scrub legacy patient participants before the service enumerates
+            // recipients for notifications/push on an internal StaffToPatient conversation.
+            await EnsureInternalConversationIsStaffOnlyAsync(conversationId);
             var result = await messagingService.SendMessageAsync(conversationId, request);
             return Ok(result);
         }
@@ -227,6 +283,7 @@ public class MessagesController(
         try
         {
             var result = await messagingService.GetOrCreatePatientConversationAsync(patientId);
+            await EnsureInternalConversationIsStaffOnlyAsync(result.Id);
             return Ok(result);
         }
         catch (KeyNotFoundException)
@@ -276,6 +333,13 @@ public class MessagesController(
 
         try
         {
+            var internalConversationId = await db.Conversations
+                .Where(c => c.PatientId == patientId && c.ConversationType == "StaffToPatient")
+                .Select(c => (Guid?)c.Id)
+                .FirstOrDefaultAsync();
+            if (internalConversationId.HasValue)
+                await EnsureInternalConversationIsStaffOnlyAsync(internalConversationId.Value);
+
             var result = await messagingService.GetPatientConversationAsync(patientId);
             if (result == null)
                 return NotFound(new { message = "لا توجد محادثة داخلية مرتبطة بهذا المريض" });
@@ -297,6 +361,7 @@ public class MessagesController(
 
         try
         {
+            await EnsureInternalConversationIsStaffOnlyAsync(conversationId);
             var messages = await messagingService.PollNewMessagesAsync(conversationId, sinceDate);
             return Ok(new { messages });
         }

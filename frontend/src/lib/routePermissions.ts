@@ -9,6 +9,8 @@ export interface RoutePermission {
   requiredPermissions?: readonly string[];  // Optional specific permissions
 }
 
+const SUPER_ADMIN_ROLE = 'SuperAdmin';
+
 export const ROUTE_MANIFEST: readonly RoutePermission[] = [
   // Main pages
   { path: '/', allowedRoles: ['Admin'] },
@@ -95,7 +97,7 @@ export const ROUTE_MANIFEST: readonly RoutePermission[] = [
   { path: '/hr', allowedRoles: ['Admin'] },
   // SEQ-03: /users is a redirect stub → /settings?tab=permissions (user management
   // lives in the settings hub). Explicit entry per the default-deny rule below.
-  { path: '/users', allowedRoles: ['Admin'] },
+  { path: '/users', allowedRoles: [SUPER_ADMIN_ROLE] },
   // More specific path first: isRouteAllowed matches exact paths or child routes, so
   // '/appointments/recall' must precede '/appointments' (Reception needs access here)
   { path: '/appointments/recall', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
@@ -112,13 +114,18 @@ export const ROUTE_MANIFEST: readonly RoutePermission[] = [
 // from ROUTE_MANIFEST through getNavigationRoles so route and sidebar roles cannot drift.
 export const ROUTE_PERMISSIONS = ROUTE_MANIFEST;
 
+function withSuperAdmin(roles: readonly string[]): readonly string[] {
+  return roles.includes(SUPER_ADMIN_ROLE) ? roles : [SUPER_ADMIN_ROLE, ...roles];
+}
+
 export function getNavigationRoles(pathname: string): readonly string[] {
   const route = findRoutePermission(pathname);
   if (!route) {
     throw new Error(`Dashboard navigation route is not registered: ${pathname}`);
   }
 
-  return route.navigationRoles ?? route.allowedRoles;
+  // SuperAdmin is the owner role and must inherit every Admin/navigation capability.
+  return withSuperAdmin(route.navigationRoles ?? route.allowedRoles);
 }
 
 export function getNavigationGroupRoles(...paths: string[]): readonly string[] {
@@ -128,18 +135,18 @@ export function getNavigationGroupRoles(...paths: string[]): readonly string[] {
 export function isRouteAllowed(pathname: string, userRole: string | null): boolean {
   if (!userRole) return false;
 
-  // Admin has access to everything
-  if (userRole === 'Admin') return true;
-
-  // Find matching permission for this route. Match exact paths and nested child routes only,
-  // so `/patients/123` matches `/patients` but `/patients-archive` does not.
   const matched = findRoutePermission(pathname);
-  // FE-02 / SEC-17 FIX: Default DENY if no specific rule matches. Previously this returned
-  // true (default-allow), which let any authenticated user reach admin-only screens like
-  // /commissions, /booking-requests, /settings/audit, /settings/backup, /surgery/[id]/edit,
-  // /ortho/new, /ceph/new, /referrals/new. The backend [Authorize(Policy=...)] still rejected
-  // API calls, so no data leaked — but the UX was broken (flash of page chrome + 403 fetches).
-  // Now unmatched routes are denied; every dashboard route MUST have an explicit entry above.
+
+  // SuperAdmin is the single owner and can access every registered dashboard route.
+  if (userRole === SUPER_ADMIN_ROLE) return Boolean(matched);
+
+  // /users is owner-only even though Admin retains broad operational access elsewhere.
+  if (matched?.path === '/users') return false;
+
+  // Admin has access to every other registered route.
+  if (userRole === 'Admin') return Boolean(matched);
+
+  // FE-02 / SEC-17 FIX: Default DENY if no specific rule matches.
   if (!matched) return false;
 
   return matched.allowedRoles.includes(userRole);

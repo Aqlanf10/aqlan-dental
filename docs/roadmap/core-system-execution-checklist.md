@@ -36,8 +36,16 @@
       Two changes on 2026-08-21 stop that green tick from being read as more than it is: the
       job is renamed from "E2E — Playwright" to **"E2E — Deployed staging smoke"**, and its
       warning now names the blocking job that does verify the journey. Turning the warning
-      into a failure remains `E2E_REQUIRE_AUTHENTICATED=true` and remains the owner's call,
-      because it depends on staging credentials existing.
+      into a failure was `E2E_REQUIRE_AUTHENTICATED=true`, and **the owner directed it on
+      2026-08-21**. Implemented in the workflow rather than as a repository variable, so it
+      cannot be silently switched off by an unset variable: the flag now defaults to `true`.
+      Required is implemented as *"when this job runs, every spec must execute"*, not as *"go
+      red because there is nothing to test against"* — a staging URL with no credentials
+      verifies nothing, and failing the build for it would block deploys of a live clinic
+      system without testing anything more. So the job now runs only when all four credential
+      secrets are present, and when it runs a single skip fails it. Adding those secrets turns
+      enforcement on by itself, with no further change. `CORE-F-009` closes the moment they
+      exist.
 - [x] `CORE-F-013`: unit `.trx` upload path corrected to `backend/TestResults`.
 - [x] **Ephemeral E2E stack (2026-08-12).** CI now stands up PostgreSQL + API + frontend inside
       the runner, seeds them and drives the real staff login. Needs no secrets and no staging.
@@ -114,7 +122,13 @@
       queue-display middleware; seven opt-in controllers hardened to deny by default. See
       `core-system-route-policy-ownership.md`.
 - [ ] `CORE-P1-S5` Distinguish executed and skipped authenticated E2E in CI.
-- [ ] Phase 1 exit gate approved.
+- [~] Phase 1 exit gate: **evidence complete 2026-08-21, approval is the owner's.** The gate
+      reads "no competing active owner routes; sidebar/guards/server policy agree". The first
+      half was settled by `CORE-P1-S2`. The second is now enforced by a shared contract,
+      `contracts/route-policy-map.json`, that both sides verify against — the backend proving
+      its role sets are what its own container grants, the frontend proving no route or sidebar
+      entry admits a role the server would refuse. Sabotage-verified four ways. Marking the
+      gate *approved* is not a thing a test can do, so it stays open for the owner.
 
 ## Phase 2 - Settings, Identity, Language, Printing
 

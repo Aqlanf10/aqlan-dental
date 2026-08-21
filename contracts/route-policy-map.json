@@ -1,0 +1,91 @@
+{
+  "$comment": [
+    "Phase 1 exit gate for spec 011-core-system-stabilization: 'sidebar/guards/server policy agree'.",
+    "CORE-P1-S3 made the sidebar and route guards read one frontend manifest. CORE-P1-S4 pinned each",
+    "controller's backend policy. Neither checked that the two AGREE, which is the gate itself.",
+    "",
+    "This file is the shared contract. Both sides verify against it and neither parses the other's",
+    "language: the backend proves every role set below is what its DI container actually grants, and",
+    "the frontend proves no route lets a role reach a screen the server would refuse.",
+    "",
+    "The rule is one-directional. A frontend narrower than the server is fine — the screen simply is",
+    "not offered. A frontend BROADER than the server is the bug: the sidebar invites a role in, the",
+    "server refuses the API calls, and the user lands in a dead end. That has happened at least twice",
+    "here (Reception on /finance-v3, and the surgeon bounce on /ortho), which is why it is checked."
+  ],
+
+  "policyRoles": {
+    "AdminOnly": ["Admin"],
+    "AdminAccess": ["Admin"],
+    "StaffOnly": ["Admin", "Orthodontist", "GeneralDentist", "OralSurgeon", "Reception", "Accountant", "Assistant", "BranchManager"],
+    "AdminOrReception": ["Admin", "Reception"],
+    "ReportsAccess": ["Admin", "Accountant"],
+    "FinanceWrite": ["Admin", "Accountant"],
+    "FinanceAccess": ["Admin", "Reception", "Accountant"],
+    "CashierAccess": ["Admin", "Reception", "Accountant"],
+    "DoctorAccess": ["Admin", "Orthodontist", "GeneralDentist", "OralSurgeon"],
+    "AIAccess": ["Admin", "Orthodontist", "GeneralDentist", "OralSurgeon"],
+    "AppointmentAccess": ["Admin", "Orthodontist", "GeneralDentist", "OralSurgeon", "Reception"],
+    "OrthoAccess": ["Admin", "Orthodontist"],
+    "GeneralAccess": ["Admin", "GeneralDentist"],
+    "SurgeryAccess": ["Admin", "OralSurgeon"],
+    "OrthoSurgicalAccess": ["Admin", "Orthodontist", "OralSurgeon"],
+    "PatientAccess": ["Patient"],
+    "CommissionView": ["Admin", "Accountant"],
+    "CommissionEdit": ["Admin", "Accountant"],
+    "CommissionApprove": ["Admin", "Accountant"],
+    "CommissionPay": ["Admin", "Accountant"],
+    "ClinicalRead": ["Admin", "Orthodontist", "GeneralDentist", "OralSurgeon"],
+    "ClinicalWrite": ["Admin", "Orthodontist", "GeneralDentist", "OralSurgeon"]
+  },
+
+  "routes": [
+    { "path": "/patients",           "owner": "PatientsController",           "policy": "StaffOnly" },
+    { "path": "/appointments",       "owner": "AppointmentsController",       "policy": "StaffOnly" },
+    { "path": "/daily-operations",   "owner": "DailyOperationsController",    "policy": "StaffOnly" },
+    { "path": "/schedule",           "owner": "DoctorSchedulesController",    "policy": "StaffOnly" },
+    { "path": "/doctor-clinic",      "owner": "VisitsController",             "policy": "ClinicalRead" },
+    { "path": "/prescriptions",      "owner": "PrescriptionsController",      "policy": "ClinicalRead" },
+    { "path": "/radiology-orders",   "owner": "RadiologyOrdersController",    "policy": "StaffOnly" },
+    { "path": "/referrals",          "owner": "ReferralsController",          "policy": "StaffOnly" },
+
+    { "path": "/ortho",              "owner": "OrthoCasesController",         "policy": "OrthoAccess",
+      "frontendMayBeBroader": {
+        "extraRoles": ["OralSurgeon"],
+        "reason": "A surgeon reaches the shared joint-planning workspace at /ortho/{id}?tab=surgical, which is served by OrthoSurgicalCasesController (OrthoSurgicalAccess). Only that tab is theirs; the other tabs stay refused by OrthoCasesController. Without this the route guard bounces every surgeon to /daily-operations before they see the shared tab. The sidebar entry stays hidden through navigationRoles."
+      } },
+    { "path": "/ortho/new",          "owner": "OrthoCasesController",         "policy": "OrthoAccess" },
+    { "path": "/ortho-surgical",     "owner": "OrthoSurgicalCasesController", "policy": "OrthoSurgicalAccess" },
+    { "path": "/general",            "owner": "GeneralController",            "policy": "GeneralAccess" },
+    { "path": "/surgery",            "owner": "SurgeryController",            "policy": "SurgeryAccess" },
+    { "path": "/ceph",               "owner": "CephController",               "policy": "OrthoAccess" },
+
+    { "path": "/lab",                "owner": "LabOrdersController",          "policy": "StaffOnly" },
+    { "path": "/lab/overdue",        "owner": "LabOrdersController",          "policy": "StaffOnly" },
+    { "path": "/lab/dashboard",      "owner": "LabOrdersController",          "policy": "StaffOnly" },
+    { "path": "/lab/reports",        "owner": "LabReportsController",         "policy": "StaffOnly" },
+    { "path": "/lab/payables",       "owner": "LabPayablesController",        "policy": "StaffOnly" },
+    { "path": "/settings/labs",      "owner": "LabsController",               "policy": "StaffOnly" },
+    { "path": "/settings/lab-work-types", "owner": "LabWorkTypesController",  "policy": "StaffOnly" },
+    { "path": "/settings/lab-pricing",    "owner": "LabWorkPricesController", "policy": "StaffOnly" },
+
+    { "path": "/finance-v3",         "owner": "FinanceV3Controller",          "policy": "ReportsAccess" },
+    { "path": "/reports",            "owner": "ReportsController",            "policy": "ReportsAccess" },
+    { "path": "/reports/operations", "owner": "OperationalReportsController", "policy": "ReportsAccess" },
+
+    { "path": "/inventory",          "owner": "InventoryController",          "policy": "AdminOnly" },
+    { "path": "/patient-segments",   "owner": "PatientSegmentsController",    "policy": "AdminOnly" },
+    { "path": "/employees",          "owner": "EmployeesController",          "policy": "AdminOnly" },
+    { "path": "/doctors",            "owner": "DoctorsController",            "policy": "StaffOnly" },
+    { "path": "/branches",           "owner": "BranchesController",           "policy": "StaffOnly" },
+    { "path": "/settings",           "owner": "SettingsController",           "policy": "AdminOnly" },
+    { "path": "/users",              "owner": "UsersController",              "policy": "AdminOnly" },
+
+    { "path": "/messages",           "owner": "MessagesController",           "policy": "StaffOnly" },
+    { "path": "/sms",                "owner": "SmsController",                "policy": "StaffOnly" },
+    { "path": "/whatsapp",           "owner": "WhatsAppController",           "policy": "StaffOnly" },
+    { "path": "/booking-requests",   "owner": "BookingRequestsController",    "policy": "AdminOrReception" },
+    { "path": "/clinic-queue",       "owner": "ClinicQueueController",        "policy": "StaffOnly" },
+    { "path": "/patient-journey",    "owner": "PatientJourneyController",     "policy": "StaffOnly" }
+  ]
+}

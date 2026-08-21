@@ -110,6 +110,44 @@ Against PostgreSQL with the real application, after the hardening:
 - Admin token against `/api/portal/dashboard`: **403** — a staff token is not a Patient token,
   so the portal boundary holds in both directions.
 
+## The cross-boundary contract (Phase 1 exit gate)
+
+`CORE-P1-S3` gave the sidebar and route guards one frontend manifest. `CORE-P1-S4` pinned each
+controller's backend policy. Neither checked that the two **agree**, which is the Phase 1 exit
+gate itself — and they are written in different languages, so nothing could check it without a
+shared artifact.
+
+`contracts/route-policy-map.json` is that artifact: every canonical route, its backend owner,
+the policy that owner enforces, and the exact roles each policy grants. Both sides verify
+against it and neither parses the other's language.
+
+- **Backend** (`RoutePolicyContractTests`) proves the role sets are what the application's own
+  DI container grants, and that each named owner really enforces the policy claimed for it.
+  Roles are derived by *asking the real authorization service* with one synthetic principal per
+  role, not by reading requirement objects — `StaffOnly` is an assertion rather than a role
+  requirement, so a reflection-based reading would end up checking its special case instead of
+  the policy.
+- **Frontend** (`routePolicyContract.test.ts`) proves no route or sidebar entry admits a role
+  the server would refuse.
+
+The rule is one-directional on purpose. A frontend **narrower** than the server is fine — the
+screen simply is not offered. A frontend **broader** than the server is the bug: the sidebar
+invites a role in, every API call returns 403, and the user hits a dead end or is bounced back
+where they started. That has happened at least twice here — Reception on `/finance-v3`, and the
+surgeon bounce on `/ortho` — which is why it is a test rather than a convention.
+
+### Declared exceptions
+
+One route is deliberately broader, and the contract requires a written reason for each:
+
+| Route | Extra role | Why |
+|---|---|---|
+| `/ortho` | `OralSurgeon` | The surgeon reaches the shared joint-planning workspace at `/ortho/{id}?tab=surgical`, served by `OrthoSurgicalCasesController` (`OrthoSurgicalAccess`). Only that tab is theirs; the other tabs stay refused by `OrthoCasesController`. Without the exception the route guard bounces every surgeon to `/daily-operations` before they see the shared tab. The sidebar entry stays hidden through `navigationRoles`. |
+
+Two further tests keep the exception mechanism from becoming a place to hide things: one fails
+an exception whose reason is missing or perfunctory, and one fails an exception that has stopped
+being necessary — because a stale exception silently permits a future widening of the same route.
+
 ## What this slice does not claim
 
 It pins current behaviour; it does not assert current behaviour is ideal. Where a policy looks

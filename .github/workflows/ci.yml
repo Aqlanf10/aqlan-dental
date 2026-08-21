@@ -220,18 +220,46 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
+      # Owner directive 2026-08-21: authenticated E2E is REQUIRED, not optional.
+      #
+      # "Required" is implemented as "when this job runs, every spec must execute" — not as
+      # "go red because there is nothing to test against". A staging URL with no credentials
+      # cannot verify a journey, and failing the build for that would block deploys of a live
+      # clinic system without testing anything more than it does today. So the job now runs
+      # only when it can actually do its work, and when it runs, a single skip fails it.
+      #
+      # The authenticated journey itself is already enforced unconditionally by the
+      # ephemeral-stack job below, which supplies its own credentials and cannot skip.
       - name: Check e2e staging env
         id: gate
         env:
           E2E_API_URL: ${{ secrets.E2E_API_URL }}
+          E2E_STAFF_PHONE: ${{ secrets.E2E_STAFF_PHONE }}
+          E2E_STAFF_PASSWORD: ${{ secrets.E2E_STAFF_PASSWORD }}
+          E2E_PORTAL_USERNAME: ${{ secrets.E2E_PORTAL_USERNAME }}
+          E2E_PORTAL_PASSWORD: ${{ secrets.E2E_PORTAL_PASSWORD }}
         run: |
-          if [ -n "${E2E_API_URL}" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::E2E_API_URL is set — Playwright will run against ${E2E_API_URL}"
-          else
+          if [ -z "${E2E_API_URL}" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::E2E_API_URL secret is not set — Playwright tests will be skipped (CI stays green)."
+            echo "::notice::E2E_API_URL is not set — no deployed staging to test. The authenticated journey is still verified by the ephemeral-stack job."
+            exit 0
           fi
+
+          missing=""
+          for name in E2E_STAFF_PHONE E2E_STAFF_PASSWORD E2E_PORTAL_USERNAME E2E_PORTAL_PASSWORD; do
+            eval "value=\${$name}"
+            [ -z "${value}" ] && missing="${missing} ${name}"
+          done
+
+          if [ -n "${missing}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::E2E_API_URL is set but these credential secrets are empty:${missing}. This job cannot verify the deployed staging environment, so it does not run rather than reporting a green tick that means nothing. Add those four secrets and enforcement starts automatically — no workflow change needed."
+            exit 0
+          fi
+
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+          echo "::notice::Staging credentials present — Playwright runs against ${E2E_API_URL} and every spec must execute."
+
 
       - name: Install dependencies
         if: steps.gate.outputs.enabled == 'true'
@@ -268,7 +296,9 @@ jobs:
       - name: Report what E2E actually verified
         if: always() && steps.gate.outputs.enabled == 'true'
         env:
-          E2E_REQUIRE_AUTHENTICATED: ${{ vars.E2E_REQUIRE_AUTHENTICATED }}
+          # Owner directive 2026-08-21: defaults to true. Previously an unset variable meant
+          # "warn only", so the enforcement could be off without anyone deciding it should be.
+          E2E_REQUIRE_AUTHENTICATED: ${{ vars.E2E_REQUIRE_AUTHENTICATED || 'true' }}
         run: |
           python3 - <<'PY'
           import json, os, pathlib, sys

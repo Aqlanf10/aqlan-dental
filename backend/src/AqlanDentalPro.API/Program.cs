@@ -91,6 +91,11 @@ var app = builder.Build();
 // extracted to Configuration/StartupDatabaseMaintenance.cs for clarity.
 await app.RunStartupDatabaseMaintenanceAsync(builder.Configuration);
 
+// Establish the single owner account after migrations/maintenance and before
+// the application begins accepting authenticated requests. No schema change is
+// required because UserRole is stored as a string.
+await app.EnsureSingleSuperAdminAsync(builder.Configuration);
+
 // ── Middleware Pipeline ───────────────────────────────────────────────────────
 app.UseSecurityHeaders();
 app.UseMiddleware<ErrorHandlingMiddleware>();

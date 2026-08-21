@@ -2,6 +2,7 @@ import { useSession } from "@/auth/SessionProvider";
 import { Card, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/components/ui";
 import { apiRequest } from "@/lib/api";
 import { fullPatientName } from "@/lib/format";
+import { canAccessClinicalRecords } from "@/lib/roles";
 import type { ConversationDetail, PatientProfile } from "@/lib/types";
 import { colors, spacing } from "@/theme";
 import { router, useLocalSearchParams } from "expo-router";
@@ -21,6 +22,7 @@ export default function PatientDetailsScreen() {
   // occupation/referralSource. Until the API exposes a partial operational update contract,
   // only Admin may use the full-profile PUT editor so hidden values cannot be erased.
   const canEdit = user?.role === "Admin";
+  const canReadClinical = canAccessClinicalRecords(user);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -136,6 +138,17 @@ export default function PatientDetailsScreen() {
 
       <SectionTitle>إجراءات سريعة</SectionTitle>
       {communicationError ? <StateMessage title="تعذر فتح المحادثة" message={communicationError} /> : null}
+      {canReadClinical ? (
+        <PrimaryButton
+          title="السجل السريري والزيارات"
+          onPress={() =>
+            router.push({
+              pathname: "/(app)/visits",
+              params: { patientId: patient.id, patientName }
+            })
+          }
+        />
+      ) : null}
       <PrimaryButton
         title="حجز موعد جديد"
         onPress={() =>

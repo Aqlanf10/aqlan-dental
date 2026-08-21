@@ -17,6 +17,10 @@ namespace AqlanDentalPro.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/ceph-norms")]
+// CORE-P1-S4 — deny by default. Actions are StaffOnly (read) and AdminOnly (write); the
+// two combine, so the stricter writes stay Admin-only. Reference norms are not patient data,
+// which is why the default is StaffOnly rather than AdminOnly.
+[Authorize(Policy = "StaffOnly")]
 public class CephNormsController(AppDbContext db) : ControllerBase
 {
     private const int InterpretationMaxLength = 300;

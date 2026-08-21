@@ -12,6 +12,10 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api")]
 [EnableCors("AllowPublicApi")]
+// CORE-P1-S4 — deny by default. Everything the public website needs keeps its own
+// [AllowAnonymous], which overrides this; GetQueue was already StaffOnly. Without a default,
+// an action added here would join the public half of the controller by accident.
+[Authorize(Policy = "StaffOnly")]
 public class PublicController : ControllerBase
 {
     private readonly AppDbContext _db;

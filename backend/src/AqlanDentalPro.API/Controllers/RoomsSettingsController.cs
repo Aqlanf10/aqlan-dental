@@ -12,6 +12,9 @@ namespace AqlanDentalPro.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/settings/rooms")]
+// CORE-P1-S4 — deny by default. Reads of the active list are StaffOnly and every mutation
+// is AdminOnly; the policies combine, so writes stay Admin-only.
+[Authorize(Policy = "StaffOnly")]
 public class RoomsSettingsController(AppDbContext db) : ControllerBase
 {
     /// <summary>Get all rooms (including inactive). Admin only.</summary>

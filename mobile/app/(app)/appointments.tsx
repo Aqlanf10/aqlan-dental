@@ -65,7 +65,9 @@ export default function AppointmentsScreen() {
         onPress={() =>
           router.push({
             pathname: "/(app)/appointments-new",
-            params: patientId ? { patientId, patientName: patientName ?? "" } : {}
+            params: patientId
+              ? { patientId, patientName: patientName ?? "", date: dateText }
+              : { date: dateText }
           })
         }
       />

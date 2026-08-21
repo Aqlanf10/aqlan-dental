@@ -40,7 +40,9 @@ public class CurrentUserService(IHttpContextAccessor httpContextAccessor) : ICur
         }
     }
 
-    public bool IsAdmin => Role == UserRole.Admin;
+    // Backwards-compatible operational admin check: the owner SuperAdmin must inherit
+    // every place that historically checked IsAdmin.
+    public bool IsAdmin => Role is UserRole.SuperAdmin or UserRole.Admin;
     public bool IsAuthenticated => Principal?.Identity?.IsAuthenticated == true;
 
     public Guid? OriginalUserId

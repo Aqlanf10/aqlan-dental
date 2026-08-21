@@ -154,6 +154,7 @@ app.UseAuthentication();
 app.UseMiddleware<QueueDisplayAuthenticationMiddleware>();
 app.UseAuthorization();
 app.UseMiddleware<MustChangePasswordMiddleware>();
+app.UseMiddleware<SuperAdminManagementGuardMiddleware>();
 app.UseMiddleware<AuditLogMiddleware>();
 app.MapControllers();
 app.MapHub<MessagingHub>("/hubs/messaging");

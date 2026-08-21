@@ -13,7 +13,9 @@ public static class PermissionGuard
         string resource,
         string action)
     {
-        if (currentUser.Role == UserRole.Admin)
+        // SuperAdmin is the single owner and inherits all operational permissions.
+        // Admin keeps its legacy implicit full access outside owner-only management routes.
+        if (currentUser.Role is UserRole.SuperAdmin or UserRole.Admin)
             return true;
 
         var role = currentUser.Role?.ToString();

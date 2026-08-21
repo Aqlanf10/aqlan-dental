@@ -1,3 +1,4 @@
+import { useSession } from "@/auth/SessionProvider";
 import { Card, PrimaryButton, Screen, StateMessage } from "@/components/ui";
 import { apiRequest } from "@/lib/api";
 import type { PaginatedResponse, PatientListItem } from "@/lib/types";
@@ -16,12 +17,14 @@ import {
 } from "react-native";
 
 export default function PatientsScreen() {
+  const { user } = useSession();
   const [query, setQuery] = useState("");
   const [patients, setPatients] = useState<PatientListItem[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const canCreate = user?.role === "Admin" || user?.role === "Reception";
 
   const load = useCallback(async (search: string) => {
     setError(null);
@@ -68,6 +71,10 @@ export default function PatientsScreen() {
         <Text style={styles.title}>المرضى</Text>
       </View>
 
+      {canCreate ? (
+        <PrimaryButton title="إضافة مريض" onPress={() => router.push("/(app)/patients/new")} />
+      ) : null}
+
       <TextInput
         value={query}
         onChangeText={setQuery}
@@ -103,7 +110,9 @@ export default function PatientsScreen() {
           }
           renderItem={({ item }) => (
             <Pressable
-              onPress={() => router.push({ pathname: "/(app)/patients/[id]", params: { id: item.id } })}
+              onPress={() =>
+                router.push({ pathname: "/(app)/patients/[id]", params: { id: item.id } })
+              }
               style={({ pressed }) => [styles.patientCard, pressed && { opacity: 0.8 }]}
             >
               <View style={{ flex: 1 }}>

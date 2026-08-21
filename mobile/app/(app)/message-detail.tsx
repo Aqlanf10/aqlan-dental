@@ -1,18 +1,31 @@
 import { useSession } from "@/auth/SessionProvider";
 import { Card, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/components/ui";
-import { apiRequest } from "@/lib/api";
+import { apiAssetUrl, apiRequest } from "@/lib/api";
 import type { ConversationDetail, ConversationMessage } from "@/lib/types";
 import { colors, radius, spacing } from "@/theme";
-import { useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
   Pressable,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
   View
 } from "react-native";
+
+const POLL_INTERVAL_MS = 5000;
+
+type PollResponse = { messages: ConversationMessage[] };
+type RenderAttachment = {
+  key: string;
+  url: string;
+  name: string;
+  mimeType?: string | null;
+  size?: number;
+};
 
 export default function MessageDetailScreen() {
   const { user } = useSession();
@@ -21,8 +34,20 @@ export default function MessageDetailScreen() {
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lastSeenRef = useRef<string | null>(null);
+  const pollingRef = useRef(false);
+
+  const markAsRead = useCallback(async () => {
+    if (!id) return;
+    try {
+      await apiRequest<void>(`/api/messages/conversations/${id}/read`, { method: "POST" });
+    } catch {
+      // Reading the conversation must not fail just because the read receipt could not be saved.
+    }
+  }, [id]);
 
   const load = useCallback(async () => {
     if (!id) {
@@ -37,21 +62,70 @@ export default function MessageDetailScreen() {
         `/api/messages/conversations/${id}?page=1&pageSize=50`
       );
       setConversation(result);
-      try {
-        await apiRequest<void>(`/api/messages/conversations/${id}/read`, { method: "POST" });
-      } catch {
-        // Reading the conversation must not fail just because the read receipt could not be saved.
-      }
+      lastSeenRef.current = newestTimestamp(result.messages) ?? result.createdAt;
+      await markAsRead();
     } catch (err) {
       setError(err instanceof Error ? err.message : "تعذر تحميل المحادثة");
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, markAsRead]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!id) return undefined;
+      let active = true;
+
+      const poll = async () => {
+        const since = lastSeenRef.current;
+        if (!active || !since || pollingRef.current) return;
+
+        pollingRef.current = true;
+        try {
+          const response = await apiRequest<PollResponse>(
+            `/api/messages/conversations/${id}/poll?since=${encodeURIComponent(since)}`
+          );
+          const incoming = response.messages ?? [];
+          if (!active || incoming.length === 0) return;
+
+          setConversation((current) =>
+            current
+              ? { ...current, messages: mergeMessages(current.messages, incoming) }
+              : current
+          );
+
+          const newest = newestTimestamp(incoming);
+          if (newest && (!lastSeenRef.current || newest > lastSeenRef.current)) {
+            lastSeenRef.current = newest;
+          }
+          await markAsRead();
+        } catch {
+          // Polling is best-effort. The next cycle or manual refresh can recover.
+        } finally {
+          pollingRef.current = false;
+        }
+      };
+
+      const interval = setInterval(() => void poll(), POLL_INTERVAL_MS);
+      return () => {
+        active = false;
+        clearInterval(interval);
+      };
+    }, [id, markAsRead])
+  );
+
+  async function refresh() {
+    setRefreshing(true);
+    try {
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   async function send() {
     const content = text.trim();
@@ -68,8 +142,11 @@ export default function MessageDetailScreen() {
         }
       );
       setConversation((current) =>
-        current ? { ...current, messages: [...current.messages, message] } : current
+        current ? { ...current, messages: mergeMessages(current.messages, [message]) } : current
       );
+      if (!lastSeenRef.current || message.createdAt > lastSeenRef.current) {
+        lastSeenRef.current = message.createdAt;
+      }
       setText("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "تعذر إرسال الرسالة");
@@ -99,7 +176,11 @@ export default function MessageDetailScreen() {
   }
 
   return (
-    <Screen>
+    <Screen
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />
+      }
+    >
       <View>
         <SectionTitle>{conversation.title}</SectionTitle>
         {conversation.patientName ? (
@@ -149,7 +230,7 @@ export default function MessageDetailScreen() {
           style={({ pressed }) => [
             styles.send,
             (sending || !text.trim()) && styles.sendDisabled,
-            pressed && !sending && Boolean(text.trim()) && { opacity: 0.85 }
+            pressed && !sending && text.trim() && { opacity: 0.85 }
           ]}
         >
           {sending ? (
@@ -178,6 +259,8 @@ function MessageBubble({
     );
   }
 
+  const attachments = collectAttachments(message);
+
   return (
     <View style={[styles.bubbleWrap, isMine ? styles.mineWrap : styles.otherWrap]}>
       <View style={[styles.bubble, isMine ? styles.mine : styles.other]}>
@@ -190,11 +273,105 @@ function MessageBubble({
             </Text>
           </View>
         ) : null}
-        <Text style={styles.messageText}>{message.content}</Text>
+        {message.content ? <Text style={styles.messageText}>{message.content}</Text> : null}
+        {attachments.length > 0 ? (
+          <View style={styles.attachments}>
+            {attachments.map((attachment) => (
+              <Pressable
+                key={attachment.key}
+                accessibilityRole="link"
+                onPress={() => void Linking.openURL(apiAssetUrl(attachment.url))}
+                style={({ pressed }) => [styles.attachment, pressed && { opacity: 0.8 }]}
+              >
+                <Text style={styles.attachmentIcon}>{attachmentIcon(attachment.mimeType)}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text numberOfLines={2} style={styles.attachmentName}>
+                    {attachment.name}
+                  </Text>
+                  <Text style={styles.attachmentMeta}>
+                    {attachmentLabel(attachment.mimeType)}
+                    {attachment.size ? ` · ${formatFileSize(attachment.size)}` : ""}
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
         <Text style={styles.messageTime}>{formatTime(message.createdAt)}</Text>
       </View>
     </View>
   );
+}
+
+function collectAttachments(message: ConversationMessage): RenderAttachment[] {
+  const result: RenderAttachment[] = [];
+  const seen = new Set<string>();
+
+  if (message.attachmentUrl) {
+    const key = `legacy:${message.attachmentUrl}`;
+    seen.add(message.attachmentUrl);
+    result.push({
+      key,
+      url: message.attachmentUrl,
+      name: message.attachmentName || "مرفق",
+      mimeType: message.attachmentType
+    });
+  }
+
+  for (const attachment of message.attachments ?? []) {
+    if (seen.has(attachment.fileUrl)) continue;
+    seen.add(attachment.fileUrl);
+    result.push({
+      key: attachment.id || attachment.fileUrl,
+      url: attachment.fileUrl,
+      name: attachment.fileName || "مرفق",
+      mimeType: attachment.mimeType,
+      size: attachment.fileSize
+    });
+  }
+
+  return result;
+}
+
+function mergeMessages(
+  current: ConversationMessage[],
+  incoming: ConversationMessage[]
+): ConversationMessage[] {
+  const byId = new Map(current.map((message) => [message.id, message]));
+  for (const message of incoming) byId.set(message.id, message);
+  return Array.from(byId.values()).sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+}
+
+function newestTimestamp(messages: ConversationMessage[]): string | null {
+  let newest: string | null = null;
+  for (const message of messages) {
+    if (!newest || message.createdAt > newest) newest = message.createdAt;
+  }
+  return newest;
+}
+
+function attachmentIcon(mimeType?: string | null): string {
+  const value = mimeType?.toLowerCase() ?? "";
+  if (value.startsWith("image/")) return "▣";
+  if (value.startsWith("audio/")) return "♪";
+  if (value === "application/pdf") return "PDF";
+  return "⌕";
+}
+
+function attachmentLabel(mimeType?: string | null): string {
+  const value = mimeType?.toLowerCase() ?? "";
+  if (value.startsWith("image/")) return "صورة";
+  if (value.startsWith("audio/")) return "رسالة صوتية";
+  if (value === "application/pdf") return "ملف PDF";
+  return "مرفق";
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function formatTime(value: string): string {
@@ -238,6 +415,26 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background
   },
   replyText: { color: colors.muted, fontSize: 12, textAlign: "right" },
+  attachments: { gap: spacing.xs, marginTop: spacing.sm },
+  attachment: {
+    minHeight: 54,
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background
+  },
+  attachmentIcon: {
+    minWidth: 30,
+    color: colors.primary,
+    fontWeight: "900",
+    textAlign: "center"
+  },
+  attachmentName: { color: colors.text, fontWeight: "700", textAlign: "right" },
+  attachmentMeta: { color: colors.muted, fontSize: 11, marginTop: 2, textAlign: "right" },
   systemBubble: { alignItems: "center", paddingVertical: spacing.xs },
   systemText: {
     color: colors.muted,

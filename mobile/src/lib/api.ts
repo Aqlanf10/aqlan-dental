@@ -29,6 +29,12 @@ function getBaseUrl(): string {
   return configured;
 }
 
+export function apiAssetUrl(path: string): string {
+  const value = path.trim();
+  if (/^https?:\/\//i.test(value)) return value;
+  return `${getBaseUrl()}${value.startsWith("/") ? value : `/${value}`}`;
+}
+
 async function parsePayload(response: Response): Promise<unknown> {
   const text = await response.text();
   if (!text) return null;
@@ -85,7 +91,6 @@ async function refreshAccessToken(): Promise<boolean> {
       await writeTokens(payload);
       return true;
     } catch {
-      // A transient network failure must not erase a still-valid refresh token.
       return false;
     } finally {
       refreshInFlight = null;

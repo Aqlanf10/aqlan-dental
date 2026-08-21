@@ -33,17 +33,6 @@ public sealed class ImpersonateRequest
 
 [ApiController]
 [Route("api/auth")]
-// CORE-P1-S4 — deny by default.
-//
-// This controller used to carry no class-level policy: every action opted in, either with
-// [AllowAnonymous] or with its own [Authorize]. Every action did so correctly, but the
-// structure meant a future action that simply forgot both attributes would be publicly
-// reachable — on the controller that issues tokens, unlocks accounts and impersonates users.
-//
-// The five genuinely public actions (Login, RefreshToken, UnlockAccount, ForgotPassword,
-// ResetPassword) keep their [AllowAnonymous], which overrides this. Impersonate keeps its
-// stricter [Authorize(Policy = "AdminOnly")]; the two policies combine, so it still requires
-// Admin. What changes is only the default for anything added later.
 [Authorize(Policy = "StaffOnly")]
 public class AuthController(
     IAuthService authService,
@@ -57,17 +46,19 @@ public class AuthController(
 {
     private const string RefreshTokenCookie = "refresh_token";
     private const string AccessTokenCookie = "aqlan_access_token";
+    private const string MobileRefreshTokenHeader = "X-Aqlan-Refresh-Token";
 
     [HttpPost("login")]
+    [HttpPost("mobile/login")]
     [AllowAnonymous]
     [EnableRateLimiting("AuthPolicy")]
     public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginRequest request)
     {
-        // Check if account is locked out
         var (isLocked, remainingMinutes) = await loginAttempts.IsLockedOutAsync(request.Username);
         if (isLocked)
         {
-            return StatusCode(429, new { 
+            return StatusCode(429, new
+            {
                 message = $"تم قفل الحساب بسبب {5} محاولات فاشلة. حاول مرة أخرى بعد {remainingMinutes} دقيقة.",
                 lockedUntil = remainingMinutes
             });
@@ -77,20 +68,26 @@ public class AuthController(
         if (result == null)
         {
             var failCount = await loginAttempts.RecordFailedAttemptAsync(request.Username);
-            
             if (failCount >= 5)
             {
-                return StatusCode(429, new { 
+                return StatusCode(429, new
+                {
                     message = "تم قفل الحساب بسبب 5 محاولات فاشلة متتالية. حاول مرة أخرى بعد 15 دقيقة.",
                     lockedUntil = 15
                 });
             }
-            
+
             return Unauthorized(new { message = "اسم المستخدم أو كلمة المرور غير صحيحة" });
         }
 
-        // Reset failed attempts on successful login
         await loginAttempts.ResetFailedAttemptsAsync(request.Username);
+
+        if (IsMobileRoute())
+        {
+            // Native clients cannot rely on browser cookie persistence. The mobile route is
+            // intentionally separate so the web login keeps the refresh token HttpOnly-only.
+            return Ok(new { result.AccessToken, result.RefreshToken, result.User });
+        }
 
         SetRefreshTokenCookie(result.RefreshToken);
         SetAccessTokenCookie(result.AccessToken);
@@ -98,31 +95,42 @@ public class AuthController(
     }
 
     [HttpPost("logout")]
+    [HttpPost("mobile/logout")]
     [Authorize(Policy = "StaffOnly")]
     public async Task<IActionResult> Logout()
     {
-        var refreshToken = Request.Cookies[RefreshTokenCookie];
-        if (refreshToken != null && currentUser.UserId.HasValue)
+        var refreshToken = IsMobileRoute()
+            ? Request.Headers[MobileRefreshTokenHeader].FirstOrDefault()
+            : Request.Cookies[RefreshTokenCookie];
+
+        if (!string.IsNullOrWhiteSpace(refreshToken) && currentUser.UserId.HasValue)
             await authService.LogoutAsync(currentUser.UserId.Value, refreshToken);
 
-        Response.Cookies.Delete(RefreshTokenCookie);
-        DeleteAccessTokenCookie();
+        if (!IsMobileRoute())
+        {
+            Response.Cookies.Delete(RefreshTokenCookie);
+            DeleteAccessTokenCookie();
+        }
+
         return NoContent();
     }
 
     [HttpPost("refresh-token")]
+    [HttpPost("mobile/refresh-token")]
     [AllowAnonymous]
     [EnableRateLimiting("AuthPolicy")]
     public async Task<ActionResult<object>> RefreshToken()
     {
-        var refreshToken = Request.Cookies[RefreshTokenCookie];
-        if (string.IsNullOrEmpty(refreshToken))
+        var isMobile = IsMobileRoute();
+        var refreshToken = isMobile
+            ? Request.Headers[MobileRefreshTokenHeader].FirstOrDefault()
+            : Request.Cookies[RefreshTokenCookie];
+
+        if (string.IsNullOrWhiteSpace(refreshToken))
             return Unauthorized(new { message = "لا يوجد refresh token" });
 
         try
         {
-            // The access token may be expired here, so we cannot rely on JWT claims.
-            // Look up the owner directly from the refresh token stored in Redis.
             var userId = currentUser.UserId
                 ?? await tokenService.GetOwnerOfRefreshTokenAsync(refreshToken);
 
@@ -132,10 +140,17 @@ public class AuthController(
             var result = await authService.RefreshAsync(userId.Value, refreshToken);
             if (result == null)
             {
-                Response.Cookies.Delete(RefreshTokenCookie);
-                DeleteAccessTokenCookie();
+                if (!isMobile)
+                {
+                    Response.Cookies.Delete(RefreshTokenCookie);
+                    DeleteAccessTokenCookie();
+                }
+
                 return Unauthorized(new { message = "انتهت صلاحية الجلسة، يرجى تسجيل الدخول مجدداً" });
             }
+
+            if (isMobile)
+                return Ok(new { accessToken = result.Value.accessToken, refreshToken = result.Value.refreshToken });
 
             SetRefreshTokenCookie(result.Value.refreshToken);
             SetAccessTokenCookie(result.Value.accessToken);
@@ -143,21 +158,17 @@ public class AuthController(
         }
         catch (Exception ex)
         {
-            // Sprint 1 Fix: Log refresh failure safely WITHOUT printing tokens
-            // The user is logged out only if refresh genuinely fails (expired/invalid token),
-            // not due to transient server errors (Redis timeout, etc.)
             logger.LogError(ex, "RefreshToken failed: {ExceptionType}", ex.GetType().Name);
-            
-            // For transient errors (Redis timeout, network issues), return 500 instead of 401
-            // so the frontend can retry instead of force-logging-out the user
+
             if (ex is InvalidOperationException or TimeoutException or System.Net.Sockets.SocketException)
-            {
                 return StatusCode(500, new { message = "حدث خطأ مؤقت أثناء تجديد الجلسة، يرجى المحاولة مرة أخرى" });
+
+            if (!isMobile)
+            {
+                Response.Cookies.Delete(RefreshTokenCookie);
+                DeleteAccessTokenCookie();
             }
-            
-            // For auth errors (invalid/expired token), clear cookie and return 401
-            Response.Cookies.Delete(RefreshTokenCookie);
-            DeleteAccessTokenCookie();
+
             return Unauthorized(new { message = "انتهت صلاحية الجلسة، يرجى تسجيل الدخول مجدداً" });
         }
     }
@@ -180,10 +191,7 @@ public class AuthController(
         var user = await authService.GetMeAsync(currentUser.UserId.Value);
         if (user == null) return Unauthorized();
 
-        // Get role permissions from database
-        var roleKey = user.Role; // e.g. "Admin", "Reception"
-
-        // Admin has all permissions implicitly
+        var roleKey = user.Role;
         if (string.Equals(roleKey, "Admin", StringComparison.OrdinalIgnoreCase))
         {
             var allResources = await db.RolePermissions
@@ -205,7 +213,6 @@ public class AuthController(
             return Ok(new UserPermissionsDto { Role = roleKey, Permissions = allPermissionKeys });
         }
 
-        // Non-admin: derive permission keys from RolePermission records
         var permissions = await db.RolePermissions
             .Where(rp => rp.Role == roleKey)
             .ToListAsync();
@@ -231,7 +238,6 @@ public class AuthController(
         var userId = currentUser.UserId;
         if (!userId.HasValue) return Unauthorized();
 
-        // SEC-11: enforce centralized password complexity policy before hashing.
         var (valid, policyError) = PasswordPolicy.Validate(request.NewPassword);
         if (!valid)
             return BadRequest(new { message = policyError });
@@ -245,18 +251,11 @@ public class AuthController(
         return Ok(new { message = "تم تغيير كلمة المرور بنجاح", accessToken = newAccessToken });
     }
 
-    /// <summary>
-    /// Unlocks a locked-out account. Accessible without authentication but requires
-    /// the server-side ADMIN_UNLOCK_SECRET environment variable. This allows a
-    /// sysadmin to unlock any account (including the admin account) when locked out
-    /// due to too many failed login attempts.
-    /// </summary>
     [HttpPost("unlock-account")]
     [AllowAnonymous]
     [EnableRateLimiting("AuthPolicy")]
     public async Task<IActionResult> UnlockAccount([FromBody] UnlockAccountRequest request)
     {
-        // Validate the unlock secret from environment variables
         var unlockSecret = Environment.GetEnvironmentVariable("ADMIN_UNLOCK_SECRET");
         if (string.IsNullOrWhiteSpace(unlockSecret))
             return StatusCode(403, new { message = "إلغاء القفل غير مفعّل — لم يتم تعيين المفتاح السري" });
@@ -271,38 +270,27 @@ public class AuthController(
         return Ok(new { message = $"تم إلغاء قفل الحساب '{request.Username}' بنجاح" });
     }
 
-    // ── Forgot Password ─────────────────────────────────────────────────────
-
     [HttpPost("forgot-password")]
     [AllowAnonymous]
     [EnableRateLimiting("ForgotPasswordPolicy")]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
     {
-        // Always return the same message — never reveal if account exists
         var genericMessage = "إذا كان الحساب موجوداً، سيتم إرسال تعليمات استعادة كلمة المرور";
 
-        // Find user by username or email
         var user = await db.Users
             .FirstOrDefaultAsync(u => u.Username == request.UsernameOrEmail || u.Email == request.UsernameOrEmail);
 
         if (user is null || !user.IsActive)
-        {
-            // User not found — just return generic message, no audit
             return Ok(new { message = genericMessage });
-        }
 
         var smtpConfigured = await emailService.IsConfiguredAsync();
 
         if (!string.IsNullOrWhiteSpace(user.Email) && smtpConfigured)
         {
-            // Generate secure random token (64 bytes, Base64)
             var tokenBytes = RandomNumberGenerator.GetBytes(64);
             var rawToken = Convert.ToBase64String(tokenBytes);
-
-            // Hash token for storage (SHA256)
             var tokenHash = HashToken(rawToken);
 
-            // Store hashed token with 30min expiry
             db.PasswordResetTokens.Add(new PasswordResetToken
             {
                 UserId = user.Id,
@@ -312,7 +300,6 @@ public class AuthController(
 
             await db.SaveChangesAsync();
 
-            // Send email with reset link — may fail even when configured
             var emailSent = await emailService.SendPasswordResetEmailAsync(user.Email, rawToken, "reset-password");
 
             if (emailSent)
@@ -322,8 +309,6 @@ public class AuthController(
             }
             else
             {
-                // Email configured but sending failed — create fallback PasswordResetRequest
-                // so the admin can still recover the account from the dashboard.
                 db.PasswordResetRequests.Add(new PasswordResetRequest
                 {
                     UserId = user.Id,
@@ -334,13 +319,11 @@ public class AuthController(
                 });
 
                 await db.SaveChangesAsync();
-
                 await auditService.LogAsync(AuditAction.ForgotPasswordRequested, "users", user.Id);
             }
         }
         else
         {
-            // No email or SMTP not configured — create a PasswordResetRequest for admin
             db.PasswordResetRequests.Add(new PasswordResetRequest
             {
                 UserId = user.Id,
@@ -350,35 +333,28 @@ public class AuthController(
             });
 
             await db.SaveChangesAsync();
-
             await auditService.LogAsync(AuditAction.ForgotPasswordRequested, "users", user.Id);
         }
 
         return Ok(new { message = genericMessage });
     }
 
-    // ── Reset Password with Token ───────────────────────────────────────────
-
     [HttpPost("reset-password")]
     [AllowAnonymous]
     [EnableRateLimiting("PortalPasswordResetPolicy")]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
     {
-        // Validate passwords match
         if (request.NewPassword != request.ConfirmPassword)
             return BadRequest(new { message = "كلمة المرور الجديدة وتأكيدها غير متطابقين" });
 
-        // SEC-11: enforce centralized password complexity policy (replaces inline regex checks).
         var (valid, policyError) = PasswordPolicy.Validate(request.NewPassword);
         if (!valid)
             return BadRequest(new { message = policyError });
 
-        // Hash provided token, look up in PasswordResetTokens
         var tokenHash = HashToken(request.Token);
         var resetToken = await db.PasswordResetTokens
             .FirstOrDefaultAsync(t => t.TokenHash == tokenHash);
 
-        // Validate: exists, not expired, not used
         if (resetToken is null)
             return BadRequest(new { message = "رابط إعادة التعيين غير صالح" });
 
@@ -388,36 +364,27 @@ public class AuthController(
         if (resetToken.ExpiresAt < DateTime.UtcNow)
             return BadRequest(new { message = "انتهت صلاحية رابط إعادة التعيين" });
 
-        // Get user
         var user = await db.Users.FindAsync(resetToken.UserId);
         if (user is null)
             return BadRequest(new { message = "المستخدم غير موجود" });
 
-        // Update user password hash/salt
         var newSalt = AuthService.GenerateSalt();
         var newHash = AuthService.HashPassword(request.NewPassword, newSalt);
         user.PasswordHash = newHash;
         user.PasswordSalt = newSalt;
         user.MustChangePassword = false;
 
-        // Mark token as used
         resetToken.IsUsed = true;
         resetToken.UsedAt = DateTime.UtcNow;
 
-        // Reset login lockout
         await loginAttempts.ResetFailedAttemptsAsync(user.Username);
-
-        // Revoke all refresh tokens
         await tokenService.RevokeAllRefreshTokensAsync(user.Id);
-
         await db.SaveChangesAsync();
 
         await auditService.LogAsync(AuditAction.ResetTokenUsed, "users", user.Id);
 
         return Ok(new { message = "تم إعادة تعيين كلمة المرور بنجاح" });
     }
-
-    // ── Impersonation ───────────────────────────────────────────────────────
 
     [HttpPost("impersonate/{userId:guid}")]
     [Authorize(Policy = "AdminOnly")]
@@ -426,7 +393,6 @@ public class AuthController(
         if (string.IsNullOrWhiteSpace(request.Reason))
             return BadRequest(new { message = "يجب تحديد سبب الانتحال" });
 
-        // Target user must exist and be active (not deleted)
         var targetUser = await db.Users
             .Include(u => u.Doctor)
             .FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
@@ -434,7 +400,6 @@ public class AuthController(
         if (targetUser is null)
             return NotFound(new { message = "المستخدم المستهدف غير موجود أو غير نشط" });
 
-        // Normal admin cannot impersonate another admin
         if (targetUser.Role == UserRole.Admin)
         {
             await auditService.LogAsync(AuditAction.ImpersonationDenied, "users", userId,
@@ -445,7 +410,6 @@ public class AuthController(
         var originalUserId = currentUser.OriginalUserId ?? currentUser.UserId;
         var originalRole = currentUser.Role?.ToString();
 
-        // Generate access token with impersonation claims
         var accessToken = tokenService.GenerateAccessToken(targetUser, originalUserId, originalRole);
         var refreshToken = tokenService.GenerateRefreshToken();
         await tokenService.StoreRefreshTokenAsync(targetUser.Id, refreshToken);
@@ -478,13 +442,11 @@ public class AuthController(
     [Authorize(Policy = "StaffOnly")]
     public async Task<IActionResult> StopImpersonation()
     {
-        // Must be currently impersonating
         if (!currentUser.IsImpersonating || !currentUser.OriginalUserId.HasValue)
             return BadRequest(new { message = "أنت لا تنتحل حالياً" });
 
         var originalUserId = currentUser.OriginalUserId.Value;
 
-        // Get original user
         var originalUser = await db.Users
             .Include(u => u.Doctor)
             .FirstOrDefaultAsync(u => u.Id == originalUserId);
@@ -492,7 +454,6 @@ public class AuthController(
         if (originalUser is null)
             return NotFound(new { message = "المستخدم الأصلي غير موجود" });
 
-        // Generate new access token for original user (without impersonation claims)
         var accessToken = tokenService.GenerateAccessToken(originalUser);
         var refreshToken = tokenService.GenerateRefreshToken();
         await tokenService.StoreRefreshTokenAsync(originalUser.Id, refreshToken);
@@ -521,7 +482,8 @@ public class AuthController(
         return Ok(new { accessToken, user = userDto, isImpersonating = false });
     }
 
-    // ── Helper Methods ─────────────────────────────────────────────────────
+    private bool IsMobileRoute() =>
+        Request.Path.Value?.Contains("/api/auth/mobile/", StringComparison.OrdinalIgnoreCase) == true;
 
     private void SetRefreshTokenCookie(string token)
     {

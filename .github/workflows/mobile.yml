@@ -1,0 +1,51 @@
+name: Mobile
+
+on:
+  pull_request:
+    paths:
+      - "mobile/**"
+      - "backend/src/AqlanDentalPro.API/Controllers/AuthController.cs"
+      - "backend/tests/AqlanDentalPro.UnitTests/Authorization/MobileAuthRouteContractTests.cs"
+      - ".github/workflows/mobile.yml"
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - "backend/src/AqlanDentalPro.API/Controllers/AuthController.cs"
+      - "backend/tests/AqlanDentalPro.UnitTests/Authorization/MobileAuthRouteContractTests.cs"
+      - ".github/workflows/mobile.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.13"
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: TypeScript
+        run: npm run typecheck
+
+      - name: Expo doctor
+        run: npm run doctor
+
+      - name: Bundle Android
+        env:
+          EXPO_PUBLIC_API_URL: https://mobile-ci.invalid
+        run: npm run export:android
+
+      - name: Bundle iOS
+        env:
+          EXPO_PUBLIC_API_URL: https://mobile-ci.invalid
+        run: npm run export:ios

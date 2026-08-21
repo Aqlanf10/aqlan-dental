@@ -67,8 +67,11 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
                             .FontSize(7).FontColor(Colors.Grey.Darken1);
                 });
 
-                // CLIN-12: logo bytes are cached statically — no per-render file I/O.
-                if (PdfLogoCache.TryGetLogo(out var receiptLogoBytes))
+                // CORE-REQ-006: the logo the clinic configured, resolved with the rest of the
+                // identity. CLIN-12's no-per-render-I/O property is preserved by caching in
+                // PdfLogoCache against the setting value.
+                var receiptLogoBytes = Identity.LogoBytes;
+                if (receiptLogoBytes is { Length: > 0 })
                 {
                     row.ConstantItem(45).AlignLeft().Image(receiptLogoBytes);
                 }
@@ -244,8 +247,9 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
                         .FontSize(8).FontColor(Colors.Grey.Darken2);
                 });
 
-                // CLIN-12: logo bytes are cached statically — no per-render file I/O.
-                if (PdfLogoCache.TryGetLogo(out var statementLogoBytes))
+                // CORE-REQ-006: the configured logo, resolved with the rest of the identity.
+                var statementLogoBytes = Identity.LogoBytes;
+                if (statementLogoBytes is { Length: > 0 })
                 {
                     row.ConstantItem(60).AlignLeft().Image(statementLogoBytes);
                 }
@@ -432,8 +436,9 @@ public class InvoiceDocument(Invoice Invoice, FinanceClinicIdentity Identity) : 
                         .FontSize(8).FontFamily(FontName).FontColor(Colors.Grey.Darken2);
                 });
 
-                // CLIN-12: logo bytes are cached statically — no per-render file I/O.
-                if (PdfLogoCache.TryGetLogo(out var statementLogoBytes))
+                // CORE-REQ-006: the configured logo, resolved with the rest of the identity.
+                var statementLogoBytes = Identity.LogoBytes;
+                if (statementLogoBytes is { Length: > 0 })
                 {
                     row.ConstantItem(60).AlignLeft().Image(statementLogoBytes);
                 }

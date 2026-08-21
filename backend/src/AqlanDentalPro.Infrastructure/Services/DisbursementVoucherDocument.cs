@@ -73,7 +73,8 @@ public class DisbursementVoucherDocument(DisbursementVoucherModel Model, Finance
                 });
 
                 // CLIN-12: logo bytes are cached statically — no per-render file I/O.
-                var logoBytes = PdfLogoCache.LogoBytes;
+                // CORE-REQ-006: the configured logo when there is one, the shipped file otherwise.
+                var logoBytes = Identity.LogoBytes ?? (PdfLogoCache.TryGetLogo(out var shipped) ? shipped : null);
                 if (logoBytes is not null)
                     row.ConstantItem(45).AlignLeft().Image(logoBytes);
             });

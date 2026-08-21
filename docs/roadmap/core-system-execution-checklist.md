@@ -138,7 +138,13 @@
       2026-08-21** (`CORE-REQ-006`): three independent readers with three disagreeing
       fallbacks collapsed onto `FinanceClinicIdentity`, and the `clinic.*` keys — which were
       **absent from every database** because they seeded only into an empty Settings table —
-      now seed additively. Logo resolution is not yet unified and stays open.
+      now seed additively.
+- [x] Resolve runtime logo from one source. **Done 2026-08-21.** PDFs printed
+      `Fonts/logo.png` — the file compiled into the deployment — while the website showed the
+      uploaded `website.logoUrl`, so a clinic that replaced its logo saw the change everywhere
+      except on its own documents, and no re-upload or restart fixed it. The logo now resolves
+      with the rest of the identity, cached against the setting's value so CLIN-12's
+      no-per-render-I/O property is kept while a change reaches the next document.
 - [ ] Implement Arabic RTL and English LTR application contracts.
 - [ ] Implement independent print-language selection.
 - [ ] Migrate supported print generators to one identity/currency contract.

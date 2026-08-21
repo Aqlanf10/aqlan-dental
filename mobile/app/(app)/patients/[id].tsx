@@ -1,3 +1,4 @@
+import { useSession } from "@/auth/SessionProvider";
 import { Card, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/components/ui";
 import { apiRequest } from "@/lib/api";
 import { fullPatientName } from "@/lib/format";
@@ -8,11 +9,13 @@ import React, { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 export default function PatientDetailsScreen() {
+  const { user } = useSession();
   const params = useLocalSearchParams<{ id: string }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
   const [patient, setPatient] = useState<PatientProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const canEdit = user?.role === "Admin" || user?.role === "Reception";
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -51,17 +54,17 @@ export default function PatientDetailsScreen() {
     );
   }
 
+  const patientName = fullPatientName(patient);
+
   return (
     <Screen>
       <View>
-        <Text style={styles.name}>{fullPatientName(patient)}</Text>
+        <Text style={styles.name}>{patientName}</Text>
         <Text style={styles.number}>{patient.patientNumber}</Text>
       </View>
 
       {patient.isLimitedView ? (
-        <Text style={styles.notice}>
-          هذا عرض سريري محدود وفق صلاحيات حسابك.
-        </Text>
+        <Text style={styles.notice}>هذا عرض سريري محدود وفق صلاحيات حسابك.</Text>
       ) : null}
 
       <SectionTitle>المعلومات الأساسية</SectionTitle>
@@ -79,9 +82,19 @@ export default function PatientDetailsScreen() {
         <>
           <SectionTitle>التاريخ الطبي</SectionTitle>
           <Card>
-            <Row label="أمراض مزمنة" value={patient.medicalHistory.chronicDiseases || "لا يوجد مسجل"} />
-            <Row label="أدوية حالية" value={patient.medicalHistory.currentMedications || "لا يوجد مسجل"} />
-            <Row label="حساسية أدوية" value={patient.medicalHistory.drugAllergies || "لا يوجد مسجل"} last />
+            <Row
+              label="أمراض مزمنة"
+              value={patient.medicalHistory.chronicDiseases || "لا يوجد مسجل"}
+            />
+            <Row
+              label="أدوية حالية"
+              value={patient.medicalHistory.currentMedications || "لا يوجد مسجل"}
+            />
+            <Row
+              label="حساسية أدوية"
+              value={patient.medicalHistory.drugAllergies || "لا يوجد مسجل"}
+              last
+            />
           </Card>
         </>
       ) : null}
@@ -95,15 +108,33 @@ export default function PatientDetailsScreen() {
         </>
       ) : null}
 
+      <SectionTitle>إجراءات سريعة</SectionTitle>
+      <PrimaryButton
+        title="حجز موعد جديد"
+        onPress={() =>
+          router.push({
+            pathname: "/(app)/appointments-new",
+            params: { patientId: patient.id, patientName }
+          })
+        }
+      />
       <PrimaryButton
         title="عرض مواعيد المريض"
         onPress={() =>
           router.push({
             pathname: "/(app)/appointments",
-            params: { patientId: patient.id, patientName: fullPatientName(patient) }
+            params: { patientId: patient.id, patientName }
           })
         }
       />
+      {canEdit && !patient.isLimitedView ? (
+        <PrimaryButton
+          title="تعديل بيانات المريض"
+          onPress={() =>
+            router.push({ pathname: "/(app)/patients/edit", params: { id: patient.id } })
+          }
+        />
+      ) : null}
     </Screen>
   );
 }
@@ -120,8 +151,22 @@ function Row({ label, value, last = false }: { label: string; value: string; las
 const styles = StyleSheet.create({
   name: { color: colors.text, fontSize: 25, fontWeight: "800", textAlign: "right" },
   number: { color: colors.primary, marginTop: 4, fontWeight: "700", textAlign: "right" },
-  notice: { color: colors.warning, backgroundColor: colors.warningSoft, padding: spacing.sm, borderRadius: 10, textAlign: "right" },
-  row: { minHeight: 48, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.md },
+  notice: {
+    color: colors.warning,
+    backgroundColor: colors.warningSoft,
+    padding: spacing.sm,
+    borderRadius: 10,
+    textAlign: "right"
+  },
+  row: {
+    minHeight: 48,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md
+  },
   label: { color: colors.muted, textAlign: "right" },
   value: { color: colors.text, flex: 1, textAlign: "right", fontWeight: "600" },
   paragraph: { color: colors.text, textAlign: "right", lineHeight: 24 }

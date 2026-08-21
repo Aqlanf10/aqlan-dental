@@ -128,6 +128,14 @@ export default function VisitEditorScreen() {
       setError("نوع الزيارة مطلوب.");
       return;
     }
+    if (!specialty) {
+      setError("اختر التخصص السريري.");
+      return;
+    }
+    if (!doctorId) {
+      setError("اختر الطبيب المسؤول عن الزيارة.");
+      return;
+    }
 
     const clinicalContentPresent = [
       chiefComplaint,
@@ -224,18 +232,18 @@ export default function VisitEditorScreen() {
       />
       <FormField label="نوع الزيارة *" value={visitType} onChangeText={setVisitType} />
       <SelectList
-        label="التخصص"
+        label="التخصص *"
         value={specialty}
         options={specialtyOptions}
         onChange={setSpecialty}
-        emptyLabel="بدون تخصص محدد"
+        emptyLabel="اختر التخصص"
       />
       <SelectList
-        label="الطبيب"
+        label="الطبيب *"
         value={doctorId}
         options={doctorOptions}
         onChange={setDoctorId}
-        emptyLabel="بدون طبيب محدد"
+        emptyLabel="اختر الطبيب"
       />
 
       <SectionTitle>المعلومات السريرية</SectionTitle>

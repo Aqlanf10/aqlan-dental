@@ -17,11 +17,15 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 export default function NewAppointmentScreen() {
   const { user } = useSession();
-  const params = useLocalSearchParams<{ patientId?: string; patientName?: string }>();
+  const params = useLocalSearchParams<{ patientId?: string; patientName?: string; date?: string }>();
   const fixedPatientId = Array.isArray(params.patientId) ? params.patientId[0] : params.patientId;
   const fixedPatientName = Array.isArray(params.patientName)
     ? params.patientName[0]
     : params.patientName;
+  const requestedDate = Array.isArray(params.date) ? params.date[0] : params.date;
+  const initialDate = requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)
+    ? requestedDate
+    : isoDateLocal(new Date());
 
   const [patientId, setPatientId] = useState<string | null>(fixedPatientId ?? null);
   const [patientName, setPatientName] = useState(fixedPatientName ?? "");
@@ -29,7 +33,7 @@ export default function NewAppointmentScreen() {
   const [patientResults, setPatientResults] = useState<PatientListItem[]>([]);
   const [doctors, setDoctors] = useState<DoctorSummary[]>([]);
   const [doctorId, setDoctorId] = useState<string | null>(user?.doctorId ?? null);
-  const [date, setDate] = useState(() => isoDateLocal(new Date()));
+  const [date, setDate] = useState(initialDate);
   const [startTime, setStartTime] = useState("09:00");
   const [duration, setDuration] = useState("30");
   const [appointmentType, setAppointmentType] = useState("مراجعة");

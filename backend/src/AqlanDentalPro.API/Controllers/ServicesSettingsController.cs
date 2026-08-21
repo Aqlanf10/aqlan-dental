@@ -14,6 +14,9 @@ namespace AqlanDentalPro.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/settings/services")]
+// CORE-P1-S4 — deny by default. Reads of the active list are StaffOnly and every mutation
+// is AdminOnly; the policies combine, so writes stay Admin-only.
+[Authorize(Policy = "StaffOnly")]
 public class ServicesSettingsController(AppDbContext db, FinanceSettingsReader financeSettings) : ControllerBase
 {
     /// <summary>Get all services (including inactive). Admin only.</summary>

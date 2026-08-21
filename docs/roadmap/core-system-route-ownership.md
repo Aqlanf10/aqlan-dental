@@ -72,4 +72,5 @@ declared destination context.
 - Dynamic redirect tests cover identifier encoding, repeated query values, and the
   owner-controlled `focus=journey` parameter.
 - `CORE-P1-S3` will derive sidebar and route guards from one route-role manifest.
-- `CORE-P1-S4` will attach and test backend policy ownership.
+- `CORE-P1-S4` attached and tested backend policy ownership — see
+  `core-system-route-policy-ownership.md`.

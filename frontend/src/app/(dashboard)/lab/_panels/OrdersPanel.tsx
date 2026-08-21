@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, FlaskConical, Clock, CheckCircle2, XCircle, Package, Search, FileText, RotateCcw, RefreshCw, Printer, Download, ScanLine } from "lucide-react";
+import { Plus, FlaskConical, Clock, CheckCircle2, XCircle, Package, Search, FileText, RotateCcw, RefreshCw, Printer, Download, ScanLine, Boxes } from "lucide-react";
 import api from "@/lib/api";
 import { downloadPdfFromApi, printPdfFromApi } from "@/lib/pdfDownload";
 import { toast } from "@/stores/toastStore";
@@ -15,6 +15,7 @@ import type { LabOrder, LabOrderStatus } from "@/types/lab";
 import { NewLabOrderModal } from "@/components/lab/NewLabOrderModal";
 import { ScanOrderDialog } from "@/components/lab/ScanOrderDialog";
 import { SendToLabButton } from "@/components/lab/SendToLabButton";
+import { LabOrderConsumables } from "@/components/lab/LabOrderConsumables";
 import { cn, localDateString } from "@/lib/utils";
 import { extractErrorMessage } from "@/lib/errors";
 import { QueryErrorBanner } from "@/components/shared/QueryErrorBanner";
@@ -89,6 +90,7 @@ export function LabOrdersPanel() {
   // instead of the generic status-advance button, so the /remake endpoint actually
   // receives the data it's built to accept.
   const [remakeOrder, setRemakeOrder] = useState<LabOrder | null>(null);
+  const [consumablesOrder, setConsumablesOrder] = useState<LabOrder | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -292,6 +294,16 @@ export function LabOrdersPanel() {
                               transposed. Sits next to Print because both are "get this to
                               the lab". */}
                           <SendToLabButton orderId={order.id} />
+                          {/* LABINV-REQ-011 — the materials this case consumed, and what
+                              they cost the clinic. Beside the order, never inside it. */}
+                          <button
+                            type="button"
+                            onClick={() => setConsumablesOrder(order)}
+                            title="المواد المصروفة من المخزون لهذا الأمر"
+                            className="text-xs text-amber-700 hover:text-amber-900 font-medium"
+                          >
+                            <Boxes className="w-3.5 h-3.5 inline" aria-hidden /> المواد
+                          </button>
                           {/* Download PDF button — sends Authorization token */}
                           <button
                             type="button"
@@ -389,6 +401,14 @@ export function LabOrdersPanel() {
 
       {remakeOrder && (
         <RemakeLabOrderModal order={remakeOrder} onClose={() => setRemakeOrder(null)} />
+      )}
+
+      {consumablesOrder && (
+        <LabOrderConsumables
+          orderId={consumablesOrder.id}
+          orderNumber={consumablesOrder.orderNumber}
+          onClose={() => setConsumablesOrder(null)}
+        />
       )}
     </ErrorBoundary>
   );

@@ -33,6 +33,18 @@ public sealed class ImpersonateRequest
 
 [ApiController]
 [Route("api/auth")]
+// CORE-P1-S4 — deny by default.
+//
+// This controller used to carry no class-level policy: every action opted in, either with
+// [AllowAnonymous] or with its own [Authorize]. Every action did so correctly, but the
+// structure meant a future action that simply forgot both attributes would be publicly
+// reachable — on the controller that issues tokens, unlocks accounts and impersonates users.
+//
+// The five genuinely public actions (Login, RefreshToken, UnlockAccount, ForgotPassword,
+// ResetPassword) keep their [AllowAnonymous], which overrides this. Impersonate keeps its
+// stricter [Authorize(Policy = "AdminOnly")]; the two policies combine, so it still requires
+// Admin. What changes is only the default for anything added later.
+[Authorize(Policy = "StaffOnly")]
 public class AuthController(
     IAuthService authService,
     ICurrentUserService currentUser,

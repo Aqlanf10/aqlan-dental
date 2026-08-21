@@ -13,6 +13,16 @@ using Microsoft.EntityFrameworkCore;
 namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
+// CORE-P1-S4 — deny by default.
+//
+// This controller mixes the public website's booking form with the staff-side request queue
+// and carried no class-level policy, so each action opted in. All of them did, but the shape
+// meant an action added later that forgot both attributes would join the public half by
+// accident — and the staff half reads patient names and phone numbers.
+//
+// The three genuinely public actions (GetAvailability, Create, CancelPublicBooking) keep
+// their [AllowAnonymous], which overrides this.
+[Authorize(Policy = "AdminOrReception")]
 public class BookingRequestsController(IBookingRequestService service, ICurrentUserService currentUser, IRecaptchaService recaptcha, IServiceScopeFactory scopeFactory, ILogger<BookingRequestsController> logger) : ControllerBase
 {
     // ── Public endpoints ─────────────────────────────────────────────────

@@ -27,6 +27,23 @@ public class InventoryAdjustment : BaseEntity
     /// <summary>Linked purchase order line item (if adjustment was from receiving).</summary>
     public Guid? PurchaseOrderLineItemId { get; set; }
 
+    /// <summary>
+    /// LABINV-REQ-011 — the lab order this consumption belongs to, when it belongs to one.
+    ///
+    /// <para>
+    /// Nullable and unenforced by design, exactly like <see cref="PurchaseOrderLineItemId"/>:
+    /// every adjustment already in the table predates this column and none of them is wrong
+    /// for having no order.
+    /// </para>
+    /// <para>
+    /// This is a link, not a cost. Materials the clinic consumes for a case are the clinic's
+    /// own cost, not part of what it owes the lab, so nothing here is ever added to
+    /// <c>LabOrder.TotalCost</c> — that would inflate both the supplier bill and the lab-cost
+    /// deduction inside the doctor's commission.
+    /// </para>
+    /// </summary>
+    public Guid? LabOrderId { get; set; }
+
     /// <summary>User who made the adjustment.</summary>
     public Guid? AdjustedBy { get; set; }
 }

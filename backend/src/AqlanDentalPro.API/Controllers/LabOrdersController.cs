@@ -564,6 +564,81 @@ public class LabOrdersController(
         });
     }
 
+    /// <summary>المواد المستهلكة من المخزون لهذا الأمر وتكلفتها على المركز</summary>
+    /// <remarks>
+    /// <para>
+    /// LABINV-REQ-011, the reporting half. Consumption is written through
+    /// <c>InventoryController</c> — the owner API, which is the only thing allowed to move
+    /// stock — and read back here so the cost sits beside the order where the person looking
+    /// at the case can see it.
+    /// </para>
+    /// <para>
+    /// <b>Beside, never inside.</b> <c>materialCost</c> is computed on read and stored
+    /// nowhere. It is deliberately kept out of <c>LabOrder.TotalCost</c>: materials the
+    /// clinic consumes are not part of what the clinic owes the lab, so folding them in
+    /// would inflate the supplier bill and, through it, the lab-cost deduction inside the
+    /// doctor's commission — one entry corrupting two unrelated numbers.
+    /// </para>
+    /// <para>
+    /// The cost is a current valuation, not a historical one: it multiplies today's
+    /// <c>CostPerUnit</c> by the quantity consumed, because the adjustment ledger does not
+    /// record the price at the moment of consumption. Re-pricing an item therefore re-prices
+    /// past consumption. That is stated in the response rather than hidden, since the
+    /// alternative — a second cost column — is the parallel ledger this requirement forbids.
+    /// </para>
+    /// </remarks>
+    [HttpGet("{id:guid}/consumables")]
+    public async Task<IActionResult> GetConsumables(Guid id, CancellationToken ct = default)
+    {
+        if (!await CanAsync("view")) return Forbid();
+
+        var order = await db.LabOrders
+            .AsNoTracking()
+            .Where(o => o.Id == id)
+            .Select(o => new { o.Id, o.PatientId, o.OrderNumber })
+            .FirstOrDefaultAsync(ct);
+
+        if (order is null) return NotFound(new { message = NotFoundMessage });
+
+        var denied = await DenyIfDoctorCannotAccess(order.PatientId);
+        if (denied is not null) return denied;
+
+        var lines = await db.InventoryAdjustments
+            .AsNoTracking()
+            .Where(a => a.LabOrderId == id)
+            .OrderBy(a => a.CreatedAt)
+            .Select(a => new
+            {
+                a.Id,
+                a.InventoryItemId,
+                itemName = a.InventoryItem!.Name,
+                unit = a.InventoryItem.Unit ?? a.InventoryItem.ConsumptionUnit,
+                // Delta is negative for a consumption; report the magnitude.
+                consumedQuantity = -a.Delta,
+                costPerUnit = a.InventoryItem.CostPerUnit,
+                a.Reason,
+                a.AdjustedBy,
+                CreatedAt = a.CreatedAt.ToString("yyyy-MM-dd HH:mm"),
+            })
+            .ToListAsync(ct);
+
+        var materialCost = lines.Sum(l => (l.costPerUnit ?? 0m) * l.consumedQuantity);
+        var unpriced = lines.Count(l => l.costPerUnit is null);
+
+        return Ok(new
+        {
+            labOrderId = order.Id,
+            orderNumber = order.OrderNumber,
+            lines,
+            materialCost,
+            // Inventory carries no currency column; CostPerUnit is held in the clinic's base
+            // currency, the same assumption the inventory valuation endpoint already makes.
+            currency = "YER",
+            // Named so a caller cannot mistake a partial total for a complete one.
+            unpricedLineCount = unpriced,
+        });
+    }
+
     /// <summary>
     /// One message for every lookup failure. Written once so a later edit cannot
     /// accidentally reintroduce a distinguishable response.

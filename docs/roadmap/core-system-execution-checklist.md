@@ -101,7 +101,10 @@
 - [x] `CORE-P1-S1` Align Reception access to canonical `/appointments` and add tests.
 - [x] `CORE-P1-S2` Lock canonical route/owner inventory and redirects with tests.
 - [x] `CORE-P1-S3` Create one frontend route-role manifest.
-- [ ] `CORE-P1-S4` Map canonical routes to backend policy ownership.
+- [x] `CORE-P1-S4` Map canonical routes to backend policy ownership. Contract test over the
+      compiled assembly pins every controller's policy, the anonymous surface, and the
+      queue-display middleware; seven opt-in controllers hardened to deny by default. See
+      `core-system-route-policy-ownership.md`.
 - [ ] `CORE-P1-S5` Distinguish executed and skipped authenticated E2E in CI.
 - [ ] Phase 1 exit gate approved.
 

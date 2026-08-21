@@ -11,6 +11,18 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/portal")]
+// CORE-P1-S4 — deny by default.
+//
+// This controller serves two different audiences: patients holding a portal token
+// (PatientAccess) and staff managing portal credentials (AdminOrReception). No single role
+// policy satisfies both, so the class default only requires an authenticated user and each
+// action keeps the policy that does the role work. The value is that an action added later
+// cannot be anonymous by omission — on the controller that exposes a patient's visits,
+// prescriptions and financial summary.
+//
+// Login, RefreshToken, ForgotPassword, ResetPassword and GetClinicInfo keep their
+// [AllowAnonymous], which overrides this.
+[Authorize]
 public class PatientPortalController(IPatientPortalService portalService, IConfiguration configuration, ILogger<PatientPortalController> logger, IRecaptchaService recaptcha) : ControllerBase
 {
     private readonly IConfiguration Configuration = configuration;

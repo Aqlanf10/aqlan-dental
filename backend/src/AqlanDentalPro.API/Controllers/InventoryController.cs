@@ -94,6 +94,57 @@ public sealed class ConsumeServiceInventoryRequest
     public string? Notes { get; init; }
 }
 
+/// <summary>
+/// LABINV-REQ-011 — one line of materials consumed for a lab order.
+/// </summary>
+public sealed class ConsumeLabOrderLine
+{
+    public Guid InventoryItemId { get; init; }
+    public int Quantity { get; init; }
+}
+
+/// <summary>
+/// LABINV-REQ-011 — record the materials a case actually consumed against its lab order.
+///
+/// <para>
+/// The step this replaces: the materials for a crown or a retainer came off the shelf and
+/// were either deducted with a free-text note nobody could query, or not deducted at all.
+/// Both leave stock wrong, and the second is what makes a clinic discover an empty box on
+/// the day it needs it.
+/// </para>
+/// </summary>
+public sealed class ConsumeLabOrderInventoryRequest
+{
+    public Guid LabOrderId { get; init; }
+    public List<ConsumeLabOrderLine> Items { get; init; } = [];
+    public string? Notes { get; init; }
+}
+
+public sealed class ConsumeLabOrderInventoryRequestValidator : AbstractValidator<ConsumeLabOrderInventoryRequest>
+{
+    public ConsumeLabOrderInventoryRequestValidator()
+    {
+        RuleFor(x => x.LabOrderId)
+            .NotEmpty().WithMessage("أمر المختبر مطلوب");
+
+        RuleFor(x => x.Items)
+            .NotEmpty().WithMessage("حدد مادة واحدة على الأقل");
+
+        RuleForEach(x => x.Items).ChildRules(line =>
+        {
+            line.RuleFor(l => l.InventoryItemId)
+                .NotEmpty().WithMessage("المادة مطلوبة");
+
+            line.RuleFor(l => l.Quantity)
+                .GreaterThan(0).WithMessage("الكمية المستهلكة يجب أن تكون أكبر من صفر");
+        });
+
+        RuleFor(x => x.Notes)
+            .MaximumLength(300).WithMessage("الملاحظة يجب ألا تتجاوز 300 حرف")
+            .When(x => !string.IsNullOrWhiteSpace(x.Notes));
+    }
+}
+
 public sealed class AdjustQuantityRequestValidator : AbstractValidator<AdjustQuantityRequest>
 {
     public AdjustQuantityRequestValidator()
@@ -639,6 +690,145 @@ public class InventoryController(AppDbContext db, ILogger<InventoryController> l
         });
     }
 
+    /// <summary>
+    /// LABINV-REQ-011 — deducts the materials a case consumed and links each deduction to
+    /// its lab order.
+    ///
+    /// <para>
+    /// This is the existing consumption ledger with one column filled in, not a second one.
+    /// The rows it writes are ordinary <c>InventoryAdjustment</c> rows of type
+    /// <c>consumption</c>, visible in the item's adjustment history exactly like every other
+    /// deduction, and reversible through the same <c>PUT {id}/adjust</c> that reverses any
+    /// other mistake.
+    /// </para>
+    /// <para>
+    /// <b>Nothing here touches the order's money.</b> The materials the clinic consumes are
+    /// the clinic's cost, not part of what it owes the lab. Writing them into
+    /// <c>LabOrder.TotalCost</c> would inflate the supplier bill and, through it, the
+    /// lab-cost deduction inside the doctor's commission — one entry corrupting two
+    /// unrelated numbers. The cost is returned for display and stored nowhere.
+    /// </para>
+    /// </summary>
+    [HttpPost("consume-lab-order")]
+    public async Task<IActionResult> ConsumeLabOrderInventory([FromBody] ConsumeLabOrderInventoryRequest req)
+    {
+        var order = await db.LabOrders
+            .AsNoTracking()
+            .Where(o => o.Id == req.LabOrderId)
+            .Select(o => new { o.Id, o.OrderNumber, o.ApplianceType })
+            .FirstOrDefaultAsync();
+
+        if (order is null)
+            return NotFound(new { message = "أمر المختبر غير موجود" });
+
+        // Two lines for the same item would each be checked against the full opening stock,
+        // so a request for 6 + 6 of an item holding 8 would pass the sufficiency check and
+        // then drive the balance negative. Merging them silently would consume a quantity
+        // the user never asked for, so the request is refused instead.
+        var duplicated = req.Items
+            .GroupBy(line => line.InventoryItemId)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToList();
+
+        if (duplicated.Count > 0)
+            return BadRequest(new { message = "لا يمكن تكرار نفس المادة في نفس الطلب — ادمج الكمية في سطر واحد" });
+
+        var requestedIds = req.Items.Select(line => line.InventoryItemId).ToList();
+
+        var items = await db.Inventory
+            .Where(i => requestedIds.Contains(i.Id))
+            .ToListAsync();
+
+        if (items.Count != requestedIds.Count)
+            return NotFound(new { message = "بعض المواد المحددة غير موجودة" });
+
+        var byId = items.ToDictionary(i => i.Id);
+
+        var insufficient = req.Items
+            .Where(line => byId[line.InventoryItemId].Quantity < line.Quantity)
+            .Select(line => new
+            {
+                inventoryItemId = line.InventoryItemId,
+                itemName = byId[line.InventoryItemId].Name,
+                available = byId[line.InventoryItemId].Quantity,
+                required = line.Quantity,
+                unit = byId[line.InventoryItemId].Unit ?? byId[line.InventoryItemId].ConsumptionUnit
+            })
+            .ToList();
+
+        if (insufficient.Count > 0)
+            return BadRequest(new
+            {
+                message = "لا يمكن تنفيذ الاستهلاك: كمية بعض المواد غير كافية",
+                insufficient
+            });
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+        var adjustedBy = GetCurrentUserId();
+        var consumed = new List<object>();
+        decimal materialCost = 0m;
+
+        var orderLabel = string.IsNullOrWhiteSpace(order.OrderNumber)
+            ? order.ApplianceType ?? "أمر مختبر"
+            : order.OrderNumber;
+
+        foreach (var line in req.Items)
+        {
+            var item = byId[line.InventoryItemId];
+            var previous = item.Quantity;
+            item.Quantity -= line.Quantity;
+
+            var reason = $"استهلاك أمر مختبر: {orderLabel}";
+            if (!string.IsNullOrWhiteSpace(req.Notes))
+                reason += $" — {req.Notes.Trim()}";
+
+            db.InventoryAdjustments.Add(new InventoryAdjustment
+            {
+                InventoryItemId = item.Id,
+                PreviousQuantity = previous,
+                NewQuantity = item.Quantity,
+                Delta = -line.Quantity,
+                Reason = reason,
+                AdjustmentType = "consumption",
+                LabOrderId = order.Id,
+                AdjustedBy = adjustedBy
+            });
+
+            var lineCost = (item.CostPerUnit ?? 0m) * line.Quantity;
+            materialCost += lineCost;
+
+            consumed.Add(new
+            {
+                inventoryItemId = item.Id,
+                itemName = item.Name,
+                previousQuantity = previous,
+                consumedQuantity = line.Quantity,
+                newQuantity = item.Quantity,
+                unit = item.Unit ?? item.ConsumptionUnit,
+                costPerUnit = item.CostPerUnit,
+                lineCost,
+                isLowStock = item.Quantity <= item.MinQuantity ||
+                             (item.MinStockLevel.HasValue && item.Quantity < item.MinStockLevel.Value)
+            });
+        }
+
+        await db.SaveChangesAsync();
+        await tx.CommitAsync();
+
+        return Ok(new
+        {
+            labOrderId = order.Id,
+            orderNumber = order.OrderNumber,
+            consumed,
+            materialCost,
+            // Inventory carries no currency of its own; CostPerUnit is kept in the clinic's
+            // base currency, the same assumption the valuation endpoint already makes.
+            currency = "YER",
+            message = "تم صرف مواد أمر المختبر من المخزون"
+        });
+    }
+
     /// <summary>Returns adjustment history for an inventory item.</summary>
     [HttpGet("{id:guid}/adjustments")]
     public async Task<IActionResult> GetAdjustments(
@@ -670,6 +860,7 @@ public class InventoryController(AppDbContext db, ILogger<InventoryController> l
                 a.AdjustmentType,
                 a.AdjustedBy,
                 a.PurchaseOrderLineItemId,
+                a.LabOrderId,
                 CreatedAt = a.CreatedAt.ToString("yyyy-MM-dd HH:mm")
             })
             .ToListAsync();

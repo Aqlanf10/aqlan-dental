@@ -133,7 +133,11 @@
 
 ## Phase 2 - Settings, Identity, Language, Printing
 
-- [ ] Define central settings and identity schema.
+- [x] Define central settings and identity schema. **Done 2026-08-21.** The schema is
+      `clinic.*` for identity (name, location, phones, lead doctor + title + credentials),
+      `website.*` for public-site and print presentation, and `finance.*` for money rules —
+      documented in `core-system-route-policy-ownership.md`'s companion section and enforced by
+      a guard test that fails if any component reads a `clinic.*` key outside the one resolver.
 - [~] Resolve runtime logo and text identity from one source. **Text identity done
       2026-08-21** (`CORE-REQ-006`): three independent readers with three disagreeing
       fallbacks collapsed onto `FinanceClinicIdentity`, and the `clinic.*` keys — which were
@@ -145,8 +149,18 @@
       except on its own documents, and no re-upload or restart fixed it. The logo now resolves
       with the rest of the identity, cached against the setting's value so CLIN-12's
       no-per-render-I/O property is kept while a change reaches the next document.
-- [ ] Implement Arabic RTL and English LTR application contracts.
-- [ ] Implement independent print-language selection.
+
+- [x] Implement independent print-language selection. **Done 2026-08-21.** The prescription
+      and radiology-referral forms — the ones a patient carries outside the clinic — printed
+      English identity unconditionally, with no way to choose. `website.printLanguage` now
+      selects Arabic or English independently of the interface language, defaulting to English
+      so nothing changes for a clinic that has not chosen. The Arabic lead-doctor block comes
+      from the same `clinic.*` rows the PDFs read, so a printed form and a printed PDF cannot
+      name the doctor differently.
+- [ ] Implement Arabic RTL and English LTR **application** contracts. **Not started, and not a
+      slice.** The dashboard's strings are Arabic literals inline across the whole app; making
+      the interface bilingual is a phase of its own, not a step inside this one. Recorded as
+      such rather than half-done.
 - [ ] Migrate supported print generators to one identity/currency contract.
 - [ ] Phase 2 exit gate approved.
 

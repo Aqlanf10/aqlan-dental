@@ -170,6 +170,65 @@ export type AppointmentMutationInput = {
   packageId?: string | null;
 };
 
+export type VisitAppointmentSummary = {
+  appointmentDate: string;
+  appointmentTime: string;
+  appointmentType?: string | null;
+  appointmentStatus?: string | null;
+  doctorName?: string | null;
+};
+
+export type ClinicalVisit = {
+  id: string;
+  patientId: string;
+  appointmentId?: string | null;
+  visitDate: string;
+  visitType?: string | null;
+  specialty?: string | null;
+  doctorId?: string | null;
+  doctorName?: string | null;
+  chiefComplaint?: string | null;
+  clinicalNotes?: string | null;
+  treatmentDone?: string | null;
+  diagnosis?: string | null;
+  instructions?: string | null;
+  nextVisitPlan?: string | null;
+  cost?: number | null;
+  nextVisitDate?: string | null;
+  serviceId?: string | null;
+  checkoutStatus?: string | null;
+  amountDueReference?: number | null;
+  proposedProcedure?: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  appointment?: VisitAppointmentSummary | null;
+};
+
+export type VisitListResponse = {
+  data: ClinicalVisit[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type VisitMutationInput = {
+  patientId?: string;
+  appointmentId?: string | null;
+  visitDate?: string | null;
+  visitType?: string | null;
+  specialty?: string | null;
+  doctorId?: string | null;
+  serviceId?: string | null;
+  chiefComplaint?: string | null;
+  clinicalNotes?: string | null;
+  treatmentDone?: string | null;
+  diagnosis?: string | null;
+  instructions?: string | null;
+  nextVisitPlan?: string | null;
+  nextVisitDate?: string | null;
+};
+
 export type ConversationParticipant = {
   userId: string;
   username: string;

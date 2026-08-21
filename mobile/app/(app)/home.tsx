@@ -1,9 +1,10 @@
 import { useSession } from "@/auth/SessionProvider";
-import { Card, Screen, SectionTitle, StateMessage } from "@/components/ui";
+import { Card, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/components/ui";
 import { apiRequest } from "@/lib/api";
 import { formatYemeniRial } from "@/lib/format";
 import type { DashboardAlerts, DashboardStats } from "@/lib/types";
 import { colors, radius, spacing } from "@/theme";
+import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import { RefreshControl, StyleSheet, Text, View } from "react-native";
 
@@ -93,6 +94,9 @@ export default function DashboardScreen() {
           <Text style={styles.muted}>جارٍ تحميل التنبيهات…</Text>
         </Card>
       )}
+
+      <SectionTitle>التواصل</SectionTitle>
+      <PrimaryButton title="فتح الإشعارات" onPress={() => router.push("/(app)/notifications")} />
     </Screen>
   );
 }

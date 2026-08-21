@@ -149,7 +149,7 @@ export default function MessageDetailScreen() {
           style={({ pressed }) => [
             styles.send,
             (sending || !text.trim()) && styles.sendDisabled,
-            pressed && !sending && text.trim() && { opacity: 0.85 }
+            pressed && !sending && Boolean(text.trim()) && { opacity: 0.85 }
           ]}
         >
           {sending ? (

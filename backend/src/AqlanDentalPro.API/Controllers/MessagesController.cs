@@ -23,7 +23,7 @@ public class MessagesController(
     /// reactivate old participants. That must never become a branch/doctor IDOR surface.
     /// Return 404 for inaccessible patients so callers cannot enumerate patients in other branches.
     /// </summary>
-    private async Task<IActionResult?> DenyIfPatientInaccessible(Guid patientId)
+    private async Task<ActionResult?> DenyIfPatientInaccessible(Guid patientId)
     {
         var patient = await db.Patients
             .IgnoreQueryFilters()
@@ -83,7 +83,6 @@ public class MessagesController(
         }
         catch (Exception ex)
         {
-            // H-SEC FIX: Never expose raw exception messages to client
             logger.LogError(ex, "Schema status check failed");
             return StatusCode(500, new { error = "حدث خطأ أثناء فحص حالة قاعدة البيانات" });
         }

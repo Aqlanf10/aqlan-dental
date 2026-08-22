@@ -3,6 +3,7 @@ import { FormField, SelectList } from "@/components/forms";
 import { Card, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/components/ui";
 import { apiRequest } from "@/lib/api";
 import { isoDateLocal } from "@/lib/format";
+import { OPERATIONAL_PERMISSION } from "@/lib/permissionContract";
 import type {
   Appointment,
   AppointmentMutationInput,
@@ -16,12 +17,11 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 export default function NewAppointmentScreen() {
-  const { user } = useSession();
+  const { user, can } = useSession();
+  const canCreateAppointment = can(OPERATIONAL_PERMISSION.appointments.create);
   const params = useLocalSearchParams<{ patientId?: string; patientName?: string; date?: string }>();
   const fixedPatientId = Array.isArray(params.patientId) ? params.patientId[0] : params.patientId;
-  const fixedPatientName = Array.isArray(params.patientName)
-    ? params.patientName[0]
-    : params.patientName;
+  const fixedPatientName = Array.isArray(params.patientName) ? params.patientName[0] : params.patientName;
   const requestedDate = Array.isArray(params.date) ? params.date[0] : params.date;
   const initialDate = requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)
     ? requestedDate
@@ -43,6 +43,7 @@ export default function NewAppointmentScreen() {
   const [created, setCreated] = useState<Appointment | null>(null);
 
   useEffect(() => {
+    if (!canCreateAppointment) return;
     let cancelled = false;
     async function loadDoctors() {
       try {
@@ -55,13 +56,11 @@ export default function NewAppointmentScreen() {
       }
     }
     void loadDoctors();
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.branchId, user?.role]);
+    return () => { cancelled = true; };
+  }, [canCreateAppointment, user?.branchId, user?.role]);
 
   useEffect(() => {
-    if (fixedPatientId || patientSearch.trim().length < 2) {
+    if (!canCreateAppointment || fixedPatientId || patientSearch.trim().length < 2) {
       setPatientResults([]);
       return;
     }
@@ -86,44 +85,29 @@ export default function NewAppointmentScreen() {
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [fixedPatientId, patientSearch]);
+  }, [canCreateAppointment, fixedPatientId, patientSearch]);
 
   const doctorOptions = useMemo(
-    () =>
-      doctors.map((doctor) => ({
-        value: doctor.id,
-        label: doctor.name,
-        subtitle: doctor.specialty || doctor.branchName || null
-      })),
+    () => doctors.map((doctor) => ({
+      value: doctor.id,
+      label: doctor.name,
+      subtitle: doctor.specialty || doctor.branchName || null
+    })),
     [doctors]
   );
 
   async function submit() {
+    if (!canCreateAppointment) {
+      setError("صلاحية إنشاء المواعيد غير مفعلة لهذا الحساب.");
+      return;
+    }
     const minutes = Number.parseInt(duration, 10);
-    if (!patientId) {
-      setError("اختر المريض أولاً.");
-      return;
-    }
-    if (!doctorId) {
-      setError("اختر الطبيب.");
-      return;
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      setError("التاريخ يجب أن يكون بصيغة YYYY-MM-DD.");
-      return;
-    }
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime)) {
-      setError("الوقت يجب أن يكون بصيغة HH:mm مثل 09:30.");
-      return;
-    }
-    if (!Number.isFinite(minutes) || minutes < 5 || minutes > 240) {
-      setError("مدة الموعد يجب أن تكون بين 5 و240 دقيقة.");
-      return;
-    }
-    if (!appointmentType.trim()) {
-      setError("نوع الموعد مطلوب.");
-      return;
-    }
+    if (!patientId) return setError("اختر المريض أولاً.");
+    if (!doctorId) return setError("اختر الطبيب.");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return setError("التاريخ يجب أن يكون بصيغة YYYY-MM-DD.");
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime)) return setError("الوقت يجب أن يكون بصيغة HH:mm مثل 09:30.");
+    if (!Number.isFinite(minutes) || minutes < 5 || minutes > 240) return setError("مدة الموعد يجب أن تكون بين 5 و240 دقيقة.");
+    if (!appointmentType.trim()) return setError("نوع الموعد مطلوب.");
 
     const request: AppointmentMutationInput = {
       patientId,
@@ -150,6 +134,17 @@ export default function NewAppointmentScreen() {
     }
   }
 
+  if (!canCreateAppointment) {
+    return (
+      <Screen>
+        <StateMessage
+          title="إنشاء المواعيد غير مسموح"
+          message="مفتاح appointments.create غير مفعّل لهذا الحساب. الخادم سيمنع الإنشاء أيضًا."
+        />
+      </Screen>
+    );
+  }
+
   if (created) {
     return (
       <Screen>
@@ -157,19 +152,15 @@ export default function NewAppointmentScreen() {
         <Card>
           <Text style={styles.successName}>{created.patientName || patientName}</Text>
           <Text style={styles.successMeta}>{created.appointmentDate}</Text>
-          <Text style={styles.successMeta}>
-            {created.startTime} – {created.endTime}
-          </Text>
+          <Text style={styles.successMeta}>{created.startTime} – {created.endTime}</Text>
           <Text style={styles.successMeta}>د. {created.doctorName}</Text>
         </Card>
         <PrimaryButton
           title="عرض مواعيد اليوم"
-          onPress={() =>
-            router.replace({
-              pathname: "/(app)/appointments",
-              params: { patientId: created.patientId, patientName: created.patientName }
-            })
-          }
+          onPress={() => router.replace({
+            pathname: "/(app)/appointments",
+            params: { patientId: created.patientId, patientName: created.patientName }
+          })}
         />
       </Screen>
     );
@@ -203,6 +194,7 @@ export default function NewAppointmentScreen() {
           ) : (
             <>
               <TextInput
+                accessibilityLabel="البحث عن المريض"
                 value={patientSearch}
                 onChangeText={setPatientSearch}
                 placeholder="ابحث بالاسم أو رقم الملف أو الهاتف"
@@ -229,67 +221,28 @@ export default function NewAppointmentScreen() {
         </View>
       )}
 
-      <SelectList
-        label="الطبيب *"
-        value={doctorId}
-        options={doctorOptions}
-        onChange={setDoctorId}
-        emptyLabel="اختر الطبيب"
-      />
+      <SelectList label="الطبيب *" value={doctorId} options={doctorOptions} onChange={setDoctorId} emptyLabel="اختر الطبيب" />
       <FormField label="التاريخ *" value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" />
       <FormField label="وقت البداية *" value={startTime} onChangeText={setStartTime} placeholder="09:00" />
-      <FormField
-        label="المدة بالدقائق *"
-        value={duration}
-        onChangeText={setDuration}
-        keyboardType="number-pad"
-      />
+      <FormField label="المدة بالدقائق *" value={duration} onChangeText={setDuration} keyboardType="number-pad" />
       <FormField label="نوع الموعد *" value={appointmentType} onChangeText={setAppointmentType} />
       <FormField label="ملاحظات" value={notes} onChangeText={setNotes} multiline />
 
       <Text style={styles.hint}>
-        فحص التعارض النهائي يتم داخل معاملة الخادم عند الحفظ؛ لذلك لا يمكن للهاتف تجاوز قواعد منع الحجز المزدوج.
+        فحص التعارض النهائي والصلاحية يتمان داخل الخادم عند الحفظ؛ لذلك لا يمكن للهاتف تجاوز قواعد منع الحجز المزدوج أو مفتاح appointments.create.
       </Text>
-      <PrimaryButton
-        title="تأكيد الحجز"
-        loading={submitting}
-        disabled={submitting}
-        onPress={() => void submit()}
-      />
+      <PrimaryButton title="تأكيد الحجز" loading={submitting} disabled={submitting} onPress={() => void submit()} />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   fieldLabel: { color: colors.text, fontWeight: "700", textAlign: "right" },
-  search: {
-    minHeight: 48,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surface,
-    color: colors.text,
-    paddingHorizontal: spacing.md
-  },
-  patientOption: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surface,
-    padding: spacing.md
-  },
+  search: { minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, backgroundColor: colors.surface, color: colors.text, paddingHorizontal: spacing.md },
+  patientOption: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, backgroundColor: colors.surface, padding: spacing.md },
   optionName: { color: colors.text, fontWeight: "700", textAlign: "right" },
   optionMeta: { color: colors.muted, marginTop: 3, textAlign: "right" },
-  selectedPatient: {
-    flexDirection: "row-reverse",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: colors.primary,
-    borderRadius: radius.sm,
-    backgroundColor: colors.primarySoft,
-    padding: spacing.md
-  },
+  selectedPatient: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", borderWidth: 1, borderColor: colors.primary, borderRadius: radius.sm, backgroundColor: colors.primarySoft, padding: spacing.md },
   selectedLabel: { color: colors.muted, textAlign: "right" },
   selectedValue: { color: colors.text, fontWeight: "800", textAlign: "right" },
   change: { color: colors.primary, fontWeight: "700" },

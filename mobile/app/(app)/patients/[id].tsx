@@ -5,6 +5,7 @@ import { fullPatientName } from "@/lib/format";
 import { canUseGeneralDentistry } from "@/lib/general";
 import { canFinanceJourney } from "@/lib/journey";
 import { canUseOrthodontics } from "@/lib/ortho";
+import { OPERATIONAL_PERMISSION } from "@/lib/permissionContract";
 import { canAccessClinicalRecords } from "@/lib/roles";
 import { canUseSurgery } from "@/lib/surgery";
 import type { ConversationDetail, PatientProfile } from "@/lib/types";
@@ -32,6 +33,7 @@ export default function PatientDetailsScreen() {
   const canReadGeneral = canUseGeneralDentistry(user?.role);
   const canReadSurgery = canUseSurgery(user?.role);
   const canReadLab = can("lab_orders.view");
+  const canCreateAppointment = can(OPERATIONAL_PERMISSION.appointments.create);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -115,7 +117,7 @@ export default function PatientDetailsScreen() {
       {canReadSurgery ? <PrimaryButton title="جراحة الفم" onPress={() => router.push({ pathname: "/(app)/patient-surgery", params: { patientId: patient.id, patientName } })} /> : null}
       {canReadLab ? <PrimaryButton title="طلبات المعمل" onPress={() => router.push({ pathname: "/(app)/patient-lab", params: { patientId: patient.id, patientName } })} /> : null}
       {canReadFinance ? <PrimaryButton title="مالية المريض" onPress={() => router.push({ pathname: "/(app)/patient-finance", params: { patientId: patient.id, patientName } })} /> : null}
-      <PrimaryButton title="حجز موعد جديد" onPress={() => router.push({ pathname: "/(app)/appointments-new", params: { patientId: patient.id, patientName } })} />
+      {canCreateAppointment ? <PrimaryButton title="حجز موعد جديد" onPress={() => router.push({ pathname: "/(app)/appointments-new", params: { patientId: patient.id, patientName } })} /> : null}
       <PrimaryButton title="عرض مواعيد المريض" onPress={() => router.push({ pathname: "/(app)/appointments", params: { patientId: patient.id, patientName } })} />
       <PrimaryButton title="محادثة داخلية حول المريض" loading={messagingAction === "internal"} disabled={messagingAction !== null} onPress={() => void openPatientConversation("internal")} />
       <PrimaryButton title="مراسلة المريض — مرئية للمريض" loading={messagingAction === "patient"} disabled={messagingAction !== null} onPress={() => void openPatientConversation("patient")} />

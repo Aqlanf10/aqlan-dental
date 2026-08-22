@@ -156,15 +156,26 @@ export default function PatientDetailsScreen() {
         }
       />
       {canReadClinical ? (
-        <PrimaryButton
-          title="السجل السريري والزيارات"
-          onPress={() =>
-            router.push({
-              pathname: "/(app)/visits",
-              params: { patientId: patient.id, patientName }
-            })
-          }
-        />
+        <>
+          <PrimaryButton
+            title="السجل السريري والزيارات"
+            onPress={() =>
+              router.push({
+                pathname: "/(app)/visits",
+                params: { patientId: patient.id, patientName }
+              })
+            }
+          />
+          <PrimaryButton
+            title="الصور والأشعة"
+            onPress={() =>
+              router.push({
+                pathname: "/(app)/patient-media",
+                params: { patientId: patient.id, patientName }
+              })
+            }
+          />
+        </>
       ) : null}
       {canReadGeneral ? (
         <PrimaryButton

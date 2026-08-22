@@ -56,6 +56,9 @@ export default function DashboardScreen() {
         <Text style={styles.role}>{user?.role}</Text>
       </View>
 
+      <SectionTitle>تشغيل العيادة</SectionTitle>
+      <PrimaryButton title="فتح تشغيل اليوم" onPress={() => router.push("/(app)/journey")} />
+
       <SectionTitle>نظرة سريعة</SectionTitle>
 
       {error && !stats ? (

@@ -71,6 +71,13 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="general-treatment-new" options={{ href: null, title: "تسجيل علاج عام" }} />
       <Tabs.Screen name="general-plan-new" options={{ href: null, title: "خطة علاج عام" }} />
       <Tabs.Screen name="general-perio-new" options={{ href: null, title: "سجل اللثة" }} />
+      <Tabs.Screen name="patient-surgery" options={{ href: null, title: "جراحة الفم" }} />
+      <Tabs.Screen name="surgery-new" options={{ href: null, title: "حالة جراحية جديدة" }} />
+      <Tabs.Screen name="surgery-case" options={{ href: null, title: "الحالة الجراحية" }} />
+      <Tabs.Screen name="surgery-preop" options={{ href: null, title: "ما قبل الجراحة" }} />
+      <Tabs.Screen name="surgery-operative" options={{ href: null, title: "تقرير الجراحة" }} />
+      <Tabs.Screen name="surgery-postop" options={{ href: null, title: "ما بعد الجراحة" }} />
+      <Tabs.Screen name="surgery-referral-new" options={{ href: null, title: "إحالة مستشفى" }} />
     </Tabs>
   );
 }

@@ -121,11 +121,11 @@ export default function PublicHomePage() {
         />
         {/* Gradient glow */}
         <div
-          className="absolute top-0 right-0 w-96 h-96 rounded-full opacity-10 blur-3xl"
+          className="absolute top-0 start-0 w-96 h-96 rounded-full opacity-10 blur-3xl"
           style={{ background: "radial-gradient(circle, #87CEEB, transparent)" }}
         />
         <div
-          className="absolute bottom-0 left-0 w-80 h-80 rounded-full opacity-10 blur-3xl"
+          className="absolute bottom-0 end-0 w-80 h-80 rounded-full opacity-10 blur-3xl"
           style={{ background: "radial-gradient(circle, #FF8C00, transparent)" }}
         />
 
@@ -142,12 +142,12 @@ export default function PublicHomePage() {
           </div>
 
           {/* Headline */}
-          <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold leading-tight text-center md:text-right mb-6 max-w-3xl md:mx-0 mx-auto">
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold leading-tight text-center md:text-start mb-6 max-w-3xl md:mx-0 mx-auto">
             {get("heroTitle")}
           </h1>
 
           <p
-            className="text-base sm:text-lg md:text-xl leading-relaxed text-center md:text-right mb-10 max-w-2xl md:mx-0 mx-auto"
+            className="text-base sm:text-lg md:text-xl leading-relaxed text-center md:text-start mb-10 max-w-2xl md:mx-0 mx-auto"
             style={{ color: "#94a3b8" }}
           >
             {get("heroSubtitle")}
@@ -224,7 +224,7 @@ export default function PublicHomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {TRUST_STRIP.map(({ icon: Icon, label }) => (
-              <div key={label} className="flex flex-col sm:flex-row items-center gap-3 text-center sm:text-right">
+              <div key={label} className="flex flex-col sm:flex-row items-center gap-3 text-center sm:text-start">
                 <div
                   className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
                   style={{ backgroundColor: "rgba(135,206,235,0.12)" }}
@@ -305,7 +305,7 @@ export default function PublicHomePage() {
             {SERVICES.map(({ icon: Icon, title, desc }) => (
               <div
                 key={title}
-                className="bg-white rounded-3xl p-6 border border-slate-100 hover:border-slate-200 hover:shadow-lg transition-all duration-300 text-right group"
+                className="bg-white rounded-3xl p-6 border border-slate-100 hover:border-slate-200 hover:shadow-lg transition-all duration-300 text-start group"
               >
                 <div
                   className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5"

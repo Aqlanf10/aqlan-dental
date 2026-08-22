@@ -133,14 +133,47 @@
 
 ## Phase 2 - Settings, Identity, Language, Printing
 
-- [ ] Define central settings and identity schema.
+- [x] Define central settings and identity schema. **Done 2026-08-21.** The schema is
+      `clinic.*` for identity (name, location, phones, lead doctor + title + credentials),
+      `website.*` for public-site and print presentation, and `finance.*` for money rules —
+      documented in `core-system-route-policy-ownership.md`'s companion section and enforced by
+      a guard test that fails if any component reads a `clinic.*` key outside the one resolver.
 - [~] Resolve runtime logo and text identity from one source. **Text identity done
       2026-08-21** (`CORE-REQ-006`): three independent readers with three disagreeing
       fallbacks collapsed onto `FinanceClinicIdentity`, and the `clinic.*` keys — which were
       **absent from every database** because they seeded only into an empty Settings table —
-      now seed additively. Logo resolution is not yet unified and stays open.
-- [ ] Implement Arabic RTL and English LTR application contracts.
-- [ ] Implement independent print-language selection.
+      now seed additively.
+- [x] Resolve runtime logo from one source. **Done 2026-08-21.** PDFs printed
+      `Fonts/logo.png` — the file compiled into the deployment — while the website showed the
+      uploaded `website.logoUrl`, so a clinic that replaced its logo saw the change everywhere
+      except on its own documents, and no re-upload or restart fixed it. The logo now resolves
+      with the rest of the identity, cached against the setting's value so CLIN-12's
+      no-per-render-I/O property is kept while a change reaches the next document.
+
+- [x] Implement independent print-language selection. **Done 2026-08-21.** The prescription
+      and radiology-referral forms — the ones a patient carries outside the clinic — printed
+      English identity unconditionally, with no way to choose. `website.printLanguage` now
+      selects Arabic or English independently of the interface language, defaulting to English
+      so nothing changes for a clinic that has not chosen. The Arabic lead-doctor block comes
+      from the same `clinic.*` rows the PDFs read, so a printed form and a printed PDF cannot
+      name the doctor differently.
+- [~] Implement Arabic RTL and English LTR application contracts. **Foundation done and proved
+      on a live surface, 2026-08-21; the bulk of the migration is measured and outstanding.**
+      - **Done:** locale + direction contract (`src/i18n/`), a `LocaleProvider` that writes
+        `lang`/`dir` onto `<html>`, a one-click switcher in the topbar, and translation with an
+        **Arabic fallback** so an untranslated key renders today's exact text — the property
+        that makes migrating incrementally safe. Proved end-to-end against a running app:
+        `dir` rtl→ltr, `lang` ar→en, sidebar labels translated, no horizontal overflow.
+      - **Measured and outstanding — two separate bodies of work:**
+        1. **~7,880 Arabic strings across 419 files.** Additive: each screen keeps working
+           until it is migrated. Best done per module, with clinical and financial terms
+           reviewed rather than machine-translated.
+        2. **~418 physical CSS direction utilities** (`text-right` ×207, `text-left` ×50,
+           `pr-9` ×41, `pl-3` ×36, `flex-row-reverse` ×7 …) that do **not** follow `dir` and
+           must become logical properties (`text-start`, `ps-*`, `pe-*`). 156 logical
+           utilities are already in use, so the pattern is established. Until this is done the
+           text translates but the chrome stays physically right-to-left — confirmed visually,
+           not assumed.
 - [ ] Migrate supported print generators to one identity/currency contract.
 - [ ] Phase 2 exit gate approved.
 

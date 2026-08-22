@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useT } from "@/i18n/LocaleProvider";
 import {
   LayoutDashboard, Users, GitBranch, Activity,
   Stethoscope, Scissors, ArrowLeftRight, Wallet,
@@ -55,6 +56,33 @@ type NavGroup = {
 
 type NavItem = NavLeaf & { section?: string };
 type NavEntry = (NavItem & { kind?: "leaf" }) | (NavGroup & { section?: string });
+
+/**
+ * CORE-REQ-006 — the translation key for a navigation route.
+ *
+ * Derived from the href rather than stored on each of the forty entries, so the array below is
+ * untouched and an entry with no key yet simply keeps its Arabic label. That is the migration
+ * property this whole system is built on: translating a screen is additive, and a screen nobody
+ * has reached yet keeps working exactly as it does today.
+ */
+export function navKeyFor(href: string): string {
+  if (href === "/") return "nav.dashboard";
+
+  // The WHOLE path, not just its first segment. Keying on the first segment alone made
+  // /appointments/recall collapse onto /appointments, so the recall entry lost its own label
+  // and the sidebar showed "Appointments" twice — caught in a screenshot, not by a test.
+  const camel = href
+    .replace(/^\//, "")
+    .split("/")
+    .filter(Boolean)
+    .map((part, index) => {
+      const c = part.replace(/-([a-z])/g, (_, ch: string) => ch.toUpperCase());
+      return index === 0 ? c : c.charAt(0).toUpperCase() + c.slice(1);
+    })
+    .join("");
+
+  return `nav.${camel}`;
+}
 
 /* ─── Navigation definition ─────────────────────────────────────────────────── */
 export const NAV: NavEntry[] = [
@@ -194,7 +222,7 @@ function NavLink({
       href={href}
       className={cn(
         "flex items-center gap-2.5 py-2.5 text-sm font-medium transition-all relative",
-        indent ? "pr-9 pl-[18px]" : "px-[18px]",
+        indent ? "ps-9 pe-[18px]" : "px-[18px]",
         isCurrent ? "text-white font-bold" : "hover:text-white",
       )}
       style={isCurrent ? {
@@ -211,10 +239,10 @@ function NavLink({
         className="w-[18px] h-[18px] flex-shrink-0"
         style={{ color: isCurrent ? BRAND_ORANGE : "rgba(255,255,255,0.65)" }}
       />
-      <span className="flex-1 text-right">{label}</span>
+      <span className="flex-1 text-start">{label}</span>
       {badge && (
         <span
-          className="text-[9px] font-bold rounded-full px-1.5 py-0.5 ml-1 flex-shrink-0"
+          className="text-[9px] font-bold rounded-full px-1.5 py-0.5 me-1 flex-shrink-0"
           style={{ background: BRAND_ORANGE, color: "#fff" }}
         >
           {badge}
@@ -282,7 +310,7 @@ function NavGroupItem({
           className="w-[18px] h-[18px] flex-shrink-0"
           style={{ color: isChildActive ? BRAND_ORANGE : "rgba(255,255,255,0.65)" }}
         />
-        <span className="flex-1 text-right">{group.label}</span>
+        <span className="flex-1 text-start">{group.label}</span>
         <ChevronDown
           className="w-3.5 h-3.5 transition-transform duration-200 flex-shrink-0"
           style={{
@@ -315,6 +343,7 @@ function NavGroupItem({
 /* ─── Sidebar ───────────────────────────────────────────────────────────────── */
 export function Sidebar() {
   const pathname  = usePathname();
+  const t = useT();
   const router    = useRouter();
   const { user, logout } = useAuthStore();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -339,7 +368,7 @@ export function Sidebar() {
       {/* Mobile hamburger */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed top-3.5 right-3 z-50 w-10 h-10 rounded-lg border flex items-center justify-center text-white hover:opacity-90"
+        className="lg:hidden fixed top-3.5 start-3 z-50 w-10 h-10 rounded-lg border flex items-center justify-center text-white hover:opacity-90"
         style={{ backgroundColor: BRAND_PRIMARY, borderColor: BRAND_PRIMARY_LIGHT }}
         aria-label="فتح القائمة"
       >
@@ -357,9 +386,21 @@ export function Sidebar() {
       {/* Sidebar */}
       <aside
         className={cn(
-          "w-64 flex flex-col h-full fixed top-0 right-0 z-40 transition-transform duration-300",
+          // CORE-REQ-006: `start-0` follows `dir`, so the sidebar sits right in Arabic and
+          // left in English. The off-canvas transform cannot: translateX is physical, so it
+          // needs the direction variants or the drawer would slide the wrong way in English.
+          //
+          // The off-canvas transform is scoped to `max-lg:` deliberately. Tailwind emits
+          // `rtl:*` after the responsive variants, and `:where()` keeps both rules at the
+          // same specificity, so a bare unscoped rtl transform simply came last and beat
+          // `lg:translate-x-0` — leaving the sidebar parked off-screen on desktop too, not
+          // just on mobile. Confining the transform to below `lg` removes the conflict
+          // rather than fighting the cascade: above `lg` no transform class is emitted.
+          "w-64 flex flex-col h-full fixed top-0 start-0 z-40 transition-transform duration-300",
           "lg:translate-x-0",
-          mobileOpen ? "translate-x-0" : "translate-x-full lg:translate-x-0",
+          mobileOpen
+            ? "translate-x-0"
+            : "max-lg:rtl:translate-x-full max-lg:ltr:-translate-x-full",
         )}
         style={{ backgroundColor: BRAND_PRIMARY }}
       >
@@ -410,7 +451,7 @@ export function Sidebar() {
             const unreadCount = leaf.href === "/messages" ? unreadData?.totalUnread : undefined;
 
             // Dynamically customize labels for Doctor roles
-            let label = leaf.label;
+            let label = t(navKeyFor(leaf.href), leaf.label);
             if (leaf.href === "/schedule" && ["GeneralDentist", "OralSurgeon", "Orthodontist"].includes(userRole)) {
               label = "مواعيدي";
             } else if (leaf.href === "/patients" && ["GeneralDentist", "OralSurgeon", "Orthodontist"].includes(userRole)) {

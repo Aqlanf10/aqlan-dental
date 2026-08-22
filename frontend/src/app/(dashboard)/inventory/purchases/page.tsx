@@ -225,7 +225,7 @@ function CreatePOModal({ onClose }: { onClose: () => void }) {
                     onChange={(e) => setItemSearch(e.target.value)}
                     placeholder="بحث في المواد..."
                     autoFocus
-                    className="w-full border border-gray-200 rounded-lg pr-9 pl-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    className="w-full border border-gray-200 rounded-lg ps-9 pe-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
                   />
                 </div>
                 <div className="max-h-40 overflow-y-auto space-y-1">
@@ -234,7 +234,7 @@ function CreatePOModal({ onClose }: { onClose: () => void }) {
                       key={inv.id}
                       type="button"
                       onClick={() => addLineItem(inv)}
-                      className="w-full text-right px-3 py-2 text-sm hover:bg-white rounded-lg transition-colors flex items-center justify-between"
+                      className="w-full text-start px-3 py-2 text-sm hover:bg-white rounded-lg transition-colors flex items-center justify-between"
                     >
                       <span className="font-medium text-gray-900">{inv.name}</span>
                       <span className="text-gray-400 text-xs">
@@ -299,7 +299,7 @@ function CreatePOModal({ onClose }: { onClose: () => void }) {
                         className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
                       />
                     </div>
-                    <div className="w-24 text-left">
+                    <div className="w-24 text-end">
                       <label className="text-[11px] text-gray-500">الإجمالي</label>
                       <p className="text-sm font-mono font-semibold text-gray-700 py-1.5">
                         {formatYemeniRiyal(li.quantity * li.unitCost)}
@@ -539,7 +539,7 @@ function ViewPOModal({
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
                   {["العنصر", "الكمية", "المستلمة", "تكلفة الوحدة", "الإجمالي"].map((h) => (
-                    <th key={h} className="text-right px-4 py-3 font-medium text-gray-500 text-xs">
+                    <th key={h} className="text-start px-4 py-3 font-medium text-gray-500 text-xs">
                       {h}
                     </th>
                   ))}
@@ -745,7 +745,7 @@ export default function PurchaseOrdersPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="بحث برقم الأمر أو المورد..."
-              className="w-full border border-gray-200 rounded-lg pr-9 pl-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className="w-full border border-gray-200 rounded-lg ps-9 pe-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
           </div>
         </div>
@@ -809,7 +809,7 @@ export default function PurchaseOrdersPage() {
                       ].map((h) => (
                         <th
                           key={h}
-                          className="text-right px-4 py-3 font-medium text-gray-500 text-xs"
+                          className="text-start px-4 py-3 font-medium text-gray-500 text-xs"
                         >
                           {h}
                         </th>

@@ -25,7 +25,7 @@ export function ConversationItem({
     <button
       onClick={onClick}
       className={cn(
-        "w-full flex items-center gap-3 px-4 py-3 text-right transition-colors border-b border-gray-50",
+        "w-full flex items-center gap-3 px-4 py-3 text-start transition-colors border-b border-gray-50",
         isSelected
           ? "bg-[#3d7ab5]/5 border-r-4 border-r-[#3d7ab5]"
           : "hover:bg-gray-50"

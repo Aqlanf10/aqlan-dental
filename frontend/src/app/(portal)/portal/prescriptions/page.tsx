@@ -59,7 +59,7 @@ export default function PortalPrescriptionsPage() {
                     <p className="text-xs text-gray-400">{p.createdAt}</p>
                   </div>
                 </div>
-                <div className="text-left">
+                <div className="text-end">
                   {p.doctorName && (
                     <span className="text-xs text-gray-500 flex items-center gap-1">
                       <User className="w-3 h-3" /> {p.doctorName}

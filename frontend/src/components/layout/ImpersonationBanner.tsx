@@ -36,7 +36,7 @@ export function ImpersonationBanner() {
       <button
         onClick={handleStop}
         disabled={stopping}
-        className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-lg transition mr-2"
+        className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-lg transition ms-2"
         style={{
           background: "rgba(0,0,0,0.15)",
           color: "#1a1a1a",

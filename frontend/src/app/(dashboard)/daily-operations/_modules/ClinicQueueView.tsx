@@ -601,7 +601,7 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
           <div className="flex items-center gap-2 mb-1">
             <BarChart3 className="w-3.5 h-3.5" style={{ color: BLUE }} />
             <span className="text-[11px] font-bold" style={{ color: NAVY }}>إحصائيات الانتظار</span>
-            <button onClick={() => setShowAnalytics(false)} className="mr-auto">
+            <button onClick={() => setShowAnalytics(false)} className="ms-auto">
               <ChevronUp className="w-3.5 h-3.5" style={{ color: "#94a3b8" }} />
             </button>
           </div>
@@ -771,7 +771,7 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
                           </button>
                           <button onClick={(e) => { e.stopPropagation(); queueAction(`/api/clinic-queue/${item.id}/cancel`); }}
                             disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50" style={{ background: "#ef4444" }}>
-                            <XCircle className="w-3 h-3 inline ml-1" />إلغاء
+                            <XCircle className="w-3 h-3 inline me-1" />إلغاء
                           </button>
                         </>
                       )}
@@ -779,7 +779,7 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
                         <>
                           <button onClick={(e) => { e.stopPropagation(); queueAction(`/api/clinic-queue/${item.id}/enter-room`); }}
                             disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50" style={{ background: "#7c3aed" }}>
-                            <DoorOpen className="w-3 h-3 inline ml-1" />إدخال
+                            <DoorOpen className="w-3 h-3 inline me-1" />إدخال
                           </button>
                           <button onClick={(e) => { e.stopPropagation(); queueAction(`/api/clinic-queue/${item.id}/recall`); }}
                             disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50 flex items-center gap-1" style={{ background: "#d97706" }} title="إعادة نداء">
@@ -794,13 +794,13 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
                       {item.status === "InRoom" && (
                         <button onClick={(e) => { e.stopPropagation(); queueAction(`/api/clinic-queue/${item.id}/start`); }}
                           disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50" style={{ background: "#059669" }}>
-                          <Play className="w-3 h-3 inline ml-1" />بدء
+                          <Play className="w-3 h-3 inline me-1" />بدء
                         </button>
                       )}
                       {item.status === "InProgress" && (
                         <button onClick={(e) => { e.stopPropagation(); queueAction(`/api/clinic-queue/${item.id}/complete`); }}
                           disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50" style={{ background: NAVY }}>
-                          <Square className="w-3 h-3 inline ml-1" />إنهاء
+                          <Square className="w-3 h-3 inline me-1" />إنهاء
                         </button>
                       )}
 
@@ -816,17 +816,17 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
                           <ChevronDown className="w-2.5 h-2.5" />
                         </button>
                         {priorityDropdownOpen === item.id && (
-                          <div className="absolute top-full mt-1 left-0 z-50 rounded-lg shadow-lg border py-1 min-w-[100px]" style={{ background: "#fff", borderColor: "#e5e7eb" }}>
+                          <div className="absolute top-full mt-1 end-0 z-50 rounded-lg shadow-lg border py-1 min-w-[100px]" style={{ background: "#fff", borderColor: "#e5e7eb" }}>
                             {Object.entries(PRIORITY_CONFIG).map(([key, val]) => (
                               <button
                                 key={key}
                                 onClick={(e) => { e.stopPropagation(); handlePriorityChange(item, key); }}
-                                className="w-full text-right px-3 py-1.5 text-[11px] font-semibold hover:bg-gray-50 transition flex items-center gap-2"
+                                className="w-full text-start px-3 py-1.5 text-[11px] font-semibold hover:bg-gray-50 transition flex items-center gap-2"
                                 style={{ color: item.priority === key ? val.color : "#374151" }}
                               >
                                 <span className="w-2 h-2 rounded-full" style={{ background: val.color }} />
                                 {val.label}
-                                {item.priority === key && <span className="mr-auto text-[10px]" style={{ color: val.color }}>✓</span>}
+                                {item.priority === key && <span className="ms-auto text-[10px]" style={{ color: val.color }}>✓</span>}
                               </button>
                             ))}
                           </div>
@@ -868,7 +868,7 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
                         </span>
                         {item.noShowAt && (
                           <span className="text-[10px]" style={{ color: "#94a3b8" }}>
-                            <Clock className="w-3 h-3 inline ml-0.5" />
+                            <Clock className="w-3 h-3 inline me-0.5" />
                             {new Date(item.noShowAt).toLocaleTimeString("ar-YE", { hour: "2-digit", minute: "2-digit" })}
                           </span>
                         )}

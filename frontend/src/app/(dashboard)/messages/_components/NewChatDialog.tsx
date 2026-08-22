@@ -92,7 +92,7 @@ export function NewChatDialog({
               placeholder="بحث عن مستخدم..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pr-10 pl-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]"
+              className="w-full ps-10 pe-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]"
             />
           </div>
 
@@ -125,7 +125,7 @@ export function NewChatDialog({
                   key={u.id}
                   onClick={() => toggleUser(u.id)}
                   className={cn(
-                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-right transition-colors",
+                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-start transition-colors",
                     selected.has(u.id)
                       ? "bg-[#3d7ab5]/10 border border-[#3d7ab5]/30"
                       : "hover:bg-gray-50 border border-transparent"

@@ -250,7 +250,7 @@ export function FooterWithSettings() {
 
       {/* Bottom bar */}
       <div className="max-w-7xl mx-auto px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="text-xs text-slate-600 text-center sm:text-right">
+        <div className="text-xs text-slate-600 text-center sm:text-start">
           © {new Date().getFullYear()} {s.clinicName}. جميع الحقوق محفوظة.
         </div>
         <Link

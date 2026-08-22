@@ -33,12 +33,27 @@ public class PublicController : ControllerBase
             "website.whatsapp", "website.address", "website.workingHours",
             "website.facebook", "website.instagram", "website.logoUrl",
             "website.heroImageUrl", "website.servicesSectionTitle",
-            "website.bookingButtonText", "website.whatsappButtonText"
+            "website.bookingButtonText", "website.whatsappButtonText",
+            "website.clinicNameEn", "website.addressEn",
+            "website.leadDoctorEn", "website.leadDoctorCredentialsEn",
+            // Print language for the patient-carried forms (see printLanguage below).
+            "website.printLanguage"
         };
 
+        // CORE-REQ-006 — the Arabic lead-doctor block comes from the one resolver, not from a
+        // second read of the same rows. Reading clinic.* directly here would have worked, and
+        // the repository's own guard test refused it: a direct read is exactly how the lab
+        // work order came to print a different clinic name than the receipts.
+        var clinic = await FinanceClinicIdentity.ResolveAsync(_db);
+
+        // The key list above was previously declared and never used — the query filtered on
+        // category alone, so it happened to serve every website.* row and could serve nothing
+        // else. Identity now also comes from clinic.*, which carries a different category, so
+        // the list has to count. Category is kept as well so no website key that exists today
+        // stops being served because it was missing from the list.
         var settings = await _db.Settings
             .AsNoTracking()
-            .Where(s => s.Category == "website")
+            .Where(s => s.Category == "website" || websiteKeys.Contains(s.Key))
             .ToDictionaryAsync(s => s.Key, s => s.Value);
 
         // Build response with fallback defaults
@@ -66,9 +81,40 @@ public class PublicController : ControllerBase
             ["addressEn"]                = settings.GetValueOrDefault("website.addressEn")                ?? "Upper Al-Tahrir Street, Taiz, Yemen",
             ["leadDoctorEn"]             = settings.GetValueOrDefault("website.leadDoctorEn")             ?? "Dr. Aqlan Alkamel — Orthodontic Specialist",
             ["leadDoctorCredentialsEn"]  = settings.GetValueOrDefault("website.leadDoctorCredentialsEn")  ?? "Central University of Manila — Philippines",
+            // CORE-REQ-006 — print language, selectable independently of the interface
+            // language. Defaults to "en" because the prescription and radiology-referral
+            // forms have always printed English identity by the owner's decision
+            // (Spec 010, RX-REQ-004); the default preserves that exactly, and the setting
+            // is what makes it a choice rather than a constant.
+            ["printLanguage"]            = NormalizePrintLanguage(settings.GetValueOrDefault("website.printLanguage")),
+            // Arabic lead-doctor identity, read from clinic.* so a printed Arabic form and a
+            // printed Arabic PDF cannot end up naming the doctor differently.
+            ["leadDoctorAr"]             = ComposeLeadDoctorAr(clinic),
+            ["leadDoctorCredentialsAr"]  = clinic.LeadDoctorCredentials,
         };
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// "د. عقلان الكامل — أخصائي تقويم الأسنان" when both parts are configured, the name alone
+    /// when only it is, and empty when neither is — never a dangling dash.
+    /// </summary>
+    private static string ComposeLeadDoctorAr(FinanceClinicIdentity clinic)
+    {
+        if (!clinic.HasLeadDoctor) return "";
+        return clinic.HasLeadDoctorTitle ? $"{clinic.LeadDoctor} — {clinic.LeadDoctorTitle}" : clinic.LeadDoctor;
+    }
+
+    /// <summary>
+    /// Accepts only "ar" or "en". An unrecognised value falls back to the established
+    /// behaviour rather than being passed through — a typo in a settings row must not make a
+    /// printed medical form render in no language at all.
+    /// </summary>
+    private static string NormalizePrintLanguage(string? raw)
+    {
+        var value = (raw ?? "").Trim().ToLowerInvariant();
+        return value is "ar" or "en" ? value : "en";
     }
 
     [HttpGet("public/queue")]

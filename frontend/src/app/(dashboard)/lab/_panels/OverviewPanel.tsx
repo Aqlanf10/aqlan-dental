@@ -56,7 +56,7 @@ function SimpleBarChart({ data, maxVal, labelFn, valueFn, colorFn }: {
         const pct = maxVal > 0 ? (val / maxVal) * 100 : 0;
         return (
           <div key={i} className="flex items-center gap-2">
-            <span className="text-xs text-gray-600 w-24 truncate text-right">{labelFn(item)}</span>
+            <span className="text-xs text-gray-600 w-24 truncate text-start">{labelFn(item)}</span>
             <div className="flex-1 bg-gray-100 rounded-full h-5 relative overflow-hidden">
               <div
                 className={cn("h-full rounded-full transition-all duration-500", colorFn(item))}
@@ -203,7 +203,7 @@ export function LabOverviewPanel() {
                 <thead>
                   <tr className="bg-gray-50">
                     {["المعمل", "فواتير مفتوحة", "إجمالي المفوتر", "المدفوع", "الرصيد المستحق"].map((h) => (
-                      <th key={h} className="text-right px-4 py-2.5 font-semibold text-xs text-gray-500 whitespace-nowrap">
+                      <th key={h} className="text-start px-4 py-2.5 font-semibold text-xs text-gray-500 whitespace-nowrap">
                         {h}
                       </th>
                     ))}
@@ -327,7 +327,7 @@ export function LabOverviewPanel() {
                 <thead>
                   <tr className="border-b border-red-200">
                     {["رقم الطلب", "المريض", "المختبر", "نوع الجهاز", "تاريخ الاستلام", "أيام التأخير", "الحالة"].map((h) => (
-                      <th key={h} className="text-right px-3 py-2 font-medium text-red-700 text-xs whitespace-nowrap">{h}</th>
+                      <th key={h} className="text-start px-3 py-2 font-medium text-red-700 text-xs whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>

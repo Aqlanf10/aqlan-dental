@@ -52,8 +52,13 @@ export function formatPhoneForWhatsApp(phone: string | null | undefined): string
  * Return a date as "YYYY-MM-DD" in the user's LOCAL timezone.
  *
  * Do NOT use `new Date().toISOString().split("T")[0]` for "today":
- * toISOString() converts to UTC first, so in Yemen (UTC+3) any time after
- * 21:00 local yields TOMORROW's date — daily screens then show the wrong day.
+ * toISOString() converts to UTC first. Yemen is UTC+3, so between 00:00 and 03:00
+ * local time the UTC date is still YESTERDAY — a value defaulted that way lands in
+ * the previous clinic day, which for a journal entry may already be a closed period.
+ *
+ * Verified against the clock: at 00:07 in Aden the UTC date read 2026-08-22, one day
+ * behind. (An earlier version of this note said "after 21:00 local yields TOMORROW";
+ * that is the drift for a negative UTC offset, not for Yemen's.)
  */
 export function localDateString(date: Date = new Date()): string {
   const y = date.getFullYear();

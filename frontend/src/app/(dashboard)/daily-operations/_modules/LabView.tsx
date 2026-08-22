@@ -111,7 +111,7 @@ export default function LabView() {
             placeholder="البحث باسم المريض، رقم الملف، الطبيب، أو نوع التركيبة..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full text-xs rounded-xl border border-gray-200 pl-10 pr-9 py-2 outline-none focus:ring-2 focus:ring-[#3d7ab5]/20"
+            className="w-full text-xs rounded-xl border border-gray-200 pe-10 ps-9 py-2 outline-none focus:ring-2 focus:ring-[#3d7ab5]/20"
           />
         </div>
 
@@ -170,7 +170,7 @@ export default function LabView() {
         /* Table */
         <div className="flex-1 overflow-auto bg-white rounded-2xl border border-gray-100 shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full text-right" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+            <table className="w-full text-start" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
               <thead>
                 <tr className="text-[11px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50/50">
                   <th className="py-3 px-4 border-b">المريض</th>
@@ -179,7 +179,7 @@ export default function LabView() {
                   <th className="py-3 px-4 border-b">التواريخ</th>
                   <th className="py-3 px-4 border-b">التكلفة</th>
                   <th className="py-3 px-4 border-b">الحالة</th>
-                  <th className="py-3 px-4 border-b text-left">إجراءات</th>
+                  <th className="py-3 px-4 border-b text-end">إجراءات</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -202,7 +202,7 @@ export default function LabView() {
                     </td>
                     <td className="py-3.5 px-4 font-bold text-gray-900 font-sans">{c.cost ? fmtRial(c.cost) : "—"}</td>
                     <td className="py-3.5 px-4">{getStatusBadge(c.status)}</td>
-                    <td className="py-3.5 px-4 text-left">
+                    <td className="py-3.5 px-4 text-end">
                       <div className="flex items-center justify-end gap-1.5">
                         {(c.status === "sent" || c.status === "manufacturing") && (
                           <button

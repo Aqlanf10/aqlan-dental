@@ -134,7 +134,7 @@ export default function MessagesPage() {
         {/* ─── قائمة المحادثات ──────────────────────────────────────────── */}
         <div
           className={cn(
-            "w-full md:w-80 lg:w-96 flex-shrink-0 bg-white flex flex-col overflow-hidden border-l border-slate-200/60",
+            "w-full md:w-80 lg:w-96 flex-shrink-0 bg-white flex flex-col overflow-hidden border-e border-slate-200/60",
             isMobileDetail ? "hidden md:flex" : "flex"
           )}
         >
@@ -229,7 +229,7 @@ export default function MessagesPage() {
                 placeholder="بحث بالاسم، رقم المريض، أو نص الرسالة..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pr-10 pl-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5] bg-gray-50"
+                className="w-full ps-10 pe-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5] bg-gray-50"
               />
             </div>
 

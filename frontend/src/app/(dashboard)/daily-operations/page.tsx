@@ -1115,7 +1115,7 @@ export default function DailyOperationsPage() {
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="بحث باسم المريض أو الهاتف..."
-              className="w-full text-sm rounded-full border-0 pl-16 pr-9 py-1.5 outline-none focus:ring-2 focus:ring-[#3d7ab5]/20"
+              className="w-full text-sm rounded-full border-0 pe-16 ps-9 py-1.5 outline-none focus:ring-2 focus:ring-[#3d7ab5]/20"
               style={{ background: "#f5f7fa", color: NAVY }}
             />
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-medium px-1.5 py-0.5 rounded"
@@ -1207,7 +1207,7 @@ export default function DailyOperationsPage() {
             </button>
 
             {moreMenuOpen && (
-              <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-lg border py-1.5 min-w-[200px] z-50"
+              <div className="absolute top-full end-0 mt-1 bg-white rounded-xl shadow-lg border py-1.5 min-w-[200px] z-50"
                 style={{ borderColor: "#e5e7eb" }}>
 
                 {/* تسجيل وصول (CheckIn) */}
@@ -1483,7 +1483,7 @@ export default function DailyOperationsPage() {
 
                   {/* Next patient chip (inline) */}
                   {nextPatient && (
-                    <div className="flex items-center gap-1.5 mr-auto px-2.5 py-1 rounded-lg text-xs font-bold"
+                    <div className="flex items-center gap-1.5 ms-auto px-2.5 py-1 rounded-lg text-xs font-bold"
                       style={{ background: "linear-gradient(135deg, #f0f7ff, #faf5ff)", border: "1px solid #e0e7ff", color: NAVY }}>
                       <Activity className="w-3 h-3" style={{ color: BLUE }} />
                       <span>التالي: {nextPatient.patientName}</span>

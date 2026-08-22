@@ -219,7 +219,7 @@ export default function DocumentTemplatesPage() {
                   key={template.id}
                   onClick={() => setSelectedId(template.id)}
                   className={cn(
-                    "w-full text-right p-4 hover:bg-gray-50 transition",
+                    "w-full text-start p-4 hover:bg-gray-50 transition",
                     selectedId === template.id && "bg-blue-50"
                   )}
                 >

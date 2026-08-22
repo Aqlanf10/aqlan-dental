@@ -19,6 +19,11 @@ const FALLBACKS = {
   addressEn: "Upper Al-Tahrir Street, Taiz, Yemen",
   leadDoctorEn: "Dr. Aqlan Alkamel — Orthodontic Specialist",
   leadDoctorCredentialsEn: "Central University of Manila — Philippines",
+  // CORE-REQ-006: print language for the forms a patient carries outside the clinic.
+  // "en" preserves the behaviour those forms have always had (Spec 010, RX-REQ-004).
+  printLanguage: "en",
+  leadDoctorAr: "د. عقلان الكامل — أخصائي تقويم الأسنان",
+  leadDoctorCredentialsAr: "جامعة مانيلا المركزية — الفلبين",
 } as const;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -35,6 +40,30 @@ export interface ClinicBranding {
   addressEn: string;
   leadDoctorEn: string;
   leadDoctorCredentialsEn: string;
+  /** "ar" | "en" — chosen independently of the interface language. */
+  printLanguage: string;
+  leadDoctorAr: string;
+  leadDoctorCredentialsAr: string;
+}
+
+/**
+ * CORE-REQ-006 — the clinic identity a printed form should carry, in the language the clinic
+ * selected.
+ *
+ * Prescriptions and radiology referrals used to read the English fields directly, so they were
+ * permanently English with no way to change that. This returns the Arabic or English block
+ * according to `printLanguage`, defaulting to English so nothing changes for a clinic that has
+ * not chosen.
+ */
+export function printIdentity(branding: ClinicBranding) {
+  const arabic = branding.printLanguage === "ar";
+  return {
+    clinicName: arabic ? branding.clinicName : branding.clinicNameEn,
+    clinicAddress: arabic ? branding.address : branding.addressEn,
+    leadDoctor: arabic ? branding.leadDoctorAr : branding.leadDoctorEn,
+    leadDoctorCredentials: arabic ? branding.leadDoctorCredentialsAr : branding.leadDoctorCredentialsEn,
+    isArabic: arabic,
+  };
 }
 
 // ─── URL resolver ─────────────────────────────────────────────────────────────
@@ -79,6 +108,9 @@ export function useClinicBranding(): ClinicBranding {
           logoUrl: resolveImageUrl(s.logoUrl),
           clinicNameEn: s.clinicNameEn || FALLBACKS.clinicNameEn,
           addressEn: s.addressEn || FALLBACKS.addressEn,
+          printLanguage: s.printLanguage === "ar" ? "ar" : "en",
+          leadDoctorAr: s.leadDoctorAr || FALLBACKS.leadDoctorAr,
+          leadDoctorCredentialsAr: s.leadDoctorCredentialsAr || FALLBACKS.leadDoctorCredentialsAr,
           leadDoctorEn: s.leadDoctorEn || FALLBACKS.leadDoctorEn,
           leadDoctorCredentialsEn: s.leadDoctorCredentialsEn || FALLBACKS.leadDoctorCredentialsEn,
         });

@@ -8,12 +8,14 @@ import type { RadiologyOrder } from "@/types/radiologyOrder";
 import { studyTypeLabelAr } from "@/types/radiologyOrder";
 import api from "@/lib/api";
 import { RadiologyReferralPrint } from "@/components/radiology/RadiologyReferralPrint";
-import { useClinicBranding } from "@/hooks/useClinicBranding";
+import { useClinicBranding, printIdentity } from "@/hooks/useClinicBranding";
 
 export default function RadiologyOrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [order, setOrder] = useState<RadiologyOrder | null>(null);
   const branding = useClinicBranding();
+  // CORE-REQ-006: identity in the language the clinic selected for printed forms.
+  const print = printIdentity(branding);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
 
@@ -93,11 +95,11 @@ export default function RadiologyOrderDetailPage() {
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 print:border-0 print:shadow-none print:p-0">
         <RadiologyReferralPrint
           order={order}
-          clinicName={branding.clinicNameEn}
-          clinicAddress={branding.addressEn}
+          clinicName={print.clinicName}
+          clinicAddress={print.clinicAddress}
           clinicPhone={branding.phone}
-          leadDoctor={branding.leadDoctorEn}
-          leadDoctorCredentials={branding.leadDoctorCredentialsEn}
+          leadDoctor={print.leadDoctor}
+          leadDoctorCredentials={print.leadDoctorCredentials}
         />
       </div>
     </div>

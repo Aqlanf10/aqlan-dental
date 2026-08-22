@@ -192,7 +192,7 @@ export function FinanceTab({ patientId, refreshKey }: FinanceTabProps) {
                     <p className="text-xs text-[#94a3b8]">{p.paymentDate} {p.paymentMethod ? `· ${paymentMethodLabels[p.paymentMethod as keyof typeof paymentMethodLabels] ?? p.paymentMethod}` : ""}</p>
                   </div>
                 </div>
-                <div className="text-left">
+                <div className="text-end">
                   <p className="text-sm font-semibold text-[#3d7ab5]">{p.amount.toLocaleString()}</p>
                   {p.receiptNumber && <p className="text-xs text-[#94a3b8]">{p.receiptNumber}</p>}
                 </div>
@@ -247,7 +247,7 @@ export function FinanceTab({ patientId, refreshKey }: FinanceTabProps) {
                     >
                       {invStatus?.label ?? inv.statusArabic ?? inv.status}
                     </span>
-                    <div className="text-left">
+                    <div className="text-end">
                       <p className="text-sm font-semibold text-[#3d7ab5]">
                         {inv.totalAmount.toLocaleString()} ر.ي
                       </p>

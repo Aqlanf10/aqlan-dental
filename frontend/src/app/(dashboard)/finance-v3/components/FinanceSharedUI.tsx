@@ -145,7 +145,7 @@ export function DataTable<T>({ columns, data, onRowClick, keyField }: { columns:
         <thead>
           <tr style={{ backgroundColor: tokens.cardHover }}>
             {columns.map((col) => (
-              <th key={col.key} className="text-right px-4 py-2.5 font-semibold text-xs" style={{ color: tokens.textSecondary }}>{col.label}</th>
+              <th key={col.key} className="text-start px-4 py-2.5 font-semibold text-xs" style={{ color: tokens.textSecondary }}>{col.label}</th>
             ))}
           </tr>
         </thead>

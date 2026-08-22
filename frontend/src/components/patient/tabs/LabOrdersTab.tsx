@@ -219,7 +219,7 @@ export function LabOrdersTab({ patientId }: LabOrdersTabProps) {
                   {item.toothNumber && <span className="text-[#94a3b8]">سن: {item.toothNumber}</span>}
                   {item.shade && <span className="text-[#94a3b8]">ظل: {item.shade}</span>}
                   <span className="text-[#94a3b8]">العدد: {item.unitsCount}</span>
-                  {item.totalPrice != null && <span className="font-medium text-[#0d2137] mr-auto">{item.totalPrice.toLocaleString()}</span>}
+                  {item.totalPrice != null && <span className="font-medium text-[#0d2137] ms-auto">{item.totalPrice.toLocaleString()}</span>}
                 </div>
               ))}
             </div>

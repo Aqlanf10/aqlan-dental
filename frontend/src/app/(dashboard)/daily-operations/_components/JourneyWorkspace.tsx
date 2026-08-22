@@ -67,7 +67,7 @@ export function DailyOperationsJourneyWorkspace({
 }) {
   return (
     <div className="flex-1 min-w-0 flex overflow-hidden">
-      <aside className="w-[360px] max-w-[42vw] flex-shrink-0 bg-white border-l border-[#e5edf5] flex flex-col">
+      <aside className="w-[360px] max-w-[42vw] flex-shrink-0 bg-white border-e border-[#e5edf5] flex flex-col">
         <div className="p-3 border-b border-[#edf2f7] flex items-center justify-between gap-2">
           <div>
             <h3 className="text-[13px] font-extrabold" style={{ color: NAVY }}>رحلة المرضى اليومية</h3>
@@ -120,7 +120,7 @@ export function DailyOperationsJourneyWorkspace({
                   type="button"
                   onClick={() => onSelect(item)}
                   onContextMenu={(event) => onContextMenu(event, item)}
-                  className="w-full px-3 py-3 text-right border-b border-[#f0f3f7] hover:bg-[#f8fbff] transition"
+                  className="w-full px-3 py-3 text-start border-b border-[#f0f3f7] hover:bg-[#f8fbff] transition"
                   style={{
                     background: isSelected ? "#eef6ff" : "#fff",
                     borderRight: isSelected ? `3px solid ${BLUE}` : "3px solid transparent",

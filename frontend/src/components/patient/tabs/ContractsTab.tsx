@@ -166,13 +166,13 @@ export function ContractsTab({ patientId }: ContractsTabProps) {
                 <div>
                   <span className="text-sm font-bold text-[#0d2137]">{c.totalAmount.toLocaleString()} ر.ي</span>
                   {c.discountAmount != null && c.discountAmount > 0 && (
-                    <span className="text-xs text-green-600 mr-2">خصم: {c.discountAmount.toLocaleString()}</span>
+                    <span className="text-xs text-green-600 ms-2">خصم: {c.discountAmount.toLocaleString()}</span>
                   )}
                 </div>
-                <div className="text-left">
+                <div className="text-end">
                   <span className="text-xs text-[#64748b]">مدفوع: {c.paidAmount.toLocaleString()}</span>
                   {c.remainingAmount > 0 && (
-                    <span className="text-xs text-amber-600 mr-2">متبقي: {c.remainingAmount.toLocaleString()}</span>
+                    <span className="text-xs text-amber-600 ms-2">متبقي: {c.remainingAmount.toLocaleString()}</span>
                   )}
                 </div>
               </div>

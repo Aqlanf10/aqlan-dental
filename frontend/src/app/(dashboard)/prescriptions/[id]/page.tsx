@@ -7,7 +7,7 @@ import { ArrowRight, Printer, Trash2 } from "lucide-react";
 import type { Prescription } from "@/types/prescription";
 import api from "@/lib/api";
 import { PrescriptionPrint } from "@/components/prescriptions/PrescriptionPrint";
-import { useClinicBranding } from "@/hooks/useClinicBranding";
+import { useClinicBranding, printIdentity } from "@/hooks/useClinicBranding";
 import { formatArabicDate } from "@/lib/utils";
 
 export default function PrescriptionDetailPage() {
@@ -16,6 +16,8 @@ export default function PrescriptionDetailPage() {
   // MS-TASK-006: printed-prescription identity comes from settings, not the
   // component's hardcoded defaults.
   const branding = useClinicBranding();
+  // CORE-REQ-006: identity in the language the clinic selected for printed forms.
+  const print = printIdentity(branding);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
 
@@ -95,11 +97,11 @@ export default function PrescriptionDetailPage() {
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 print:border-0 print:shadow-none print:p-0">
         <PrescriptionPrint
           prescription={prescription}
-          clinicName={branding.clinicNameEn}
-          clinicAddress={branding.addressEn}
+          clinicName={print.clinicName}
+          clinicAddress={print.clinicAddress}
           clinicPhone={branding.phone}
-          leadDoctor={branding.leadDoctorEn}
-          leadDoctorCredentials={branding.leadDoctorCredentialsEn}
+          leadDoctor={print.leadDoctor}
+          leadDoctorCredentials={print.leadDoctorCredentials}
         />
       </div>
     </div>

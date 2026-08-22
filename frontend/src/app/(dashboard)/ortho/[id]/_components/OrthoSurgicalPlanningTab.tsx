@@ -274,7 +274,7 @@ export function OrthoSurgicalPlanningTab({ caseId }: OrthoSurgicalPlanningTabPro
             ))}
           </div>
           {readiness.missing.length > 0 && (
-            <ul className="mt-3 list-disc space-y-1 pr-5 text-xs text-amber-700">
+            <ul className="mt-3 list-disc space-y-1 ps-5 text-xs text-amber-700">
               {readiness.missing.map((item) => <li key={item}>{item}</li>)}
             </ul>
           )}

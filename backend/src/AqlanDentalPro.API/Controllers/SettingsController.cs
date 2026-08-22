@@ -541,6 +541,13 @@ public class SettingsController(AppDbContext db, ICurrentUserService currentUser
         ["servicesSectionTitle"] = "حلول طبية متكاملة لابتسامة صحية وواثقة",
         ["bookingButtonText"]    = "احجز موعدك الآن",
         ["whatsappButtonText"]   = "تواصل عبر الواتساب",
+        // CORE-REQ-006 — identity for forms the patient carries outside the clinic, and the
+        // language they print in. Editable here so they stop being literals in components.
+        ["clinicNameEn"]             = "Dr. Aqlan Alkamel Center for Orthodontics, Dental Implants & Cosmetic Dentistry",
+        ["addressEn"]                = "Upper Al-Tahrir Street, Taiz, Yemen",
+        ["leadDoctorEn"]             = "Dr. Aqlan Alkamel — Orthodontic Specialist",
+        ["leadDoctorCredentialsEn"]  = "Central University of Manila — Philippines",
+        ["printLanguage"]            = "en",
     };
 }
 

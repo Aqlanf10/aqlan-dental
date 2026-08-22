@@ -144,7 +144,7 @@ export function CommissionAdjustmentsPanel({ doctorId }: { doctorId?: string }) 
                     "عمولة مصروفة", "العمولة الصحيحة", "الفرق", "الحالة", ""].map((h) => (
                     <th
                       key={h}
-                      className="text-right px-4 py-3 font-semibold text-xs whitespace-nowrap"
+                      className="text-start px-4 py-3 font-semibold text-xs whitespace-nowrap"
                       style={{ color: tokens.textSecondary }}
                     >
                       {h}

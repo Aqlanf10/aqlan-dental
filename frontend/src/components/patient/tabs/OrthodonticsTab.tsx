@@ -246,7 +246,7 @@ export function OrthodonticsTab({ patientId }: OrthodonticsTabProps) {
                     style={{ width: `${Math.min(c.stagePercentage, 100)}%` }}
                   />
                 </div>
-                <span className="text-xs font-bold text-[#1a3a5c] w-10 text-left">
+                <span className="text-xs font-bold text-[#1a3a5c] w-10 text-end">
                   {c.stagePercentage}%
                 </span>
               </div>

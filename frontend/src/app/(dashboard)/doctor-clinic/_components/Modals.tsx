@@ -733,7 +733,7 @@ export function PricedProceduresPanel({
               return (
                 <button key={service.id}
                   onClick={() => isSelected ? removeService(service.id) : addService(service)}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-right transition"
+                  className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-start transition"
                   style={{
                     background: isSelected ? "#9333ea08" : "transparent",
                     border: isSelected ? "1.5px solid #9333ea40" : "1.5px solid transparent",
@@ -786,7 +786,7 @@ export function PricedProceduresPanel({
                     <Plus className="w-3 h-3" style={{ color: "#16a34a" }} />
                   </button>
                   <button onClick={() => removeService(service.id)}
-                    className="w-6 h-6 rounded flex items-center justify-center mr-1" style={{ background: "#fef2f2" }}>
+                    className="w-6 h-6 rounded flex items-center justify-center ms-1" style={{ background: "#fef2f2" }}>
                     <Trash2 className="w-3 h-3" style={{ color: "#ef4444" }} />
                   </button>
                 </div>
@@ -1222,7 +1222,7 @@ export function ImagesRadiographsPanel({
             accept=".jpg,.jpeg,.png,.webp,.pdf"
             onChange={e => setFile(e.target.files?.[0] ?? null)}
             disabled={isSaving}
-            className="w-full text-xs file:ml-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:text-white file:cursor-pointer disabled:opacity-50"
+            className="w-full text-xs file:me-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:text-white file:cursor-pointer disabled:opacity-50"
             style={{ color: "#334155" }}
           />
           {file && (

@@ -33,6 +33,13 @@ public sealed class FinanceClinicIdentity
     private readonly string _receiptFooterText;
     private readonly bool _showLeadDoctor;
 
+    /// <summary>
+    /// CORE-REQ-006 — the logo this clinic actually configured, resolved once alongside the
+    /// text identity so a document never has to decide for itself where its logo comes from.
+    /// Null when neither a configured upload nor the shipped file is readable.
+    /// </summary>
+    public byte[]? LogoBytes { get; private init; }
+
     private FinanceClinicIdentity(
         string name, string leadDoctor, string leadDoctorTitle,
         string leadDoctorCredentials, string phones, string location,
@@ -115,7 +122,10 @@ public sealed class FinanceClinicIdentity
             Get("clinic.phones"),
             Get("clinic.location"),
             Get(FinanceSettingsKeys.ReceiptFooterText),
-            showLeadDoctor);
+            showLeadDoctor)
+        {
+            LogoBytes = await PdfLogoCache.ResolveAsync(db, ct),
+        };
     }
 
     private static bool ParseBool(string raw, bool fallback)

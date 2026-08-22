@@ -249,7 +249,7 @@ export default function SuppliersPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="بحث بالاسم أو الهاتف أو جهة الاتصال..."
-              className="w-full border border-gray-200 rounded-lg pr-9 pl-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className="w-full border border-gray-200 rounded-lg ps-9 pe-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
           </div>
         </div>
@@ -295,7 +295,7 @@ export default function SuppliersPage() {
                       ].map((h) => (
                         <th
                           key={h}
-                          className="text-right px-4 py-3 font-medium text-gray-500 text-xs"
+                          className="text-start px-4 py-3 font-medium text-gray-500 text-xs"
                         >
                           {h}
                         </th>

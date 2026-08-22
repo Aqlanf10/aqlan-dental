@@ -42,10 +42,7 @@ export default function AppTabsLayout() {
     >
       <Tabs.Screen name="home" options={{ title: "الرئيسية", tabBarIcon: icon("⌂") }} />
       <Tabs.Screen name="patients" options={{ title: "المرضى", tabBarIcon: icon("♙") }} />
-      <Tabs.Screen
-        name="appointments"
-        options={{ title: "المواعيد", tabBarIcon: icon("◷") }}
-      />
+      <Tabs.Screen name="appointments" options={{ title: "المواعيد", tabBarIcon: icon("◷") }} />
       <Tabs.Screen name="messages" options={{ title: "الرسائل", tabBarIcon: icon("✉") }} />
       <Tabs.Screen name="account" options={{ title: "حسابي", tabBarIcon: icon("●") }} />
       <Tabs.Screen name="appointments-new" options={{ href: null, title: "حجز موعد" }} />
@@ -57,10 +54,7 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="visit-editor" options={{ href: null, title: "السجل السريري" }} />
       <Tabs.Screen name="journey" options={{ href: null, title: "تشغيل اليوم" }} />
       <Tabs.Screen name="journey-summary" options={{ href: null, title: "ملخص رحلة المريض" }} />
-      <Tabs.Screen
-        name="journey-handoff"
-        options={{ href: null, title: "تسليم الزيارة للاستقبال" }}
-      />
+      <Tabs.Screen name="journey-handoff" options={{ href: null, title: "تسليم الزيارة للاستقبال" }} />
       <Tabs.Screen name="patient-finance" options={{ href: null, title: "مالية المريض" }} />
       <Tabs.Screen name="payment-new" options={{ href: null, title: "إضافة دفعة" }} />
       <Tabs.Screen name="patient-ortho" options={{ href: null, title: "تقويم الأسنان" }} />
@@ -78,6 +72,9 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="surgery-operative" options={{ href: null, title: "تقرير الجراحة" }} />
       <Tabs.Screen name="surgery-postop" options={{ href: null, title: "ما بعد الجراحة" }} />
       <Tabs.Screen name="surgery-referral-new" options={{ href: null, title: "إحالة مستشفى" }} />
+      <Tabs.Screen name="patient-media" options={{ href: null, title: "الصور والأشعة" }} />
+      <Tabs.Screen name="media-photo-new" options={{ href: null, title: "صورة سريرية" }} />
+      <Tabs.Screen name="media-xray-new" options={{ href: null, title: "إضافة أشعة" }} />
     </Tabs>
   );
 }

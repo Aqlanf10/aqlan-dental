@@ -28,6 +28,18 @@ namespace AqlanDentalPro.API.Controllers;
 public class AppointmentsController(AppointmentService service, AppDbContext db, ICurrentUserService currentUser, IWhatsAppService whatsapp, IEmailService emailService, IRealTimePushService pushService, IPatientAccessService patientAccess, IAuditService audit, IClinicClock clinicClock, IJourneyBusinessDatePolicy businessDatePolicy, ILogger<AppointmentsController> logger) : ControllerBase
 {
     /// <summary>
+    /// GOLIVE-PERM-001: the settings screen shows the owner an `appointments` row with a
+    /// «حذف» switch, but nothing on the server ever read it — Reception, with that switch
+    /// off, deleted an appointment and got 200. Enforcing it here makes the switch mean
+    /// what it says. Admin bypasses inside PermissionGuard, as everywhere else.
+    /// </summary>
+    private Task<bool> CanAsync(string action) =>
+        PermissionGuard.HasAsync(db, currentUser, "appointments", action);
+
+    private IActionResult Deny() =>
+        StatusCode(403, new { message = "غير مصرح لك بهذا الإجراء على المواعيد" });
+
+    /// <summary>
     /// Best-effort push of JourneyUpdated. Scoped to the caller's branch when
     /// resolvable; falls back to PushToAllAsync for admin callers without a branch.
     /// Never throws — push failure must not fail the HTTP request.
@@ -668,6 +680,8 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        if (!await CanAsync("delete")) return Deny();
+
         var appointment = await db.Appointments.FindAsync(id);
         if (appointment is null)
             return NotFound(new { message = "الموعد غير موجود" });

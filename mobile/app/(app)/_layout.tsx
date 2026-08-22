@@ -13,14 +13,7 @@ export default function AppTabsLayout() {
 
   if (isLoading) {
     return (
-      <View
-        style={{
-          flex: 1,
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: colors.background
-        }}
-      >
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background }}>
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
@@ -30,16 +23,7 @@ export default function AppTabsLayout() {
   if (user.mustChangePassword) return <Redirect href="/change-password" />;
 
   return (
-    <Tabs
-      screenOptions={{
-        headerTitleAlign: "center",
-        headerStyle: { backgroundColor: colors.surface },
-        headerTintColor: colors.text,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.muted,
-        tabBarStyle: { backgroundColor: colors.surface }
-      }}
-    >
+    <Tabs screenOptions={{ headerTitleAlign: "center", headerStyle: { backgroundColor: colors.surface }, headerTintColor: colors.text, tabBarActiveTintColor: colors.primary, tabBarInactiveTintColor: colors.muted, tabBarStyle: { backgroundColor: colors.surface } }}>
       <Tabs.Screen name="home" options={{ title: "الرئيسية", tabBarIcon: icon("⌂") }} />
       <Tabs.Screen name="patients" options={{ title: "المرضى", tabBarIcon: icon("♙") }} />
       <Tabs.Screen name="appointments" options={{ title: "المواعيد", tabBarIcon: icon("◷") }} />
@@ -90,6 +74,7 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="inventory-adjust" options={{ href: null, title: "تعديل المخزون" }} />
       <Tabs.Screen name="lab-order-consume-inventory" options={{ href: null, title: "صرف مواد للمعمل" }} />
       <Tabs.Screen name="reports" options={{ href: null, title: "التقارير والإدارة" }} />
+      <Tabs.Screen name="settings" options={{ href: null, title: "الإعدادات والحالة" }} />
     </Tabs>
   );
 }

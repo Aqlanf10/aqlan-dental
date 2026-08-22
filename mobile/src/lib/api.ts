@@ -2,6 +2,7 @@ import { clearTokens, readTokens, writeTokens } from "@/auth/tokenStore";
 import type { MobileLoginResponse, MobileRefreshResponse } from "@/lib/types";
 
 const MOBILE_REFRESH_HEADER = "X-Aqlan-Refresh-Token";
+const REQUEST_TIMEOUT_MS = 30_000;
 
 export class ApiError extends Error {
   constructor(
@@ -33,6 +34,35 @@ export function apiAssetUrl(path: string): string {
   const value = path.trim();
   if (/^https?:\/\//i.test(value)) return value;
   return `${getBaseUrl()}${value.startsWith("/") ? value : `/${value}`}`;
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const externalSignal = init.signal;
+  let timedOut = false;
+  const forwardAbort = () => controller.abort();
+
+  if (externalSignal?.aborted) controller.abort();
+  else externalSignal?.addEventListener?.("abort", forwardAbort, { once: true });
+
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
+
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (timedOut) {
+      throw new ApiError("انتهت مهلة الاتصال بالخادم. تحقق من الإنترنت ثم أعد المحاولة.", 408);
+    }
+    if (externalSignal?.aborted) throw err;
+    if (err instanceof ApiError) throw err;
+    throw new ApiError("تعذر الاتصال بالخادم. تحقق من اتصال الإنترنت ثم أعد المحاولة.", 0);
+  } finally {
+    clearTimeout(timer);
+    externalSignal?.removeEventListener?.("abort", forwardAbort);
+  }
 }
 
 async function parsePayload(response: Response): Promise<unknown> {
@@ -69,7 +99,7 @@ async function refreshAccessToken(): Promise<boolean> {
     if (!tokens?.refreshToken) return false;
 
     try {
-      const response = await fetch(`${getBaseUrl()}/api/auth/mobile/refresh-token`, {
+      const response = await fetchWithTimeout(`${getBaseUrl()}/api/auth/mobile/refresh-token`, {
         method: "POST",
         headers: {
           Accept: "application/json",
@@ -117,7 +147,10 @@ export async function apiRequest<T>(
     headers.set("Authorization", `Bearer ${tokens.accessToken}`);
   }
 
-  const response = await fetch(`${getBaseUrl()}${path}`, {
+  // Deliberately no automatic retry for mutations. A duplicated POST/PUT could create
+  // a second payment, visit, prescription, lab order, or accounting entry. The only
+  // automatic retry below is the existing token-refresh replay after an explicit 401.
+  const response = await fetchWithTimeout(`${getBaseUrl()}${path}`, {
     ...init,
     headers
   });
@@ -143,7 +176,7 @@ export async function mobileLogin(
   username: string,
   password: string
 ): Promise<MobileLoginResponse> {
-  const response = await fetch(`${getBaseUrl()}/api/auth/mobile/login`, {
+  const response = await fetchWithTimeout(`${getBaseUrl()}/api/auth/mobile/login`, {
     method: "POST",
     headers: {
       Accept: "application/json",

@@ -34,21 +34,31 @@ jobs:
           java-version: "17"
 
       - name: Install dependencies
+        id: install
+        continue-on-error: true
         run: npm install --no-audit --no-fund
 
       - name: TypeScript
+        id: typecheck
+        continue-on-error: true
         run: npm run typecheck
 
       - name: Generate Android project
+        id: prebuild
+        continue-on-error: true
         run: npx expo prebuild --platform android --clean
 
       - name: Build debug APK
+        id: gradle
+        continue-on-error: true
         run: |
           chmod +x android/gradlew
           cd android
           ./gradlew assembleDebug --no-daemon
 
       - name: Prepare APK
+        id: prepare
+        continue-on-error: true
         run: |
           mkdir -p dist
           cp android/app/build/outputs/apk/debug/app-debug.apk dist/AqlanDentalPro-Test.apk
@@ -56,6 +66,9 @@ jobs:
           sha256sum dist/AqlanDentalPro-Test.apk | tee dist/AqlanDentalPro-Test.apk.sha256
 
       - name: Upload APK artifact
+        id: artifact
+        if: steps.prepare.outcome == 'success'
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: AqlanDentalPro-Test-APK
@@ -66,6 +79,9 @@ jobs:
           retention-days: 14
 
       - name: Publish test prerelease
+        id: release
+        if: steps.prepare.outcome == 'success'
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -77,20 +93,48 @@ jobs:
             --notes "Internal Android test build from commit $GITHUB_SHA. API base: https://aqlan-dental.vercel.app" \
             --prerelease
 
-      - name: Record successful build
+      - name: Record pipeline result
+        if: always()
+        env:
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
+          TYPECHECK_OUTCOME: ${{ steps.typecheck.outcome }}
+          PREBUILD_OUTCOME: ${{ steps.prebuild.outcome }}
+          GRADLE_OUTCOME: ${{ steps.gradle.outcome }}
+          PREPARE_OUTCOME: ${{ steps.prepare.outcome }}
+          ARTIFACT_OUTCOME: ${{ steps.artifact.outcome }}
+          RELEASE_OUTCOME: ${{ steps.release.outcome }}
         run: |
           cd ..
           mkdir -p build-output
+          if [ "$RELEASE_OUTCOME" = "success" ]; then
+            STATUS="READY"
+          else
+            STATUS="FAILED"
+          fi
           cat > build-output/APK_BUILD_RESULT.md <<EOF
-          # Android Test APK — READY
+          # Android Test APK — $STATUS
 
           - Commit: $GITHUB_SHA
           - API base: https://aqlan-dental.vercel.app
+          - install: $INSTALL_OUTCOME
+          - typecheck: $TYPECHECK_OUTCOME
+          - prebuild: $PREBUILD_OUTCOME
+          - gradle: $GRADLE_OUTCOME
+          - prepare: $PREPARE_OUTCOME
+          - artifact: $ARTIFACT_OUTCOME
+          - release: $RELEASE_OUTCOME
           - APK: https://github.com/Aqlanf10/aqlan-dental/releases/download/mobile-test-latest/AqlanDentalPro-Test.apk
           - SHA256: https://github.com/Aqlanf10/aqlan-dental/releases/download/mobile-test-latest/AqlanDentalPro-Test.apk.sha256
           EOF
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add build-output/APK_BUILD_RESULT.md
-          git commit -m "BUILD: record successful test APK [skip ci]" || exit 0
+          git commit -m "BUILD: record test APK pipeline result [skip ci]" || exit 0
           git push origin HEAD:${GITHUB_REF_NAME}
+
+      - name: Fail if APK was not published
+        if: always()
+        env:
+          RELEASE_OUTCOME: ${{ steps.release.outcome }}
+        run: |
+          test "$RELEASE_OUTCOME" = "success"

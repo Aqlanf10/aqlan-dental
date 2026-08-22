@@ -86,9 +86,9 @@ export default function NewPaymentScreen() {
       contracts.map((contract) => ({
         value: contract.id,
         label: contract.specialty || "عقد علاج",
-        subtitle: `متبقي ${contract.remainingAmount.toLocaleString()} ${accountCurrency}`
+        subtitle: `المتبقي المسجل: ${contract.remainingAmount.toLocaleString()}`
       })),
-    [accountCurrency, contracts]
+    [contracts]
   );
 
   const invoiceOptions = useMemo(
@@ -96,9 +96,9 @@ export default function NewPaymentScreen() {
       invoices.map((invoice) => ({
         value: invoice.id,
         label: invoice.invoiceNumber,
-        subtitle: `متبقي ${(invoice.balance ?? invoice.totalAmount).toLocaleString()} ${accountCurrency}`
+        subtitle: `المتبقي المسجل: ${(invoice.balance ?? invoice.totalAmount).toLocaleString()}`
       })),
-    [accountCurrency, invoices]
+    [invoices]
   );
 
   function validate(): CreatePaymentInput | null {
@@ -256,7 +256,7 @@ export default function NewPaymentScreen() {
       </Card>
 
       <Text style={styles.notice}>
-        لا يرسل التطبيق رقم الفرع من الهاتف؛ الخادم يربط الدفعة بفرع الحساب المسجل دخولًا. أسعار الصرف تُحفظ مع الدفعة لأغراض التدقيق.
+        لا يرسل التطبيق رقم الفرع من الهاتف؛ الخادم يربط الدفعة بفرع الحساب المسجل دخولًا. عملة العقد والفاتورة لا يعيدها هذا الملخص، لذلك تحقق من عملة الحساب قبل الربط. أسعار الصرف تُحفظ مع الدفعة لأغراض التدقيق.
       </Text>
 
       <PrimaryButton

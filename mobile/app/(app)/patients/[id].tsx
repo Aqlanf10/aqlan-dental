@@ -3,6 +3,7 @@ import { Card, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/compo
 import { apiRequest } from "@/lib/api";
 import { fullPatientName } from "@/lib/format";
 import { canFinanceJourney } from "@/lib/journey";
+import { canUseOrthodontics } from "@/lib/ortho";
 import { canAccessClinicalRecords } from "@/lib/roles";
 import type { ConversationDetail, PatientProfile } from "@/lib/types";
 import { colors, spacing } from "@/theme";
@@ -25,6 +26,7 @@ export default function PatientDetailsScreen() {
   const canEdit = user?.role === "Admin";
   const canReadClinical = canAccessClinicalRecords(user);
   const canReadFinance = canFinanceJourney(user);
+  const canReadOrtho = canUseOrthodontics(user?.role);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -155,6 +157,17 @@ export default function PatientDetailsScreen() {
           onPress={() =>
             router.push({
               pathname: "/(app)/visits",
+              params: { patientId: patient.id, patientName }
+            })
+          }
+        />
+      ) : null}
+      {canReadOrtho ? (
+        <PrimaryButton
+          title="تقويم الأسنان"
+          onPress={() =>
+            router.push({
+              pathname: "/(app)/patient-ortho",
               params: { patientId: patient.id, patientName }
             })
           }

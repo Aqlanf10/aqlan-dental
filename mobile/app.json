@@ -21,6 +21,14 @@
           "configureAndroidBackup": true,
           "faceIDPermission": "السماح لـ Aqlan Dental Pro بالتحقق من هويتك."
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "السماح لـ Aqlan Dental Pro بالوصول إلى الصور لإضافتها إلى السجل السريري للمريض.",
+          "cameraPermission": "السماح لـ Aqlan Dental Pro باستخدام الكاميرا لالتقاط الصور السريرية.",
+          "microphonePermission": false
+        }
       ]
     ],
     "experiments": {

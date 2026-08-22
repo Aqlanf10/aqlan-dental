@@ -6,6 +6,7 @@ import { canUseGeneralDentistry } from "@/lib/general";
 import { canFinanceJourney } from "@/lib/journey";
 import { canUseOrthodontics } from "@/lib/ortho";
 import { canAccessClinicalRecords } from "@/lib/roles";
+import { canUseSurgery } from "@/lib/surgery";
 import type { ConversationDetail, PatientProfile } from "@/lib/types";
 import { colors, spacing } from "@/theme";
 import { router, useLocalSearchParams } from "expo-router";
@@ -29,6 +30,7 @@ export default function PatientDetailsScreen() {
   const canReadFinance = canFinanceJourney(user);
   const canReadOrtho = canUseOrthodontics(user?.role);
   const canReadGeneral = canUseGeneralDentistry(user?.role);
+  const canReadSurgery = canUseSurgery(user?.role);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -181,6 +183,17 @@ export default function PatientDetailsScreen() {
           onPress={() =>
             router.push({
               pathname: "/(app)/patient-ortho",
+              params: { patientId: patient.id, patientName }
+            })
+          }
+        />
+      ) : null}
+      {canReadSurgery ? (
+        <PrimaryButton
+          title="جراحة الفم"
+          onPress={() =>
+            router.push({
+              pathname: "/(app)/patient-surgery",
               params: { patientId: patient.id, patientName }
             })
           }

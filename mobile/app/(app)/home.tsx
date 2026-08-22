@@ -9,7 +9,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { RefreshControl, StyleSheet, Text, View } from "react-native";
 
 export default function DashboardScreen() {
-  const { user } = useSession();
+  const { user, can } = useSession();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [alerts, setAlerts] = useState<DashboardAlerts | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +38,7 @@ export default function DashboardScreen() {
 
   const canSeeFinance = user?.role === "Admin" || user?.role === "Accountant" || user?.role === "Reception";
   const isAdmin = user?.role === "Admin";
+  const canViewReports = can("reports.view");
 
   return (
     <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />}>
@@ -49,10 +50,11 @@ export default function DashboardScreen() {
       <SectionTitle>تشغيل العيادة</SectionTitle>
       <PrimaryButton title="فتح تشغيل اليوم" onPress={() => router.push("/(app)/journey")} />
 
-      {isAdmin ? (
+      {isAdmin || canViewReports ? (
         <>
           <SectionTitle>الإدارة</SectionTitle>
-          <PrimaryButton title="إدارة المخزون" onPress={() => router.push("/(app)/inventory")} />
+          {canViewReports ? <PrimaryButton title="التقارير والإدارة" onPress={() => router.push("/(app)/reports")} /> : null}
+          {isAdmin ? <PrimaryButton title="إدارة المخزون" onPress={() => router.push("/(app)/inventory")} /> : null}
         </>
       ) : null}
 

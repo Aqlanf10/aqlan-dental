@@ -60,6 +60,8 @@ export default function AppTabsLayout() {
         name="journey-handoff"
         options={{ href: null, title: "تسليم الزيارة للاستقبال" }}
       />
+      <Tabs.Screen name="patient-finance" options={{ href: null, title: "مالية المريض" }} />
+      <Tabs.Screen name="payment-new" options={{ href: null, title: "إضافة دفعة" }} />
     </Tabs>
   );
 }

@@ -2,6 +2,7 @@ import { useSession } from "@/auth/SessionProvider";
 import { Card, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/components/ui";
 import { apiRequest } from "@/lib/api";
 import { fullPatientName } from "@/lib/format";
+import { canUseGeneralDentistry } from "@/lib/general";
 import { canFinanceJourney } from "@/lib/journey";
 import { canUseOrthodontics } from "@/lib/ortho";
 import { canAccessClinicalRecords } from "@/lib/roles";
@@ -27,6 +28,7 @@ export default function PatientDetailsScreen() {
   const canReadClinical = canAccessClinicalRecords(user);
   const canReadFinance = canFinanceJourney(user);
   const canReadOrtho = canUseOrthodontics(user?.role);
+  const canReadGeneral = canUseGeneralDentistry(user?.role);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -157,6 +159,17 @@ export default function PatientDetailsScreen() {
           onPress={() =>
             router.push({
               pathname: "/(app)/visits",
+              params: { patientId: patient.id, patientName }
+            })
+          }
+        />
+      ) : null}
+      {canReadGeneral ? (
+        <PrimaryButton
+          title="الأسنان العامة وFDI"
+          onPress={() =>
+            router.push({
+              pathname: "/(app)/patient-general",
               params: { patientId: patient.id, patientName }
             })
           }

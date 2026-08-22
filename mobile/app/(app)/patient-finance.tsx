@@ -4,11 +4,11 @@ import { apiRequest } from "@/lib/api";
 import {
   INVOICE_STATUS_LABELS,
   PAYMENT_METHOD_LABELS,
+  formatRecordedMoney,
   type AccountStatement,
   type FinanceInvoice,
   type FinancePayment
 } from "@/lib/finance";
-import { formatYemeniRial } from "@/lib/format";
 import { canFinanceJourney } from "@/lib/journey";
 import { colors, radius, spacing } from "@/theme";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -90,10 +90,15 @@ export default function PatientFinanceScreen() {
   );
 
   const paymentList = payments.data ?? [];
-  const totalLoadedPayments = useMemo(
-    () => paymentList.filter((payment) => payment.isActive !== false).reduce((sum, payment) => sum + payment.amount, 0),
-    [paymentList]
-  );
+  const totalsByCurrency = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const payment of paymentList) {
+      if (payment.isActive === false) continue;
+      const currency = payment.currency || "YER";
+      totals.set(currency, (totals.get(currency) ?? 0) + payment.amount);
+    }
+    return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [paymentList]);
 
   async function refresh() {
     setRefreshing(true);
@@ -146,12 +151,17 @@ export default function PatientFinanceScreen() {
           message={`${statement.error}\nلم يتم افتراض أن الرصيد صفر.`}
         />
       ) : statement.data ? (
-        <View style={styles.metrics}>
-          <Metric label="إجمالي العقود" value={formatYemeniRial(statement.data.totalContracted)} />
-          <Metric label="إجمالي المدفوع" value={formatYemeniRial(statement.data.totalPaid)} />
-          <Metric label="المتبقي" value={formatYemeniRial(statement.data.totalRemaining)} warning={statement.data.totalRemaining > 0} />
-          <Metric label="الخصومات" value={formatYemeniRial(statement.data.totalDiscounts)} />
-        </View>
+        <>
+          <Text style={styles.currencyCaveat}>
+            هذا endpoint لا يعيد عملة إجماليات كشف الحساب؛ لذلك تُعرض القيم التالية بدون رمز عملة ولا يتم تحويلها أو جمعها مع عملات أخرى داخل التطبيق.
+          </Text>
+          <View style={styles.metrics}>
+            <Metric label="إجمالي العقود" value={formatRecordedMoney(statement.data.totalContracted)} />
+            <Metric label="إجمالي المدفوع" value={formatRecordedMoney(statement.data.totalPaid)} />
+            <Metric label="المتبقي" value={formatRecordedMoney(statement.data.totalRemaining)} warning={statement.data.totalRemaining > 0} />
+            <Metric label="الخصومات" value={formatRecordedMoney(statement.data.totalDiscounts)} />
+          </View>
+        </>
       ) : null}
 
       {statement.data ? (
@@ -164,9 +174,9 @@ export default function PatientFinanceScreen() {
               <Card key={contract.id}>
                 <Row label="التخصص" value={contract.specialty || "عقد علاج"} />
                 <Row label="الحالة" value={contract.status} />
-                <Row label="الإجمالي" value={formatYemeniRial(contract.totalAmount)} />
-                <Row label="المدفوع" value={formatYemeniRial(contract.paidAmount)} />
-                <Row label="المتبقي" value={formatYemeniRial(contract.remainingAmount)} last />
+                <Row label="الإجمالي" value={formatRecordedMoney(contract.totalAmount)} />
+                <Row label="المدفوع" value={formatRecordedMoney(contract.paidAmount)} />
+                <Row label="المتبقي" value={formatRecordedMoney(contract.remainingAmount)} last />
               </Card>
             ))
           )}
@@ -181,19 +191,33 @@ export default function PatientFinanceScreen() {
         />
       ) : payments.data ? (
         <>
-          <Card style={styles.totalCard}>
-            <Text style={styles.totalLabel}>إجمالي المدفوعات المحملة</Text>
-            <Text style={styles.totalValue}>{formatYemeniRial(totalLoadedPayments)}</Text>
-          </Card>
+          {totalsByCurrency.length > 0 ? (
+            <View style={styles.currencyTotals}>
+              {totalsByCurrency.map(([currency, total]) => (
+                <Card key={currency} style={styles.totalCard}>
+                  <Text style={styles.totalLabel}>إجمالي المدفوعات — {currency}</Text>
+                  <Text style={styles.totalValue}>{formatRecordedMoney(total, currency)}</Text>
+                </Card>
+              ))}
+            </View>
+          ) : null}
           {paymentList.length === 0 ? (
             <StateMessage title="لا توجد مدفوعات مسجلة" />
           ) : (
             paymentList.map((payment) => (
               <Card key={payment.id}>
                 <View style={styles.paymentHeader}>
-                  <Text style={styles.paymentAmount}>{formatYemeniRial(payment.amount)}</Text>
+                  <Text style={styles.paymentAmount}>
+                    {formatRecordedMoney(payment.amount, payment.currency || "YER")}
+                  </Text>
                   <Text style={styles.paymentDate}>{payment.paymentDate}</Text>
                 </View>
+                {payment.accountCurrency ? (
+                  <Row
+                    label="المطبق على الحساب"
+                    value={formatRecordedMoney(payment.appliedAmount ?? payment.amount, payment.accountCurrency)}
+                  />
+                ) : null}
                 <Row
                   label="طريقة الدفع"
                   value={PAYMENT_METHOD_LABELS[payment.paymentMethod ?? ""] ?? payment.paymentMethod ?? "—"}
@@ -214,23 +238,28 @@ export default function PatientFinanceScreen() {
         invoices.data.length === 0 ? (
           <StateMessage title="لا توجد فواتير مسجلة" />
         ) : (
-          invoices.data.map((invoice) => (
-            <Card key={invoice.id}>
-              <View style={styles.paymentHeader}>
-                <Text style={styles.invoiceNumber}>{invoice.invoiceNumber}</Text>
-                <Text style={styles.status}>
-                  {INVOICE_STATUS_LABELS[invoice.status] ?? invoice.statusArabic ?? invoice.status}
-                </Text>
-              </View>
-              <Row label="الإجمالي" value={formatYemeniRial(invoice.totalAmount)} />
-              {invoice.paidAmount != null ? (
-                <Row label="المدفوع" value={formatYemeniRial(invoice.paidAmount)} />
-              ) : null}
-              {invoice.balance != null ? (
-                <Row label="المتبقي" value={formatYemeniRial(invoice.balance)} last />
-              ) : null}
-            </Card>
-          ))
+          <>
+            <Text style={styles.currencyCaveat}>
+              قائمة الفواتير الحالية لا تعيد حقل العملة في هذا العقد، لذلك تُعرض مبالغها بدون اختلاق رمز عملة.
+            </Text>
+            {invoices.data.map((invoice) => (
+              <Card key={invoice.id}>
+                <View style={styles.paymentHeader}>
+                  <Text style={styles.invoiceNumber}>{invoice.invoiceNumber}</Text>
+                  <Text style={styles.status}>
+                    {INVOICE_STATUS_LABELS[invoice.status] ?? invoice.statusArabic ?? invoice.status}
+                  </Text>
+                </View>
+                <Row label="الإجمالي" value={formatRecordedMoney(invoice.totalAmount)} />
+                {invoice.paidAmount != null ? (
+                  <Row label="المدفوع" value={formatRecordedMoney(invoice.paidAmount)} />
+                ) : null}
+                {invoice.balance != null ? (
+                  <Row label="المتبقي" value={formatRecordedMoney(invoice.balance)} last />
+                ) : null}
+              </Card>
+            ))}
+          </>
         )
       ) : null}
     </Screen>
@@ -258,6 +287,14 @@ function Row({ label, value, last = false }: { label: string; value: string; las
 const styles = StyleSheet.create({
   title: { color: colors.text, fontSize: 25, fontWeight: "800", textAlign: "right" },
   subtitle: { color: colors.primary, marginTop: 4, fontWeight: "700", textAlign: "right" },
+  currencyCaveat: {
+    color: colors.warning,
+    backgroundColor: colors.warningSoft,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+    textAlign: "right",
+    lineHeight: 21
+  },
   metrics: { flexDirection: "row-reverse", flexWrap: "wrap", gap: spacing.sm },
   metric: {
     width: "48%",
@@ -282,6 +319,7 @@ const styles = StyleSheet.create({
   last: { borderBottomWidth: 0 },
   label: { color: colors.muted, textAlign: "right" },
   value: { color: colors.text, flex: 1, textAlign: "right", fontWeight: "600" },
+  currencyTotals: { gap: spacing.sm },
   totalCard: { backgroundColor: colors.successSoft },
   totalLabel: { color: colors.success, textAlign: "right" },
   totalValue: { color: colors.success, fontSize: 22, fontWeight: "800", textAlign: "right", marginTop: 4 },

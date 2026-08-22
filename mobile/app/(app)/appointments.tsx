@@ -18,7 +18,7 @@ const STATUS_FILTERS = [
   { value: "Cancelled", label: "ملغي" }
 ];
 
-type BusyAction = { id: string; status: string } | null;
+type BusyAction = { id: string; action: string } | null;
 
 export default function AppointmentsScreen() {
   const params = useLocalSearchParams<{ patientId?: string; patientName?: string }>();
@@ -31,6 +31,7 @@ export default function AppointmentsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<BusyAction>(null);
 
   const dateText = useMemo(() => isoDateLocal(date), [date]);
@@ -74,8 +75,9 @@ export default function AppointmentsScreen() {
 
   async function changeStatus(item: Appointment, status: string) {
     if (busy) return;
-    setBusy({ id: item.id, status });
+    setBusy({ id: item.id, action: status });
     setError(null);
+    setNotice(null);
     try {
       await apiRequest<Appointment>(`/api/appointments/${item.id}/status`, {
         method: "PUT",
@@ -84,6 +86,34 @@ export default function AppointmentsScreen() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "تعذر تغيير حالة الموعد");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function sendReminder(item: Appointment, channel: "whatsapp" | "email") {
+    if (busy) return;
+    setBusy({ id: item.id, action: channel });
+    setError(null);
+    setNotice(null);
+    try {
+      const path =
+        channel === "email"
+          ? `/api/appointments/${item.id}/send-email-reminder`
+          : `/api/appointments/${item.id}/send-reminder`;
+      const response = await apiRequest<{ message?: string }>(path, { method: "POST" });
+      setNotice(
+        response.message ||
+          (channel === "email" ? "تم إرسال تذكير البريد الإلكتروني." : "تم إرسال تذكير واتساب.")
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : channel === "email"
+            ? "تعذر إرسال تذكير البريد"
+            : "تعذر إرسال تذكير واتساب"
+      );
     } finally {
       setBusy(null);
     }
@@ -158,6 +188,7 @@ export default function AppointmentsScreen() {
         ))}
       </View>
 
+      {notice ? <StateMessage title="تم الإجراء" message={notice} /> : null}
       {error ? <StateMessage title="تعذر إكمال إجراء المواعيد" message={error} /> : null}
 
       {loading ? (
@@ -175,6 +206,7 @@ export default function AppointmentsScreen() {
       ) : (
         appointments.map((item) => {
           const actionBusy = busy?.id === item.id;
+          const reminderEligible = ["Scheduled", "Confirmed"].includes(item.status);
           return (
             <Card key={item.id}>
               <Pressable
@@ -202,12 +234,35 @@ export default function AppointmentsScreen() {
                   <PrimaryButton
                     title="تأكيد الموعد"
                     onPress={() => void changeStatus(item, "Confirmed")}
-                    loading={actionBusy && busy?.status === "Confirmed"}
+                    loading={actionBusy && busy?.action === "Confirmed"}
                     disabled={actionBusy}
                   />
                 ) : null}
 
-                {["Scheduled", "Confirmed"].includes(item.status) ? (
+                {reminderEligible ? (
+                  <View style={styles.secondaryActions}>
+                    <Pressable
+                      disabled={actionBusy}
+                      onPress={() => void sendReminder(item, "whatsapp")}
+                      style={[styles.secondaryButton, styles.reminderButton]}
+                    >
+                      <Text style={styles.reminderButtonText}>
+                        {actionBusy && busy?.action === "whatsapp" ? "جارٍ الإرسال…" : "تذكير واتساب"}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      disabled={actionBusy}
+                      onPress={() => void sendReminder(item, "email")}
+                      style={[styles.secondaryButton, styles.reminderButton]}
+                    >
+                      <Text style={styles.reminderButtonText}>
+                        {actionBusy && busy?.action === "email" ? "جارٍ الإرسال…" : "تذكير بريد"}
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+
+                {reminderEligible ? (
                   <View style={styles.secondaryActions}>
                     <Pressable
                       disabled={actionBusy}
@@ -319,10 +374,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.warning,
     borderRadius: radius.sm,
-    backgroundColor: colors.warningSoft
+    backgroundColor: colors.warningSoft,
+    paddingHorizontal: spacing.xs
   },
-  secondaryButtonText: { color: colors.warning, fontWeight: "800" },
+  secondaryButtonText: { color: colors.warning, fontWeight: "800", fontSize: 12 },
+  reminderButton: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  reminderButtonText: { color: colors.primary, fontWeight: "800", fontSize: 12 },
   dangerButton: { borderColor: colors.danger, backgroundColor: colors.dangerSoft },
-  dangerButtonText: { color: colors.danger, fontWeight: "800" },
+  dangerButtonText: { color: colors.danger, fontWeight: "800", fontSize: 12 },
   empty: { color: colors.muted, textAlign: "center" }
 });

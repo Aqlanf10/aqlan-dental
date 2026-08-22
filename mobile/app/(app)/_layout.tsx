@@ -79,6 +79,11 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="lab-order-new" options={{ href: null, title: "طلب معمل جديد" }} />
       <Tabs.Screen name="lab-order-detail" options={{ href: null, title: "تفاصيل طلب المعمل" }} />
       <Tabs.Screen name="lab-order-transition" options={{ href: null, title: "تغيير حالة طلب المعمل" }} />
+      <Tabs.Screen name="inventory" options={{ href: null, title: "المخزون" }} />
+      <Tabs.Screen name="inventory-item" options={{ href: null, title: "تفاصيل المادة" }} />
+      <Tabs.Screen name="inventory-item-editor" options={{ href: null, title: "بيانات المادة" }} />
+      <Tabs.Screen name="inventory-adjust" options={{ href: null, title: "تعديل المخزون" }} />
+      <Tabs.Screen name="lab-order-consume-inventory" options={{ href: null, title: "صرف مواد للمعمل" }} />
     </Tabs>
   );
 }

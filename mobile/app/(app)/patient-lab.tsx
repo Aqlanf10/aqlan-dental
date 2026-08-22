@@ -1,6 +1,7 @@
 import { useSession } from "@/auth/SessionProvider";
 import { Card, PrimaryButton, Screen, StateMessage } from "@/components/ui";
 import { apiRequest } from "@/lib/api";
+import { canUseInventory } from "@/lib/inventory";
 import {
   formatMoney,
   LAB_PRIORITY_LABELS,
@@ -15,13 +16,14 @@ import React, { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 
 export default function PatientLabScreen() {
-  const { can } = useSession();
+  const { can, user } = useSession();
   const params = useLocalSearchParams<{ patientId: string; patientName?: string; orthoCaseId?: string }>();
   const patientId = Array.isArray(params.patientId) ? params.patientId[0] : params.patientId;
   const patientName = Array.isArray(params.patientName) ? params.patientName[0] : params.patientName;
   const orthoCaseId = Array.isArray(params.orthoCaseId) ? params.orthoCaseId[0] : params.orthoCaseId;
   const canView = can("lab_orders.view");
   const canCreate = can("lab_orders.create");
+  const canManageInventory = canUseInventory(user?.role);
 
   const [orders, setOrders] = useState<LabOrderListItem[]>([]);
   const [status, setStatus] = useState<string>("");
@@ -47,20 +49,11 @@ export default function PatientLabScreen() {
     }
   }, [canView, patientId, status]);
 
-  useFocusEffect(
-    useCallback(() => {
-      setLoading(true);
-      void load();
-    }, [load])
-  );
+  useFocusEffect(useCallback(() => { setLoading(true); void load(); }, [load]));
 
   async function refresh() {
     setRefreshing(true);
-    try {
-      await load();
-    } finally {
-      setRefreshing(false);
-    }
+    try { await load(); } finally { setRefreshing(false); }
   }
 
   const statusOptions = useMemo(
@@ -69,11 +62,7 @@ export default function PatientLabScreen() {
   );
 
   if (!canView) {
-    return (
-      <Screen>
-        <StateMessage title="غير مصرح" message="حسابك لا يملك صلاحية lab_orders.view." />
-      </Screen>
-    );
+    return <Screen><StateMessage title="غير مصرح" message="حسابك لا يملك صلاحية lab_orders.view." /></Screen>;
   }
 
   return (
@@ -86,44 +75,27 @@ export default function PatientLabScreen() {
       {canCreate ? (
         <PrimaryButton
           title="طلب معمل جديد"
-          onPress={() =>
-            router.push({
-              pathname: "/(app)/lab-order-new",
-              params: { patientId, patientName, ...(orthoCaseId ? { orthoCaseId } : {}) }
-            })
-          }
+          onPress={() => router.push({ pathname: "/(app)/lab-order-new", params: { patientId, patientName, ...(orthoCaseId ? { orthoCaseId } : {}) } })}
         />
       ) : null}
+      {canManageInventory ? <PrimaryButton title="فتح المخزون" onPress={() => router.push("/(app)/inventory")} /> : null}
 
       <View style={styles.filters}>
         {statusOptions.map((value) => (
-          <Pressable
-            key={value || "all"}
-            onPress={() => setStatus(value)}
-            style={[styles.filter, status === value && styles.filterSelected]}
-          >
-            <Text style={[styles.filterText, status === value && styles.filterTextSelected]}>
-              {value ? LAB_STATUS_LABELS[value] ?? value : "الكل"}
-            </Text>
+          <Pressable key={value || "all"} onPress={() => setStatus(value)} style={[styles.filter, status === value && styles.filterSelected]}>
+            <Text style={[styles.filterText, status === value && styles.filterTextSelected]}>{value ? LAB_STATUS_LABELS[value] ?? value : "الكل"}</Text>
           </Pressable>
         ))}
       </View>
 
       {loading ? <ActivityIndicator size="large" color={colors.primary} /> : null}
-      {error ? (
-        <StateMessage
-          title="تعذر تحميل طلبات المعمل"
-          message={error}
-          action={<PrimaryButton title="إعادة المحاولة" onPress={() => void load()} />}
-        />
-      ) : null}
+      {error ? <StateMessage title="تعذر تحميل طلبات المعمل" message={error} action={<PrimaryButton title="إعادة المحاولة" onPress={() => void load()} />} /> : null}
       {!loading && !error && orders.length === 0 ? <StateMessage title="لا توجد طلبات معمل مطابقة" /> : null}
 
       {orders.map((order) => (
-        <Pressable
-          key={order.id}
-          onPress={() =>
-            router.push({
+        <View key={order.id} style={styles.orderBlock}>
+          <Pressable
+            onPress={() => router.push({
               pathname: "/(app)/lab-order-detail",
               params: {
                 id: order.id,
@@ -131,79 +103,56 @@ export default function PatientLabScreen() {
                 currency: order.currency ?? "",
                 exchangeRateToYer: order.exchangeRateToYer != null ? String(order.exchangeRateToYer) : ""
               }
-            })
-          }
-        >
-          <Card>
-            <View style={styles.header}>
-              <Text style={styles.status}>{labStatusLabel(order.status)}</Text>
-              <View style={styles.headerText}>
-                <Text style={styles.orderNumber}>{order.orderNumber || "طلب معمل"}</Text>
-                <Text style={styles.appliance}>{order.applianceType || order.restorationType || "عمل معمل"}</Text>
+            })}
+          >
+            <Card>
+              <View style={styles.header}>
+                <Text style={styles.status}>{labStatusLabel(order.status)}</Text>
+                <View style={styles.headerText}>
+                  <Text style={styles.orderNumber}>{order.orderNumber || "طلب معمل"}</Text>
+                  <Text style={styles.appliance}>{order.applianceType || order.restorationType || "عمل معمل"}</Text>
+                </View>
               </View>
-            </View>
-            <Row label="المعمل" value={order.labEntityName || order.labName || "غير محدد"} />
-            {order.shade ? <Row label="اللون" value={order.shade} /> : null}
-            <Row label="الأولوية" value={LAB_PRIORITY_LABELS[order.priority] ?? order.priority} />
-            <Row label="تاريخ الإرسال" value={order.sentDate || "مسودة"} />
-            <Row label="الاستلام المتوقع" value={order.expectedDate || "—"} />
-            {order.totalCost != null || order.cost != null ? (
-              <Row label="التكلفة" value={formatMoney(order.totalCost ?? order.cost, order.currency)} />
-            ) : null}
-            <Row label="الطبيب" value={order.doctorName || "—"} last />
-          </Card>
-        </Pressable>
+              <Row label="المعمل" value={order.labEntityName || order.labName || "غير محدد"} />
+              {order.shade ? <Row label="اللون" value={order.shade} /> : null}
+              <Row label="الأولوية" value={LAB_PRIORITY_LABELS[order.priority] ?? order.priority} />
+              <Row label="تاريخ الإرسال" value={order.sentDate || "مسودة"} />
+              <Row label="الاستلام المتوقع" value={order.expectedDate || "—"} />
+              {order.totalCost != null || order.cost != null ? <Row label="التكلفة" value={formatMoney(order.totalCost ?? order.cost, order.currency)} /> : null}
+              <Row label="الطبيب" value={order.doctorName || "—"} last />
+            </Card>
+          </Pressable>
+          {canManageInventory && order.status !== "cancelled" ? (
+            <PrimaryButton
+              title="صرف مواد مخزون لهذا الطلب"
+              onPress={() => router.push({ pathname: "/(app)/lab-order-consume-inventory", params: { id: order.id, orderNumber: order.orderNumber ?? "" } })}
+            />
+          ) : null}
+        </View>
       ))}
     </Screen>
   );
 }
 
 function Row({ label, value, last = false }: { label: string; value: string; last?: boolean }) {
-  return (
-    <View style={[styles.row, last && { borderBottomWidth: 0 }]}>
-      <Text style={styles.value}>{value}</Text>
-      <Text style={styles.label}>{label}</Text>
-    </View>
-  );
+  return <View style={[styles.row, last && { borderBottomWidth: 0 }]}><Text style={styles.value}>{value}</Text><Text style={styles.label}>{label}</Text></View>;
 }
 
 const styles = StyleSheet.create({
   title: { color: colors.text, fontSize: 25, fontWeight: "800", textAlign: "right" },
   subtitle: { color: colors.primary, marginTop: 4, fontWeight: "700", textAlign: "right" },
   filters: { flexDirection: "row-reverse", flexWrap: "wrap", gap: spacing.xs },
-  filter: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 999,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 7,
-    backgroundColor: colors.surface
-  },
+  filter: { borderWidth: 1, borderColor: colors.border, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 7, backgroundColor: colors.surface },
   filterSelected: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
   filterText: { color: colors.muted, fontWeight: "700", fontSize: 12 },
   filterTextSelected: { color: colors.primary },
+  orderBlock: { gap: spacing.sm },
   header: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: spacing.sm },
   headerText: { flex: 1 },
   orderNumber: { color: colors.text, fontWeight: "800", fontSize: 17, textAlign: "right" },
   appliance: { color: colors.muted, textAlign: "right", marginTop: 4 },
-  status: {
-    color: colors.primary,
-    backgroundColor: colors.primarySoft,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 5,
-    fontWeight: "800",
-    fontSize: 12
-  },
-  row: {
-    minHeight: 42,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border
-  },
+  status: { color: colors.primary, backgroundColor: colors.primarySoft, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 5, fontWeight: "800", fontSize: 12 },
+  row: { minHeight: 42, flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
   label: { color: colors.muted, textAlign: "right" },
   value: { color: colors.text, flex: 1, textAlign: "right", fontWeight: "600" }
 });

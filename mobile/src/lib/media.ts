@@ -4,7 +4,8 @@ import * as ImagePicker from "expo-image-picker";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const PHOTO_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-const RADIOGRAPH_MIME_TYPES = new Set([...PHOTO_MIME_TYPES, "application/pdf"]);
+const CLINICAL_DOCUMENT_MIME_TYPES = new Set([...PHOTO_MIME_TYPES, "application/pdf"]);
+const RADIOGRAPH_MIME_TYPES = CLINICAL_DOCUMENT_MIME_TYPES;
 
 export const PHOTO_CATEGORIES = [
   { label: "خارج فموية", value: "extraoral" },
@@ -119,6 +120,14 @@ export async function captureClinicalPhoto(): Promise<PickedClinicalFile | null>
 }
 
 export async function pickRadiographFile(): Promise<PickedClinicalFile | null> {
+  return pickDocumentLikeFile("radiograph");
+}
+
+export async function pickClinicalDocument(): Promise<PickedClinicalFile | null> {
+  return pickDocumentLikeFile("document");
+}
+
+async function pickDocumentLikeFile(prefix: string): Promise<PickedClinicalFile | null> {
   const result = await DocumentPicker.getDocumentAsync({
     type: ["image/jpeg", "image/png", "image/webp", "application/pdf"],
     copyToCacheDirectory: true,
@@ -128,10 +137,10 @@ export async function pickRadiographFile(): Promise<PickedClinicalFile | null> {
 
   const asset = result.assets[0];
   const mimeType = normalizeMime(asset.mimeType, asset.name);
-  validatePickedFile(asset.size, mimeType, RADIOGRAPH_MIME_TYPES);
+  validatePickedFile(asset.size, mimeType, CLINICAL_DOCUMENT_MIME_TYPES);
   return {
     uri: asset.uri,
-    name: asset.name || `radiograph-${Date.now()}${extensionForMime(mimeType)}`,
+    name: asset.name || `${prefix}-${Date.now()}${extensionForMime(mimeType)}`,
     mimeType,
     size: asset.size
   };
@@ -140,7 +149,7 @@ export async function pickRadiographFile(): Promise<PickedClinicalFile | null> {
 export async function uploadClinicalFile(
   file: PickedClinicalFile,
   patientId: string,
-  purpose: "clinical-photo" | "radiograph"
+  purpose: "clinical-photo" | "radiograph" | "document"
 ): Promise<UploadResult> {
   const formData = new FormData();
   const filePart = {
@@ -186,7 +195,7 @@ function validatePickedFile(
     throw new Error("حجم الملف يتجاوز 10 ميجابايت.");
   }
   if (!allowedMimeTypes.has(mimeType)) {
-    throw new Error("نوع الملف غير مدعوم. استخدم JPG أو PNG أو WEBP، ويمكن PDF للأشعة.");
+    throw new Error("نوع الملف غير مدعوم. استخدم JPG أو PNG أو WEBP، ويمكن PDF للمستندات والأشعة.");
   }
 }
 
@@ -205,16 +214,11 @@ function normalizeMime(value: string | null | undefined, name: string): string {
 
 function extensionForMime(mimeType: string): string {
   switch (mimeType) {
-    case "image/jpeg":
-      return ".jpg";
-    case "image/png":
-      return ".png";
-    case "image/webp":
-      return ".webp";
-    case "application/pdf":
-      return ".pdf";
-    default:
-      return "";
+    case "image/jpeg": return ".jpg";
+    case "image/png": return ".png";
+    case "image/webp": return ".webp";
+    case "application/pdf": return ".pdf";
+    default: return "";
   }
 }
 

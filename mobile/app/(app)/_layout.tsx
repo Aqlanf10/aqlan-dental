@@ -84,6 +84,7 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="inventory-item-editor" options={{ href: null, title: "بيانات المادة" }} />
       <Tabs.Screen name="inventory-adjust" options={{ href: null, title: "تعديل المخزون" }} />
       <Tabs.Screen name="lab-order-consume-inventory" options={{ href: null, title: "صرف مواد للمعمل" }} />
+      <Tabs.Screen name="reports" options={{ href: null, title: "التقارير والإدارة" }} />
     </Tabs>
   );
 }

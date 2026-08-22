@@ -88,18 +88,21 @@ public class PermissionActionContractTests
     }
 
     /// <summary>
-    /// Guards the file itself: a contract listing nothing, or listing everything as done, would
-    /// let the remaining work disappear quietly.
+    /// Every endpoint the contract lists is now enforced. This started life as the opposite
+    /// assertion — that unfinished work must stay recorded — and was flipped when the last
+    /// slice landed. Keep it pointed at whichever direction is true: a contract that quietly
+    /// agrees with any state checks nothing.
     /// </summary>
     [Fact]
-    public void The_contract_still_records_the_work_that_is_not_done()
+    public void Every_listed_endpoint_is_enforced()
     {
         var (endpoints, _) = LoadContract();
 
-        endpoints.Should().Contain(e => e.Enforced,
-            "step 1 enforced two destructive endpoints; losing them should fail loudly");
-        endpoints.Should().Contain(e => !e.Enforced,
-            "the queue and edit endpoints still await the owner's role review — if this ever " +
-            "becomes empty, either the work finished (update this test) or the list was trimmed");
+        endpoints.Should().HaveCountGreaterThan(15,
+            "a trimmed list would make the rest of this file vacuous");
+
+        endpoints.Where(e => !e.Enforced).Should().BeEmpty(
+            "adding an endpoint here without a guard leaves a switch the owner can see and " +
+            "the server ignores — the defect this whole contract exists to prevent");
     }
 }

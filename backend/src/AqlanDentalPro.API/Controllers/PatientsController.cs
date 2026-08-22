@@ -27,6 +27,15 @@ public class PatientsController(
     IAuditService audit,
     ILogger<PatientsController> logger) : ControllerBase
 {
+    // GOLIVE-PERM-001: reception edited a patient record while `patients.edit` was off and
+    // got 200 — the screen showed the switch, nothing on the server read it. The switch is
+    // now granted to reception by default (owner's decision) and enforced here.
+    private Task<bool> CanAsync(string action) =>
+        PermissionGuard.HasAsync(db, currentUser, "patients", action);
+
+    private ObjectResult Deny() =>
+        StatusCode(403, new { message = "غير مصرح لك بهذا الإجراء على بيانات المرضى" });
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private Task<bool> CanViewFinanceAsync(string resource) =>
@@ -317,6 +326,8 @@ public class PatientsController(
     [Authorize(Policy = "AdminOrReception")]
     public async Task<ActionResult<PatientProfileDto>> Update(Guid id, [FromBody] UpdatePatientRequest req)
     {
+        if (!await CanAsync("edit")) return Deny();
+
         try
         {
             var result = await service.UpdateAsync(id, req);

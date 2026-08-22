@@ -359,6 +359,9 @@ public class VisitsController(
         var denied = await DenyIfDoctorCannotAccess(visit.PatientId);
         if (denied is not null) return denied;
 
+        // GOLIVE-PERM-001: after the per-patient check so CLIN-01's message survives.
+        if (!await CanAsync("edit")) return Deny();
+
         if (req.VisitDate != null)
         {
             if (!DateOnly.TryParse(req.VisitDate, out var visitDate))

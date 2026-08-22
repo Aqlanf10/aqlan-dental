@@ -82,6 +82,20 @@ public class AppointmentsControllerAccessTests : IDisposable
         var doctor = BuildDoctor();
         _db.Patients.Add(patient);
         _db.Doctors.Add(doctor);
+
+        // GOLIVE-PERM-001: the write endpoints now read the appointments switch, and
+        // PermissionGuard fails closed when no row exists for (role, resource). These tests
+        // are about patient access and clinic-day rules, not permissions, so grant the role
+        // its ordinary appointment rights — the same rows the seeder creates in a real database.
+        _db.RolePermissions.Add(new RolePermission
+        {
+            Id = Guid.NewGuid(),
+            Role = nameof(UserRole.GeneralDentist),
+            Resource = "appointments",
+            CanView = true,
+            CanCreate = true,
+            CanEdit = true,
+        });
         await _db.SaveChangesAsync();
 
         var appointment = BuildAppointment(patient.Id, doctor.Id, date ?? DateOnly.FromDateTime(DateTime.UtcNow));

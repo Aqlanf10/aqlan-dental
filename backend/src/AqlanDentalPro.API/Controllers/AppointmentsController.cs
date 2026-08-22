@@ -293,6 +293,10 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         var denied = await DenyIfDoctorCannotAccess(req.PatientId);
         if (denied != null) return denied;
 
+        // GOLIVE-PERM-001: after the branch and per-patient checks, so their specific
+        // refusals survive rather than being replaced by a generic permissions message.
+        if (!await CanAsync("create")) return Deny();
+
         var orthoValidation = await ValidateOrthoCaseLinkAsync(req);
         if (orthoValidation != null)
             return orthoValidation;
@@ -315,6 +319,8 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] CreateAppointmentRequest req)
     {
+        if (!await CanAsync("edit")) return Deny();
+
         // CORE-APPT-001 follow-up (Codex review): AppointmentService.UpdateAsync loads
         // the appointment by route `id` and never reassigns PatientId — it always stays
         // whichever patient the appointment already belongs to. Checking req.PatientId
@@ -379,6 +385,8 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     [HttpPut("{id:guid}/status")]
     public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateAppointmentStatusRequest req)
     {
+        if (!await CanAsync("edit")) return Deny();
+
         var appointmentForStatus = await db.Appointments
             .FirstOrDefaultAsync(a => a.Id == id
                 && (currentUser.IsAdmin

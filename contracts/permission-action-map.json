@@ -49,14 +49,14 @@
     { "route": "api/clinic-queue/{id}/cancel",           "verb": "POST",   "resource": "clinic_queue",    "action": "delete", "enforced": true,
       "note": "The one destructive transition — withholding it is the point of a separate switch." },
 
-    { "route": "api/patients/{id}",                      "verb": "PUT",    "resource": "patients",        "action": "edit",   "enforced": false,
+    { "route": "api/patients/{id}",                      "verb": "PUT",    "resource": "patients",        "action": "edit",   "enforced": true,
       "note": "Reception edited a patient with patients.edit off and got 200. Correcting a phone number is normal reception work, so the seed is the likelier defect, not the call." },
 
-    { "route": "api/appointments",                       "verb": "POST",   "resource": "appointments",    "action": "create", "enforced": false },
-    { "route": "api/appointments/{id}",                  "verb": "PUT",    "resource": "appointments",    "action": "edit",   "enforced": false },
-    { "route": "api/appointments/{id}/status",           "verb": "PUT",    "resource": "appointments",    "action": "edit",   "enforced": false },
+    { "route": "api/appointments",                       "verb": "POST",   "resource": "appointments",    "action": "create", "enforced": true },
+    { "route": "api/appointments/{id}",                  "verb": "PUT",    "resource": "appointments",    "action": "edit",   "enforced": true },
+    { "route": "api/appointments/{id}/status",           "verb": "PUT",    "resource": "appointments",    "action": "edit",   "enforced": true },
 
-    { "route": "api/visits/{id}",                        "verb": "PUT",    "resource": "visits",          "action": "edit",   "enforced": false,
+    { "route": "api/visits/{id}",                        "verb": "PUT",    "resource": "visits",          "action": "edit",   "enforced": true,
       "note": "All three doctor roles are seeded visits.edit=false yet may reach this. A doctor who cannot edit their own visit note is a seed defect, not a policy." }
   ],
 

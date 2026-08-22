@@ -23,5 +23,3 @@ export const OPERATIONAL_PERMISSION = {
  * Queue state transitions (call, recall, start, enter-room, complete, no-show,
  * notify, reorder, priority, room) are EDIT operations, not create/approve.
  */
-export type OperationalPermission =
-  (typeof OPERATIONAL_PERMISSION)[keyof typeof OPERATIONAL_PERMISSION][keyof (typeof OPERATIONAL_PERMISSION)[keyof typeof OPERATIONAL_PERMISSION]];

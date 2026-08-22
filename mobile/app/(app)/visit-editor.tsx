@@ -3,6 +3,7 @@ import { FormField, SelectList } from "@/components/forms";
 import { Card, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/components/ui";
 import { apiRequest } from "@/lib/api";
 import { isoDateLocal } from "@/lib/format";
+import { OPERATIONAL_PERMISSION } from "@/lib/permissionContract";
 import { canWriteClinicalRecords } from "@/lib/roles";
 import type { ClinicalVisit, DoctorSummary, VisitMutationInput } from "@/lib/types";
 import { colors, spacing } from "@/theme";
@@ -19,7 +20,7 @@ const specialtyOptions = [
 ];
 
 export default function VisitEditorScreen() {
-  const { user } = useSession();
+  const { user, can } = useSession();
   const params = useLocalSearchParams<{ id?: string; patientId?: string; patientName?: string }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
   const patientIdParam = Array.isArray(params.patientId) ? params.patientId[0] : params.patientId;
@@ -43,7 +44,9 @@ export default function VisitEditorScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canWrite = canWriteClinicalRecords(user);
+  const clinicalWriter = canWriteClinicalRecords(user);
+  const canEditExistingVisit = can(OPERATIONAL_PERMISSION.visits.edit);
+  const canWrite = clinicalWriter && (!isEditing || canEditExistingVisit);
 
   useEffect(() => {
     if (!canWrite) return;
@@ -61,9 +64,7 @@ export default function VisitEditorScreen() {
     }
 
     void loadDoctors();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [canWrite, user?.branchId, user?.role]);
 
   useEffect(() => {
@@ -96,60 +97,33 @@ export default function VisitEditorScreen() {
     }
 
     void loadVisit();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [canWrite, id]);
 
   const doctorOptions = useMemo(
-    () =>
-      doctors.map((doctor) => ({
-        value: doctor.id,
-        label: doctor.name,
-        subtitle: doctor.specialty || doctor.branchName || null
-      })),
+    () => doctors.map((doctor) => ({
+      value: doctor.id,
+      label: doctor.name,
+      subtitle: doctor.specialty || doctor.branchName || null
+    })),
     [doctors]
   );
 
   async function submit() {
-    if (!patientId) {
-      setError("معرّف المريض غير موجود.");
+    if (isEditing && !canEditExistingVisit) {
+      setError("مفتاح visits.edit غير مفعّل لهذا الحساب.");
       return;
     }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(visitDate)) {
-      setError("تاريخ الزيارة يجب أن يكون بصيغة YYYY-MM-DD.");
-      return;
-    }
-    if (nextVisitDate && !/^\d{4}-\d{2}-\d{2}$/.test(nextVisitDate)) {
-      setError("تاريخ الزيارة القادمة يجب أن يكون بصيغة YYYY-MM-DD.");
-      return;
-    }
-    if (!visitType.trim()) {
-      setError("نوع الزيارة مطلوب.");
-      return;
-    }
-    if (!specialty) {
-      setError("اختر التخصص السريري.");
-      return;
-    }
-    if (!doctorId) {
-      setError("اختر الطبيب المسؤول عن الزيارة.");
-      return;
-    }
+    if (!patientId) return setError("معرّف المريض غير موجود.");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(visitDate)) return setError("تاريخ الزيارة يجب أن يكون بصيغة YYYY-MM-DD.");
+    if (nextVisitDate && !/^\d{4}-\d{2}-\d{2}$/.test(nextVisitDate)) return setError("تاريخ الزيارة القادمة يجب أن يكون بصيغة YYYY-MM-DD.");
+    if (!visitType.trim()) return setError("نوع الزيارة مطلوب.");
+    if (!specialty) return setError("اختر التخصص السريري.");
+    if (!doctorId) return setError("اختر الطبيب المسؤول عن الزيارة.");
 
-    const clinicalContentPresent = [
-      chiefComplaint,
-      diagnosis,
-      clinicalNotes,
-      treatmentDone,
-      instructions,
-      nextVisitPlan
-    ].some((value) => value.trim().length > 0);
-
-    if (!clinicalContentPresent) {
-      setError("سجّل معلومة سريرية واحدة على الأقل قبل الحفظ.");
-      return;
-    }
+    const clinicalContentPresent = [chiefComplaint, diagnosis, clinicalNotes, treatmentDone, instructions, nextVisitPlan]
+      .some((value) => value.trim().length > 0);
+    if (!clinicalContentPresent) return setError("سجّل معلومة سريرية واحدة على الأقل قبل الحفظ.");
 
     const request: VisitMutationInput = {
       visitDate,
@@ -183,10 +157,7 @@ export default function VisitEditorScreen() {
       }
 
       if (!savedId) throw new Error("لم يُرجع الخادم معرّف الزيارة المحفوظة.");
-      router.replace({
-        pathname: "/(app)/visit-detail",
-        params: { id: savedId, patientName: patientName || "" }
-      });
+      router.replace({ pathname: "/(app)/visit-detail", params: { id: savedId, patientName: patientName || "" } });
     } catch (err) {
       setError(err instanceof Error ? err.message : "تعذر حفظ الزيارة");
     } finally {
@@ -194,106 +165,47 @@ export default function VisitEditorScreen() {
     }
   }
 
-  if (!canWrite) {
+  if (!clinicalWriter) {
+    return <Screen><StateMessage title="لا تملك صلاحية تعديل السجل السريري" message="إضافة وتعديل الزيارات متاح للطبيب أو مدير النظام فقط." /></Screen>;
+  }
+
+  if (isEditing && !canEditExistingVisit) {
     return (
       <Screen>
         <StateMessage
-          title="لا تملك صلاحية تعديل السجل السريري"
-          message="إضافة وتعديل الزيارات متاح للطبيب أو مدير النظام فقط."
+          title="تعديل الزيارة غير مسموح"
+          message="مفتاح visits.edit غير مفعّل لهذا الحساب. هذا يطابق PermissionGuard الجديد في الخادم."
         />
       </Screen>
     );
   }
 
-  if (loading) {
-    return (
-      <Screen>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </Screen>
-    );
-  }
+  if (loading) return <Screen><ActivityIndicator size="large" color={colors.primary} /></Screen>;
 
   return (
     <Screen>
       <SectionTitle>{isEditing ? "تعديل الزيارة السريرية" : "إضافة زيارة سريرية"}</SectionTitle>
-      {patientName ? (
-        <Card>
-          <Text style={styles.patientLabel}>المريض</Text>
-          <Text style={styles.patientName}>{patientName}</Text>
-        </Card>
-      ) : null}
+      {patientName ? <Card><Text style={styles.patientLabel}>المريض</Text><Text style={styles.patientName}>{patientName}</Text></Card> : null}
       {error ? <StateMessage title="تعذر الحفظ" message={error} /> : null}
 
-      <FormField
-        label="تاريخ الزيارة *"
-        value={visitDate}
-        onChangeText={setVisitDate}
-        placeholder="YYYY-MM-DD"
-      />
+      <FormField label="تاريخ الزيارة *" value={visitDate} onChangeText={setVisitDate} placeholder="YYYY-MM-DD" />
       <FormField label="نوع الزيارة *" value={visitType} onChangeText={setVisitType} />
-      <SelectList
-        label="التخصص *"
-        value={specialty}
-        options={specialtyOptions}
-        onChange={setSpecialty}
-        emptyLabel="اختر التخصص"
-      />
-      <SelectList
-        label="الطبيب *"
-        value={doctorId}
-        options={doctorOptions}
-        onChange={setDoctorId}
-        emptyLabel="اختر الطبيب"
-      />
+      <SelectList label="التخصص *" value={specialty} options={specialtyOptions} onChange={setSpecialty} emptyLabel="اختر التخصص" />
+      <SelectList label="الطبيب *" value={doctorId} options={doctorOptions} onChange={setDoctorId} emptyLabel="اختر الطبيب" />
 
       <SectionTitle>المعلومات السريرية</SectionTitle>
-      <FormField
-        label="الشكوى الرئيسية"
-        value={chiefComplaint}
-        onChangeText={setChiefComplaint}
-        multiline
-      />
+      <FormField label="الشكوى الرئيسية" value={chiefComplaint} onChangeText={setChiefComplaint} multiline />
       <FormField label="التشخيص" value={diagnosis} onChangeText={setDiagnosis} multiline />
-      <FormField
-        label="الملاحظات السريرية"
-        value={clinicalNotes}
-        onChangeText={setClinicalNotes}
-        multiline
-      />
-      <FormField
-        label="العلاج المنفذ"
-        value={treatmentDone}
-        onChangeText={setTreatmentDone}
-        multiline
-      />
-      <FormField
-        label="تعليمات المريض"
-        value={instructions}
-        onChangeText={setInstructions}
-        multiline
-      />
-      <FormField
-        label="خطة الزيارة القادمة"
-        value={nextVisitPlan}
-        onChangeText={setNextVisitPlan}
-        multiline
-      />
-      <FormField
-        label="تاريخ الزيارة القادمة"
-        value={nextVisitDate}
-        onChangeText={setNextVisitDate}
-        placeholder="YYYY-MM-DD"
-      />
+      <FormField label="الملاحظات السريرية" value={clinicalNotes} onChangeText={setClinicalNotes} multiline />
+      <FormField label="العلاج المنفذ" value={treatmentDone} onChangeText={setTreatmentDone} multiline />
+      <FormField label="تعليمات المريض" value={instructions} onChangeText={setInstructions} multiline />
+      <FormField label="خطة الزيارة القادمة" value={nextVisitPlan} onChangeText={setNextVisitPlan} multiline />
+      <FormField label="تاريخ الزيارة القادمة" value={nextVisitDate} onChangeText={setNextVisitDate} placeholder="YYYY-MM-DD" />
 
       <Text style={styles.hint}>
-        الصلاحية النهائية والوصول للمريض يتحققان مرة أخرى داخل الخادم عند الحفظ.
+        الصلاحية النهائية والوصول للمريض يتحققان مرة أخرى داخل الخادم عند الحفظ. تعديل زيارة قائمة يتطلب visits.edit.
       </Text>
-      <PrimaryButton
-        title={isEditing ? "حفظ التعديلات" : "حفظ الزيارة"}
-        loading={submitting}
-        disabled={submitting}
-        onPress={() => void submit()}
-      />
+      <PrimaryButton title={isEditing ? "حفظ التعديلات" : "حفظ الزيارة"} loading={submitting} disabled={submitting} onPress={() => void submit()} />
     </Screen>
   );
 }
@@ -305,14 +217,10 @@ function nullable(value: string): string | null {
 
 function defaultSpecialty(role?: string): string | null {
   switch (role) {
-    case "Orthodontist":
-      return "Orthodontics";
-    case "GeneralDentist":
-      return "GeneralDentistry";
-    case "OralSurgeon":
-      return "OralSurgery";
-    default:
-      return null;
+    case "Orthodontist": return "Orthodontics";
+    case "GeneralDentist": return "GeneralDentistry";
+    case "OralSurgeon": return "OralSurgery";
+    default: return null;
   }
 }
 

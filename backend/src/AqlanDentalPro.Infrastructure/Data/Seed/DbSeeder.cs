@@ -403,7 +403,9 @@ public static class DbSeeder
                 ["Orthodontist"]   = (true,  true,  true,  false, false, false),
                 ["GeneralDentist"] = (true,  true,  true,  false, false, false),
                 ["OralSurgeon"]    = (true,  true,  true,  false, false, false),
-                ["Reception"]      = (true,  true,  false, false, false, false),
+                // GOLIVE-PERM-001: reception edited a patient with this off and got 200.
+                // Correcting a phone number is ordinary reception work; owner confirmed.
+                ["Reception"]      = (true,  true,  true,  false, false, false),
                 ["Accountant"]     = (true,  false, false, false, true,  false),
                 ["Assistant"]      = (true,  false, false, false, false, false),
                 ["BranchManager"]  = (true,  false, false, false, false, false),
@@ -430,7 +432,10 @@ public static class DbSeeder
                 ["GeneralDentist"] = (true, true, true, false, false, false),
                 ["OralSurgeon"]    = (true, true, true, false, false, false),
                 ["Reception"]      = (true, true, true, false, false, false),
-                ["Assistant"]      = (true, false, false, false, false, false),
+                // GOLIVE-PERM-001: the assistant books and amends appointments in practice.
+                ["Assistant"]      = (true, true, true, false, false, false),
+                // Left view-only on the owner's decision: enforcement withdraws the booking
+                // and visit-start abilities the accountant reached only because nothing checked.
                 ["Accountant"]     = (true, false, false, false, false, false),
             },
             ["finance"] = new()
@@ -495,7 +500,7 @@ public static class DbSeeder
                 ["Orthodontist"]   = (true, false, false, false, false, false),
                 ["GeneralDentist"] = (true, false, false, false, false, false),
                 ["OralSurgeon"]    = (true, false, false, false, false, false),
-                ["Assistant"]      = (true, false, false, false, false, false),
+                ["Assistant"]      = (true, true, true, false, false, false),
             },
             ["clinic_display"] = new()
             {
@@ -510,17 +515,21 @@ public static class DbSeeder
             {
                 ["Admin"]          = (true, true, true, false, false, false),
                 ["Reception"]      = (true, true, true, false, false, false),
+                ["Assistant"]      = (true, true, true, false, false, false),
                 ["Orthodontist"]   = (true, true, false, false, false, false),
                 ["GeneralDentist"] = (true, true, false, false, false, false),
                 ["OralSurgeon"]    = (true, true, false, false, false, false),
             },
+            // GOLIVE-PERM-001: the doctor roles were seeded create-but-not-edit, so a doctor
+            // could open a visit and not amend their own note. The route allowed it anyway
+            // because nothing read the switch; owner confirmed edit is intended.
             ["visits"] = new()
             {
                 ["Admin"]          = (true, true, true, false, false, false),
                 ["Reception"]      = (true, true, true, false, false, false),
-                ["Orthodontist"]   = (true, true, false, false, false, false),
-                ["GeneralDentist"] = (true, true, false, false, false, false),
-                ["OralSurgeon"]    = (true, true, false, false, false, false),
+                ["Orthodontist"]   = (true, true, true, false, false, false),
+                ["GeneralDentist"] = (true, true, true, false, false, false),
+                ["OralSurgeon"]    = (true, true, true, false, false, false),
             },
             ["checkout"] = new()
             {
@@ -588,18 +597,20 @@ public static class DbSeeder
         var existingPermissions = await context.RolePermissions
             .ToDictionaryAsync(rp => (rp.Role, rp.Resource));
 
+        // GOLIVE-PERM-001: this loop used to re-assert the code defaults over every existing
+        // row on every startup, so anything the owner changed in Settings → Roles was silently
+        // reverted on the next deploy. That was survivable only while nothing read these
+        // switches. Now that they decide requests, a permission that quietly resets itself is
+        // worse than one that never worked — so the matrix is INSERT-ONLY, matching how the
+        // finance rows below have always behaved. Deliberate changes to defaults reach existing
+        // databases through a one-time backfill, not by overwriting the owner every restart.
         foreach (var (resource, roles) in matrix)
         {
             foreach (var (role, (view, create, edit, delete, export, approve)) in roles)
             {
-                if (existingPermissions.TryGetValue((role, resource), out var existing))
+                if (existingPermissions.ContainsKey((role, resource)))
                 {
-                    existing.CanView = view;
-                    existing.CanCreate = create;
-                    existing.CanEdit = edit;
-                    existing.CanDelete = delete;
-                    existing.CanExport = export;
-                    existing.CanApprove = approve;
+                    // Already present — the owner's setting wins.
                 }
                 else
                 {

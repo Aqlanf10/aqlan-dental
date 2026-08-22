@@ -71,6 +71,12 @@ public class VisitsController(
     IRealTimePushService pushService,
     ILogger<VisitsController> logger) : ControllerBase
 {
+    private Task<bool> CanAsync(string action) =>
+        PermissionGuard.HasAsync(db, currentUser, "visits", action);
+
+    private IActionResult Deny() =>
+        StatusCode(403, new { message = "غير مصرح لك بهذا الإجراء على الزيارات" });
+
     /// <summary>
     /// Best-effort push of JourneyUpdated. Scoped to the caller's branch when
     /// resolvable; falls back to PushToAllAsync for admin callers without a branch.
@@ -353,6 +359,9 @@ public class VisitsController(
         var denied = await DenyIfDoctorCannotAccess(visit.PatientId);
         if (denied is not null) return denied;
 
+        // GOLIVE-PERM-001: after the per-patient check so CLIN-01's message survives.
+        if (!await CanAsync("edit")) return Deny();
+
         if (req.VisitDate != null)
         {
             if (!DateOnly.TryParse(req.VisitDate, out var visitDate))
@@ -439,6 +448,16 @@ public class VisitsController(
         // CLIN-01: per-patient check before deleting.
         var denied = await DenyIfDoctorCannotAccess(visit.PatientId);
         if (denied is not null) return denied;
+
+        // GOLIVE-PERM-001: ClinicalWrite admits all three doctor roles, and every one of
+        // them is seeded with `visits.delete` off — yet the switch was never read, so the
+        // route deleted anyway. The policy still decides who may reach the route; this
+        // decides whether their «حذف» switch actually permits it.
+        //
+        // Deliberately after the per-patient check: a doctor reaching for another patient's
+        // visit must keep hearing why (CLIN-01's message), not have it replaced by a generic
+        // permissions refusal. Either way nothing is mutated below this line.
+        if (!await CanAsync("delete")) return Deny();
 
         visit.IsActive = false;
         visit.DeletedAt = DateTime.UtcNow;

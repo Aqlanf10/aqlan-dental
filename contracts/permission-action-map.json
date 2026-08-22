@@ -1,0 +1,67 @@
+{
+  "$comment": [
+    "GOLIVE-PERM-001 step 2 — which permission switch each operational endpoint reads.",
+    "",
+    "Step 1 enforced the two destructive endpoints. Extending that mechanically by HTTP verb",
+    "was not possible: of the eleven POSTs under api/clinic-queue exactly one creates anything.",
+    "Call, recall, start, complete, enter-room, no-show and notify are state transitions on a",
+    "queue item that already exists. Mapping them to `create` because they are POSTs would put",
+    "'who may call the next patient' behind a switch labelled «إنشاء» on «الطابور», which is",
+    "less honest than having no switch at all.",
+    "",
+    "The frontend had already invented its own mapping and contradicted itself doing so:",
+    "call -> clinic_queue.create, recall -> clinic_queue.edit, enter-room -> clinic_queue.approve.",
+    "",
+    "So the mapping is written down deliberately, once, here, and both sides read it.",
+    "",
+    "The action vocabulary is fixed at the six columns on RolePermission (view/create/edit/",
+    "delete/export/approve). Adding verbs like 'call' would need a schema migration; it is not",
+    "worth one. State transitions therefore map to `edit` — they mutate an existing row — and",
+    "only genuine creation maps to `create`.",
+    "",
+    "`enforced: false` means the endpoint is listed and agreed but the guard is not switched on",
+    "yet, because turning it on would remove an ability a role uses today. Those await the",
+    "owner's role-by-role review; the impact per role is in docs/audits/."
+  ],
+
+  "actionVocabulary": ["view", "create", "edit", "delete", "export", "approve"],
+
+  "endpoints": [
+    { "route": "api/appointments/{id}",                  "verb": "DELETE", "resource": "appointments",    "action": "delete", "enforced": true,
+      "note": "Step 1. Reception with the switch off deleted an appointment and got 200." },
+    { "route": "api/visits/{id}",                        "verb": "DELETE", "resource": "visits",          "action": "delete", "enforced": true,
+      "note": "Step 1. Checked after CLIN-01's per-patient check so its message survives." },
+
+    { "route": "api/clinic-queue",                       "verb": "POST",   "resource": "clinic_queue",    "action": "create", "enforced": true,
+      "note": "The only genuine create under this route." },
+    { "route": "api/clinic-queue/arrive/{id}",           "verb": "POST",   "resource": "clinic_queue",    "action": "create", "enforced": true,
+      "note": "Admits an appointment into the queue — creates the queue item." },
+    { "route": "api/clinic-queue/{id}/call",             "verb": "POST",   "resource": "clinic_queue",    "action": "edit",   "enforced": true },
+    { "route": "api/clinic-queue/{id}/recall",           "verb": "POST",   "resource": "clinic_queue",    "action": "edit",   "enforced": true },
+    { "route": "api/clinic-queue/{id}/start",            "verb": "POST",   "resource": "clinic_queue",    "action": "edit",   "enforced": true },
+    { "route": "api/clinic-queue/{id}/enter-room",       "verb": "POST",   "resource": "clinic_queue",    "action": "edit",   "enforced": true },
+    { "route": "api/clinic-queue/{id}/complete",         "verb": "POST",   "resource": "clinic_queue",    "action": "edit",   "enforced": true },
+    { "route": "api/clinic-queue/{id}/no-show",          "verb": "POST",   "resource": "clinic_queue",    "action": "edit",   "enforced": true },
+    { "route": "api/clinic-queue/{id}/notify",           "verb": "POST",   "resource": "clinic_queue",    "action": "edit",   "enforced": true },
+    { "route": "api/clinic-queue/reorder",               "verb": "POST",   "resource": "clinic_queue",    "action": "edit",   "enforced": true },
+    { "route": "api/clinic-queue/{id}/priority",         "verb": "PATCH",  "resource": "clinic_queue",    "action": "edit",   "enforced": true },
+    { "route": "api/clinic-queue/{id}/room",             "verb": "PATCH",  "resource": "clinic_queue",    "action": "edit",   "enforced": true },
+    { "route": "api/clinic-queue/{id}/cancel",           "verb": "POST",   "resource": "clinic_queue",    "action": "delete", "enforced": true,
+      "note": "The one destructive transition — withholding it is the point of a separate switch." },
+
+    { "route": "api/patients/{id}",                      "verb": "PUT",    "resource": "patients",        "action": "edit",   "enforced": true,
+      "note": "Reception edited a patient with patients.edit off and got 200. Correcting a phone number is normal reception work, so the seed is the likelier defect, not the call." },
+
+    { "route": "api/appointments",                       "verb": "POST",   "resource": "appointments",    "action": "create", "enforced": true },
+    { "route": "api/appointments/{id}",                  "verb": "PUT",    "resource": "appointments",    "action": "edit",   "enforced": true },
+    { "route": "api/appointments/{id}/status",           "verb": "PUT",    "resource": "appointments",    "action": "edit",   "enforced": true },
+
+    { "route": "api/visits/{id}",                        "verb": "PUT",    "resource": "visits",          "action": "edit",   "enforced": true,
+      "note": "All three doctor roles are seeded visits.edit=false yet may reach this. A doctor who cannot edit their own visit note is a seed defect, not a policy." }
+  ],
+
+  "notEnforceableByDesign": [
+    { "resource": "patients", "action": "delete",
+      "reason": "Only Admin reaches DELETE /api/patients/{id}, and PermissionGuard bypasses Admin, so the switch can never change the outcome. Left visible rather than removed, but it decides nothing." }
+  ]
+}

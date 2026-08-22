@@ -272,6 +272,11 @@ public class JourneyUpdatedSignalRTests
         var currentUser = new Mock<ICurrentUserService>();
         currentUser.SetupGet(c => c.IsAuthenticated).Returns(true);
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
+        // The real CurrentUserService defines IsAdmin as Role == Admin, so the two cannot
+        // disagree in production. This mock left Role unset, which PermissionGuard reads as
+        // "no role" and fails closed on — invisible until the write endpoints started
+        // consulting it (GOLIVE-PERM-001).
+        currentUser.SetupGet(c => c.Role).Returns(UserRole.Admin);
         currentUser.SetupGet(c => c.BranchId).Returns((Guid?)null);
 
         var scopeFactory = new Mock<IServiceScopeFactory>();

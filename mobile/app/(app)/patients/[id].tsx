@@ -14,7 +14,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 export default function PatientDetailsScreen() {
-  const { user } = useSession();
+  const { user, can } = useSession();
   const params = useLocalSearchParams<{ id: string }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
   const [patient, setPatient] = useState<PatientProfile | null>(null);
@@ -31,6 +31,7 @@ export default function PatientDetailsScreen() {
   const canReadOrtho = canUseOrthodontics(user?.role);
   const canReadGeneral = canUseGeneralDentistry(user?.role);
   const canReadSurgery = canUseSurgery(user?.role);
+  const canReadLab = can("lab_orders.view");
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -118,19 +119,9 @@ export default function PatientDetailsScreen() {
         <>
           <SectionTitle>التاريخ الطبي</SectionTitle>
           <Card>
-            <Row
-              label="أمراض مزمنة"
-              value={patient.medicalHistory.chronicDiseases || "لا يوجد مسجل"}
-            />
-            <Row
-              label="أدوية حالية"
-              value={patient.medicalHistory.currentMedications || "لا يوجد مسجل"}
-            />
-            <Row
-              label="حساسية أدوية"
-              value={patient.medicalHistory.drugAllergies || "لا يوجد مسجل"}
-              last
-            />
+            <Row label="أمراض مزمنة" value={patient.medicalHistory.chronicDiseases || "لا يوجد مسجل"} />
+            <Row label="أدوية حالية" value={patient.medicalHistory.currentMedications || "لا يوجد مسجل"} />
+            <Row label="حساسية أدوية" value={patient.medicalHistory.drugAllergies || "لا يوجد مسجل"} last />
           </Card>
         </>
       ) : null}
@@ -138,9 +129,7 @@ export default function PatientDetailsScreen() {
       {patient.dentalHistory?.chiefComplaint ? (
         <>
           <SectionTitle>الشكوى الرئيسية</SectionTitle>
-          <Card>
-            <Text style={styles.paragraph}>{patient.dentalHistory.chiefComplaint}</Text>
-          </Card>
+          <Card><Text style={styles.paragraph}>{patient.dentalHistory.chiefComplaint}</Text></Card>
         </>
       ) : null}
 
@@ -148,96 +137,57 @@ export default function PatientDetailsScreen() {
       {communicationError ? <StateMessage title="تعذر فتح المحادثة" message={communicationError} /> : null}
       <PrimaryButton
         title="ملخص رحلة المريض اليوم"
-        onPress={() =>
-          router.push({
-            pathname: "/(app)/journey-summary",
-            params: { patientId: patient.id }
-          })
-        }
+        onPress={() => router.push({ pathname: "/(app)/journey-summary", params: { patientId: patient.id } })}
       />
       {canReadClinical ? (
         <>
           <PrimaryButton
             title="السجل السريري والزيارات"
-            onPress={() =>
-              router.push({
-                pathname: "/(app)/visits",
-                params: { patientId: patient.id, patientName }
-              })
-            }
+            onPress={() => router.push({ pathname: "/(app)/visits", params: { patientId: patient.id, patientName } })}
           />
           <PrimaryButton
             title="الصور والأشعة"
-            onPress={() =>
-              router.push({
-                pathname: "/(app)/patient-media",
-                params: { patientId: patient.id, patientName }
-              })
-            }
+            onPress={() => router.push({ pathname: "/(app)/patient-media", params: { patientId: patient.id, patientName } })}
           />
         </>
       ) : null}
       {canReadGeneral ? (
         <PrimaryButton
           title="الأسنان العامة وFDI"
-          onPress={() =>
-            router.push({
-              pathname: "/(app)/patient-general",
-              params: { patientId: patient.id, patientName }
-            })
-          }
+          onPress={() => router.push({ pathname: "/(app)/patient-general", params: { patientId: patient.id, patientName } })}
         />
       ) : null}
       {canReadOrtho ? (
         <PrimaryButton
           title="تقويم الأسنان"
-          onPress={() =>
-            router.push({
-              pathname: "/(app)/patient-ortho",
-              params: { patientId: patient.id, patientName }
-            })
-          }
+          onPress={() => router.push({ pathname: "/(app)/patient-ortho", params: { patientId: patient.id, patientName } })}
         />
       ) : null}
       {canReadSurgery ? (
         <PrimaryButton
           title="جراحة الفم"
-          onPress={() =>
-            router.push({
-              pathname: "/(app)/patient-surgery",
-              params: { patientId: patient.id, patientName }
-            })
-          }
+          onPress={() => router.push({ pathname: "/(app)/patient-surgery", params: { patientId: patient.id, patientName } })}
+        />
+      ) : null}
+      {canReadLab ? (
+        <PrimaryButton
+          title="طلبات المعمل"
+          onPress={() => router.push({ pathname: "/(app)/patient-lab", params: { patientId: patient.id, patientName } })}
         />
       ) : null}
       {canReadFinance ? (
         <PrimaryButton
           title="مالية المريض"
-          onPress={() =>
-            router.push({
-              pathname: "/(app)/patient-finance",
-              params: { patientId: patient.id, patientName }
-            })
-          }
+          onPress={() => router.push({ pathname: "/(app)/patient-finance", params: { patientId: patient.id, patientName } })}
         />
       ) : null}
       <PrimaryButton
         title="حجز موعد جديد"
-        onPress={() =>
-          router.push({
-            pathname: "/(app)/appointments-new",
-            params: { patientId: patient.id, patientName }
-          })
-        }
+        onPress={() => router.push({ pathname: "/(app)/appointments-new", params: { patientId: patient.id, patientName } })}
       />
       <PrimaryButton
         title="عرض مواعيد المريض"
-        onPress={() =>
-          router.push({
-            pathname: "/(app)/appointments",
-            params: { patientId: patient.id, patientName }
-          })
-        }
+        onPress={() => router.push({ pathname: "/(app)/appointments", params: { patientId: patient.id, patientName } })}
       />
       <PrimaryButton
         title="محادثة داخلية حول المريض"
@@ -254,9 +204,7 @@ export default function PatientDetailsScreen() {
       {canEdit && !patient.isLimitedView ? (
         <PrimaryButton
           title="تعديل بيانات المريض"
-          onPress={() =>
-            router.push({ pathname: "/(app)/patients/edit", params: { id: patient.id } })
-          }
+          onPress={() => router.push({ pathname: "/(app)/patients/edit", params: { id: patient.id } })}
         />
       ) : null}
     </Screen>
@@ -275,22 +223,8 @@ function Row({ label, value, last = false }: { label: string; value: string; las
 const styles = StyleSheet.create({
   name: { color: colors.text, fontSize: 25, fontWeight: "800", textAlign: "right" },
   number: { color: colors.primary, marginTop: 4, fontWeight: "700", textAlign: "right" },
-  notice: {
-    color: colors.warning,
-    backgroundColor: colors.warningSoft,
-    padding: spacing.sm,
-    borderRadius: 10,
-    textAlign: "right"
-  },
-  row: {
-    minHeight: 48,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: spacing.md
-  },
+  notice: { color: colors.warning, backgroundColor: colors.warningSoft, padding: spacing.sm, borderRadius: 10, textAlign: "right" },
+  row: { minHeight: 48, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.md },
   label: { color: colors.muted, textAlign: "right" },
   value: { color: colors.text, flex: 1, textAlign: "right", fontWeight: "600" },
   paragraph: { color: colors.text, textAlign: "right", lineHeight: 24 }

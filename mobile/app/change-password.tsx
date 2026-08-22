@@ -26,14 +26,9 @@ export default function ChangePasswordScreen() {
   if (!isLoading && !user) return <Redirect href="/sign-in" />;
 
   async function submit() {
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      setError("أكمل جميع الحقول.");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError("كلمة المرور الجديدة وتأكيدها غير متطابقين.");
-      return;
-    }
+    if (!currentPassword || !newPassword || !confirmPassword) return setError("أكمل جميع الحقول.");
+    if (newPassword !== confirmPassword) return setError("كلمة المرور الجديدة وتأكيدها غير متطابقين.");
+    if (newPassword === currentPassword) return setError("كلمة المرور الجديدة يجب أن تكون مختلفة عن الحالية.");
 
     setSubmitting(true);
     setError(null);
@@ -53,23 +48,19 @@ export default function ChangePasswordScreen() {
         <View style={styles.card}>
           <Text style={styles.title}>تغيير كلمة المرور</Text>
           <Text style={styles.description}>
-            يجب تغيير كلمة المرور المؤقتة قبل استخدام نظام العيادة من الهاتف.
+            {user?.mustChangePassword
+              ? "يجب تغيير كلمة المرور المؤقتة قبل استخدام نظام العيادة من الهاتف."
+              : "أدخل كلمة المرور الحالية ثم اختر كلمة مرور جديدة قوية. يطبق الخادم سياسة التعقيد المعتمدة للمركز."}
           </Text>
 
           <Text style={styles.label}>كلمة المرور الحالية</Text>
-          <TextInput value={currentPassword} onChangeText={setCurrentPassword} secureTextEntry style={styles.input} />
+          <TextInput value={currentPassword} onChangeText={setCurrentPassword} secureTextEntry autoCapitalize="none" textContentType="password" style={styles.input} />
 
           <Text style={styles.label}>كلمة المرور الجديدة</Text>
-          <TextInput value={newPassword} onChangeText={setNewPassword} secureTextEntry style={styles.input} />
+          <TextInput value={newPassword} onChangeText={setNewPassword} secureTextEntry autoCapitalize="none" textContentType="newPassword" style={styles.input} />
 
           <Text style={styles.label}>تأكيد كلمة المرور الجديدة</Text>
-          <TextInput
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            secureTextEntry
-            style={styles.input}
-            onSubmitEditing={() => void submit()}
-          />
+          <TextInput value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry autoCapitalize="none" textContentType="newPassword" style={styles.input} onSubmitEditing={() => void submit()} />
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -77,9 +68,15 @@ export default function ChangePasswordScreen() {
             {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>حفظ والمتابعة</Text>}
           </Pressable>
 
-          <Pressable onPress={() => void signOut()} disabled={submitting} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>تسجيل الخروج</Text>
-          </Pressable>
+          {user?.mustChangePassword ? (
+            <Pressable onPress={() => void signOut()} disabled={submitting} style={styles.secondaryButton}>
+              <Text style={styles.secondaryText}>تسجيل الخروج</Text>
+            </Pressable>
+          ) : (
+            <Pressable onPress={() => router.back()} disabled={submitting} style={styles.secondaryButton}>
+              <Text style={styles.secondaryText}>رجوع بدون تغيير</Text>
+            </Pressable>
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -89,35 +86,13 @@ export default function ChangePasswordScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1, justifyContent: "center", padding: spacing.lg },
-  card: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    gap: spacing.sm
-  },
+  card: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.lg, gap: spacing.sm },
   title: { color: colors.text, fontSize: 24, fontWeight: "800", textAlign: "right" },
   description: { color: colors.muted, lineHeight: 22, textAlign: "right", marginBottom: spacing.sm },
   label: { color: colors.text, fontWeight: "700", textAlign: "right", marginTop: spacing.xs },
-  input: {
-    minHeight: 50,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.md,
-    color: colors.text,
-    textAlign: "right"
-  },
+  input: { minHeight: 50, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, paddingHorizontal: spacing.md, color: colors.text, textAlign: "right" },
   error: { color: colors.danger, backgroundColor: colors.dangerSoft, borderRadius: radius.sm, padding: spacing.sm, textAlign: "right" },
-  primaryButton: {
-    minHeight: 50,
-    borderRadius: radius.sm,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: spacing.sm
-  },
+  primaryButton: { minHeight: 50, borderRadius: radius.sm, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", marginTop: spacing.sm },
   primaryText: { color: "#fff", fontWeight: "800", fontSize: 16 },
   secondaryButton: { minHeight: 44, alignItems: "center", justifyContent: "center" },
   secondaryText: { color: colors.muted, fontWeight: "700" }

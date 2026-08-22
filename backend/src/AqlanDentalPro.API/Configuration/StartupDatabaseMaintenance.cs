@@ -153,6 +153,7 @@ public static class StartupDatabaseMaintenance
         await EnsureInvoicesAndMigrationHistoryAsync(app);
         await EnsureAdminPasswordResetAsync(app);
         await EnsureClinicIdentitySettingsSeedAsync(app);
+        await EnsureOperationalPermissionBackfillAsync(app);
         await EnsureWebsiteSettingsSeedAsync(app);
         await EnsurePatientJourneyColumnsAsync(app);
         await EnsurePatientJourneyPermissionsAsync(app);
@@ -1731,6 +1732,79 @@ public static class StartupDatabaseMaintenance
     /// edited any of these keeps their value, and a database that has them is untouched.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// GOLIVE-PERM-001 — a one-time grant of the five operational permissions the owner
+    /// confirmed, applied to databases that already hold rows for these resources.
+    ///
+    /// <para>
+    /// The seeder's role matrix became INSERT-ONLY in the same change, so a corrected default
+    /// no longer reaches an existing database on its own. That is the point: the owner's
+    /// choices must survive a deploy. Deliberate corrections therefore come through here,
+    /// once, guarded by a marker key — never by overwriting what the owner set.
+    /// </para>
+    ///
+    /// <para>
+    /// Grants only. Nothing here revokes: the abilities the owner chose to withdraw (the
+    /// accountant's booking and visit-start) are withdrawn by enforcing the switch that was
+    /// already off, not by editing anyone's row.
+    /// </para>
+    /// </summary>
+    private static async Task EnsureOperationalPermissionBackfillAsync(WebApplication app)
+    {
+        const string MarkerKey = "permissions.golive_operational_backfill_v1";
+
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db     = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+            if (await db.Settings.AnyAsync(s => s.Key == MarkerKey))
+                return;
+
+            // (role, resource, grant edit, grant create)
+            var grants = new (string Role, string Resource, bool Edit, bool Create)[]
+            {
+                ("Orthodontist",   "visits",          true,  false),
+                ("GeneralDentist", "visits",          true,  false),
+                ("OralSurgeon",    "visits",          true,  false),
+                ("Reception",      "patients",        true,  false),
+                ("Assistant",      "clinic_queue",    true,  true),
+                ("Assistant",      "appointments",    true,  true),
+                ("Assistant",      "patient_journey", true,  true),
+            };
+
+            var changed = 0;
+            foreach (var (role, resource, edit, create) in grants)
+            {
+                var row = await db.RolePermissions
+                    .FirstOrDefaultAsync(rp => rp.Role == role && rp.Resource == resource);
+                if (row is null) continue;   // absent → the seeder inserts the corrected default
+
+                if (edit && !row.CanEdit)     { row.CanEdit = true;   changed++; }
+                if (create && !row.CanCreate) { row.CanCreate = true; changed++; }
+            }
+
+            db.Settings.Add(new Setting
+            {
+                Key      = MarkerKey,
+                Value    = DateTime.UtcNow.ToString("O"),
+                Category = "system",
+            });
+
+            await db.SaveChangesAsync();
+            logger.LogInformation(
+                "GOLIVE-PERM-001: operational permission backfill applied ({Changed} switch(es) turned on).",
+                changed);
+        }
+        catch (Exception ex)
+        {
+            using var scope = app.Services.CreateScope();
+            scope.ServiceProvider.GetRequiredService<ILogger<Program>>()
+                .LogWarning(ex, "GOLIVE-PERM-001: permission backfill skipped; startup continues.");
+        }
+    }
+
     private static async Task EnsureClinicIdentitySettingsSeedAsync(WebApplication app)
     {
         try

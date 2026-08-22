@@ -97,6 +97,41 @@ public class DestructiveActionPermissionTests
     }
 
     /// <summary>
+    /// The queue is the busiest screen in the clinic, so it was the first slice enforced.
+    /// Every state transition must read a switch — one unguarded endpoint is a way around
+    /// all the others, since call/start/enter-room/complete reach the same states.
+    /// </summary>
+    [Fact]
+    public void Every_queue_state_transition_reads_a_switch()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            RepoRoot(), "src", "AqlanDentalPro.API", "Controllers", "ClinicQueueController.cs"));
+
+        string[] mutating =
+        [
+            "[HttpPost]", "[HttpPost(\"arrive/{id:guid}\")]", "[HttpPost(\"reorder\")]",
+            "[HttpPost(\"{id:guid}/call\")]", "[HttpPost(\"{id:guid}/recall\")]",
+            "[HttpPost(\"{id:guid}/start\")]", "[HttpPost(\"{id:guid}/enter-room\")]",
+            "[HttpPost(\"{id:guid}/complete\")]", "[HttpPost(\"{id:guid}/no-show\")]",
+            "[HttpPost(\"{id:guid}/notify\")]", "[HttpPost(\"{id:guid}/cancel\")]",
+            "[HttpPatch(\"{id:guid}/priority\")]", "[HttpPatch(\"{id:guid}/room\")]",
+        ];
+
+        var unguarded = new List<string>();
+        foreach (var attr in mutating)
+        {
+            var at = source.IndexOf("    " + attr + "\n", StringComparison.Ordinal);
+            at.Should().BeGreaterThan(-1, $"{attr} must exist — this test is worthless if the route moved");
+
+            var next = source.IndexOf("    [Http", at + 10, StringComparison.Ordinal);
+            var body = next > at ? source[at..next] : source[at..];
+            if (!body.Contains("CanAsync(", StringComparison.Ordinal)) unguarded.Add(attr);
+        }
+
+        unguarded.Should().BeEmpty("an unguarded transition is a way around every guarded one");
+    }
+
+    /// <summary>
     /// The guard existing is not the fix; the endpoint calling it is. This reads the delete
     /// method out of each controller and requires the check to sit before any mutation.
     /// </summary>

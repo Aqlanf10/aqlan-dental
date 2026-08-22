@@ -1,3 +1,4 @@
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.DTOs.Appointments;
 using AqlanDentalPro.Application.DTOs.Journey;
 using AqlanDentalPro.Application.DTOs.Sms;
@@ -36,6 +37,17 @@ public class ClinicQueueController(
     IJourneyBusinessDatePolicy businessDatePolicy,
     ILogger<ClinicQueueController> logger) : ControllerBase
 {
+    // GOLIVE-PERM-001 step 2: the roles screen shows a «الطابور» row and nothing on the
+    // server read it. Which switch each endpoint reads is written down in
+    // contracts/permission-action-map.json rather than derived from the HTTP verb — of the
+    // eleven POSTs here only two create anything; call, recall, start, enter-room, complete,
+    // no-show and notify move a queue item that already exists, so they read «تعديل».
+    private Task<bool> CanAsync(string action) =>
+        PermissionGuard.HasAsync(db, currentUser, "clinic_queue", action);
+
+    private IActionResult Deny() =>
+        StatusCode(403, new { message = "غير مصرح لك بهذا الإجراء على الطابور" });
+
     private static readonly HashSet<ClinicQueueStatus> ActiveStatuses =
     [
         ClinicQueueStatus.Waiting,
@@ -157,6 +169,8 @@ public class ClinicQueueController(
     [HttpPost]
     public async Task<IActionResult> AddToQueue([FromBody] AddToQueueRequest req)
     {
+        if (!await CanAsync("create")) return Deny();
+
         var today = clinicClock.Today();
 
         // Validate patient exists
@@ -282,6 +296,8 @@ public class ClinicQueueController(
     [HttpPost("{id:guid}/call")]
     public async Task<IActionResult> CallPatient(Guid id, [FromBody] CallQueuePatientRequest? req = null)
     {
+        if (!await CanAsync("edit")) return Deny();
+
         // CON-03 FIX: Read inside transaction + advisory lock to prevent race condition
         await using var tx = await db.Database.BeginTransactionAsync();
         try
@@ -364,6 +380,8 @@ public class ClinicQueueController(
     [HttpPost("{id:guid}/enter-room")]
     public async Task<IActionResult> EnterRoom(Guid id)
     {
+        if (!await CanAsync("edit")) return Deny();
+
         // CON-03 FIX: Add advisory lock for concurrency protection against double-processing
         await using var tx = await db.Database.BeginTransactionAsync();
         try
@@ -419,6 +437,8 @@ public class ClinicQueueController(
     [HttpPost("{id:guid}/start")]
     public async Task<IActionResult> StartVisit(Guid id, [FromBody] StartVisitRequest? req = null)
     {
+        if (!await CanAsync("edit")) return Deny();
+
         // CON-03 FIX: Add advisory lock for concurrency protection
         await using var tx = db.Database.IsRelational()
             ? await db.Database.BeginTransactionAsync()
@@ -561,6 +581,8 @@ public class ClinicQueueController(
     [HttpPost("{id:guid}/complete")]
     public async Task<IActionResult> Complete(Guid id)
     {
+        if (!await CanAsync("edit")) return Deny();
+
         // CON-03 FIX: Add advisory lock for concurrency protection against double-processing
         await using var tx = await db.Database.BeginTransactionAsync();
         try
@@ -615,6 +637,8 @@ public class ClinicQueueController(
     [HttpPost("{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id)
     {
+        if (!await CanAsync("delete")) return Deny();
+
         // CON-03 FIX: Add transaction + advisory lock — Cancel was the only state-changing
         // endpoint without a transaction, making it vulnerable to race conditions.
         await using var tx = await db.Database.BeginTransactionAsync();
@@ -674,6 +698,8 @@ public class ClinicQueueController(
     [HttpPost("{id:guid}/no-show")]
     public async Task<IActionResult> MarkNoShow(Guid id)
     {
+        if (!await CanAsync("edit")) return Deny();
+
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
@@ -739,6 +765,8 @@ public class ClinicQueueController(
     [HttpPost("{id:guid}/recall")]
     public async Task<IActionResult> RecallPatient(Guid id, [FromBody] CallQueuePatientRequest? req = null)
     {
+        if (!await CanAsync("edit")) return Deny();
+
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
@@ -820,6 +848,8 @@ public class ClinicQueueController(
     [HttpPatch("{id:guid}/priority")]
     public async Task<IActionResult> ChangePriority(Guid id, [FromBody] ChangePriorityRequest req)
     {
+        if (!await CanAsync("edit")) return Deny();
+
         var item = await db.ClinicQueueItems.FindAsync(id);
         if (item is null)
             return NotFound(new { message = "عنصر الانتظار غير موجود" });
@@ -877,6 +907,8 @@ public class ClinicQueueController(
     [HttpPost("reorder")]
     public async Task<IActionResult> Reorder([FromBody] List<ReorderItemRequest> items)
     {
+        if (!await CanAsync("edit")) return Deny();
+
         if (items == null || items.Count == 0)
             return BadRequest(new { message = "قائمة الترتيب فارغة" });
 
@@ -918,6 +950,8 @@ public class ClinicQueueController(
     [HttpPost("{id:guid}/notify")]
     public async Task<IActionResult> NotifyPatient(Guid id, [FromBody] NotifyPatientRequest? req = null)
     {
+        if (!await CanAsync("edit")) return Deny();
+
         var item = await db.ClinicQueueItems
             .Include(q => q.Patient)
             .FirstOrDefaultAsync(q => q.Id == id);
@@ -1106,6 +1140,8 @@ public class ClinicQueueController(
     [HttpPatch("{id:guid}/room")]
     public async Task<IActionResult> ChangeRoom(Guid id, [FromBody] ChangeRoomRequest req)
     {
+        if (!await CanAsync("edit")) return Deny();
+
         var item = await db.ClinicQueueItems.FindAsync(id);
         if (item is null)
             return NotFound(new { message = "عنصر الانتظار غير موجود" });
@@ -1430,6 +1466,8 @@ public class ClinicQueueController(
     [HttpPost("arrive/{id:guid}")]
     public async Task<IActionResult> MarkArrived(Guid id, [FromBody] StartVisitRequest? req = null)
     {
+        if (!await CanAsync("create")) return Deny();
+
         var appointment = await db.Appointments.FindAsync(id);
         if (appointment is null)
             return NotFound(new { message = "الموعد غير موجود" });

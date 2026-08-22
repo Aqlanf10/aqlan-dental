@@ -1,6 +1,10 @@
 name: Mobile APK
 
 on:
+  pull_request:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile-apk.yml"
   push:
     branches:
       - feat/mobile-v1-clinical

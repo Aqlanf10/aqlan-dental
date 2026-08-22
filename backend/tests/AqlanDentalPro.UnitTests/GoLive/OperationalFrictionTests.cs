@@ -103,6 +103,51 @@ public class OperationalFrictionTests
             "the cashier must be told to issue the invoice, not merely that only issued ones can be paid");
     }
 
+    // ── Second dry run, walked as Reception ──────────────────────────────────
+
+    /// <summary>
+    /// Reception is told to set the due amount, but reception cannot: the amount comes from
+    /// the doctor's handoff (<c>HandoffRequest.AmountDue</c>) or from the price of the service
+    /// linked to the appointment. The old wording sent the receptionist looking for a field
+    /// that does not exist on their screen.
+    /// </summary>
+    [Fact]
+    public void The_zero_amount_refusal_names_who_sets_the_amount()
+    {
+        var source = Read("src", "AqlanDentalPro.Infrastructure", "Services", "CheckoutService.cs");
+
+        source.Should().Contain("المبلغ المستحق يحدده الطبيب عند تسليم المريض للاستقبال",
+            "reception cannot set this value, so the refusal must point at who can");
+        source.Should().NotContain("بمبلغ صفر — حدد المبلغ المستحق أولاً",
+            "the old wording asked reception to do something reception has no field for");
+    }
+
+    /// <summary>
+    /// Every resource the API actually guards must carry an Arabic label, otherwise the owner
+    /// sees raw keys such as "finance.invoices" in the roles screen. Found when the finance
+    /// family was added to that screen: all twelve were enforced and none had a label.
+    /// </summary>
+    [Fact]
+    public void Every_finance_resource_the_api_guards_has_an_arabic_label()
+    {
+        var users = Read("src", "AqlanDentalPro.API", "Controllers", "UsersController.cs");
+
+        var guarded = new HashSet<string>();
+        foreach (var dir in new[] { "AqlanDentalPro.API", "AqlanDentalPro.Infrastructure" })
+        foreach (var file in Directory.EnumerateFiles(
+                     Path.Combine(RepoRoot(), "src", dir), "*.cs", SearchOption.AllDirectories))
+        foreach (Match call in Regex.Matches(
+                     File.ReadAllText(file), @"(?:PermissionGuard\.HasAsync|CanAsync)\([^)]*\)"))
+        foreach (Match literal in Regex.Matches(call.Value, "\"(finance\\.[a-z_]+)\""))
+            guarded.Add(literal.Groups[1].Value);
+
+        guarded.Should().NotBeEmpty("the scan must actually find the finance guards");
+
+        foreach (var resource in guarded)
+            users.Should().Contain($"[\"{resource}\"] = \"",
+                $"{resource} is enforced by the API, so the roles screen must name it in Arabic");
+    }
+
     /// <summary>
     /// Guards the tests above against passing for the wrong reason: if the files could not be
     /// read, every Contain assertion would be checking an empty string.

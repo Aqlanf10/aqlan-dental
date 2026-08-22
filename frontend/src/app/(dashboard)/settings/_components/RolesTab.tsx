@@ -152,14 +152,30 @@ export function RolesTab() {
     Approve: "موافقة",
   };
 
+  // "invoices" is intentionally absent: it is a seeded resource that no API
+  // guard and no screen consults. The resource that actually governs invoices
+  // is "finance.invoices", listed under the finance group below.
   const PERMISSION_GROUPS = [
     {
       title: "التشغيل اليومي",
-      resources: ["daily_operations", "booking_requests", "clinic_queue", "clinic_display", "patient_journey", "visits", "checkout", "invoices", "rooms"],
+      resources: ["daily_operations", "booking_requests", "clinic_queue", "clinic_display", "patient_journey", "visits", "checkout", "rooms"],
     },
     {
       title: "العيادة",
       resources: ["patients", "appointments", "finance", "reports"],
+    },
+    {
+      title: "المالية",
+      resources: [
+        "finance.dashboard", "finance.invoices", "finance.payments", "finance.receipts",
+        "finance.expenses", "finance.contracts", "finance.commissions", "finance.treasuries",
+        "finance.cashier_session", "finance.reports", "finance.patient_balance",
+        "finance.account_statement",
+      ],
+    },
+    {
+      title: "المعمل",
+      resources: ["lab_orders", "labs", "lab_work_types", "lab_work_prices", "lab_payables", "lab_reports"],
     },
     {
       title: "التخصصات",

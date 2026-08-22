@@ -747,6 +747,22 @@ public class UsersController(
         ["lab_work_prices"] = "تسعير المعامل",
         ["lab_payables"] = "مستحقات المعامل",
         ["lab_reports"] = "تقارير المعامل",
+
+        // Finance sub-resources. These are the resources the API actually checks
+        // (PermissionGuard / CanAsync); without labels here they render to the
+        // owner as raw keys such as "finance.invoices".
+        ["finance.dashboard"] = "لوحة المالية",
+        ["finance.invoices"] = "الفواتير",
+        ["finance.payments"] = "الدفعات",
+        ["finance.receipts"] = "سندات القبض",
+        ["finance.expenses"] = "المصروفات",
+        ["finance.contracts"] = "العقود",
+        ["finance.commissions"] = "عمولات الأطباء",
+        ["finance.treasuries"] = "الخزائن",
+        ["finance.cashier_session"] = "ورديات الكاشير",
+        ["finance.reports"] = "التقارير المالية",
+        ["finance.patient_balance"] = "أرصدة المرضى",
+        ["finance.account_statement"] = "كشف الحساب",
     };
 
     /// <summary>

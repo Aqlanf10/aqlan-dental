@@ -1091,7 +1091,7 @@ public class CheckoutService(
         // Determine amounts
         var lineAmount = visit.AmountDueReference ?? visit.Cost ?? 0;
         if (lineAmount <= 0)
-            return BadRequest(new { message = "لا يمكن إنشاء فاتورة بمبلغ صفر — حدد المبلغ المستحق أولاً" });
+            return BadRequest(new { message = "لا يمكن إنشاء فاتورة بمبلغ صفر — المبلغ المستحق يحدده الطبيب عند تسليم المريض للاستقبال، أو يأتي من سعر الخدمة المرتبطة بالموعد. اطلب من الطبيب تسليم الزيارة بمبلغها، أو اربط الموعد بخدمة لها سعر." });
 
         // Get service name for line item description + ServiceId fallback from appointment
         string lineDescription = "زيارة طبية";

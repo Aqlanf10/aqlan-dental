@@ -389,11 +389,18 @@ export function Sidebar() {
           // CORE-REQ-006: `start-0` follows `dir`, so the sidebar sits right in Arabic and
           // left in English. The off-canvas transform cannot: translateX is physical, so it
           // needs the direction variants or the drawer would slide the wrong way in English.
+          //
+          // The off-canvas transform is scoped to `max-lg:` deliberately. Tailwind emits
+          // `rtl:*` after the responsive variants, and `:where()` keeps both rules at the
+          // same specificity, so a bare unscoped rtl transform simply came last and beat
+          // `lg:translate-x-0` — leaving the sidebar parked off-screen on desktop too, not
+          // just on mobile. Confining the transform to below `lg` removes the conflict
+          // rather than fighting the cascade: above `lg` no transform class is emitted.
           "w-64 flex flex-col h-full fixed top-0 start-0 z-40 transition-transform duration-300",
           "lg:translate-x-0",
           mobileOpen
             ? "translate-x-0"
-            : "rtl:translate-x-full ltr:-translate-x-full lg:translate-x-0",
+            : "max-lg:rtl:translate-x-full max-lg:ltr:-translate-x-full",
         )}
         style={{ backgroundColor: BRAND_PRIMARY }}
       >

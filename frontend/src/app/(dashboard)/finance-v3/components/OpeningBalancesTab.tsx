@@ -1,4 +1,5 @@
 "use client";
+import { localDateString } from "@/lib/utils";
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -50,7 +51,10 @@ interface OpeningBalancesResponse {
   totalsByCurrency: OpeningBalanceTotal[];
 }
 
-const today = new Date().toISOString().slice(0, 10);
+// Clinic-local day, not UTC. Yemen is UTC+3, so between midnight and 03:00 local the UTC
+// date is still yesterday — an opening balance defaulted from toISOString() would be dated
+// into the previous accounting day, which may already be closed.
+const today = localDateString();
 
 export function OpeningBalancesTab() {
   const router = useRouter();

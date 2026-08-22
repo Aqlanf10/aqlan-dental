@@ -1,4 +1,5 @@
 "use client";
+import { localDateString } from "@/lib/utils";
 
 import { useState, useEffect, useCallback } from "react";
 import {
@@ -181,7 +182,9 @@ export function JournalTab() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [manualDescription, setManualDescription] = useState("");
-  const [manualDate, setManualDate] = useState(() => new Date().toISOString().slice(0, 10));
+  // Clinic-local day. A manual journal entry posted after midnight Yemen time would
+  // otherwise default to yesterday's UTC date and land in the wrong accounting period.
+  const [manualDate, setManualDate] = useState(() => localDateString());
   const [manualCurrency, setManualCurrency] = useState("YER");
   const [manualRate, setManualRate] = useState("");
   const [manualLines, setManualLines] = useState<ManualJournalLine[]>([
@@ -241,7 +244,7 @@ export function JournalTab() {
   const updateManualLine = (index: number, patch: Partial<ManualJournalLine>) =>
     setManualLines((current) => current.map((line, i) => i === index ? { ...line, ...patch } : line));
   const resetManualEntry = () => {
-    setManualDescription(""); setManualDate(new Date().toISOString().slice(0, 10)); setManualCurrency("YER"); setManualRate("");
+    setManualDescription(""); setManualDate(localDateString()); setManualCurrency("YER"); setManualRate("");
     setManualLines([{ accountType: "Expense", debit: "", credit: "", description: "" }, { accountType: "OwnerEquity", debit: "", credit: "", description: "" }]);
   };
   const submitManualEntry = async () => {

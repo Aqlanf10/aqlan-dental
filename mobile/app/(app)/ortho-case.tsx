@@ -153,6 +153,20 @@ export default function OrthoCaseScreen() {
         />
       ) : null}
 
+      <PrimaryButton
+        title="صور وأشعة هذه الحالة"
+        onPress={() =>
+          router.push({
+            pathname: "/(app)/patient-media",
+            params: {
+              patientId: orthoCase.patientId,
+              patientName: orthoCase.patientName,
+              orthoCaseId: orthoCase.id
+            }
+          })
+        }
+      />
+
       <SectionTitle>مراحل العلاج</SectionTitle>
       {orthoCase.stages?.length ? (
         orthoCase.stages.map((stage) => (

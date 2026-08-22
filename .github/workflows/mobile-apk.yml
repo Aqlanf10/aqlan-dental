@@ -7,7 +7,7 @@ on:
       - ".github/workflows/mobile-apk.yml"
   push:
     branches:
-      - feat/mobile-v1-clinical
+      - main
     paths:
       - "mobile/**"
       - ".github/workflows/mobile-apk.yml"

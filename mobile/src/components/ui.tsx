@@ -34,6 +34,8 @@ export function Screen({
       <ScrollView
         contentContainerStyle={styles.screen}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets
         refreshControl={refreshControl}
       >
         {children}
@@ -50,33 +52,39 @@ export function Card({
 }
 
 export function SectionTitle({ children }: PropsWithChildren) {
-  return <Text style={styles.sectionTitle}>{children}</Text>;
+  return <Text accessibilityRole="header" style={styles.sectionTitle}>{children}</Text>;
 }
 
 export function PrimaryButton({
   title,
   onPress,
   disabled = false,
-  loading = false
+  loading = false,
+  accessibilityHint
 }: {
   title: string;
   onPress: () => void;
   disabled?: boolean;
   loading?: boolean;
+  accessibilityHint?: string;
 }) {
+  const unavailable = disabled || loading;
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled: unavailable, busy: loading }}
       onPress={onPress}
-      disabled={disabled || loading}
+      disabled={unavailable}
       style={({ pressed }) => [
         styles.primaryButton,
-        (disabled || loading) && styles.disabled,
-        pressed && !disabled && !loading && styles.pressed
+        unavailable && styles.disabled,
+        pressed && !unavailable && styles.pressed
       ]}
     >
       {loading ? (
-        <ActivityIndicator color="#fff" />
+        <ActivityIndicator accessibilityLabel="جارٍ التنفيذ" color="#fff" />
       ) : (
         <Text style={styles.primaryButtonText}>{title}</Text>
       )}
@@ -94,11 +102,13 @@ export function StateMessage({
   action?: ReactNode;
 }) {
   return (
-    <Card>
-      <Text style={styles.stateTitle}>{title}</Text>
-      {message ? <Text style={styles.stateMessage}>{message}</Text> : null}
-      {action ? <View style={{ marginTop: spacing.md }}>{action}</View> : null}
-    </Card>
+    <View accessibilityRole="alert">
+      <Card>
+        <Text style={styles.stateTitle}>{title}</Text>
+        {message ? <Text style={styles.stateMessage}>{message}</Text> : null}
+        {action ? <View style={{ marginTop: spacing.md }}>{action}</View> : null}
+      </Card>
+    </View>
   );
 }
 
@@ -131,7 +141,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     paddingHorizontal: spacing.md
   },
-  primaryButtonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  primaryButtonText: { color: "#fff", fontSize: 16, fontWeight: "700", textAlign: "center" },
   disabled: { opacity: 0.55 },
   pressed: { opacity: 0.85 },
   stateTitle: {

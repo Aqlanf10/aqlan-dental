@@ -539,7 +539,7 @@ export default function ClinicDisplayPage() {
             <p className="text-lg md:text-xl text-teal-300 mt-1">شاشة الانتظار</p>
           </div>
         </div>
-        <div className="text-left">
+        <div className="text-end">
           <p className="text-5xl md:text-6xl font-mono font-bold text-teal-300 tabular-nums">{formatClock(now)}</p>
           <p className="text-sm text-gray-400 mt-1">
             {now.toLocaleDateString("ar-SA", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
@@ -804,7 +804,7 @@ export default function ClinicDisplayPage() {
             {contextMenu.patientName && <p className="text-xs text-gray-400 mt-0.5">رقم الملف: {contextMenu.patientNumber}</p>}
           </div>
           <button onClick={() => handleReplayPatient(contextMenu.patientName, contextMenu.patientNumber, contextMenu.roomName)}
-            className={`w-full text-right px-4 py-2.5 flex items-center gap-3 transition-colors ${voiceEnabled ? "text-teal-300 hover:bg-teal-900/40" : "text-gray-500 cursor-not-allowed"}`} disabled={!voiceEnabled}>
+            className={`w-full text-start px-4 py-2.5 flex items-center gap-3 transition-colors ${voiceEnabled ? "text-teal-300 hover:bg-teal-900/40" : "text-gray-500 cursor-not-allowed"}`} disabled={!voiceEnabled}>
             <Volume2 className="w-4 h-4 flex-shrink-0" /><span className="flex-1">إعادة النداء</span>
             {!voiceEnabled && <span className="text-[10px] text-amber-500">يفضّل تفعيل الصوت</span>}
           </button>

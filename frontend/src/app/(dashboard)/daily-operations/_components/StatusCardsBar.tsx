@@ -155,7 +155,7 @@ export default function StatusCardsBar({
               onClick={() => handleClick(card)}
               dir="rtl"
               title={`تصفية: ${label}`}
-              className="relative bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-150 text-right cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+              className="relative bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-150 text-start cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
               style={{
                 borderRight: `4px solid ${accent}`,
                 borderTop: "1px solid #f1f5f9",

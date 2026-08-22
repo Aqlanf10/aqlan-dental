@@ -215,7 +215,7 @@ export function PatientContextMenu({
             {/* Print submenu */}
             {item.isSubmenu && printSubOpen && (
               <div
-                className="absolute right-full top-0 mr-0.5 bg-white rounded-xl shadow-2xl border border-[#e8f0f9] py-1 min-w-48 z-10"
+                className="absolute right-full top-0 ms-0.5 bg-white rounded-xl shadow-2xl border border-[#e8f0f9] py-1 min-w-48 z-10"
                
               >
                 <button

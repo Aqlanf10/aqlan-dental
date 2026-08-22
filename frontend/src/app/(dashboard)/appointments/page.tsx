@@ -121,7 +121,7 @@ export default function AppointmentsPage() {
             <button
               onClick={() => setView("week")}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition border-r border-l border-gray-200",
+                "flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition border-s border-e border-gray-200",
                 view === "week" ? "bg-clinic-blue text-white" : "text-gray-600 hover:bg-gray-50"
               )}
             >

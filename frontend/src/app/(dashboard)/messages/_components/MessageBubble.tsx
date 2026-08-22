@@ -64,7 +64,7 @@ export function MessageBubble({
           <div
             className={cn(
               "text-xs px-3 py-1.5 rounded-lg mb-1 border-r-2 border-[#3d7ab5] bg-gray-100",
-              isMine ? "text-left" : "text-right"
+              isMine ? "text-end" : "text-start"
             )}
           >
             <span className="font-semibold text-[#3d7ab5]">

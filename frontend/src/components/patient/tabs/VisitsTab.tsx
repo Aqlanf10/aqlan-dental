@@ -409,7 +409,7 @@ export function VisitsTab({ patientId, onVisitChanged, openAddModal, onModalOpen
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="بحث بالتشخيص أو العلاج أو الملاحظات..."
-            className="w-full text-sm border border-[#e8f0f9] rounded-lg pr-9 pl-3 py-2 focus:outline-none focus:border-[#3d7ab5] placeholder:text-[#94a3b8]"
+            className="w-full text-sm border border-[#e8f0f9] rounded-lg ps-9 pe-3 py-2 focus:outline-none focus:border-[#3d7ab5] placeholder:text-[#94a3b8]"
           />
         </div>
 
@@ -491,7 +491,7 @@ export function VisitsTab({ patientId, onVisitChanged, openAddModal, onModalOpen
                 {/* Header row */}
                 <button
                   onClick={() => toggleExpand(visit.id)}
-                  className="w-full flex items-center justify-between p-3.5 hover:bg-[#f8fafc] transition text-right"
+                  className="w-full flex items-center justify-between p-3.5 hover:bg-[#f8fafc] transition text-start"
                 >
                   <div className="flex items-center gap-3">
                     {/* Specialty icon */}

@@ -116,7 +116,7 @@ export function CephImageSliderCompare({
           <span className="inline-block w-3 h-0.5 rounded-full bg-emerald-600" />
           <span className="font-medium text-emerald-700">بعد — {targetDate}</span>
         </span>
-        <span className="text-gray-400 mr-auto flex items-center gap-1">
+        <span className="text-gray-400 ms-auto flex items-center gap-1">
           <MoveHorizontal className="w-3.5 h-3.5" />
           اسحب المقبض يمينًا لكشف صورة «قبل» ويسارًا لكشف «بعد»
         </span>

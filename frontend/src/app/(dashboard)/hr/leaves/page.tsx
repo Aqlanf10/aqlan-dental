@@ -274,12 +274,12 @@ export default function LeavesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/60">
-                  <th className="text-right px-4 py-3 font-semibold text-gray-600">الموظف</th>
-                  <th className="text-right px-4 py-3 font-semibold text-gray-600">نوع الإجازة</th>
-                  <th className="text-right px-4 py-3 font-semibold text-gray-600">من</th>
-                  <th className="text-right px-4 py-3 font-semibold text-gray-600">إلى</th>
+                  <th className="text-start px-4 py-3 font-semibold text-gray-600">الموظف</th>
+                  <th className="text-start px-4 py-3 font-semibold text-gray-600">نوع الإجازة</th>
+                  <th className="text-start px-4 py-3 font-semibold text-gray-600">من</th>
+                  <th className="text-start px-4 py-3 font-semibold text-gray-600">إلى</th>
                   <th className="text-center px-4 py-3 font-semibold text-gray-600">الأيام</th>
-                  <th className="text-right px-4 py-3 font-semibold text-gray-600">الحالة</th>
+                  <th className="text-start px-4 py-3 font-semibold text-gray-600">الحالة</th>
                   <th className="text-center px-4 py-3 font-semibold text-gray-600">إجراء</th>
                 </tr>
               </thead>

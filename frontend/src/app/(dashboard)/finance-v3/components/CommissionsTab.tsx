@@ -249,14 +249,14 @@ export function CommissionsTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ backgroundColor: tokens.cardHover }}>
-                  <th className="text-right px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>اسم الطبيب</th>
-                  <th className="text-right px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>العملة</th>
-                  <th className="text-right px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>عدد الحالات</th>
-                  <th className="text-right px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>إجمالي الخدمات</th>
-                  <th className="text-right px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>نسبة العمولة</th>
-                  <th className="text-right px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>العمولة المستحقة</th>
-                  <th className="text-right px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>العمولة المدفوعة</th>
-                  <th className="text-right px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>المتبقي</th>
+                  <th className="text-start px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>اسم الطبيب</th>
+                  <th className="text-start px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>العملة</th>
+                  <th className="text-start px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>عدد الحالات</th>
+                  <th className="text-start px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>إجمالي الخدمات</th>
+                  <th className="text-start px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>نسبة العمولة</th>
+                  <th className="text-start px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>العمولة المستحقة</th>
+                  <th className="text-start px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>العمولة المدفوعة</th>
+                  <th className="text-start px-4 py-3 font-semibold text-xs" style={{ color: tokens.textSecondary }}>المتبقي</th>
                 </tr>
               </thead>
               <tbody>

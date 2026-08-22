@@ -923,7 +923,7 @@ export default function DoctorClinicPage() {
         {/* ═══════════════════════════════════════════════════════════════
             PATIENT SIDEBAR (280px fixed) — in RTL, appears on the RIGHT
             ═══════════════════════════════════════════════════════════════ */}
-        <aside className="w-[280px] flex-shrink-0 bg-white border-r border-[#e0e0e0] flex flex-col overflow-hidden">
+        <aside className="w-[280px] flex-shrink-0 bg-white border-s border-[#e0e0e0] flex flex-col overflow-hidden">
           {/* Sidebar header: title + search + filters */}
           <div className="p-3 border-b border-[#e0e0e0]">
             <div className="flex items-center justify-between mb-2">
@@ -989,7 +989,7 @@ export default function DoctorClinicPage() {
                 <button
                   key={p.appointmentId}
                   onClick={() => selectPatient(p)}
-                  className="w-full px-3 py-2.5 text-right transition-all hover:bg-[#f8fafc]"
+                  className="w-full px-3 py-2.5 text-start transition-all hover:bg-[#f8fafc]"
                   style={{
                     background: isSelected ? "#eff6ff" : "transparent",
                     borderRight: isSelected ? "3px solid #2563eb" : "3px solid transparent",

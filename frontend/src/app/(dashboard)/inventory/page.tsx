@@ -89,7 +89,7 @@ function AdjustmentHistoryModal({
                       </p>
                     )}
                   </div>
-                  <div className="text-left flex-shrink-0 mr-3">
+                  <div className="text-end flex-shrink-0 ms-3">
                     <p className="text-[11px] text-gray-400">
                       {formatArabicDate(adj.createdAt)}
                     </p>
@@ -283,7 +283,7 @@ export default function InventoryPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="بحث بالاسم أو الفئة..."
-              className="w-full border border-gray-200 rounded-lg pr-9 pl-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className="w-full border border-gray-200 rounded-lg ps-9 pe-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
           </div>
           {categoriesData && categoriesData.length > 0 && (
@@ -338,7 +338,7 @@ export default function InventoryPage() {
                       "المورد الافتراضي",
                       "",
                     ].map((h) => (
-                      <th key={h} className="text-right px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">
+                      <th key={h} className="text-start px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">
                         {h}
                       </th>
                     ))}

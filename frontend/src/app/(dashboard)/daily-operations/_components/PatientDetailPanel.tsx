@@ -69,7 +69,7 @@ export function PatientDetailPanel({
             <div className="text-sm font-extrabold truncate" style={{ color: NAVY }}>{item.patientName}</div>
             {item.patientPhone && (
               <div className="text-[11px] font-medium" style={{ color: "#64748b" }}>
-                <Phone className="w-3 h-3 inline ml-1" />
+                <Phone className="w-3 h-3 inline me-1" />
                 {item.patientPhone}
               </div>
             )}

@@ -180,7 +180,7 @@ export function LabOrdersPanel() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="بحث بالمريض أو رقم الطلب أو المختبر..."
-              className="w-full border border-gray-200 rounded-lg pr-9 pl-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className="w-full border border-gray-200 rounded-lg ps-9 pe-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
           </div>
           {/* CORE-LAB-021: eleven status pills in a flex row that neither wrapped nor
@@ -229,7 +229,7 @@ export function LabOrdersPanel() {
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
                   {["رقم الطلب", "المريض", "نوع الجهاز", "المختبر", "تاريخ الاستلام المتوقع", "الأولوية", "الحالة", "إجراء"].map((h) => (
-                    <th key={h} className="text-right px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">
+                    <th key={h} className="text-start px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">
                       {h}
                     </th>
                   ))}

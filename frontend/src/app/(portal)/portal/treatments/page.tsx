@@ -110,7 +110,7 @@ export default function PortalTreatmentsPage() {
                       </div>
                     )}
                   </div>
-                  <div className="text-left">
+                  <div className="text-end">
                     <span className="text-xs text-gray-400">{t.visitDate || t.createdAt}</span>
                   </div>
                 </div>

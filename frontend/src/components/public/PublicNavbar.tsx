@@ -115,7 +115,7 @@ export function PublicNavbar() {
               />
             </button>
             {loginOpen && (
-              <div className="absolute left-0 top-full mt-2 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-1.5 z-50">
+              <div className="absolute end-0 top-full mt-2 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-1.5 z-50">
                 <Link
                   href="/portal/login"
                   onClick={() => setLoginOpen(false)}
@@ -164,7 +164,7 @@ export function PublicNavbar() {
             onClick={() => setMenuOpen(false)}
           />
           <div
-            className="lg:hidden fixed top-20 right-0 left-0 z-50 bg-white border-t border-slate-100 shadow-2xl max-h-[calc(100vh-5rem)] overflow-y-auto"
+            className="lg:hidden fixed top-20 start-0 end-0 z-50 bg-white border-t border-slate-100 shadow-2xl max-h-[calc(100vh-5rem)] overflow-y-auto"
            
           >
             <nav className="max-w-7xl mx-auto px-6 py-4 flex flex-col gap-1">

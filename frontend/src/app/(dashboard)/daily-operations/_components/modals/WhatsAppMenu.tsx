@@ -62,7 +62,7 @@ export function WhatsAppMenu({
         <div className="p-3 space-y-1.5">
           {WHATSAPP_TEMPLATES.map(t => (
             <button key={t.key} onClick={() => handleSend(t)}
-              className="w-full text-right px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-3 transition hover:bg-[#25D36608]"
+              className="w-full text-start px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-3 transition hover:bg-[#25D36608]"
               style={{ color: "#1a3a5c" }}>
               <Send className="w-4 h-4 flex-shrink-0" style={{ color: "#25D366" }} />
               {t.label}

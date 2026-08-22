@@ -74,7 +74,7 @@ export function BulkSmsModal({
             <span className="text-xs font-bold" style={{ color: NAVY }}>
               تحديد الكل ({tomorrowItems.length} مريض)
             </span>
-            <span className="text-[10px] mr-auto" style={{ color: "#94a3b8" }}>
+            <span className="text-[10px] ms-auto" style={{ color: "#94a3b8" }}>
               تم تحديد {selectedIds.size}
             </span>
           </div>

@@ -98,7 +98,8 @@ export default function DashboardLayout({
     <div className="flex h-screen overflow-hidden" style={{ background: "#eef3f9", direction: "rtl" }}>
       <ImpersonationBanner />
       <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden lg:mr-64">
+      {/* CORE-REQ-006: logical margin so the content clears the sidebar on whichever side it is. */}
+      <div className="flex-1 flex flex-col overflow-hidden lg:ms-64">
         <Topbar />
         <main className="flex-1 overflow-y-auto p-6">
           {children}

@@ -186,7 +186,7 @@ function DayRow({
 
       {/* Break times */}
       {schedule.isWorking && showBreak && (
-        <div className="flex items-center gap-3 mt-2 pr-2">
+        <div className="flex items-center gap-3 mt-2 ps-2">
           <span className="text-xs text-amber-600 font-medium">استراحة:</span>
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-gray-500">من</span>
@@ -299,7 +299,7 @@ function DoctorScheduleCard({ doctor }: { doctor: Doctor }) {
           ))}
         </div>
 
-        <span className="text-xs text-gray-400 hidden sm:block ml-2">
+        <span className="text-xs text-gray-400 hidden sm:block me-2">
           {workingDays.length} أيام عمل
         </span>
         {expanded ? (
@@ -418,7 +418,7 @@ export default function SchedulePage() {
           <span className="w-3 h-3 rounded-full bg-gray-200" />
           إجازة / يوم راحة
         </div>
-        <div className="flex items-center gap-1.5 mr-auto text-amber-600">
+        <div className="flex items-center gap-1.5 ms-auto text-amber-600">
           <Clock className="w-3 h-3" />
           التعديلات تؤثر على متاحية الحجوزات فوراً
         </div>

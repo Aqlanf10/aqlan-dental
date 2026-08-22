@@ -95,7 +95,7 @@ export function LabOverduePanel() {
                 <thead className="bg-red-50 border-b border-red-200">
                   <tr>
                     {["رقم الطلب", "المريض", "المختبر", "نوع الجهاز", "تاريخ الاستلام", "أيام التأخير", "الحالة", "إجراء"].map((h) => (
-                      <th key={h} className="text-right px-4 py-3 font-medium text-red-700 text-xs whitespace-nowrap">{h}</th>
+                      <th key={h} className="text-start px-4 py-3 font-medium text-red-700 text-xs whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>

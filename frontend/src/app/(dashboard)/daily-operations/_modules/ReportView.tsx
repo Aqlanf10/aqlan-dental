@@ -258,7 +258,7 @@ export default function ReportView() {
                     <CreditCard className="w-3.5 h-3.5" /> تفصيل طرق الدفع
                   </div>
                   <div className="rounded-xl border border-gray-100 overflow-hidden">
-                    <table className="w-full text-right" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+                    <table className="w-full text-start" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
                       <thead>
                         <tr className="text-[10px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50/50">
                           <th className="py-2.5 px-3 border-b">طريقة الدفع</th>
@@ -485,7 +485,7 @@ export default function ReportView() {
                     <p className="text-xs font-bold">لا توجد عمولات مسجلة لهذه الفترة</p>
                   </div>
                 ) : (
-                  <table className="w-full text-right" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+                  <table className="w-full text-start" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
                     <thead>
                       <tr className="text-[10px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50/50">
                         <th className="py-2.5 px-3 border-b">الطبيب</th>

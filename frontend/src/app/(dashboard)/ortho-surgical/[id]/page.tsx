@@ -37,7 +37,7 @@ export default function OrthoSurgicalLegacyDetailRoute() {
 
   return (
     <div className="flex items-center justify-center py-24 text-sm text-gray-500">
-      <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+      <Loader2 className="me-2 h-4 w-4 animate-spin" />
       جار فتح التخطيط الجراحي داخل حالة التقويم...
     </div>
   );

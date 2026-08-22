@@ -311,7 +311,7 @@ export function OrthoImagePreparationDialog({
               </div>
             </section>
 
-            <aside className="min-h-0 overflow-y-auto border-r bg-white p-4">
+            <aside className="min-h-0 overflow-y-auto border-s bg-white p-4">
               <div className="space-y-5">
                 <section className="space-y-2">
                   <h3 className="text-xs font-bold text-clinic-navy">القوالب القياسية</h3>

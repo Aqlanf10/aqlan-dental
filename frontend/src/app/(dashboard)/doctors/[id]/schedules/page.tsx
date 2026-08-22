@@ -242,7 +242,7 @@ function DayCard({
             </div>
 
             {/* Actions row */}
-            <div className="flex items-center gap-1 mr-auto">
+            <div className="flex items-center gap-1 ms-auto">
               {/* Break toggle */}
               <button
                 type="button"
@@ -283,7 +283,7 @@ function DayCard({
                       className="fixed inset-0 z-10"
                       onClick={() => setShowCopyMenu(false)}
                     />
-                    <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 min-w-[140px]">
+                    <div className="absolute top-full end-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 min-w-[140px]">
                       <div className="px-3 py-1.5 text-[10px] text-gray-400 font-medium">
                         نسخ جدول من:
                       </div>
@@ -295,7 +295,7 @@ function DayCard({
                             onCopyFrom(d.index);
                             setShowCopyMenu(false);
                           }}
-                          className="w-full text-right px-3 py-1.5 text-xs text-gray-700 hover:bg-[#3d7ab5]/5 hover:text-[#3d7ab5] transition"
+                          className="w-full text-start px-3 py-1.5 text-xs text-gray-700 hover:bg-[#3d7ab5]/5 hover:text-[#3d7ab5] transition"
                         >
                           {d.label}
                         </button>
@@ -333,7 +333,7 @@ function DayCard({
 
       {/* Break times */}
       {schedule.isWorking && showBreak && (
-        <div className="flex items-center gap-3 px-4 pb-3 pr-2">
+        <div className="flex items-center gap-3 px-4 pb-3 ps-2">
           <span className="text-xs text-amber-600 font-medium">استراحة:</span>
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-gray-500">من</span>
@@ -625,8 +625,8 @@ export default function DoctorSchedulesPage() {
           <span className="w-3 h-3 rounded-full bg-amber-400" />
           وقت الاستراحة
         </div>
-        <div className="mr-auto text-gray-400">
-          <Clock className="w-3 h-3 inline ml-1" />
+        <div className="ms-auto text-gray-400">
+          <Clock className="w-3 h-3 inline me-1" />
           أيام العمل: <span className="font-semibold text-gray-600">{workingDays.length}</span>
           {" | "}
           إجمالي الساعات: <span className="font-semibold text-gray-600">{totalWorkingHours.toFixed(1)}</span>

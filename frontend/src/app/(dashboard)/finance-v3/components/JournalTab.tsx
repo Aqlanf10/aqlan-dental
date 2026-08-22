@@ -376,10 +376,10 @@ export function JournalTab() {
                     <table className="w-full text-xs">
                       <thead>
                         <tr style={{ color: tokens.textTertiary }}>
-                          <th className="text-right py-1 px-2 font-medium">الحساب</th>
-                          <th className="text-right py-1 px-2 font-medium">البيان</th>
-                          <th className="text-right py-1 px-2 font-medium">مدين</th>
-                          <th className="text-right py-1 px-2 font-medium">دائن</th>
+                          <th className="text-start py-1 px-2 font-medium">الحساب</th>
+                          <th className="text-start py-1 px-2 font-medium">البيان</th>
+                          <th className="text-start py-1 px-2 font-medium">مدين</th>
+                          <th className="text-start py-1 px-2 font-medium">دائن</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -490,10 +490,10 @@ export function JournalTab() {
               <table className="w-full text-sm">
                 <thead>
                   <tr style={{ backgroundColor: tokens.cardHover }}>
-                    <th className="text-right px-4 py-2 font-semibold text-xs" style={{ color: tokens.textSecondary }}>الحساب</th>
-                    <th className="text-right px-4 py-2 font-semibold text-xs" style={{ color: tokens.textSecondary }}>البيان</th>
-                    <th className="text-right px-4 py-2 font-semibold text-xs" style={{ color: tokens.textSecondary }}>مدين</th>
-                    <th className="text-right px-4 py-2 font-semibold text-xs" style={{ color: tokens.textSecondary }}>دائن</th>
+                    <th className="text-start px-4 py-2 font-semibold text-xs" style={{ color: tokens.textSecondary }}>الحساب</th>
+                    <th className="text-start px-4 py-2 font-semibold text-xs" style={{ color: tokens.textSecondary }}>البيان</th>
+                    <th className="text-start px-4 py-2 font-semibold text-xs" style={{ color: tokens.textSecondary }}>مدين</th>
+                    <th className="text-start px-4 py-2 font-semibold text-xs" style={{ color: tokens.textSecondary }}>دائن</th>
                   </tr>
                 </thead>
                 <tbody>

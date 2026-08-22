@@ -158,7 +158,7 @@ export function LabReportsPanel() {
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
                       {["المختبر", "عدد الطلبات", "التكلفة الإجمالية", "معلّقة", "مرتجعة", "إعادة صناعة"].map((h) => (
-                        <th key={h} className="text-right px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">{h}</th>
+                        <th key={h} className="text-start px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -249,7 +249,7 @@ export function LabReportsPanel() {
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
                         {["المختبر", "الطلبات", "مسلّمة", "متوسط أيام", "نسبة إعادة", "نسبة تأخير", "نسبة التزام", "التكلفة"].map((h) => (
-                          <th key={h} className="text-right px-3 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">{h}</th>
+                          <th key={h} className="text-start px-3 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -342,7 +342,7 @@ export function LabReportsPanel() {
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
                         {["المختبر", "رقم الطلب", "المبلغ", "المدفوع", "الرصيد", "الحالة", "تاريخ الاستحقاق"].map((h) => (
-                          <th key={h} className="text-right px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">{h}</th>
+                          <th key={h} className="text-start px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -420,15 +420,15 @@ export function LabReportsPanel() {
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50 border-b border-gray-100">
                         <tr>
-                          <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">المختبر</th>
-                          <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">العملة</th>
+                          <th className="text-start px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">المختبر</th>
+                          <th className="text-start px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">العملة</th>
                           {agingColumns(agingData!.buckets).map((col) => (
-                            <th key={col.key} className="text-right px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">
+                            <th key={col.key} className="text-start px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">
                               {col.label}
                             </th>
                           ))}
-                          <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">الإجمالي</th>
-                          <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">أقدم تأخر</th>
+                          <th className="text-start px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">الإجمالي</th>
+                          <th className="text-start px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">أقدم تأخر</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">

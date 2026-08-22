@@ -35,6 +35,7 @@ export function FormField({
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
+        accessibilityLabel={label}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
@@ -63,7 +64,7 @@ export function ChoiceRow({
   onChange: (value: string | null) => void;
 }) {
   return (
-    <View style={styles.field}>
+    <View style={styles.field} accessibilityLabel={label}>
       <Text style={styles.label}>{label}</Text>
       <View style={styles.choices}>
         {options.map((option) => {
@@ -72,13 +73,12 @@ export function ChoiceRow({
             <Pressable
               key={option.value}
               accessibilityRole="button"
+              accessibilityLabel={`${label}: ${option.label}`}
               accessibilityState={{ selected }}
               onPress={() => onChange(selected ? null : option.value)}
               style={[styles.choice, selected && styles.choiceSelected]}
             >
-              <Text style={[styles.choiceText, selected && styles.choiceTextSelected]}>
-                {option.label}
-              </Text>
+              <Text style={[styles.choiceText, selected && styles.choiceTextSelected]}>{option.label}</Text>
             </Pressable>
           );
         })}
@@ -101,16 +101,16 @@ export function SelectList({
   emptyLabel?: string;
 }) {
   return (
-    <View style={styles.field}>
+    <View style={styles.field} accessibilityLabel={label}>
       <Text style={styles.label}>{label}</Text>
       <Pressable
         accessibilityRole="button"
+        accessibilityLabel={`${label}: ${emptyLabel}`}
+        accessibilityState={{ selected: value === null }}
         onPress={() => onChange(null)}
         style={[styles.selectOption, value === null && styles.selectOptionSelected]}
       >
-        <Text style={[styles.selectText, value === null && styles.selectTextSelected]}>
-          {emptyLabel}
-        </Text>
+        <Text style={[styles.selectText, value === null && styles.selectTextSelected]}>{emptyLabel}</Text>
       </Pressable>
       {options.map((option) => {
         const selected = value === option.value;
@@ -118,16 +118,14 @@ export function SelectList({
           <Pressable
             key={option.value}
             accessibilityRole="button"
+            accessibilityLabel={`${label}: ${option.label}${option.subtitle ? `، ${option.subtitle}` : ""}`}
+            accessibilityState={{ selected }}
             onPress={() => onChange(option.value)}
             style={[styles.selectOption, selected && styles.selectOptionSelected]}
           >
             <View style={{ flex: 1 }}>
-              <Text style={[styles.selectText, selected && styles.selectTextSelected]}>
-                {option.label}
-              </Text>
-              {option.subtitle ? (
-                <Text style={styles.selectSubtitle}>{option.subtitle}</Text>
-              ) : null}
+              <Text style={[styles.selectText, selected && styles.selectTextSelected]}>{option.label}</Text>
+              {option.subtitle ? <Text style={styles.selectSubtitle}>{option.subtitle}</Text> : null}
             </View>
           </Pressable>
         );
@@ -138,57 +136,16 @@ export function SelectList({
 
 const styles = StyleSheet.create({
   field: { gap: spacing.xs },
-  label: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "700",
-    textAlign: "right"
-  },
-  input: {
-    minHeight: 48,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surface,
-    color: colors.text,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm
-  },
+  label: { color: colors.text, fontSize: 14, fontWeight: "700", textAlign: "right" },
+  input: { minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, backgroundColor: colors.surface, color: colors.text, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   multiline: { minHeight: 96, textAlignVertical: "top" },
-  choices: {
-    flexDirection: "row-reverse",
-    flexWrap: "wrap",
-    gap: spacing.sm
-  },
-  choice: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 999,
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm
-  },
-  choiceSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primarySoft
-  },
+  choices: { flexDirection: "row-reverse", flexWrap: "wrap", gap: spacing.sm },
+  choice: { minHeight: 44, justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 999, backgroundColor: colors.surface, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  choiceSelected: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
   choiceText: { color: colors.text, fontWeight: "600" },
   choiceTextSelected: { color: colors.primary },
-  selectOption: {
-    minHeight: 48,
-    flexDirection: "row-reverse",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm
-  },
-  selectOptionSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primarySoft
-  },
+  selectOption: { minHeight: 48, flexDirection: "row-reverse", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, backgroundColor: colors.surface, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  selectOptionSelected: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
   selectText: { color: colors.text, textAlign: "right", fontWeight: "600" },
   selectTextSelected: { color: colors.primary },
   selectSubtitle: { color: colors.muted, fontSize: 12, textAlign: "right", marginTop: 2 }

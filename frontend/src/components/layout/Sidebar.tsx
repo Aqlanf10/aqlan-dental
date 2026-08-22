@@ -67,8 +67,20 @@ type NavEntry = (NavItem & { kind?: "leaf" }) | (NavGroup & { section?: string }
  */
 export function navKeyFor(href: string): string {
   if (href === "/") return "nav.dashboard";
-  const segment = href.replace(/^\//, "").split("/")[0];
-  const camel = segment.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+
+  // The WHOLE path, not just its first segment. Keying on the first segment alone made
+  // /appointments/recall collapse onto /appointments, so the recall entry lost its own label
+  // and the sidebar showed "Appointments" twice — caught in a screenshot, not by a test.
+  const camel = href
+    .replace(/^\//, "")
+    .split("/")
+    .filter(Boolean)
+    .map((part, index) => {
+      const c = part.replace(/-([a-z])/g, (_, ch: string) => ch.toUpperCase());
+      return index === 0 ? c : c.charAt(0).toUpperCase() + c.slice(1);
+    })
+    .join("");
+
   return `nav.${camel}`;
 }
 

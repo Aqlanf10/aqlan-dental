@@ -123,6 +123,9 @@ describe("navKeyFor", () => {
     expect(navKeyFor("/")).toBe("nav.dashboard");
     expect(navKeyFor("/patients")).toBe("nav.patients");
     expect(navKeyFor("/daily-operations")).toBe("nav.dailyOperations");
-    expect(navKeyFor("/appointments/recall")).toBe("nav.appointments");
+    // A child route must keep its own key: keying on the first segment alone made the recall
+    // entry render the parent's label, so the sidebar showed "Appointments" twice.
+    expect(navKeyFor("/appointments/recall")).toBe("nav.appointmentsRecall");
+    expect(navKeyFor("/settings/lab-work-types")).toBe("nav.settingsLabWorkTypes");
   });
 });

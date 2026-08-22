@@ -144,3 +144,8 @@ export const INVOICE_STATUS_LABELS: Record<string, string> = {
   Paid: "مدفوعة",
   Cancelled: "ملغاة"
 };
+
+export function formatRecordedMoney(value: number, currency?: string | null): string {
+  const amount = new Intl.NumberFormat("ar-YE", { maximumFractionDigits: 2 }).format(value);
+  return currency ? `${amount} ${currency}` : amount;
+}

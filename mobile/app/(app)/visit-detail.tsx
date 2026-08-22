@@ -1,6 +1,7 @@
 import { useSession } from "@/auth/SessionProvider";
 import { Card, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/components/ui";
 import { apiRequest } from "@/lib/api";
+import { OPERATIONAL_PERMISSION } from "@/lib/permissionContract";
 import { canAccessClinicalRecords, canWriteClinicalRecords } from "@/lib/roles";
 import type { ClinicalVisit } from "@/lib/types";
 import { colors, spacing } from "@/theme";
@@ -9,7 +10,7 @@ import React, { useCallback, useState } from "react";
 import { ActivityIndicator, RefreshControl, StyleSheet, Text, View } from "react-native";
 
 export default function VisitDetailScreen() {
-  const { user } = useSession();
+  const { user, can } = useSession();
   const params = useLocalSearchParams<{ id?: string; patientName?: string }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
   const patientName = Array.isArray(params.patientName) ? params.patientName[0] : params.patientName;
@@ -20,13 +21,13 @@ export default function VisitDetailScreen() {
 
   const canRead = canAccessClinicalRecords(user);
   const canWrite = canWriteClinicalRecords(user);
+  const canEditVisit = can(OPERATIONAL_PERMISSION.visits.edit);
 
   const load = useCallback(async () => {
     if (!id || !canRead) {
       setLoading(false);
       return;
     }
-
     setError(null);
     try {
       setVisit(await apiRequest<ClinicalVisit>(`/api/visits/${id}`));
@@ -37,77 +38,36 @@ export default function VisitDetailScreen() {
     }
   }, [canRead, id]);
 
-  useFocusEffect(
-    useCallback(() => {
-      void load();
-    }, [load])
-  );
+  useFocusEffect(useCallback(() => { void load(); }, [load]));
 
   async function refresh() {
     setRefreshing(true);
-    try {
-      await load();
-    } finally {
-      setRefreshing(false);
-    }
+    try { await load(); } finally { setRefreshing(false); }
   }
 
   if (!canRead) {
-    return (
-      <Screen>
-        <StateMessage
-          title="السجل السريري غير متاح لهذا الحساب"
-          message="تفاصيل الزيارة متاحة للطبيب أو مدير النظام فقط."
-        />
-      </Screen>
-    );
+    return <Screen><StateMessage title="السجل السريري غير متاح لهذا الحساب" message="تفاصيل الزيارة متاحة للطبيب أو مدير النظام فقط." /></Screen>;
   }
-
-  if (loading) {
-    return (
-      <Screen>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </Screen>
-    );
-  }
-
+  if (loading) return <Screen><ActivityIndicator size="large" color={colors.primary} /></Screen>;
   if (!visit) {
-    return (
-      <Screen>
-        <StateMessage
-          title="تعذر فتح الزيارة"
-          message={error ?? "الزيارة غير موجودة أو لا تملك صلاحية الوصول إليها."}
-          action={<PrimaryButton title="إعادة المحاولة" onPress={() => void load()} />}
-        />
-      </Screen>
-    );
+    return <Screen><StateMessage title="تعذر فتح الزيارة" message={error ?? "الزيارة غير موجودة أو لا تملك صلاحية الوصول إليها."} action={<PrimaryButton title="إعادة المحاولة" onPress={() => void load()} />} /></Screen>;
   }
 
   return (
-    <Screen
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />
-      }
-    >
-      <View>
-        <Text style={styles.title}>{patientName || "تفاصيل الزيارة"}</Text>
-        <Text style={styles.date}>{visit.visitDate}</Text>
-      </View>
+    <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />}>
+      <View><Text style={styles.title}>{patientName || "تفاصيل الزيارة"}</Text><Text style={styles.date}>{visit.visitDate}</Text></View>
 
-      {canWrite && visit.isActive ? (
+      {canWrite && canEditVisit && visit.isActive ? (
         <PrimaryButton
           title="تعديل الزيارة"
-          onPress={() =>
-            router.push({
-              pathname: "/(app)/visit-editor",
-              params: {
-                id: visit.id,
-                patientId: visit.patientId,
-                patientName: patientName || ""
-              }
-            })
-          }
+          onPress={() => router.push({
+            pathname: "/(app)/visit-editor",
+            params: { id: visit.id, patientId: visit.patientId, patientName: patientName || "" }
+          })}
         />
+      ) : null}
+      {canWrite && !canEditVisit && visit.isActive ? (
+        <StateMessage title="الزيارة للقراءة فقط" message="مفتاح visits.edit غير مفعّل لهذا الحساب." />
       ) : null}
 
       <SectionTitle>ملخص الزيارة</SectionTitle>
@@ -116,14 +76,8 @@ export default function VisitDetailScreen() {
         <Row label="التخصص" value={specialtyLabel(visit.specialty)} />
         <Row label="الطبيب" value={visit.doctorName || "—"} />
         {visit.appointment ? (
-          <Row
-            label="الموعد المرتبط"
-            value={`${visit.appointment.appointmentDate} ${visit.appointment.appointmentTime}`}
-            last
-          />
-        ) : (
-          <Row label="الموعد المرتبط" value="زيارة بدون موعد مرتبط" last />
-        )}
+          <Row label="الموعد المرتبط" value={`${visit.appointment.appointmentDate} ${visit.appointment.appointmentTime}`} last />
+        ) : <Row label="الموعد المرتبط" value="زيارة بدون موعد مرتبط" last />}
       </Card>
 
       <ClinicalSection title="الشكوى الرئيسية" value={visit.chiefComplaint} />
@@ -144,50 +98,24 @@ export default function VisitDetailScreen() {
 
 function ClinicalSection({ title, value }: { title: string; value?: string | null }) {
   if (!value?.trim()) return null;
-  return (
-    <>
-      <SectionTitle>{title}</SectionTitle>
-      <Card>
-        <Text style={styles.paragraph}>{value}</Text>
-      </Card>
-    </>
-  );
+  return <><SectionTitle>{title}</SectionTitle><Card><Text style={styles.paragraph}>{value}</Text></Card></>;
 }
-
 function Row({ label, value, last = false }: { label: string; value: string; last?: boolean }) {
-  return (
-    <View style={[styles.row, last && { borderBottomWidth: 0 }]}>
-      <Text style={styles.value}>{value}</Text>
-      <Text style={styles.label}>{label}</Text>
-    </View>
-  );
+  return <View style={[styles.row, last && { borderBottomWidth: 0 }]}><Text style={styles.value}>{value}</Text><Text style={styles.label}>{label}</Text></View>;
 }
-
 function specialtyLabel(value?: string | null): string {
   switch (value) {
-    case "Orthodontics":
-      return "تقويم الأسنان";
-    case "GeneralDentistry":
-      return "طب الأسنان العام";
-    case "OralSurgery":
-      return "جراحة الفم";
-    default:
-      return value || "—";
+    case "Orthodontics": return "تقويم الأسنان";
+    case "GeneralDentistry": return "طب الأسنان العام";
+    case "OralSurgery": return "جراحة الفم";
+    default: return value || "—";
   }
 }
 
 const styles = StyleSheet.create({
   title: { color: colors.text, fontSize: 24, fontWeight: "800", textAlign: "right" },
   date: { color: colors.primary, marginTop: 4, fontWeight: "800", textAlign: "right" },
-  row: {
-    minHeight: 48,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: spacing.md
-  },
+  row: { minHeight: 48, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.md },
   label: { color: colors.muted, textAlign: "right" },
   value: { color: colors.text, flex: 1, textAlign: "right", fontWeight: "600" },
   paragraph: { color: colors.text, textAlign: "right", lineHeight: 24 }

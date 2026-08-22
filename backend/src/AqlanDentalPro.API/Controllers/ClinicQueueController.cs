@@ -1469,7 +1469,19 @@ public class ClinicQueueController(
 
             // SEC-01 FIX: Validate appointment status transition before applying
             if (!AppointmentStatusTransitions.IsValidTransition(appointment.Status, AppointmentStatus.Waiting))
-                return BadRequest(new { message = $"لا يمكن تغيير حالة الموعد من {appointment.Status} إلى {AppointmentStatus.Waiting}" });
+            {
+                // A refusal that only restates the rule leaves reception stuck: the transition
+                // Scheduled -> Waiting is not allowed, and nothing on screen says that
+                // confirming the appointment is what unblocks it. Found in a go-live dry run.
+                var remedy = appointment.Status == AppointmentStatus.Scheduled
+                    ? " — أكّد الموعد أولًا ثم سجّل الوصول."
+                    : "";
+
+                return BadRequest(new
+                {
+                    message = $"لا يمكن تسجيل وصول مريض حالة موعده «{appointment.Status}»{remedy}"
+                });
+            }
 
             var eventUtc = clinicClock.UtcNow();
             appointment.Status = AppointmentStatus.Waiting;

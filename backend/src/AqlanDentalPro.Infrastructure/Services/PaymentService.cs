@@ -170,7 +170,7 @@ public class PaymentService(
                 throw new ArgumentException("الفاتورة المحددة غير موجودة");
             // Only Issued invoices can receive payments
             if (invoice.Status != InvoiceStatus.Issued)
-                throw new ArgumentException("يمكن تسجيل الدفعات للفواتير المصدرة فقط");
+                throw new ArgumentException("لا يمكن تسجيل دفعة على فاتورة غير مُصدَرة — أصدِر الفاتورة أولًا ثم سجّل الدفعة.");
             // Payment patient must match invoice patient
             if (req.PatientId != invoice.PatientId)
                 throw new ArgumentException("المريض في الدفعة لا يطابق المريض في الفاتورة");

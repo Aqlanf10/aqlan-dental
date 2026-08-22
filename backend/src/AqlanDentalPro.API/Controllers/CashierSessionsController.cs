@@ -25,9 +25,13 @@ public sealed class CurrencyOpeningBalanceRequest
 
 public sealed class CloseSessionRequest
 {
-    public decimal ActualClosingCash { get; init; } // النقد الفعلي بالدرج
-    public decimal ActualClosingCard { get; init; } // نقاط البيع الفعلية
-    public decimal ActualClosingBank { get; init; } // التحويل البنكي الفعلي
+    // Nullable on purpose. As a plain decimal these defaulted to 0, so a request that simply
+    // omitted the count was indistinguishable from a cashier who counted the drawer and found
+    // it empty — and the close booked a full shortage against them, silently. Null now means
+    // "not counted" and is refused; 0 still means "counted, and it is empty".
+    public decimal? ActualClosingCash { get; init; } // النقد الفعلي بالدرج
+    public decimal? ActualClosingCard { get; init; } // نقاط البيع الفعلية
+    public decimal? ActualClosingBank { get; init; } // التحويل البنكي الفعلي
     public string? Notes { get; init; }
 
     // FIN-03: When |ShortageOrSurplus| exceeds the threshold, a manager (Admin/Accountant)
@@ -46,7 +50,16 @@ public sealed class CurrencyClosingRequest
 // FIN-03: Threshold above which a manager must explicitly approve the closing balance.
 // Shortages/surpluses within this amount are accepted as normal drawer variance; above it,
 // the close is rejected with 400 until a manager co-signs (ManagerOverrideApproved=true).
-// Tunable via Settings:CashierClosingApprovalThreshold; defaults to 5000 SAR.
+//
+// UNITS: this figure is in the CLINIC'S BASE CURRENCY (YER) — it is compared directly against
+// a shortage computed from the drawer, and this clinic's drawer is in rial. An earlier comment
+// here said "5000 SAR", which is a different number by more than two orders of magnitude and
+// would make the guard effectively unreachable. Found during a go-live dry run: a 5,000 YER
+// shortage — one whole consultation — passed with no co-sign, because 5000 > 5000 is false.
+//
+// The DEFAULT IS DELIBERATELY LEFT AT 5000 rather than being changed here: what counts as a
+// tolerable drawer variance is the owner's business decision, not a developer's. Tune it via
+// Settings:CashierClosingApprovalThreshold.
 public static class CashierClosingApprovalConfig
 {
     public const decimal DefaultThreshold = 5000m;
@@ -229,6 +242,18 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     public async Task<IActionResult> CloseSession([FromBody] CloseSessionRequest req)
     {
         if (!await CanAsync("create")) return Deny();
+        // The count is the whole point of closing a shift. Without it the drawer's actual
+        // contents are unknown, and treating "unstated" as zero writes a fabricated shortage
+        // into the financial record against whoever was on the till.
+        if (req.ActualClosingCash is null)
+        {
+            return BadRequest(new
+            {
+                message = "أدخل النقد الفعلي الموجود في الدرج قبل إقفال الوردية. "
+                        + "إن كان الدرج فارغًا فعلًا فأدخل صفرًا صراحةً."
+            });
+        }
+
         var userId = currentUser.UserId ?? Guid.Empty;
 
         // FIN-01 FIX: Wrap close in a transaction + advisory lock + re-check, mirroring OpenSession.
@@ -267,12 +292,12 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
             session.ExpectedClosingCard = expected.Card;
             session.ExpectedClosingBank = expected.Bank;
 
-            session.ActualClosingCash = req.ActualClosingCash;
+            session.ActualClosingCash = req.ActualClosingCash!.Value;
             session.ActualClosingCard = req.ActualClosingCard;
             session.ActualClosingBank = req.ActualClosingBank;
 
             var expectedTotal = session.ExpectedClosingCash + session.ExpectedClosingCard + session.ExpectedClosingBank;
-            var actualTotal = req.ActualClosingCash + req.ActualClosingCard + req.ActualClosingBank;
+            var actualTotal = req.ActualClosingCash!.Value + (req.ActualClosingCard ?? 0m) + (req.ActualClosingBank ?? 0m);
             session.ShortageOrSurplus = actualTotal - expectedTotal;
 
             session.ClosingTime = DateTime.UtcNow;
@@ -486,9 +511,9 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 CashierSessionId = session.Id,
                 Currency = "YER",
                 ExpectedCash = session.ExpectedClosingCash,
-                ActualCash = request.ActualClosingCash,
+                ActualCash = request.ActualClosingCash ?? 0m,
                 ExpectedBank = session.ExpectedClosingCard + session.ExpectedClosingBank,
-                ActualBank = request.ActualClosingCard + request.ActualClosingBank
+                ActualBank = (request.ActualClosingCard ?? 0m) + (request.ActualClosingBank ?? 0m)
             }
         };
 

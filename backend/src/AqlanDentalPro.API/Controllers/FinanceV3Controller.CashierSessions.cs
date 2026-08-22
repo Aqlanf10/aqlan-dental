@@ -186,6 +186,19 @@ public partial class FinanceV3Controller
         if (branchId == Guid.Empty)
             return BadRequest(new { message = "لم يتم تحديد فرع للمستخدم. يرجى تسجيل الدخول بفرع صالح." });
 
+        // The drawer count is what a close is for. Left unstated it is not zero — it is
+        // unknown, and with a nullable total the shortage would come out null, so the shift
+        // would close recording no discrepancy at all. A null comparison is also false, so
+        // the negative check below never catches it.
+        if (req.ActualClosingCash is null)
+        {
+            return BadRequest(new
+            {
+                message = "أدخل النقد الفعلي الموجود في الدرج قبل إقفال الوردية. "
+                        + "إن كان الدرج فارغًا فعلًا فأدخل صفرًا صراحةً."
+            });
+        }
+
         // Amount validation: reject negative actual closing values
         if (req.ActualClosingCash < 0)
             return BadRequest(new { message = "النقدي الفعلي لا يمكن أن يكون سالباً" });
@@ -326,12 +339,12 @@ public partial class FinanceV3Controller
             session.ExpectedClosingCash = session.OpeningBalance + cashInflows - cashOutflows;
             session.ExpectedClosingCard = cardInflows - cardOutflows;
             session.ExpectedClosingBank = bankInflows - bankOutflows;
-            session.ActualClosingCash = req.ActualClosingCash;
+            session.ActualClosingCash = req.ActualClosingCash!.Value;
             session.ActualClosingCard = req.ActualClosingCard;
             session.ActualClosingBank = req.ActualClosingBank;
 
             var expectedTotal = session.ExpectedClosingCash + session.ExpectedClosingCard + session.ExpectedClosingBank;
-            var actualTotal = req.ActualClosingCash + req.ActualClosingCard + req.ActualClosingBank;
+            var actualTotal = req.ActualClosingCash!.Value + (req.ActualClosingCard ?? 0m) + (req.ActualClosingBank ?? 0m);
             session.ShortageOrSurplus = actualTotal - expectedTotal;
             session.ClosingTime = DateTime.UtcNow;
             session.Status = SessionStatus.Closed;
@@ -344,9 +357,9 @@ public partial class FinanceV3Controller
                     CashierSessionId = session.Id,
                     Currency = "YER",
                     ExpectedCash = session.ExpectedClosingCash,
-                    ActualCash = req.ActualClosingCash,
+                    ActualCash = req.ActualClosingCash ?? 0m,
                     ExpectedBank = session.ExpectedClosingCard + session.ExpectedClosingBank,
-                    ActualBank = req.ActualClosingCard + req.ActualClosingBank
+                    ActualBank = (req.ActualClosingCard ?? 0m) + (req.ActualClosingBank ?? 0m)
                 }
             };
             currencyReconciliations.AddRange(foreignCurrencyActivity.Select(activity =>

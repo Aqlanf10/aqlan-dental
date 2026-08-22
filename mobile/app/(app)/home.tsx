@@ -29,28 +29,18 @@ export default function DashboardScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   async function refresh() {
     setRefreshing(true);
-    try {
-      await load();
-    } finally {
-      setRefreshing(false);
-    }
+    try { await load(); } finally { setRefreshing(false); }
   }
 
-  const canSeeFinance =
-    user?.role === "Admin" || user?.role === "Accountant" || user?.role === "Reception";
+  const canSeeFinance = user?.role === "Admin" || user?.role === "Accountant" || user?.role === "Reception";
+  const isAdmin = user?.role === "Admin";
 
   return (
-    <Screen
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />
-      }
-    >
+    <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />}>
       <View>
         <Text style={styles.greeting}>مرحباً، {user?.doctorName || user?.username}</Text>
         <Text style={styles.role}>{user?.role}</Text>
@@ -59,11 +49,15 @@ export default function DashboardScreen() {
       <SectionTitle>تشغيل العيادة</SectionTitle>
       <PrimaryButton title="فتح تشغيل اليوم" onPress={() => router.push("/(app)/journey")} />
 
-      <SectionTitle>نظرة سريعة</SectionTitle>
-
-      {error && !stats ? (
-        <StateMessage title="تعذر تحميل لوحة التحكم" message={error} />
+      {isAdmin ? (
+        <>
+          <SectionTitle>الإدارة</SectionTitle>
+          <PrimaryButton title="إدارة المخزون" onPress={() => router.push("/(app)/inventory")} />
+        </>
       ) : null}
+
+      <SectionTitle>نظرة سريعة</SectionTitle>
+      {error && !stats ? <StateMessage title="تعذر تحميل لوحة التحكم" message={error} /> : null}
 
       {stats ? (
         <View style={styles.grid}>
@@ -73,13 +67,7 @@ export default function DashboardScreen() {
           <Metric title="إجمالي المرضى" value={stats.totalPatients} />
           <Metric title="حالات التقويم" value={stats.activeOrthoCases} />
           <Metric title="أعمال المعمل" value={stats.pendingLabOrders} />
-          {canSeeFinance ? (
-            <Metric
-              title="إيراد الشهر"
-              value={formatYemeniRial(stats.totalRevenueMTD)}
-              wide
-            />
-          ) : null}
+          {canSeeFinance ? <Metric title="إيراد الشهر" value={formatYemeniRial(stats.totalRevenueMTD)} wide /> : null}
         </View>
       ) : null}
 
@@ -93,9 +81,7 @@ export default function DashboardScreen() {
           <AlertRow label="مرشحون للاستدعاء" value={alerts.recallCandidatesCount} last />
         </Card>
       ) : (
-        <Card>
-          <Text style={styles.muted}>جارٍ تحميل التنبيهات…</Text>
-        </Card>
+        <Card><Text style={styles.muted}>جارٍ تحميل التنبيهات…</Text></Card>
       )}
 
       <SectionTitle>التواصل</SectionTitle>
@@ -104,74 +90,23 @@ export default function DashboardScreen() {
   );
 }
 
-function Metric({
-  title,
-  value,
-  wide = false
-}: {
-  title: string;
-  value: string | number;
-  wide?: boolean;
-}) {
-  return (
-    <View style={[styles.metric, wide && styles.metricWide]}>
-      <Text style={styles.metricValue}>{value}</Text>
-      <Text style={styles.metricTitle}>{title}</Text>
-    </View>
-  );
+function Metric({ title, value, wide = false }: { title: string; value: string | number; wide?: boolean }) {
+  return <View style={[styles.metric, wide && styles.metricWide]}><Text style={styles.metricValue}>{value}</Text><Text style={styles.metricTitle}>{title}</Text></View>;
 }
 
-function AlertRow({
-  label,
-  value,
-  last = false
-}: {
-  label: string;
-  value: number;
-  last?: boolean;
-}) {
-  return (
-    <View style={[styles.alertRow, last && { borderBottomWidth: 0 }]}>
-      <Text style={[styles.alertValue, value > 0 && styles.alertActive]}>{value}</Text>
-      <Text style={styles.alertLabel}>{label}</Text>
-    </View>
-  );
+function AlertRow({ label, value, last = false }: { label: string; value: number; last?: boolean }) {
+  return <View style={[styles.alertRow, last && { borderBottomWidth: 0 }]}><Text style={[styles.alertValue, value > 0 && styles.alertActive]}>{value}</Text><Text style={styles.alertLabel}>{label}</Text></View>;
 }
 
 const styles = StyleSheet.create({
   greeting: { color: colors.text, fontSize: 24, fontWeight: "800", textAlign: "right" },
   role: { color: colors.muted, fontSize: 13, marginTop: 4, textAlign: "right" },
-  grid: {
-    flexDirection: "row-reverse",
-    flexWrap: "wrap",
-    gap: spacing.sm
-  },
-  metric: {
-    width: "48%",
-    minHeight: 104,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    justifyContent: "center"
-  },
+  grid: { flexDirection: "row-reverse", flexWrap: "wrap", gap: spacing.sm },
+  metric: { width: "48%", minHeight: 104, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, justifyContent: "center" },
   metricWide: { width: "100%" },
-  metricValue: {
-    color: colors.primary,
-    fontSize: 24,
-    fontWeight: "800",
-    textAlign: "right"
-  },
+  metricValue: { color: colors.primary, fontSize: 24, fontWeight: "800", textAlign: "right" },
   metricTitle: { color: colors.muted, marginTop: spacing.xs, textAlign: "right" },
-  alertRow: {
-    minHeight: 48,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border
-  },
+  alertRow: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: colors.border },
   alertValue: { color: colors.muted, fontWeight: "800" },
   alertActive: { color: colors.danger },
   alertLabel: { color: colors.text, textAlign: "right" },

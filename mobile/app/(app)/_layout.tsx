@@ -75,6 +75,10 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="patient-media" options={{ href: null, title: "الصور والأشعة" }} />
       <Tabs.Screen name="media-photo-new" options={{ href: null, title: "صورة سريرية" }} />
       <Tabs.Screen name="media-xray-new" options={{ href: null, title: "إضافة أشعة" }} />
+      <Tabs.Screen name="patient-lab" options={{ href: null, title: "طلبات المعمل" }} />
+      <Tabs.Screen name="lab-order-new" options={{ href: null, title: "طلب معمل جديد" }} />
+      <Tabs.Screen name="lab-order-detail" options={{ href: null, title: "تفاصيل طلب المعمل" }} />
+      <Tabs.Screen name="lab-order-transition" options={{ href: null, title: "تغيير حالة طلب المعمل" }} />
     </Tabs>
   );
 }

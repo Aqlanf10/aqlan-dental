@@ -54,6 +54,11 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="visits" options={{ href: null, title: "الزيارات السريرية" }} />
       <Tabs.Screen name="visit-detail" options={{ href: null, title: "تفاصيل الزيارة" }} />
       <Tabs.Screen name="visit-editor" options={{ href: null, title: "السجل السريري" }} />
+      <Tabs.Screen name="journey" options={{ href: null, title: "تشغيل اليوم" }} />
+      <Tabs.Screen
+        name="journey-handoff"
+        options={{ href: null, title: "تسليم الزيارة للاستقبال" }}
+      />
     </Tabs>
   );
 }

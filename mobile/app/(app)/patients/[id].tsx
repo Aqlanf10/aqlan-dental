@@ -2,6 +2,7 @@ import { useSession } from "@/auth/SessionProvider";
 import { Card, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/components/ui";
 import { apiRequest } from "@/lib/api";
 import { fullPatientName } from "@/lib/format";
+import { canFinanceJourney } from "@/lib/journey";
 import { canAccessClinicalRecords } from "@/lib/roles";
 import type { ConversationDetail, PatientProfile } from "@/lib/types";
 import { colors, spacing } from "@/theme";
@@ -23,6 +24,7 @@ export default function PatientDetailsScreen() {
   // only Admin may use the full-profile PUT editor so hidden values cannot be erased.
   const canEdit = user?.role === "Admin";
   const canReadClinical = canAccessClinicalRecords(user);
+  const canReadFinance = canFinanceJourney(user);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -138,12 +140,32 @@ export default function PatientDetailsScreen() {
 
       <SectionTitle>إجراءات سريعة</SectionTitle>
       {communicationError ? <StateMessage title="تعذر فتح المحادثة" message={communicationError} /> : null}
+      <PrimaryButton
+        title="ملخص رحلة المريض اليوم"
+        onPress={() =>
+          router.push({
+            pathname: "/(app)/journey-summary",
+            params: { patientId: patient.id }
+          })
+        }
+      />
       {canReadClinical ? (
         <PrimaryButton
           title="السجل السريري والزيارات"
           onPress={() =>
             router.push({
               pathname: "/(app)/visits",
+              params: { patientId: patient.id, patientName }
+            })
+          }
+        />
+      ) : null}
+      {canReadFinance ? (
+        <PrimaryButton
+          title="مالية المريض"
+          onPress={() =>
+            router.push({
+              pathname: "/(app)/patient-finance",
               params: { patientId: patient.id, patientName }
             })
           }

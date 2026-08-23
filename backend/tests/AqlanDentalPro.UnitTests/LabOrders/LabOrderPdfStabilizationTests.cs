@@ -1,3 +1,4 @@
+using AqlanDentalPro.Infrastructure.Services;
 using FluentAssertions;
 using Xunit;
 using AqlanDentalPro.Domain.Entities;
@@ -193,7 +194,7 @@ public class LabOrderPdfStabilizationTests
         order.Items = null!;
 
         // Act & Assert: Generate should NOT throw
-        var act = () => LabOrderPdfGenerator.Generate(order, "عيادة الأسنان", "0501234567", "الرياض");
+        var act = () => LabOrderPdfGenerator.Generate(order, FinanceClinicIdentity.Fallback);
         act.Should().NotThrow("PDF generation should handle null Items gracefully");
     }
 
@@ -205,7 +206,7 @@ public class LabOrderPdfStabilizationTests
         order.Items = [];
 
         // Act & Assert: Generate should NOT throw
-        var act = () => LabOrderPdfGenerator.Generate(order, "عيادة الأسنان", "0501234567", "الرياض");
+        var act = () => LabOrderPdfGenerator.Generate(order, FinanceClinicIdentity.Fallback);
         act.Should().NotThrow("PDF generation should handle empty Items list gracefully");
     }
 
@@ -217,7 +218,7 @@ public class LabOrderPdfStabilizationTests
         order.Patient = null!; // Intentionally null to test fallback
 
         // Act & Assert: Generate should NOT throw — uses fallback "غير محدد"
-        var act = () => LabOrderPdfGenerator.Generate(order, "عيادة الأسنان", "0501234567", "الرياض");
+        var act = () => LabOrderPdfGenerator.Generate(order, FinanceClinicIdentity.Fallback);
         act.Should().NotThrow("PDF generation should handle null Patient with Arabic fallback");
     }
 
@@ -229,7 +230,7 @@ public class LabOrderPdfStabilizationTests
         order.Doctor = null!; // Intentionally null to test fallback
 
         // Act & Assert: Generate should NOT throw — uses fallback "غير محدد"
-        var act = () => LabOrderPdfGenerator.Generate(order, "عيادة الأسنان", "0501234567", "الرياض");
+        var act = () => LabOrderPdfGenerator.Generate(order, FinanceClinicIdentity.Fallback);
         act.Should().NotThrow("PDF generation should handle null Doctor with Arabic fallback");
     }
 
@@ -241,7 +242,7 @@ public class LabOrderPdfStabilizationTests
         order.Lab = null!; // Intentionally null to test fallback
 
         // Act & Assert: Generate should NOT throw — uses fallback "غير محدد"
-        var act = () => LabOrderPdfGenerator.Generate(order, "عيادة الأسنان", "0501234567", "الرياض");
+        var act = () => LabOrderPdfGenerator.Generate(order, FinanceClinicIdentity.Fallback);
         act.Should().NotThrow("PDF generation should handle null Lab with Arabic fallback");
     }
 
@@ -257,7 +258,7 @@ public class LabOrderPdfStabilizationTests
         order.LabName = null;
 
         // Act
-        var pdfBytes = LabOrderPdfGenerator.Generate(order, "عيادة الأسنان", "0501234567", "الرياض");
+        var pdfBytes = LabOrderPdfGenerator.Generate(order, FinanceClinicIdentity.Fallback);
 
         // Assert: should produce a non-empty PDF
         pdfBytes.Should().NotBeNullOrEmpty("PDF should be generated even with all null navigation properties");
@@ -287,7 +288,7 @@ public class LabOrderPdfStabilizationTests
         };
 
         // Act
-        var pdfBytes = LabOrderPdfGenerator.Generate(order, "عيادة الأسنان", "0501234567", "الرياض");
+        var pdfBytes = LabOrderPdfGenerator.Generate(order, FinanceClinicIdentity.Fallback);
 
         // Assert
         pdfBytes.Should().NotBeNullOrEmpty();

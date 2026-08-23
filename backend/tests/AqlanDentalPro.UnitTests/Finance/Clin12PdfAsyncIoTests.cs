@@ -53,12 +53,13 @@ public class Clin12PdfAsyncIoTests
         // both are non-empty, (3) both are approximately the same length (the timestamp
         // delta is < 1% of the file), and (4) the first object header matches.
         var order = CreateSampleLabOrder();
-        var clinicName = "مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان";
-        var clinicPhone = "777000000";
-        var clinicAddress = "تعز — اليمن";
+        // CORE-REQ-006: the generator takes the resolved identity rather than three loose
+        // strings, so the work order can follow the clinic's print language. Fallback carries
+        // the same defaults the three strings used to.
+        var identity = FinanceClinicIdentity.Fallback;
 
-        var syncBytes = LabOrderPdfGenerator.Generate(order, clinicName, clinicPhone, clinicAddress);
-        var asyncBytes = await LabOrderPdfGenerator.GenerateAsync(order, clinicName, clinicPhone, clinicAddress);
+        var syncBytes = LabOrderPdfGenerator.Generate(order, identity);
+        var asyncBytes = await LabOrderPdfGenerator.GenerateAsync(order, identity);
 
         asyncBytes.Should().NotBeNullOrEmpty("async path must produce a PDF");
         syncBytes.Should().NotBeNullOrEmpty("sync path must produce a PDF");
@@ -78,7 +79,7 @@ public class Clin12PdfAsyncIoTests
     {
         var order = CreateSampleLabOrder();
 
-        var bytes = await LabOrderPdfGenerator.GenerateAsync(order, "عيادة الأسنان", "0501234567", "الرياض");
+        var bytes = await LabOrderPdfGenerator.GenerateAsync(order, FinanceClinicIdentity.Fallback);
 
         bytes.Should().NotBeNullOrEmpty();
         Encoding.ASCII.GetString(bytes, 0, 4).Should().Be("%PDF",

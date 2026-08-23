@@ -1754,13 +1754,10 @@ public class LabOrdersController(
             // a name that is not this clinic's, on the one document that physically leaves
             // the building and reaches an outside lab.
             var clinic = await FinanceClinicIdentity.ResolveAsync(db);
-            var clinicName = clinic.Name;
-            var clinicPhone = clinic.Phones;
-            var clinicAddress = clinic.Location;
 
             // CLIN-12: CPU-bound PDF generation is offloaded to the thread pool
             // (GenerateAsync wraps Task.Run) so the request thread is released.
-            var pdfBytes = await LabOrderPdfGenerator.GenerateAsync(order, clinicName, clinicPhone, clinicAddress);
+            var pdfBytes = await LabOrderPdfGenerator.GenerateAsync(order, clinic);
             return File(pdfBytes, "application/pdf", $"lab-order-{order.OrderNumber}.pdf");
         }
         catch (Exception ex)

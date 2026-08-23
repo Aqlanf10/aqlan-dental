@@ -1,5 +1,5 @@
 import { Redirect, router } from 'expo-router';
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -7,6 +7,7 @@ import { ApiError } from '@/api/client';
 import { useAuth } from '@/auth/AuthProvider';
 import { AlertBanner } from '@/components/AlertBanner';
 import { AppText } from '@/components/AppText';
+import { JourneyStepModal } from '@/components/JourneyStepModal';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { RoomPickerModal } from '@/components/RoomPickerModal';
 import { useLocale } from '@/i18n/LocaleProvider';
@@ -17,6 +18,7 @@ import type { DailyOperationAction, DailyPatient } from '@/types/dailyOperations
 
 type Tab = 'arrivals' | 'waiting';
 type RoomRequest = { item: DailyPatient; action: 'call' | 'recall' } | null;
+type JourneyRequest = { item: DailyPatient; action: 'intake' | 'send-to-queue' } | null;
 
 const statusKeys: Record<string, TranslationKey> = {
   scheduled: 'ops.status.scheduled',
@@ -33,6 +35,8 @@ const statusKeys: Record<string, TranslationKey> = {
 };
 
 const actionKeys: Record<DailyOperationAction, TranslationKey> = {
+  intake: 'ops.action.intake',
+  'send-to-queue': 'ops.action.sendToQueue',
   call: 'ops.action.call',
   recall: 'ops.action.recall',
   'enter-room': 'ops.action.enterRoom',
@@ -52,10 +56,12 @@ export default function DailyOperationsScreen() {
   const { isRtl, t } = useLocale();
   const canView = hasPermission('patient_journey.view') || hasPermission('clinic_queue.view');
   const operations = useDailyOperations(canView);
+  const runAction = operations.runAction;
   const [tab, setTab] = useState<Tab>('arrivals');
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [roomRequest, setRoomRequest] = useState<RoomRequest>(null);
+  const [journeyRequest, setJourneyRequest] = useState<JourneyRequest>(null);
 
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -75,21 +81,24 @@ export default function DailyOperationsScreen() {
     filtered.find((item) => patientKey(item) === selectedId) ?? filtered[0] ?? null
   ), [filtered, selectedId]);
 
-  useEffect(() => {
-    if (selected && patientKey(selected) !== selectedId) setSelectedId(patientKey(selected));
-  }, [selected, selectedId]);
-
   const runRoomAction = useCallback((roomName?: string) => {
     if (!roomRequest) return;
     const pending = roomRequest;
     setRoomRequest(null);
-    void operations.runAction(pending.item, pending.action, roomName);
-  }, [operations, roomRequest]);
+    void runAction(pending.item, pending.action, { roomName });
+  }, [roomRequest, runAction]);
 
   const requestAction = useCallback((item: DailyPatient, action: DailyOperationAction) => {
     if (action === 'call' || action === 'recall') setRoomRequest({ item, action });
-    else void operations.runAction(item, action);
-  }, [operations]);
+    else if (action === 'intake' || action === 'send-to-queue') setJourneyRequest({ item, action });
+    else void runAction(item, action);
+  }, [runAction]);
+
+  const submitJourneyStep = useCallback(async (input: { roomId?: string; notes?: string }) => {
+    if (!journeyRequest) return;
+    const succeeded = await runAction(journeyRequest.item, journeyRequest.action, input);
+    if (succeeded) setJourneyRequest(null);
+  }, [journeyRequest, runAction]);
 
   if (!user) return <Redirect href="/sign-in" />;
 
@@ -181,6 +190,18 @@ export default function DailyOperationsScreen() {
         rooms={operations.rooms}
         visible={roomRequest !== null}
       />
+      {journeyRequest ? (
+        <JourneyStepModal
+          busy={operations.busyAction?.action === journeyRequest.action}
+          errorMessage={errorMessage}
+          item={journeyRequest.item}
+          key={`${patientKey(journeyRequest.item)}:${journeyRequest.action}`}
+          mode={journeyRequest.action}
+          onClose={() => setJourneyRequest(null)}
+          onSubmit={(input) => { void submitJourneyStep(input); }}
+          rooms={operations.rooms}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -235,9 +256,15 @@ function PatientDetails({ item, busyAction, onAction }: {
   const itemId = item.queueItemId ?? item.appointmentId ?? item.patientId;
   const isBusy = busyAction?.itemId === itemId;
   const actions: DailyOperationAction[] = [];
+  const canCreateDaily = hasPermission('daily_operations.create');
+  const paymentBlocked = item.paymentBeforeEntryRequired
+    || item.financialEntryStatus === 'WaitingForPayment'
+    || item.canEnterWithoutPayment === false;
+  if ((status === 'scheduled' || status === 'confirmed') && item.appointmentId && canCreateDaily) actions.push('intake');
+  if ((status === 'arrived' || status === 'waiting') && item.appointmentId && !item.queueItemId && canCreateDaily) actions.push('send-to-queue');
   if (status === 'waiting' && item.queueItemId && hasPermission('clinic_queue.create')) actions.push('call');
   if (status === 'called' && item.queueItemId && hasPermission('clinic_queue.edit')) actions.push('recall');
-  if (status === 'called' && item.queueItemId && hasPermission('clinic_queue.approve')) actions.push('enter-room');
+  if (status === 'called' && item.queueItemId && hasPermission('clinic_queue.approve') && !paymentBlocked) actions.push('enter-room');
   if (status === 'inroom' && item.appointmentId && (user?.role === 'Doctor' || hasPermission('visits.edit'))) actions.push('start-visit');
 
   return (
@@ -257,6 +284,16 @@ function PatientDetails({ item, busyAction, onAction }: {
         <DetailRow label={t('ops.room')} value={item.roomName} />
         <DetailRow label={t('ops.visitCount')} value={item.visitCount === null ? null : String(item.visitCount)} />
       </View>
+      {paymentBlocked ? (
+        <View style={styles.financialBlocked}>
+          <AppText variant="label" color={colors.danger}>{t('ops.paymentRequired')}</AppText>
+          <AppText variant="caption" color={colors.danger}>{item.financialEntryReason || t('ops.paymentRequiredDescription')}</AppText>
+        </View>
+      ) : item.consultationFeeRequired && item.consultationFeePaid ? (
+        <View style={styles.financialClear}>
+          <AppText variant="caption" color={colors.success}>{t('ops.paymentClear')}</AppText>
+        </View>
+      ) : null}
       {actions.length ? (
         <View style={[styles.actionRow, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
           {actions.map((action) => (
@@ -308,6 +345,8 @@ function describeError(error: unknown, t: (key: TranslationKey) => string) {
   if (error instanceof ApiError) {
     if (error.status === 401) return t('auth.sessionExpired');
     if (error.status === 403) return t('ops.forbidden');
+    if (error.status === 409) return t('ops.conflict');
+    if (error.status === 400) return t('ops.invalidTransition');
     if (error.kind === 'network' || error.kind === 'timeout') return t('ops.networkError');
     if (error.kind === 'invalid-response') return t('ops.invalidData');
   }
@@ -346,6 +385,8 @@ const styles = StyleSheet.create({
   alertPill: { paddingHorizontal: spacing.sm, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: colors.dangerSoft },
   detailGrid: { gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.white },
   detailRow: { alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  financialBlocked: { gap: spacing.xs, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.dangerSoft },
+  financialClear: { padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.successSoft },
   actionRow: { flexWrap: 'wrap', gap: spacing.sm },
   actionButton: { minHeight: 46, minWidth: 120, flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: colors.orange600 },
   emptyBox: { gap: spacing.sm, marginHorizontal: spacing.xl, padding: spacing.xxxl, alignItems: 'center', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.white },

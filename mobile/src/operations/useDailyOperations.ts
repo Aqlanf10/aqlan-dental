@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { createDailyOperationsApi } from '@/api/dailyOperationsApi';
 import { useAuth } from '@/auth/AuthProvider';
-import type { ClinicRoom, DailyOperationAction, DailyPatient } from '@/types/dailyOperations';
+import type { ClinicRoom, DailyOperationAction, DailyOperationInput, DailyPatient } from '@/types/dailyOperations';
 
 type BusyAction = { itemId: string; action: DailyOperationAction } | null;
 
@@ -58,30 +58,44 @@ export function useDailyOperations(enabled = true) {
   const runAction = useCallback(async (
     item: DailyPatient,
     action: DailyOperationAction,
-    roomName?: string,
+    input: DailyOperationInput = {},
   ) => {
-    if (actionInFlight.current) return;
+    if (actionInFlight.current) return false;
     actionInFlight.current = true;
     const itemId = item.queueItemId ?? item.appointmentId ?? item.patientId;
     setBusyAction({ itemId, action });
     setError(null);
     setNotice(null);
     try {
-      if (action === 'call' && item.queueItemId) await api.call(item.queueItemId, roomName);
-      else if (action === 'recall' && item.queueItemId) await api.recall(item.queueItemId, roomName);
+      if (action === 'intake' && item.appointmentId) {
+        await api.intake(item.appointmentId, {
+          roomId: input.roomId,
+          notes: input.notes,
+          serviceId: item.serviceId ?? undefined,
+        });
+      }
+      else if (action === 'send-to-queue' && item.appointmentId) {
+        await api.sendToQueue(item.appointmentId, { roomId: input.roomId, notes: input.notes });
+      }
+      else if (action === 'call' && item.queueItemId) await api.call(item.queueItemId, input.roomName);
+      else if (action === 'recall' && item.queueItemId) await api.recall(item.queueItemId, input.roomName);
       else if (action === 'enter-room' && item.queueItemId) await api.enterRoom(item.queueItemId);
       else if (action === 'start-visit' && item.appointmentId) await api.startVisit(item.appointmentId);
       else throw new Error('Missing operation identifier');
-      if (!mounted.current) return;
+      if (!mounted.current) return false;
       setNotice(action);
       await load(false);
+      return true;
     } catch (nextError) {
       if (mounted.current) setError(nextError);
+      return false;
     } finally {
       actionInFlight.current = false;
       if (mounted.current) setBusyAction(null);
     }
   }, [api, load]);
+
+  const refresh = useCallback(() => load(false), [load]);
 
   return {
     items,
@@ -91,7 +105,7 @@ export function useDailyOperations(enabled = true) {
     error,
     notice,
     busyAction,
-    refresh: () => load(false),
+    refresh,
     runAction,
   };
 }

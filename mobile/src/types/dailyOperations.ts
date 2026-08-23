@@ -22,6 +22,13 @@ export type DailyPatient = {
   visitId: string | null;
   visitStatus: string | null;
   proposedProcedure: string | null;
+  consultationFeeRequired: boolean;
+  consultationFeePaid: boolean;
+  paymentBeforeEntryRequired: boolean;
+  financialEntryStatus: string | null;
+  financialEntryReason: string | null;
+  canEnterWithoutPayment: boolean;
+  managerOverrideAllowed: boolean;
   hasMedicalAlerts: boolean;
   visitCount: number | null;
   nextAction: string;
@@ -32,4 +39,10 @@ export type ClinicRoom = {
   arabicName: string;
 };
 
-export type DailyOperationAction = 'call' | 'recall' | 'enter-room' | 'start-visit';
+export type DailyOperationAction = 'intake' | 'send-to-queue' | 'call' | 'recall' | 'enter-room' | 'start-visit';
+
+export type DailyOperationInput = {
+  roomId?: string;
+  roomName?: string;
+  notes?: string;
+};

@@ -48,6 +48,13 @@ function parsePatient(value: unknown): DailyPatient {
     visitId: optionalString(value, 'visitId'),
     visitStatus: optionalString(value, 'visitStatus'),
     proposedProcedure: optionalString(value, 'proposedProcedure'),
+    consultationFeeRequired: readBoolean(value, 'consultationFeeRequired'),
+    consultationFeePaid: readBoolean(value, 'consultationFeePaid'),
+    paymentBeforeEntryRequired: readBoolean(value, 'paymentBeforeEntryRequired'),
+    financialEntryStatus: optionalString(value, 'financialEntryStatus'),
+    financialEntryReason: optionalString(value, 'financialEntryReason'),
+    canEnterWithoutPayment: readBoolean(value, 'canEnterWithoutPayment', true),
+    managerOverrideAllowed: readBoolean(value, 'managerOverrideAllowed'),
     hasMedicalAlerts: readBoolean(value, 'hasMedicalAlerts'),
     visitCount: readNumber(value, 'visitCount'),
     nextAction: optionalString(value, 'nextAction') ?? '',
@@ -76,6 +83,14 @@ export function createDailyOperationsApi(request: AuthorizedRequest) {
 
     async rooms(): Promise<ClinicRoom[]> {
       return unwrapArray(await request('/api/settings/rooms/active')).map(parseRoom);
+    },
+
+    intake(appointmentId: string, body: { roomId?: string; notes?: string; serviceId?: string }) {
+      return post(request, `/api/patient-journey/${encodeURIComponent(appointmentId)}/intake`, body);
+    },
+
+    sendToQueue(appointmentId: string, body: { roomId?: string; notes?: string }) {
+      return post(request, `/api/patient-journey/${encodeURIComponent(appointmentId)}/send-to-queue`, body);
     },
 
     call(queueItemId: string, roomName?: string) {

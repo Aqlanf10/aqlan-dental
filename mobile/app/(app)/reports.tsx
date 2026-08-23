@@ -63,8 +63,9 @@ export default function ReportsScreen() {
 
     const failures = [summaryResult, financialResult, appointmentsResult, doctorsResult]
       .filter((result) => result.status === "rejected") as PromiseRejectedResult[];
-    if (failures.length) {
-      setError(failures[0].reason instanceof Error ? failures[0].reason.message : "تعذر تحميل بعض التقارير");
+    const firstFailure = failures[0];
+    if (firstFailure) {
+      setError(firstFailure.reason instanceof Error ? firstFailure.reason.message : "تعذر تحميل بعض التقارير");
     }
     setLoading(false);
   }, [allowed, from, to, validRange]);

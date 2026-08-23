@@ -223,7 +223,7 @@ function extensionForMime(mimeType: string): string {
 }
 
 function fileNameFromUri(uri: string): string | null {
-  const clean = uri.split("?")[0];
+  const [clean = ""] = uri.split("?");
   const name = clean.split("/").pop();
   return name && name.includes(".") ? decodeURIComponent(name) : null;
 }

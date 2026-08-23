@@ -33,20 +33,22 @@ export default function SettingsScreen() {
 
   const load = useCallback(async () => {
     setError(null);
-    const requests: Promise<unknown>[] = [apiRequest<ExchangeRates>("/api/settings/exchange-rates")];
-    if (canReadFinanceSettings) requests.push(apiRequest<Record<string, string | null>>("/api/settings/finance"));
-    if (isAdmin) requests.push(apiRequest<Record<string, string>>("/api/settings"));
-    const results = await Promise.allSettled(requests);
-    let index = 0;
-    const ratesResult = results[index++];
+    const results = await Promise.allSettled([
+      apiRequest<ExchangeRates>("/api/settings/exchange-rates"),
+      canReadFinanceSettings
+        ? apiRequest<Record<string, string | null>>("/api/settings/finance")
+        : Promise.resolve(null),
+      isAdmin
+        ? apiRequest<Record<string, string>>("/api/settings")
+        : Promise.resolve(null)
+    ] as const);
+    const [ratesResult, financeResult, generalResult] = results;
     if (ratesResult.status === "fulfilled") setRates(ratesResult.value as ExchangeRates); else setRates(null);
     if (canReadFinanceSettings) {
-      const result = results[index++];
-      setFinance(result.status === "fulfilled" ? result.value as Record<string, string | null> : null);
+      setFinance(financeResult.status === "fulfilled" ? financeResult.value : null);
     } else setFinance(null);
     if (isAdmin) {
-      const result = results[index++];
-      setGeneral(result.status === "fulfilled" ? result.value as Record<string, string> : null);
+      setGeneral(generalResult.status === "fulfilled" ? generalResult.value : null);
     } else setGeneral(null);
     const rejected = results.find((result) => result.status === "rejected") as PromiseRejectedResult | undefined;
     if (rejected) setError(rejected.reason instanceof Error ? rejected.reason.message : "تعذر تحميل بعض الإعدادات");

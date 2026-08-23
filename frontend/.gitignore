@@ -38,3 +38,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Capacitor / Android
+# The android/ project itself IS committed — it is the app. Only build output and local
+# machine paths are not.
+/android/.gradle/
+/android/app/build/
+/android/build/
+/android/local.properties
+/android/capacitor-cordova-android-plugins/build/
+/android-shell/

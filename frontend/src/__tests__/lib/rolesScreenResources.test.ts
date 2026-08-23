@@ -67,7 +67,12 @@ function guardedResources(): string[] {
   return [...found];
 }
 
-describe("settings → roles screen offers the resources the server reads", () => {
+// These tests shell out and scan the backend source tree, so their cost is I/O rather than
+// computation and it varies with what else the runner is doing. Under a full parallel suite
+// the first one was seen taking 16s against vitest's 5s default and failing, while passing in
+// well under a second on its own. Raising the budget is the fix; the alternative — a test that
+// reddens CI at random — teaches everyone to re-run rather than to read.
+describe("settings → roles screen offers the resources the server reads", { timeout: 60_000 }, () => {
   it("lists no resource that neither a guard nor the frontend consults", () => {
     const guarded = new Set(guardedResources());
     const orphans = screenResources().filter((r) => !guarded.has(r) && !UI_ONLY.has(r));

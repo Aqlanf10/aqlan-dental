@@ -98,6 +98,11 @@ export const ROUTE_MANIFEST: readonly RoutePermission[] = [
   { path: '/users', allowedRoles: ['Admin'] },
   // More specific path first: isRouteAllowed matches exact paths or child routes, so
   // '/appointments/recall' must precede '/appointments' (Reception needs access here)
+  // Mobile screen (/m). Same roles as the desktop equivalents it mirrors — the phone must not
+  // become a way around a permission. More specific paths first, per the matching rule above.
+  { path: '/m/appointments', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
+  { path: '/m/lab', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
+  { path: '/m', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   { path: '/appointments/recall', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   { path: '/appointments', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   { path: '/clinic-queue', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },

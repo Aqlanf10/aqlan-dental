@@ -1,0 +1,80 @@
+name: Android APK
+
+# Builds the phone app and attaches the APK to the run, so a fresh copy can be downloaded
+# without anyone needing an Android toolchain.
+#
+# Deliberately NOT part of the CI gate. It is a stopgap tool for the clinic while the main
+# system is stabilised, and a Gradle download should not be able to redden a pull request
+# about the backend.
+on:
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: "Site the app opens (defaults to production)"
+        required: false
+        default: "https://aqlan-dental.vercel.app"
+  push:
+    branches: [main]
+    paths:
+      - "frontend/android/**"
+      - "frontend/capacitor.config.ts"
+      - "frontend/src/app/m/**"
+      - ".github/workflows/android-apk.yml"
+
+jobs:
+  apk:
+    name: Build APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync the Android project
+        env:
+          # workflow_dispatch supplies this; a push to main falls back to production.
+          APP_URL: ${{ github.event.inputs.app_url || 'https://aqlan-dental.vercel.app' }}
+        run: |
+          mkdir -p android-shell
+          cp public/offline.html android-shell/index.html
+          npx cap sync android
+
+      - name: Build the APK
+        run: ./gradlew assembleDebug --no-daemon
+        working-directory: frontend/android
+
+      # A build that produced nothing must not report success — the same trap the E2E job
+      # already had to be taught about.
+      - name: Verify the APK exists and is an Android package
+        run: |
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          test -f "$APK" || { echo "::error::No APK was produced"; exit 1; }
+          file "$APK" | grep -q "Android package" || {
+            echo "::error::Output is not an Android package"; exit 1; }
+          echo "::notice::APK built — $(du -h "$APK" | cut -f1)"
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: aqlan-clinic-apk
+          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+          if-no-files-found: error

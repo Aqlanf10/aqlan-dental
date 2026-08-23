@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
-import { LocaleProvider, useLocale, useT } from "@/i18n/LocaleProvider";
+import { LocaleProvider, useLocale, useT, useTf } from "@/i18n/LocaleProvider";
 import { LanguageSwitcher } from "@/components/shared/LanguageSwitcher";
 import { normalizeLocale, directionOf, DEFAULT_LOCALE } from "@/i18n/types";
 import { ar, en } from "@/i18n/messages";
@@ -127,5 +127,68 @@ describe("navKeyFor", () => {
     // entry render the parent's label, so the sidebar showed "Appointments" twice.
     expect(navKeyFor("/appointments/recall")).toBe("nav.appointmentsRecall");
     expect(navKeyFor("/settings/lab-work-types")).toBe("nav.settingsLabWorkTypes");
+  });
+});
+
+/**
+ * Sentences that carry a value.
+ *
+ * The tempting shortcut is to concatenate — `t("paidFor") + name` — and it is wrong in a way
+ * that only shows up in the second language: Arabic puts the amount before the patient and
+ * English wants it the other way round. A placeholder is what lets each bundle choose its own
+ * word order, so the two rules here are that substitution happens at all, and that both
+ * bundles agree on which values a sentence expects.
+ */
+function InterpolationProbe() {
+  const tf = useTf();
+  return (
+    <div>
+      <span data-testid="next">{tf("dailyOps.next.patient", { name: "أحمد" })}</span>
+      <span data-testid="missing">{tf("dailyOps.next.patient", {})}</span>
+    </div>
+  );
+}
+
+const PLACEHOLDER = /\{(\w+)\}/g;
+
+function placeholdersIn(value: string): string[] {
+  return [...value.matchAll(PLACEHOLDER)].map((m) => m[1]).sort();
+}
+
+describe("interpolated messages", () => {
+  it("substitutes the values into the sentence", () => {
+    render(
+      <LocaleProvider>
+        <InterpolationProbe />
+      </LocaleProvider>,
+    );
+    expect(screen.getByTestId("next").textContent).toBe("التالي: أحمد");
+  });
+
+  it("leaves an unsupplied placeholder visible rather than blanking it", () => {
+    // A sentence with a hole in it reads as finished text and hides the bug. `{name}` does not.
+    render(
+      <LocaleProvider>
+        <InterpolationProbe />
+      </LocaleProvider>,
+    );
+    expect(screen.getByTestId("missing").textContent).toBe("التالي: {name}");
+  });
+
+  it("keeps both bundles expecting the same values", () => {
+    // If English drops a placeholder the value silently disappears for English readers, and
+    // the screen shows a shorter, wrong sentence with no error anywhere.
+    const mismatched = Object.keys(en)
+      .filter((key) => ar[key])
+      .filter((key) => placeholdersIn(ar[key]).join(",") !== placeholdersIn(en[key]).join(","))
+      .map((key) => `${key}: ar[${placeholdersIn(ar[key])}] en[${placeholdersIn(en[key])}]`);
+
+    expect(mismatched, "these two bundles disagree on what a sentence carries").toEqual([]);
+  });
+
+  it("finds interpolated keys at all", () => {
+    // A regex that matched nothing would make the parity check above vacuous.
+    const withValues = Object.keys(ar).filter((key) => placeholdersIn(ar[key]).length > 0);
+    expect(withValues.length).toBeGreaterThan(3);
   });
 });

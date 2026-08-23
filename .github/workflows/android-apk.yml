@@ -21,6 +21,10 @@ on:
       - "frontend/src/app/m/**"
       - ".github/workflows/android-apk.yml"
 
+permissions:
+  # Needed to publish the APK as a release asset — see the note on the release step.
+  contents: write
+
 jobs:
   apk:
     name: Build APK
@@ -71,10 +75,42 @@ jobs:
             echo "::error::Output is not an Android package"; exit 1; }
           echo "::notice::APK built — $(du -h "$APK" | cut -f1)"
 
-      - name: Upload the APK
+      - name: Name the file something a person can recognise
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/debug/app-debug.apk dist/aqlan-clinic.apk
+          sha256sum dist/aqlan-clinic.apk | tee dist/aqlan-clinic.apk.sha256
+
+      # Kept for CI history, but NOT the way to get the app onto a phone: GitHub always zips
+      # artifacts, so downloading this gives a .zip containing the .apk. Android will not
+      # install that, and the wrapping is invisible until someone tries.
+      - name: Upload the APK as a build artifact
         uses: actions/upload-artifact@v4
         with:
           name: aqlan-clinic-apk
-          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
+          path: dist/
           retention-days: 30
           if-no-files-found: error
+
+      # This is the download link to actually use. A release asset is served as the raw file
+      # with its real name, so a phone receives aqlan-clinic.apk and offers to install it —
+      # no renaming, no unzipping.
+      #
+      # One rolling prerelease rather than a new one per build: the clinic wants "the current
+      # app", not a version history of a stopgap.
+      - name: Publish the APK as a downloadable release
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete mobile-apk --yes --cleanup-tag 2>/dev/null || true
+          gh release create mobile-apk \
+            dist/aqlan-clinic.apk dist/aqlan-clinic.apk.sha256 \
+            --title "تطبيق عقلان — أحدث نسخة" \
+            --prerelease \
+            --notes "APK للمواعيد والمعامل. نزّل aqlan-clinic.apk مباشرة وثبّته.
+
+          مبني من: ${{ github.sha }}
+          يفتح: ${{ github.event.inputs.app_url || 'https://aqlan-dental.vercel.app' }}
+
+          موقّع بمفتاح debug — يحتاج السماح بالتثبيت من مصدر غير معروف." 

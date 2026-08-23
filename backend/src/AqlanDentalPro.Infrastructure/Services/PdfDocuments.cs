@@ -37,7 +37,7 @@ public class PaymentReceiptDocument(
     /// description and the doctor's name are data and print exactly as entered.
     /// </para>
     /// </summary>
-    private string L(string ar, string en) => Identity.PrintsEnglish ? en : ar;
+    private string L(string ar, string en) => Identity.T(ar, en);
 
     public DocumentMetadata GetMetadata() => new()
     {
@@ -247,11 +247,14 @@ public class PaymentReceiptDocument(
 
 public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient Patient, List<AqlanDentalPro.Domain.Entities.Payment> Payments, FinanceClinicIdentity Identity) : IDocument
 {
+    /// <summary>A fixed label in this document's print language. See FinanceClinicIdentity.T.</summary>
+    private string L(string ar, string en) => Identity.T(ar, en);
+
     private const string FontName = PdfService.ArabicFontName;
 
     public DocumentMetadata GetMetadata() => new()
     {
-        Title = $"كشف حساب - {Patient.FirstName} {Patient.LastName}",
+        Title = $"{L("كشف حساب", "Account Statement")} - {Patient.FirstName} {Patient.LastName}",
         Author = "Aqlan Dental Pro",
         Subject = "Patient Financial Statement"
     };
@@ -264,7 +267,10 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
                 page.Size(PageSizes.A4);
                 page.Margin(1.5f, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.ContentFromRightToLeft();
+                // The page direction follows the print language, as on the receipt: an English
+                // document laid out right-to-left puts every label on the wrong side.
+                if (!Identity.PrintsEnglish)
+                    page.ContentFromRightToLeft();
                 page.DefaultTextStyle(x => x.FontSize(9).FontFamily(FontName));
 
                 page.Header().Element(ComposeHeader);
@@ -307,7 +313,7 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
                 }
             });
 
-            column.Item().AlignCenter().Text("كشف الحساب المالي للمريض")
+            column.Item().AlignCenter().Text(L("كشف الحساب المالي للمريض", "Patient Financial Statement"))
                 .Bold().FontSize(16).FontColor("#f5922e");
 
             column.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
@@ -323,9 +329,9 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
             // Patient details card
             column.Item().Row(row =>
             {
-                row.RelativeItem().Text($"اسم المريض: {Patient.FirstName} {Patient.LastName}").Bold().FontSize(10);
-                row.RelativeItem().Text($"رقم الملف: {Patient.PatientNumber}");
-                row.RelativeItem().Text($"هاتف: {Patient.Phone ?? "غير متوفر"}");
+                row.RelativeItem().Text($"{L("اسم المريض", "Patient name")}: {Patient.FirstName} {Patient.LastName}").Bold().FontSize(10);
+                row.RelativeItem().Text($"{L("رقم الملف", "File no.")}: {Patient.PatientNumber}");
+                row.RelativeItem().Text($"{L("هاتف", "Phone")}: {Patient.Phone ?? L("غير متوفر", "Not provided")}");
             });
 
             column.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten2);
@@ -334,7 +340,7 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
             column.Item().Element(ComposeSummary);
 
             // History table
-            column.Item().Text("سجل الحركات والدفعات").Bold().FontSize(11).FontColor("#1a3a5c");
+            column.Item().Text(L("سجل الحركات والدفعات", "Transactions and payments")).Bold().FontSize(11).FontColor("#1a3a5c");
             column.Item().Element(ComposePaymentsTable);
 
             // Signature block
@@ -343,13 +349,13 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
                 row.RelativeItem().AlignCenter().Column(col =>
                 {
                     col.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten1);
-                    col.Item().Text("المحاسب المالي").FontSize(8).FontColor(Colors.Grey.Darken1);
+                    col.Item().Text(L("المحاسب المالي", "Accountant")).FontSize(8).FontColor(Colors.Grey.Darken1);
                 });
                 row.ConstantItem(60);
                 row.RelativeItem().AlignCenter().Column(col =>
                 {
                     col.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten1);
-                    col.Item().Text("ختم الإدارة المالي").FontSize(8).FontColor(Colors.Grey.Darken1);
+                    col.Item().Text(L("ختم الإدارة المالي", "Finance department stamp")).FontSize(8).FontColor(Colors.Grey.Darken1);
                 });
             });
         });
@@ -369,14 +375,14 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
                 columns.ConstantColumn(120);
             });
 
-            table.Cell().Text("إجمالي تكلفة الخطة العلاجية المقررة:").SemiBold();
-            table.Cell().AlignLeft().Text($"{totalCost:N0} ر.ي").SemiBold();
+            table.Cell().Text(L("إجمالي تكلفة الخطة العلاجية المقررة:", "Total planned treatment cost:")).SemiBold();
+            table.Cell().AlignLeft().Text($"{totalCost:N0} {Identity.T("ر.ي", "YER")}").SemiBold();
 
-            table.Cell().Text("إجمالي المبالغ المدفوعة والمقبوضة:").SemiBold().FontColor(Colors.Green.Darken3);
-            table.Cell().AlignLeft().Text($"{totalPaid:N0} ر.ي").SemiBold().FontColor(Colors.Green.Darken3);
+            table.Cell().Text(L("إجمالي المبالغ المدفوعة والمقبوضة:", "Total paid and received:")).SemiBold().FontColor(Colors.Green.Darken3);
+            table.Cell().AlignLeft().Text($"{totalPaid:N0} {Identity.T("ر.ي", "YER")}").SemiBold().FontColor(Colors.Green.Darken3);
 
-            table.Cell().Text("الرصيد المتبقي المستحق:").Bold();
-            table.Cell().AlignLeft().Text($"{remaining:N0} ر.ي").Bold().FontColor(remaining > 0 ? Colors.Red.Darken2 : Colors.Green.Darken3);
+            table.Cell().Text(L("الرصيد المتبقي المستحق:", "Balance due:")).Bold();
+            table.Cell().AlignLeft().Text($"{remaining:N0} {Identity.T("ر.ي", "YER")}").Bold().FontColor(remaining > 0 ? Colors.Red.Darken2 : Colors.Green.Darken3);
         });
     }
 
@@ -395,18 +401,18 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
 
             table.Header(header =>
             {
-                header.Cell().Text("التاريخ").SemiBold().FontSize(8);
-                header.Cell().Text("رقم السند").SemiBold().FontSize(8);
-                header.Cell().Text("طريقة الدفع").SemiBold().FontSize(8);
-                header.Cell().Text("البيان / الخدمة").SemiBold().FontSize(8);
-                header.Cell().AlignLeft().Text("المبلغ المقبوض").SemiBold().FontSize(8);
+                header.Cell().Text(L("التاريخ", "Date")).SemiBold().FontSize(8);
+                header.Cell().Text(L("رقم السند", "Receipt no.")).SemiBold().FontSize(8);
+                header.Cell().Text(L("طريقة الدفع", "Payment method")).SemiBold().FontSize(8);
+                header.Cell().Text(L("البيان / الخدمة", "Description / Service")).SemiBold().FontSize(8);
+                header.Cell().AlignLeft().Text(L("المبلغ المقبوض", "Amount received")).SemiBold().FontSize(8);
             });
 
             foreach (var payment in Payments)
             {
                 table.Cell().Text(payment.PaymentDate.ToString("yyyy-MM-dd")).FontSize(8);
                 table.Cell().Text(payment.ReceiptNumber ?? "-").FontSize(8);
-                table.Cell().Text(payment.PaymentMethod == "cash" ? "نقداً" : payment.PaymentMethod == "card" ? "بطاقة" : "تحويل").FontSize(8);
+                table.Cell().Text(payment.PaymentMethod == "cash" ? L("نقداً", "Cash") : payment.PaymentMethod == "card" ? L("بطاقة", "Card") : L("تحويل", "Transfer")).FontSize(8);
                 table.Cell().Text(payment.ServiceDescription ?? "-").FontSize(8);
                 table.Cell().AlignLeft().Text($"{payment.Amount:N0}").FontSize(8);
             }
@@ -422,10 +428,10 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
             {
                 row.RelativeItem().Column(col =>
                 {
-                    col.Item().Text($"{Identity.Name} — كشف الحساب المالي").FontSize(7).FontColor(Colors.Grey.Darken1);
-                    col.Item().Text("شكراً لثقتكم بنا").FontSize(7).FontColor(Colors.Grey.Darken1);
+                    col.Item().Text($"{Identity.Name} — {L("كشف الحساب المالي", "Patient Financial Statement")}").FontSize(7).FontColor(Colors.Grey.Darken1);
+                    col.Item().Text(L("شكراً لثقتكم بنا", "Thank you for your trust")).FontSize(7).FontColor(Colors.Grey.Darken1);
                 });
-                row.ConstantItem(120).Text($"طبع في: {DateTime.UtcNow:yyyy-MM-dd HH:mm}").FontSize(6).FontColor(Colors.Grey.Lighten1);
+                row.ConstantItem(120).Text($"{L("طبع في", "Printed")}: {DateTime.UtcNow:yyyy-MM-dd HH:mm}").FontSize(6).FontColor(Colors.Grey.Lighten1);
             });
         });
     }
@@ -436,6 +442,9 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
 /// </summary>
 public class InvoiceDocument(Invoice Invoice, FinanceClinicIdentity Identity) : IDocument
 {
+    /// <summary>A fixed label in this document's print language. See FinanceClinicIdentity.T.</summary>
+    private string L(string ar, string en) => Identity.T(ar, en);
+
     private const string FontName = PdfService.ArabicFontName;
 
     public DocumentMetadata GetMetadata() => new()
@@ -453,7 +462,10 @@ public class InvoiceDocument(Invoice Invoice, FinanceClinicIdentity Identity) : 
                 page.Size(PageSizes.A4);
                 page.Margin(2, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.ContentFromRightToLeft();
+                // The page direction follows the print language, as on the receipt: an English
+                // document laid out right-to-left puts every label on the wrong side.
+                if (!Identity.PrintsEnglish)
+                    page.ContentFromRightToLeft();
                 page.DefaultTextStyle(x => x.FontSize(10).FontFamily(FontName));
 
                 page.Header().Element(ComposeHeader);
@@ -496,7 +508,7 @@ public class InvoiceDocument(Invoice Invoice, FinanceClinicIdentity Identity) : 
                 }
             });
 
-            column.Item().AlignCenter().Text("فاتورة")
+            column.Item().AlignCenter().Text(L("فاتورة", "Invoice"))
                 .Bold().FontSize(20).FontFamily(FontName).FontColor("#1a3a5c");
             column.Item().AlignCenter().Text(Invoice.InvoiceNumber)
                 .FontSize(10).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
@@ -516,24 +528,24 @@ public class InvoiceDocument(Invoice Invoice, FinanceClinicIdentity Identity) : 
             {
                 row.RelativeItem().Column(col =>
                 {
-                    col.Item().Text($"المريض: {Invoice.Patient?.FirstName} {Invoice.Patient?.MiddleName} {Invoice.Patient?.LastName}")
+                    col.Item().Text($"{L("المريض", "Patient")}: {Invoice.Patient?.FirstName} {Invoice.Patient?.MiddleName} {Invoice.Patient?.LastName}")
                         .SemiBold().FontFamily(FontName);
-                    col.Item().Text($"رقم المريض: {Invoice.Patient?.PatientNumber}")
+                    col.Item().Text($"{L("رقم المريض", "Patient no.")}: {Invoice.Patient?.PatientNumber}")
                         .FontSize(9).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
                 });
                 row.RelativeItem().Column(col =>
                 {
-                    col.Item().Text($"التاريخ: {Invoice.CreatedAt:yyyy-MM-dd}")
+                    col.Item().Text($"{L("التاريخ", "Date")}: {Invoice.CreatedAt:yyyy-MM-dd}")
                         .FontFamily(FontName);
                     var statusArabic = Invoice.Status switch
                     {
-                        InvoiceStatus.Draft => "مسودة",
-                        InvoiceStatus.Issued => "مصدرة",
-                        InvoiceStatus.Cancelled => "ملغاة",
-                        InvoiceStatus.Paid => "مدفوعة",
+                        InvoiceStatus.Draft => L("مسودة", "Draft"),
+                        InvoiceStatus.Issued => L("مصدرة", "Issued"),
+                        InvoiceStatus.Cancelled => L("ملغاة", "Cancelled"),
+                        InvoiceStatus.Paid => L("مدفوعة", "Paid"),
                         _ => Invoice.Status.ToString()
                     };
-                    col.Item().Text($"الحالة: {statusArabic}")
+                    col.Item().Text($"{L("الحالة", "Status")}: {statusArabic}")
                         .FontFamily(FontName).SemiBold();
                 });
             });
@@ -541,7 +553,7 @@ public class InvoiceDocument(Invoice Invoice, FinanceClinicIdentity Identity) : 
             column.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
 
             // Line items table
-            column.Item().Text("بنود الفاتورة").SemiBold().FontSize(12).FontFamily(FontName);
+            column.Item().Text(L("بنود الفاتورة", "Invoice items")).SemiBold().FontSize(12).FontFamily(FontName);
             column.Item().Element(ComposeLineItemsTable);
 
             // Totals
@@ -550,7 +562,7 @@ public class InvoiceDocument(Invoice Invoice, FinanceClinicIdentity Identity) : 
             // Notes
             if (!string.IsNullOrEmpty(Invoice.Notes))
             {
-                column.Item().Text($"ملاحظات: {Invoice.Notes}")
+                column.Item().Text($"{L("ملاحظات", "Notes")}: {Invoice.Notes}")
                     .FontSize(9).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
             }
 
@@ -560,19 +572,19 @@ public class InvoiceDocument(Invoice Invoice, FinanceClinicIdentity Identity) : 
                 row.RelativeItem().AlignCenter().Column(col =>
                 {
                     col.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten1);
-                    col.Item().Text("المستلم").FontSize(9).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
+                    col.Item().Text(L("المستلم", "Received by")).FontSize(9).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
                 });
                 row.ConstantItem(60);
                 row.RelativeItem().AlignCenter().Column(col =>
                 {
                     col.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten1);
-                    col.Item().Text("المحاسب/الإدارة").FontSize(9).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
+                    col.Item().Text(L("المحاسب/الإدارة", "Accountant / Management")).FontSize(9).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
                 });
                 row.ConstantItem(60);
                 row.RelativeItem().AlignCenter().Column(col =>
                 {
                     col.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten1);
-                    col.Item().Text("ختم المركز").FontSize(9).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
+                    col.Item().Text(L("ختم المركز", "Clinic stamp")).FontSize(9).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
                 });
             });
         });
@@ -595,11 +607,11 @@ public class InvoiceDocument(Invoice Invoice, FinanceClinicIdentity Identity) : 
             table.Header(header =>
             {
                 header.Cell().Text("#").SemiBold().FontSize(9).FontFamily(FontName);
-                header.Cell().Text("الخدمة").SemiBold().FontSize(9).FontFamily(FontName);
-                header.Cell().Text("الوصف").SemiBold().FontSize(9).FontFamily(FontName);
-                header.Cell().Text("الكمية").SemiBold().FontSize(9).FontFamily(FontName);
-                header.Cell().AlignLeft().Text("سعر الوحدة").SemiBold().FontSize(9).FontFamily(FontName);
-                header.Cell().AlignLeft().Text("الإجمالي").SemiBold().FontSize(9).FontFamily(FontName);
+                header.Cell().Text(L("الخدمة", "Service")).SemiBold().FontSize(9).FontFamily(FontName);
+                header.Cell().Text(L("الوصف", "Description")).SemiBold().FontSize(9).FontFamily(FontName);
+                header.Cell().Text(L("الكمية", "Qty")).SemiBold().FontSize(9).FontFamily(FontName);
+                header.Cell().AlignLeft().Text(L("سعر الوحدة", "Unit price")).SemiBold().FontSize(9).FontFamily(FontName);
+                header.Cell().AlignLeft().Text(L("الإجمالي", "Total")).SemiBold().FontSize(9).FontFamily(FontName);
             });
 
             var idx = 1;
@@ -626,16 +638,16 @@ public class InvoiceDocument(Invoice Invoice, FinanceClinicIdentity Identity) : 
 
             column.Item().Row(row =>
             {
-                row.ConstantItem(120).Text("المجموع الفرعي:").FontFamily(FontName);
-                row.ConstantItem(100).AlignLeft().Text($"{Invoice.Subtotal:N0} ر.ي").FontFamily(FontName);
+                row.ConstantItem(120).Text(L("المجموع الفرعي:", "Subtotal:")).FontFamily(FontName);
+                row.ConstantItem(100).AlignLeft().Text($"{Invoice.Subtotal:N0} {Identity.T("ر.ي", "YER")}").FontFamily(FontName);
             });
 
             if (Invoice.DiscountAmount.HasValue && Invoice.DiscountAmount > 0)
             {
                 column.Item().Row(row =>
                 {
-                    row.ConstantItem(120).Text("الخصم:").FontFamily(FontName);
-                    row.ConstantItem(100).AlignLeft().Text($"{Invoice.DiscountAmount:N0} ر.ي").FontFamily(FontName).FontColor(Colors.Red.Darken1);
+                    row.ConstantItem(120).Text(L("الخصم:", "Discount:")).FontFamily(FontName);
+                    row.ConstantItem(100).AlignLeft().Text($"{Invoice.DiscountAmount:N0} {Identity.T("ر.ي", "YER")}").FontFamily(FontName).FontColor(Colors.Red.Darken1);
                 });
             }
 
@@ -643,8 +655,8 @@ public class InvoiceDocument(Invoice Invoice, FinanceClinicIdentity Identity) : 
             {
                 column.Item().Row(row =>
                 {
-                    row.ConstantItem(120).Text("الضريبة:").FontFamily(FontName);
-                    row.ConstantItem(100).AlignLeft().Text($"{Invoice.TaxAmount:N0} ر.ي").FontFamily(FontName);
+                    row.ConstantItem(120).Text(L("الضريبة:", "Tax:")).FontFamily(FontName);
+                    row.ConstantItem(100).AlignLeft().Text($"{Invoice.TaxAmount:N0} {Identity.T("ر.ي", "YER")}").FontFamily(FontName);
                 });
             }
 
@@ -652,21 +664,21 @@ public class InvoiceDocument(Invoice Invoice, FinanceClinicIdentity Identity) : 
 
             column.Item().Row(row =>
             {
-                row.ConstantItem(120).Text("الإجمالي:").Bold().FontFamily(FontName).FontSize(12);
-                row.ConstantItem(100).AlignLeft().Text($"{Invoice.TotalAmount:N0} ر.ي").Bold().FontFamily(FontName).FontSize(12).FontColor(Colors.Blue.Darken2);
+                row.ConstantItem(120).Text(L("الإجمالي:", "Total:")).Bold().FontFamily(FontName).FontSize(12);
+                row.ConstantItem(100).AlignLeft().Text($"{Invoice.TotalAmount:N0} {Identity.T("ر.ي", "YER")}").Bold().FontFamily(FontName).FontSize(12).FontColor(Colors.Blue.Darken2);
             });
 
             if (Invoice.Status == InvoiceStatus.Issued || Invoice.Status == InvoiceStatus.Paid)
             {
                 column.Item().Row(row =>
                 {
-                    row.ConstantItem(120).Text("المدفوع:").FontFamily(FontName);
-                    row.ConstantItem(100).AlignLeft().Text($"{paidAmount:N0} ر.ي").FontFamily(FontName).FontColor(Colors.Green.Darken2);
+                    row.ConstantItem(120).Text(L("المدفوع:", "Paid:")).FontFamily(FontName);
+                    row.ConstantItem(100).AlignLeft().Text($"{paidAmount:N0} {Identity.T("ر.ي", "YER")}").FontFamily(FontName).FontColor(Colors.Green.Darken2);
                 });
                 column.Item().Row(row =>
                 {
-                    row.ConstantItem(120).Text("المتبقي:").FontFamily(FontName).SemiBold();
-                    row.ConstantItem(100).AlignLeft().Text($"{remaining:N0} ر.ي").FontFamily(FontName).SemiBold()
+                    row.ConstantItem(120).Text(L("المتبقي:", "Balance:")).FontFamily(FontName).SemiBold();
+                    row.ConstantItem(100).AlignLeft().Text($"{remaining:N0} {Identity.T("ر.ي", "YER")}").FontFamily(FontName).SemiBold()
                         .FontColor(remaining > 0 ? Colors.Red.Darken1 : Colors.Green.Darken2);
                 });
             }
@@ -682,10 +694,10 @@ public class InvoiceDocument(Invoice Invoice, FinanceClinicIdentity Identity) : 
             {
                 row.RelativeItem().Column(col =>
                 {
-                    col.Item().Text($"{Identity.Name} — فاتورة").FontSize(7).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
-                    col.Item().Text("شكراً لثقتكم بنا").FontSize(7).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
+                    col.Item().Text($"{Identity.Name} — {L("فاتورة", "Invoice")}").FontSize(7).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
+                    col.Item().Text(L("شكراً لثقتكم بنا", "Thank you for your trust")).FontSize(7).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
                 });
-                row.ConstantItem(120).Text($"طبعت: {DateTime.UtcNow:yyyy-MM-dd HH:mm}").FontSize(7).FontColor(Colors.Grey.Lighten1);
+                row.ConstantItem(120).Text($"{L("طبعت", "Printed")}: {DateTime.UtcNow:yyyy-MM-dd HH:mm}").FontSize(7).FontColor(Colors.Grey.Lighten1);
             });
         });
     }

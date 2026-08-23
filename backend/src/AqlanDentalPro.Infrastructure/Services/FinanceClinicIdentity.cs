@@ -85,6 +85,18 @@ public sealed class FinanceClinicIdentity
     /// </summary>
     public bool PrintsEnglish => _printEnglish;
 
+    /// <summary>
+    /// A fixed label in the language this document prints in.
+    ///
+    /// <para>
+    /// Lives here rather than on each document class because all three finance PDFs — receipt,
+    /// statement, invoice — already resolve their identity through this object, and three
+    /// private copies of the same ternary is how they drift apart. Only chrome goes through
+    /// it: patient names, service descriptions and notes are data and print as entered.
+    /// </para>
+    /// </summary>
+    public string T(string ar, string en) => _printEnglish ? en : ar;
+
     public string Name => _printEnglish && !string.IsNullOrWhiteSpace(_nameEn)
         ? _nameEn
         : Or(_name, DefaultName);

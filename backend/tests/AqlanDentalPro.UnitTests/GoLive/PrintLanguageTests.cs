@@ -128,4 +128,40 @@ public class PrintLanguageTests
         receipt.Should().Contain("if (!Identity.PrintsEnglish)",
             "an English receipt laid out right-to-left puts every label on the wrong side");
     }
+
+    /// <summary>
+    /// The statement and the invoice follow the same rule as the receipt. Enforced together
+    /// because a half-translated set is the failure this work exists to remove: an English
+    /// letterhead over Arabic column headings reads worse than either language alone.
+    /// </summary>
+    [Fact]
+    public void The_statement_and_invoice_follow_the_print_language_as_well()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            RepoRoot(), "src", "AqlanDentalPro.Infrastructure", "Services", "PdfDocuments.cs"));
+
+        var statementStart = source.IndexOf("public class FinancialStatementDocument(", StringComparison.Ordinal);
+        var invoiceStart = source.IndexOf("public class InvoiceDocument(", StringComparison.Ordinal);
+        statementStart.Should().BeGreaterThan(-1);
+        invoiceStart.Should().BeGreaterThan(statementStart);
+
+        var statement = source[statementStart..invoiceStart];
+        var invoice = source[invoiceStart..];
+
+        foreach (var label in new[] { "التاريخ", "طريقة الدفع", "المبلغ المقبوض", "الرصيد المتبقي المستحق:" })
+            statement.Should().Contain($"L(\"{label}\"", $"«{label}» is a statement column heading, not data");
+
+        foreach (var label in new[] { "الكمية", "سعر الوحدة", "المجموع الفرعي:", "الخصم:", "الضريبة:" })
+            invoice.Should().Contain($"L(\"{label}\"", $"«{label}» is invoice chrome, not data");
+
+        foreach (var (name, body) in new[] { ("statement", statement), ("invoice", invoice) })
+            body.Should().Contain("if (!Identity.PrintsEnglish)",
+                $"the {name}'s page direction must follow its print language too");
+
+        // One helper, on the identity every finance document already resolves — three private
+        // copies of the same ternary is how they drift apart.
+        foreach (var (name, body) in new[] { ("statement", statement), ("invoice", invoice) })
+            body.Should().Contain("Identity.T(ar, en)",
+                $"the {name} must share the identity's label helper, not reimplement it");
+    }
 }

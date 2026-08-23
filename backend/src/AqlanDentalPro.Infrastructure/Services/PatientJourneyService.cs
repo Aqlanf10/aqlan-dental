@@ -36,7 +36,7 @@ public class PatientJourneyService(
     /// <summary>Returns today's patient journey list combining appointments,
     /// queue status, visit data, and payment info.</summary>
     public async Task<IActionResult> GetTodayAsync(
-        ClaimsPrincipal user,
+        ClaimsPrincipal? user,
         DateOnly queryDate,
         AppointmentStatus? statusFilter,
         Guid? doctorId,
@@ -193,7 +193,7 @@ public class PatientJourneyService(
 
             // Privacy: Doctors must not see patient phone numbers or financial amounts.
             var isDoctor = patientAccessService.IsDoctor;
-            var canViewFinancialAmounts = !isDoctor &&
+            var canViewFinancialAmounts = !isDoctor && user is not null &&
                 (await HasFinancePermissionAsync(user, "finance.patient_balance", "view") ||
                  await HasFinancePermissionAsync(user, "finance", "view"));
 

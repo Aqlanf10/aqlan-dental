@@ -21,7 +21,11 @@ export type DailyPatient = {
   queueStatus: string | null;
   visitId: string | null;
   visitStatus: string | null;
+  checkoutStatus: string | null;
+  amountDueReference: number | null;
+  treatmentDone: string | null;
   proposedProcedure: string | null;
+  hasDraftInvoice: boolean;
   consultationFeeRequired: boolean;
   consultationFeePaid: boolean;
   paymentBeforeEntryRequired: boolean;
@@ -39,10 +43,22 @@ export type ClinicRoom = {
   arabicName: string;
 };
 
-export type DailyOperationAction = 'intake' | 'send-to-queue' | 'call' | 'recall' | 'enter-room' | 'start-visit';
+export type DailyOperationAction =
+  | 'intake'
+  | 'send-to-queue'
+  | 'call'
+  | 'recall'
+  | 'enter-room'
+  | 'start-visit'
+  | 'handoff'
+  | 'create-draft-invoice';
 
 export type DailyOperationInput = {
   roomId?: string;
   roomName?: string;
   notes?: string;
+  treatmentDone?: string;
+  diagnosis?: string;
+  proposedProcedure?: string;
+  amountDue?: number;
 };

@@ -7,8 +7,10 @@ import { ApiError } from '@/api/client';
 import { useAuth } from '@/auth/AuthProvider';
 import { AlertBanner } from '@/components/AlertBanner';
 import { AppText } from '@/components/AppText';
+import { HandoffModal } from '@/components/HandoffModal';
 import { JourneyStepModal } from '@/components/JourneyStepModal';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
+import { ReadyForAccountingCard } from '@/components/ReadyForAccountingCard';
 import { RoomPickerModal } from '@/components/RoomPickerModal';
 import { useLocale } from '@/i18n/LocaleProvider';
 import type { TranslationKey } from '@/i18n';
@@ -16,7 +18,7 @@ import { useDailyOperations } from '@/operations/useDailyOperations';
 import { colors, radius, spacing } from '@/theme/tokens';
 import type { DailyOperationAction, DailyPatient } from '@/types/dailyOperations';
 
-type Tab = 'arrivals' | 'waiting';
+type Tab = 'arrivals' | 'waiting' | 'accounting';
 type RoomRequest = { item: DailyPatient; action: 'call' | 'recall' } | null;
 type JourneyRequest = { item: DailyPatient; action: 'intake' | 'send-to-queue' } | null;
 
@@ -41,6 +43,8 @@ const actionKeys: Record<DailyOperationAction, TranslationKey> = {
   recall: 'ops.action.recall',
   'enter-room': 'ops.action.enterRoom',
   'start-visit': 'ops.action.startVisit',
+  handoff: 'ops.action.handoff',
+  'create-draft-invoice': 'ops.action.createDraft',
 };
 
 function normalizedStatus(item: DailyPatient) {
@@ -62,6 +66,10 @@ export default function DailyOperationsScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [roomRequest, setRoomRequest] = useState<RoomRequest>(null);
   const [journeyRequest, setJourneyRequest] = useState<JourneyRequest>(null);
+  const [handoffRequest, setHandoffRequest] = useState<DailyPatient | null>(null);
+  const canViewAmount = hasPermission('finance.patient_balance.view') || hasPermission('finance.view');
+  const isFinanceRole = user?.role === 'Admin' || user?.role === 'Reception' || user?.role === 'Accountant';
+  const canCreateDraft = isFinanceRole && (hasPermission('finance.invoices.create') || hasPermission('invoices.create'));
 
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -69,7 +77,9 @@ export default function DailyOperationsScreen() {
       const status = normalizedStatus(item);
       const inTab = tab === 'arrivals'
         ? !item.queueItemId || ['scheduled', 'confirmed', 'arrived'].includes(status)
-        : Boolean(item.queueItemId) && !['completed', 'cancelled', 'canceled', 'noshow'].includes(status);
+        : tab === 'waiting'
+          ? Boolean(item.queueItemId) && !['completed', 'cancelled', 'canceled', 'noshow'].includes(status)
+          : item.checkoutStatus === 'ReadyForCheckout' || item.nextAction === 'Checkout';
       if (!inTab) return false;
       if (!normalizedQuery) return true;
       return [item.patientName, item.patientNumber, item.patientPhone, item.doctorName, item.roomName]
@@ -91,6 +101,7 @@ export default function DailyOperationsScreen() {
   const requestAction = useCallback((item: DailyPatient, action: DailyOperationAction) => {
     if (action === 'call' || action === 'recall') setRoomRequest({ item, action });
     else if (action === 'intake' || action === 'send-to-queue') setJourneyRequest({ item, action });
+    else if (action === 'handoff') setHandoffRequest(item);
     else void runAction(item, action);
   }, [runAction]);
 
@@ -99,6 +110,16 @@ export default function DailyOperationsScreen() {
     const succeeded = await runAction(journeyRequest.item, journeyRequest.action, input);
     if (succeeded) setJourneyRequest(null);
   }, [journeyRequest, runAction]);
+
+  const submitHandoff = useCallback(async (input: Parameters<typeof runAction>[2]) => {
+    if (!handoffRequest) return;
+    const succeeded = await runAction(handoffRequest, 'handoff', input);
+    if (succeeded) setHandoffRequest(null);
+  }, [handoffRequest, runAction]);
+
+  const createDraft = useCallback((item: DailyPatient) => {
+    void runAction(item, 'create-draft-invoice');
+  }, [runAction]);
 
   if (!user) return <Redirect href="/sign-in" />;
 
@@ -129,6 +150,7 @@ export default function DailyOperationsScreen() {
             <View style={[styles.summaryRow, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
               <Summary value={operations.items.filter((item) => !item.queueItemId).length} label={t('ops.arrivals')} />
               <Summary value={operations.items.filter((item) => Boolean(item.queueItemId) && !['completed', 'cancelled', 'canceled'].includes(normalizedStatus(item))).length} label={t('ops.waiting')} />
+              <Summary value={operations.items.filter((item) => item.checkoutStatus === 'ReadyForCheckout' || item.nextAction === 'Checkout').length} label={t('ops.readyForAccounting')} />
             </View>
 
             {!canView ? <AlertBanner message={t('ops.noAccess')} /> : null}
@@ -139,6 +161,7 @@ export default function DailyOperationsScreen() {
               <View style={[styles.tabRow, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
                 <TabButton active={tab === 'arrivals'} label={t('ops.arrivals')} onPress={() => setTab('arrivals')} />
                 <TabButton active={tab === 'waiting'} label={t('ops.waiting')} onPress={() => setTab('waiting')} />
+                <TabButton active={tab === 'accounting'} label={t('ops.readyForAccounting')} onPress={() => setTab('accounting')} />
               </View>
               <View style={[styles.searchRow, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
                 <TextInput
@@ -168,7 +191,7 @@ export default function DailyOperationsScreen() {
               </View>
             ) : null}
 
-            {selected && canView && !operations.loading ? (
+            {selected && tab !== 'accounting' && canView && !operations.loading ? (
               <PatientDetails
                 busyAction={operations.busyAction}
                 item={selected}
@@ -179,7 +202,15 @@ export default function DailyOperationsScreen() {
             {canView && !operations.loading ? <AppText variant="subheading">{t('ops.patientList')}</AppText> : null}
           </View>
         )}
-        renderItem={({ item }) => (
+        renderItem={({ item }) => tab === 'accounting' ? (
+          <ReadyForAccountingCard
+            busy={operations.busyAction?.itemId === (item.queueItemId ?? item.appointmentId ?? item.patientId)}
+            canCreateDraft={canCreateDraft}
+            canViewAmount={canViewAmount}
+            item={item}
+            onCreateDraft={createDraft}
+          />
+        ) : (
           <PatientCard item={item} onPress={() => setSelectedId(patientKey(item))} selected={selected ? patientKey(selected) === patientKey(item) : false} />
         )}
         showsVerticalScrollIndicator={false}
@@ -200,6 +231,17 @@ export default function DailyOperationsScreen() {
           onClose={() => setJourneyRequest(null)}
           onSubmit={(input) => { void submitJourneyStep(input); }}
           rooms={operations.rooms}
+        />
+      ) : null}
+      {handoffRequest ? (
+        <HandoffModal
+          allowAmount={canViewAmount}
+          busy={operations.busyAction?.action === 'handoff'}
+          errorMessage={errorMessage}
+          item={handoffRequest}
+          onClose={() => setHandoffRequest(null)}
+          onSubmit={(input) => { void submitHandoff(input); }}
+          visible
         />
       ) : null}
     </SafeAreaView>
@@ -266,6 +308,8 @@ function PatientDetails({ item, busyAction, onAction }: {
   if (status === 'called' && item.queueItemId && hasPermission('clinic_queue.edit')) actions.push('recall');
   if (status === 'called' && item.queueItemId && hasPermission('clinic_queue.approve') && !paymentBlocked) actions.push('enter-room');
   if (status === 'inroom' && item.appointmentId && (user?.role === 'Doctor' || hasPermission('visits.edit'))) actions.push('start-visit');
+  const isDoctorRole = user?.role === 'Admin' || user?.role === 'Orthodontist' || user?.role === 'GeneralDentist' || user?.role === 'OralSurgeon';
+  if (status === 'inprogress' && item.visitId && isDoctorRole && hasPermission('visits.edit')) actions.push('handoff');
 
   return (
     <View style={styles.detailsCard}>
@@ -361,8 +405,8 @@ const styles = StyleSheet.create({
   backButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: colors.navy800 },
   center: { textAlign: 'center' },
   titleCopy: { flex: 1, gap: spacing.xs },
-  summaryRow: { gap: spacing.md, paddingHorizontal: spacing.xl, marginTop: -6 },
-  summaryCard: { flex: 1, gap: spacing.xs, padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.white },
+  summaryRow: { flexWrap: 'wrap', gap: spacing.md, paddingHorizontal: spacing.xl, marginTop: -6 },
+  summaryCard: { flexGrow: 1, flexBasis: 100, gap: spacing.xs, padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.white },
   tabs: { gap: spacing.md, paddingHorizontal: spacing.xl },
   tabRow: { padding: 4, borderRadius: radius.md, backgroundColor: colors.blue100 },
   tabButton: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.sm, borderRadius: radius.sm },

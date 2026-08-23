@@ -47,7 +47,11 @@ function parsePatient(value: unknown): DailyPatient {
     queueStatus: optionalString(value, 'queueStatus'),
     visitId: optionalString(value, 'visitId'),
     visitStatus: optionalString(value, 'visitStatus'),
+    checkoutStatus: optionalString(value, 'checkoutStatus'),
+    amountDueReference: readNumber(value, 'amountDueReference'),
+    treatmentDone: optionalString(value, 'treatmentDone'),
     proposedProcedure: optionalString(value, 'proposedProcedure'),
+    hasDraftInvoice: readBoolean(value, 'hasDraftInvoice'),
     consultationFeeRequired: readBoolean(value, 'consultationFeeRequired'),
     consultationFeePaid: readBoolean(value, 'consultationFeePaid'),
     paymentBeforeEntryRequired: readBoolean(value, 'paymentBeforeEntryRequired'),
@@ -107,6 +111,20 @@ export function createDailyOperationsApi(request: AuthorizedRequest) {
 
     startVisit(appointmentId: string) {
       return post(request, `/api/patient-journey/${encodeURIComponent(appointmentId)}/start-visit`);
+    },
+
+    handoff(visitId: string, body: {
+      treatmentDone?: string;
+      diagnosis?: string;
+      proposedProcedure?: string;
+      amountDue?: number;
+      notes?: string;
+    }) {
+      return post(request, `/api/patient-journey/${encodeURIComponent(visitId)}/handoff-to-reception`, body);
+    },
+
+    createDraftInvoice(visitId: string) {
+      return post(request, `/api/patient-journey/${encodeURIComponent(visitId)}/create-draft-invoice`);
     },
   };
 }

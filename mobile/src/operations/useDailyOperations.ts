@@ -81,6 +81,16 @@ export function useDailyOperations(enabled = true) {
       else if (action === 'recall' && item.queueItemId) await api.recall(item.queueItemId, input.roomName);
       else if (action === 'enter-room' && item.queueItemId) await api.enterRoom(item.queueItemId);
       else if (action === 'start-visit' && item.appointmentId) await api.startVisit(item.appointmentId);
+      else if (action === 'handoff' && item.visitId) {
+        await api.handoff(item.visitId, {
+          treatmentDone: input.treatmentDone,
+          diagnosis: input.diagnosis,
+          proposedProcedure: input.proposedProcedure,
+          amountDue: input.amountDue,
+          notes: input.notes,
+        });
+      }
+      else if (action === 'create-draft-invoice' && item.visitId) await api.createDraftInvoice(item.visitId);
       else throw new Error('Missing operation identifier');
       if (!mounted.current) return false;
       setNotice(action);

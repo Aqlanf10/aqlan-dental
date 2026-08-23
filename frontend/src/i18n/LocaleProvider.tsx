@@ -33,6 +33,15 @@ interface LocaleContextValue {
   setLocale: (next: Locale) => void;
   /** Translate a key, falling back to Arabic and then to the key itself. */
   t: (key: string, fallback?: string) => string;
+  /**
+   * Translate a key that carries values, substituting `{name}` placeholders.
+   *
+   * Concatenating a translated fragment onto a value would fix the word order to Arabic's:
+   * «تم تسجيل دفعة 5,000 ر.ي للمريض أحمد» puts the amount before the patient, and English
+   * wants «Payment of 5,000 YER recorded for Ahmed» — same pieces, different order, and
+   * some languages want the verb elsewhere again. A placeholder lets each bundle decide.
+   */
+  tf: (key: string, values: Record<string, string | number>) => string;
 }
 
 const LocaleContext = createContext<LocaleContextValue | null>(null);
@@ -91,9 +100,19 @@ export function LocaleProvider({
     [locale],
   );
 
+  const tf = useCallback(
+    (key: string, values: Record<string, string | number>) =>
+      // A placeholder with no matching value is left as written rather than blanked: the
+      // reader sees `{count}` and can report it, instead of a sentence with a hole in it.
+      t(key).replace(/\{(\w+)\}/g, (whole, name: string) =>
+        Object.prototype.hasOwnProperty.call(values, name) ? String(values[name]) : whole,
+      ),
+    [t],
+  );
+
   const value = useMemo<LocaleContextValue>(
-    () => ({ locale, dir: directionOf(locale), setLocale, t }),
-    [locale, setLocale, t],
+    () => ({ locale, dir: directionOf(locale), setLocale, t, tf }),
+    [locale, setLocale, t, tf],
   );
 
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
@@ -114,10 +133,19 @@ export function useLocale(): LocaleContextValue {
     dir: directionOf(DEFAULT_LOCALE),
     setLocale: () => {},
     t: (key: string, fallback?: string) => ar[key] ?? fallback ?? key,
+    tf: (key: string, values: Record<string, string | number>) =>
+      (ar[key] ?? key).replace(/\{(\w+)\}/g, (whole, name: string) =>
+        Object.prototype.hasOwnProperty.call(values, name) ? String(values[name]) : whole,
+      ),
   };
 }
 
 /** Convenience for components that only need to translate. */
 export function useT() {
   return useLocale().t;
+}
+
+/** Convenience for components that need to translate sentences carrying values. */
+export function useTf() {
+  return useLocale().tf;
 }

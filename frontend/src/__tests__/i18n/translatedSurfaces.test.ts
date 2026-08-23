@@ -26,6 +26,10 @@ const frontend = resolve(__dirname, "../..", "..");
 /** Surfaces claimed complete, with the key namespaces each one owns. */
 const TRANSLATED_SURFACES: ReadonlyArray<{ file: string; namespaces: readonly string[] }> = [
   { file: "src/components/layout/Topbar.tsx", namespaces: ["topbar."] },
+  { file: "src/components/layout/TopbarNotifications.tsx", namespaces: ["notifications."] },
+  { file: "src/components/layout/TopbarSearch.tsx", namespaces: ["search."] },
+  { file: "src/components/layout/ImpersonationBanner.tsx", namespaces: ["impersonation."] },
+  { file: "src/app/(dashboard)/daily-operations/page.tsx", namespaces: ["dailyOps."] },
 ];
 
 /**
@@ -63,6 +67,21 @@ describe("surfaces claimed as translated", () => {
 
     const untranslated = owned.filter((key) => !en[key]);
     expect(untranslated, "these fall back to Arabic on a surface claimed as done").toEqual([]);
+  });
+
+  it.each(TRANSLATED_SURFACES)("$file asks for no key that does not exist", ({ file }) => {
+    // A mistyped key renders the key name itself — `dailyOps.toast.paymentDon` in the middle
+    // of a toast. The Arabic fallback cannot save it, because there is nothing to fall back
+    // to. Nothing else in the build catches this, so it is caught here.
+    const source = readFileSync(resolve(frontend, file), "utf8");
+    const used = [...source.matchAll(/\bt\(\s*"([^"]+)"/g), ...source.matchAll(/\btf\(\s*"([^"]+)"/g)]
+      .map((m) => m[1])
+      .filter((key) => key.includes("."));
+
+    expect(used.length).toBeGreaterThan(0);
+
+    const undefinedKeys = [...new Set(used)].filter((key) => !ar[key]);
+    expect(undefinedKeys, "these render as the raw key name").toEqual([]);
   });
 
   it("never lets the English bundle claim a key Arabic does not define", () => {

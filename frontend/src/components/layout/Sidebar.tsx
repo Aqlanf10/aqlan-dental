@@ -87,7 +87,7 @@ export function navKeyFor(href: string): string {
 /* ─── Navigation definition ─────────────────────────────────────────────────── */
 export const NAV: NavEntry[] = [
   // ── رئيسي ────────────────────────────────────────────────────────────────
-  { href: "/",               label: "لوحة التحكم",     icon: LayoutDashboard, roles: getNavigationRoles("/"),                                                             section: "رئيسي" },
+  { href: "/",               label: "لوحة التحكم",     icon: LayoutDashboard, roles: getNavigationRoles("/"),                                                             section: "nav.section.main" },
   { href: "/daily-operations", label: "التشغيل اليومي", icon: ClipboardList, roles: getNavigationRoles("/daily-operations"), permission: PERMISSION_KEYS.DAILY_OPERATIONS_VIEW, badge: "⭐" },
   { href: "/patients",       label: "المرضى",           icon: Users,           roles: getNavigationRoles("/patients"), permission: PERMISSION_KEYS.PATIENTS_VIEW },
   // YOLO-S5: Patient segments — pre-built dynamic (overdue ortho, outstanding balance,
@@ -96,7 +96,7 @@ export const NAV: NavEntry[] = [
   { href: "/patient-segments", label: "مجموعات المرضى", icon: Layers,          roles: getNavigationRoles("/patient-segments") },
 
   // ── العيادة ───────────────────────────────────────────────────────────────
-  { href: "/appointments",   label: "المواعيد",        icon: CalendarDays,    roles: getNavigationRoles("/appointments"), permission: PERMISSION_KEYS.APPOINTMENTS_VIEW, section: "العيادة" },
+  { href: "/appointments",   label: "المواعيد",        icon: CalendarDays,    roles: getNavigationRoles("/appointments"), permission: PERMISSION_KEYS.APPOINTMENTS_VIEW, section: "nav.section.clinic" },
   { href: "/appointments/recall", label: "قائمة الاستدعاء", icon: BellRing,   roles: getNavigationRoles("/appointments/recall"), permission: PERMISSION_KEYS.APPOINTMENTS_VIEW },
   // NAV-CEPH-FIX (audit §4 — Reception workflow): /clinic-queue and /patient-journey
   // index pages are now thin redirect stubs to /daily-operations — the canonical workspace.
@@ -108,7 +108,7 @@ export const NAV: NavEntry[] = [
   { href: "/prescriptions",  label: "الوصفات الطبية",  icon: Pill,            roles: getNavigationRoles("/prescriptions") },
 
   // ── تخصصات ───────────────────────────────────────────────────────────────
-  { href: "/ortho",          label: "التقويم",          icon: GitBranch,       roles: getNavigationRoles("/ortho"),                                       section: "تخصصات", badge: "محدّث" },
+  { href: "/ortho",          label: "التقويم",          icon: GitBranch,       roles: getNavigationRoles("/ortho"),                                       section: "nav.section.specialties", badge: "nav.badge.updated" },
   { href: "/ceph",           label: "السيفالومتري",     icon: Activity,        roles: getNavigationRoles("/ceph") },
   { href: "/general",        label: "طب الأسنان العام", icon: Stethoscope,     roles: getNavigationRoles("/general") },
   { href: "/surgery",        label: "الجراحة",          icon: Scissors,        roles: getNavigationRoles("/surgery") },
@@ -117,7 +117,7 @@ export const NAV: NavEntry[] = [
   // NAV-CEPH-FIX (audit §4 — Referrals): Reception is not in routePermissions for /referrals
   // (routePermissions.ts:26 is Admin + doctors only) → the link was a click→redirect dead-end.
   // Backend already blocks Reception; only hides a confusing link.
-  { href: "/referrals",      label: "الإحالات",         icon: ArrowLeftRight,  roles: getNavigationRoles("/referrals"),                                         section: "التواصل" },
+  { href: "/referrals",      label: "الإحالات",         icon: ArrowLeftRight,  roles: getNavigationRoles("/referrals"),                                         section: "nav.section.communication" },
   { href: "/messages",       label: "الرسائل",          icon: MessageCircle,   roles: getNavigationRoles("/messages") },
   { href: "/whatsapp",       label: "واتساب",           icon: MessageSquare,   roles: getNavigationRoles("/whatsapp") },
   { href: "/sms",            label: "رسائل SMS",        icon: Smartphone,      roles: getNavigationRoles("/sms") },
@@ -129,7 +129,7 @@ export const NAV: NavEntry[] = [
   // blocks Reception from finance APIs.
   // /finance-v3?tab=commissions entry deleted — same page, different starting tab; users pick
   // the Commissions tab inside /finance-v3. Direct URL still works.
-  { href: "/finance-v3",  label: "المالية",  icon: Wallet,  roles: getNavigationRoles("/finance-v3"),  section: "المالية" },
+  { href: "/finance-v3",  label: "المالية",  icon: Wallet,  roles: getNavigationRoles("/finance-v3"),  section: "nav.financeV3" },
   {
     kind: "group",
     label: "المخزون", icon: Package,
@@ -157,10 +157,10 @@ export const NAV: NavEntry[] = [
   },
 
   // ── تقارير ───────────────────────────────────────────────────────────────
-  { href: "/reports",        label: "التقارير",         icon: BarChart2,       roles: getNavigationRoles("/reports"),                                         section: "تقارير" },
+  { href: "/reports",        label: "التقارير",         icon: BarChart2,       roles: getNavigationRoles("/reports"),                                         section: "nav.section.reports" },
 
   // ── الإدارة ───────────────────────────────────────────────────────────────
-  { href: "/doctors",        label: "إدارة الأطباء",     icon: UserRound,       roles: getNavigationRoles("/doctors"),                                                      section: "الإدارة" },
+  { href: "/doctors",        label: "إدارة الأطباء",     icon: UserRound,       roles: getNavigationRoles("/doctors"),                                                      section: "nav.section.administration" },
   { href: "/employees",      label: "الموظفين",         icon: UserCog,         roles: getNavigationRoles("/employees") },
   {
     kind: "group",
@@ -184,7 +184,7 @@ export const NAV: NavEntry[] = [
   // NAV-CEPH-FIX (audit §4 — Settings): /settings/services and /settings/backup entries
   // deleted — they are sub-pages of /settings (already reachable via the settings hub).
   // Direct URLs still work; cleaner sidebar (no duplicated shortcuts).
-  { href: "/settings",       label: "الإعدادات",        icon: Settings,        roles: getNavigationRoles("/settings"),                                                      section: "النظام" },
+  { href: "/settings",       label: "الإعدادات",        icon: Settings,        roles: getNavigationRoles("/settings"),                                                      section: "nav.section.system" },
 ];
 
 const ROLE_LABELS: Record<string, string> = {
@@ -217,6 +217,8 @@ function NavLink({
   href: string; label: string; icon: React.ElementType;
   isCurrent: boolean; indent?: boolean; unreadCount?: number; badge?: string;
 }) {
+  // The badge arrives as a bundle key so it can follow the interface language.
+  const t = useT();
   return (
     <Link
       href={href}
@@ -245,7 +247,7 @@ function NavLink({
           className="text-[9px] font-bold rounded-full px-1.5 py-0.5 me-1 flex-shrink-0"
           style={{ background: BRAND_ORANGE, color: "#fff" }}
         >
-          {badge}
+          {t(badge, badge)}
         </span>
       )}
       {unreadCount && unreadCount > 0 && (
@@ -436,7 +438,7 @@ export function Sidebar() {
               if (!visible) return null;
               return (
                 <div key={`group-${idx}`}>
-                  {entry.section && <SectionLabel label={entry.section} />}
+                  {entry.section && <SectionLabel label={t(entry.section, entry.section)} />}
                   <NavGroupItem group={entry} userRole={userRole} pathname={pathname} user={user} />
                 </div>
               );
@@ -453,14 +455,14 @@ export function Sidebar() {
             // Dynamically customize labels for Doctor roles
             let label = t(navKeyFor(leaf.href), leaf.label);
             if (leaf.href === "/schedule" && ["GeneralDentist", "OralSurgeon", "Orthodontist"].includes(userRole)) {
-              label = "مواعيدي";
+              label = t("nav.mySchedule");
             } else if (leaf.href === "/patients" && ["GeneralDentist", "OralSurgeon", "Orthodontist"].includes(userRole)) {
-              label = "مرضاي";
+              label = t("nav.myPatients");
             }
 
             return (
               <div key={leaf.href}>
-                {leaf.section && <SectionLabel label={leaf.section} />}
+                {leaf.section && <SectionLabel label={t(leaf.section, leaf.section)} />}
                 <NavLink
                   href={leaf.href}
                   label={label}

@@ -51,8 +51,18 @@ function screenResources(): string[] {
   return [...new Set(block.match(/"[a-z_.]+"/g)?.map((s) => s.slice(1, -1)) ?? [])];
 }
 
-/** Resources read by PermissionGuard.HasAsync / CanAsync anywhere in the API. */
+/**
+ * Resources read by PermissionGuard.HasAsync / CanAsync anywhere in the API.
+ *
+ * Memoised: this greps the whole backend tree, and running it once per test case pushed the
+ * file past vitest's 5s default on a loaded machine. It failed that way three times before I
+ * stopped calling it a flake and read the message — it said "Test timed out", not an
+ * assertion. The scan is the slow part, and it cannot change between cases in one run.
+ */
+let guardedCache: string[] | null = null;
+
 function guardedResources(): string[] {
+  if (guardedCache) return guardedCache;
   const out = execFileSync(
     "grep",
     ["-rhoE", "(PermissionGuard\\.HasAsync|CanAsync)\\([^)]*\\)", resolve(repoRoot, "backend/src")],
@@ -64,10 +74,12 @@ function guardedResources(): string[] {
     const r = m.slice(1, -1);
     if (!actions.has(r)) found.add(r);
   }
-  return [...found];
+  guardedCache = [...found];
+  return guardedCache;
 }
 
-describe("settings → roles screen offers the resources the server reads", () => {
+// The first case pays for the backend scan; 30s is headroom, not an expectation.
+describe("settings → roles screen offers the resources the server reads", { timeout: 30_000 }, () => {
   it("lists no resource that neither a guard nor the frontend consults", () => {
     const guarded = new Set(guardedResources());
     const orphans = screenResources().filter((r) => !guarded.has(r) && !UI_ONLY.has(r));

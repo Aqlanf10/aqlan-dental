@@ -3,6 +3,7 @@ using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Application.Common;
 using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,7 +13,12 @@ namespace AqlanDentalPro.API.Controllers;
 
 public sealed class OpenSessionRequest
 {
-    public decimal OpeningBalance { get; init; } // مبلغ العهدة الافتتاحية
+    /// <summary>
+    /// The float in the drawer at open. Nullable so that "not stated" is distinguishable from
+    /// "counted, and it was empty" — as a plain decimal both arrive as 0, and the clinic's
+    /// configured default could never be told apart from a deliberate zero.
+    /// </summary>
+    public decimal? OpeningBalance { get; init; } // مبلغ العهدة الافتتاحية
     public List<CurrencyOpeningBalanceRequest> CurrencyOpeningBalances { get; init; } = [];
     public string? Notes { get; init; }
 }
@@ -69,8 +75,12 @@ public static class CashierClosingApprovalConfig
 [ApiController]
 [Route("api/cashier-sessions")]
 [Authorize(Policy = "FinanceAccess")] // Admin, Accountant, Reception
-public class CashierSessionsController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, ITreasuryResolutionService treasuryResolution, ILogger<CashierSessionsController> logger) : ControllerBase
+public class CashierSessionsController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, ITreasuryResolutionService treasuryResolution, ILogger<CashierSessionsController> logger, FinanceSettingsReader? financeSettings = null) : ControllerBase
 {
+    // The settings reader is last and optional so the many existing test call sites keep
+    // compiling; DI still injects the registered instance, and the fallback builds one from
+    // the same DbContext. Same shape as PaymentService's legacy test constructor.
+
     // FIN-PERM: the class-level FinanceAccess policy is the coarse gate; the granular
     // finance.cashier_session permission (RolePermissions, owner-configurable from
     // Settings) is the real per-action gate. Admin always bypasses. With the seeded
@@ -103,6 +113,15 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
 
         if (req.OpeningBalance < 0)
             return BadRequest(new { message = "لا يمكن أن يكون رصيد العهدة الافتتاحية سالباً" });
+
+        // An unstated opening float falls back to the clinic's configured default. The setting
+        // finance.cashier_session.default_opening_balance was editable in Settings and read by
+        // nothing, so reception retyped the same figure at the start of every shift.
+        // GetDecimalAsync already falls back to the declared default and then to zero, so no
+        // further coalescing is needed here.
+        var openingBalance = req.OpeningBalance
+            ?? await (financeSettings ?? new FinanceSettingsReader(db))
+                .GetDecimalAsync(FinanceSettingsKeys.CashierDefaultOpeningBalance);
 
         if (req.CurrencyOpeningBalances.Any(item => item.OpeningCash < 0))
             return BadRequest(new { message = "لا يمكن أن يكون رصيد افتتاح أي عملة سالباً" });
@@ -193,8 +212,8 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 CashierId = userId,
                 BranchId = branchId.Value,
                 OpeningTime = DateTime.UtcNow,
-                OpeningBalance = req.OpeningBalance,
-                ExpectedClosingCash = req.OpeningBalance, // starts with just opening cash
+                OpeningBalance = openingBalance,
+                ExpectedClosingCash = openingBalance, // starts with just opening cash
                 ExpectedClosingCard = 0,
                 ExpectedClosingBank = 0,
                 Status = SessionStatus.Open,

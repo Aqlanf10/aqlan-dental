@@ -1,6 +1,7 @@
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -159,7 +160,11 @@ public class CrossRouteVisitIdempotencyTests : IClassFixture<TestWebAppFactory>,
         };
         db.ClinicServices.Add(service);
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        // Both StartVisit routes reject an appointment that is not today, and they ask
+        // ClinicTimeProvider what today is. Seeding the server's date puts the fixture a
+        // day behind the clinic between 21:00 and 24:00 UTC — after midnight in Aden —
+        // and the routes correctly refuse a yesterday appointment.
+        var today = ClinicTimeProvider.ClinicToday();
 
         // AppointmentStatus.InRoom -> InProgress is a valid transition
         // (AppointmentStatusTransitions), which is what AppointmentsController.StartVisit

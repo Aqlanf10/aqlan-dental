@@ -127,14 +127,32 @@ export interface TabDef {
   shortcut: string;
 }
 
+/**
+ * `label` is a translation key, not text: the tabs are declared at module scope where no
+ * translator exists, so the screen resolves them with `t(tab.label)` at render time.
+ */
 export const TABS: TabDef[] = [
-  { key: "appointments", label: "مواعيد اليوم",  icon: "Calendar",       color: BLUE,       shortcut: "1" },
-  { key: "queue",        label: "قائمة الانتظار", icon: "Clock",          color: ORANGE,     shortcut: "2" },
-  { key: "inClinic",     label: "داخل العيادة",  icon: "Stethoscope",    color: "#9333ea",  shortcut: "3" },
-  { key: "completed",    label: "مكتمل اليوم",   icon: "CheckCircle",    color: "#16a34a",  shortcut: "4" },
-  { key: "payments",     label: "المدفوعات السريعة", icon: "CreditCard",  color: "#22c55e",  shortcut: "5" },
-  { key: "overdue",      label: "المتأخرات",     icon: "AlertTriangle",  color: "#ef4444",  shortcut: "6" },
+  { key: "appointments", label: "dailyOps.tab.appointments", icon: "Calendar",       color: BLUE,       shortcut: "1" },
+  { key: "queue",        label: "dailyOps.tab.queue",        icon: "Clock",          color: ORANGE,     shortcut: "2" },
+  { key: "inClinic",     label: "dailyOps.tab.inClinic",     icon: "Stethoscope",    color: "#9333ea",  shortcut: "3" },
+  { key: "completed",    label: "dailyOps.tab.completed",    icon: "CheckCircle",    color: "#16a34a",  shortcut: "4" },
+  { key: "payments",     label: "dailyOps.tab.payments",     icon: "CreditCard",     color: "#22c55e",  shortcut: "5" },
+  { key: "overdue",      label: "dailyOps.tab.overdue",      icon: "AlertTriangle",  color: "#ef4444",  shortcut: "6" },
 ];
+
+/**
+ * The note written into an appointment when a manager waives an outstanding balance.
+ *
+ * This is deliberately not translated. It is not a label on a screen — it is stored on the
+ * record and read back later in the day report and in any audit of who waived what. If it
+ * followed the reader's interface language, the same override would read differently
+ * depending on who happened to be logged in when it was written, and a manager reviewing the
+ * day would find two languages in one column. The record is Arabic because the clinic's
+ * records are Arabic.
+ */
+export function overdueOverrideNote(managerName: string): string {
+  return `[تجاوز متأخرات: بواسطة المدير ${managerName}]`;
+}
 
 // ─── WhatsApp Templates ──────────────────────────────────────────────────────
 export interface WhatsAppTemplate {

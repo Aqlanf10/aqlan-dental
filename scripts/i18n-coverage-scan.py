@@ -20,6 +20,7 @@ import re
 import sys
 
 ROOT = "frontend/src"
+BUNDLE = os.path.join(ROOT, "i18n", "messages.ts")
 
 # Any Arabic outside a comment is user-visible text. An earlier version of this matched only
 # quoted strings and text between two tags on one line, which silently missed bare JSX text on
@@ -53,6 +54,11 @@ def scan(prefixes: list[str]) -> collections.Counter:
             if not filename.endswith((".tsx", ".ts")):
                 continue
             path = os.path.join(dirpath, filename)
+            # The bundle is where the Arabic is supposed to live. Counting it made the number
+            # go *up* as surfaces were migrated — every string moved out of a component landed
+            # here — which is the opposite of what this measures.
+            if path == BUNDLE:
+                continue
             if prefixes and not any(path.startswith(p) for p in prefixes):
                 continue
             found = count_file(path)

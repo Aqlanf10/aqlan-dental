@@ -1,5 +1,7 @@
 "use client";
 
+import { useT, useLocale } from "@/i18n/LocaleProvider";
+
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Bell, CheckCheck, RefreshCw, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -30,17 +32,31 @@ const ENTITY_URL: Record<string, (id: string) => string> = {
 
 const UNREAD_COUNT_QUERY_KEY = ["notificationUnreadCount"] as const;
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const min = Math.floor(diff / 60_000);
-  if (min < 1) return "الآن";
-  if (min < 60) return `منذ ${min} دقيقة`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `منذ ${hr} ساعة`;
-  return `منذ ${Math.floor(hr / 24)} يوم`;
+/**
+ * Relative time in the reader's language.
+ *
+ * Built from Arabic fragments before — «منذ 3 دقيقة» — which is wrong Arabic as well as
+ * untranslatable: Arabic inflects the noun by count and the fragments cannot express that.
+ * Intl.RelativeTimeFormat knows both languages' rules, so this stops hand-assembling
+ * grammar. Western digits (ar-EG) to match the rest of the interface.
+ */
+function timeAgo(iso: string, locale: string): string {
+  const rtf = new Intl.RelativeTimeFormat(locale === "en" ? "en" : "ar-EG", { numeric: "auto" });
+  const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
+
+  if (minutes < 1) return rtf.format(0, "minute");
+  if (minutes < 60) return rtf.format(-minutes, "minute");
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return rtf.format(-hours, "hour");
+
+  return rtf.format(-Math.floor(hours / 24), "day");
 }
 
 export function TopbarNotifications() {
+  const t = useT();
+  const { locale } = useLocale();
+
   const router = useRouter();
   const queryClient = useQueryClient();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -111,7 +127,7 @@ export function TopbarNotifications() {
       setLoadError(null);
     } catch (error) {
       if (controller.signal.aborted || requestId !== loadRequestSequenceRef.current) return;
-      setLoadError(extractErrorMessage(error, "تعذّر تحميل الإشعارات"));
+      setLoadError(extractErrorMessage(error, t("notifications.error.load")));
     } finally {
       if (requestId === loadRequestSequenceRef.current) {
         setLoading(false);
@@ -163,7 +179,7 @@ export function TopbarNotifications() {
       setUnreadCount(0);
       queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_QUERY_KEY });
     } catch (error) {
-      setActionError(extractErrorMessage(error, "تعذّر تعليم الإشعارات كمقروءة"));
+      setActionError(extractErrorMessage(error, t("notifications.error.markAll")));
     } finally {
       finishAction(actionKey);
     }
@@ -186,7 +202,7 @@ export function TopbarNotifications() {
       queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_QUERY_KEY });
       return true;
     } catch (error) {
-      setActionError(extractErrorMessage(error, "تعذّر تعليم الإشعار كمقروء"));
+      setActionError(extractErrorMessage(error, t("notifications.error.markOne")));
       return false;
     } finally {
       finishAction(actionKey);
@@ -220,7 +236,7 @@ export function TopbarNotifications() {
         queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_QUERY_KEY });
       }
     } catch (error) {
-      setActionError(extractErrorMessage(error, "تعذّر حذف الإشعار"));
+      setActionError(extractErrorMessage(error, t("notifications.error.delete")));
     } finally {
       finishAction(actionKey);
     }
@@ -256,7 +272,7 @@ export function TopbarNotifications() {
       <button
         type="button"
         onClick={toggleOpen}
-        aria-label="الإشعارات"
+        aria-label={t("notifications.title")}
         aria-expanded={open}
         className="relative w-[38px] h-[38px] rounded-lg flex items-center justify-center transition-colors"
         style={{ background: "#eef3f9", color: "#64748b" }}
@@ -284,7 +300,7 @@ export function TopbarNotifications() {
           style={{ boxShadow: "0 8px 30px rgba(0,0,0,0.12)", border: "1px solid #e8f0f9" }}
         >
           <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid #e8f0f9" }}>
-            <span className="font-bold text-sm" style={{ color: "#0d2137" }}>الإشعارات</span>
+            <span className="font-bold text-sm" style={{ color: "#0d2137" }}>{t("notifications.title")}</span>
             {unreadCount > 0 && (
               <button
                 type="button"
@@ -294,14 +310,14 @@ export function TopbarNotifications() {
                 style={{ color: "#3d7ab5" }}
               >
                 <CheckCheck className="w-3.5 h-3.5" />
-                {pendingAction === "read-all" ? "جارٍ التحديث..." : "تحديد الكل كمقروء"}
+                {pendingAction === "read-all" ? t("notifications.refreshing") : t("notifications.markAllRead")}
               </button>
             )}
           </div>
 
           <div className="max-h-96 overflow-y-auto">
             {showInitialSkeleton ? (
-              <div className="space-y-3 p-4" aria-label="جارٍ تحميل الإشعارات">
+              <div className="space-y-3 p-4" aria-label={t("notifications.loading")}>
                 {[1, 2, 3].map((item) => (
                   <div key={item} className="h-12 rounded-lg animate-pulse" style={{ background: "#f1f5f9" }} />
                 ))}
@@ -318,8 +334,8 @@ export function TopbarNotifications() {
                       <p className="font-bold">{loadError}</p>
                       <p className="mt-0.5 text-[11px] text-red-600">
                         {notifications.length > 0
-                          ? "لم يتم استبدال الإشعارات المحمّلة سابقًا."
-                          : "يمكنك إعادة المحاولة دون فقدان أي بيانات."}
+                          ? t("notifications.error.keptPrevious")
+                          : t("notifications.error.retryHint")}
                       </p>
                     </div>
                     <button
@@ -329,7 +345,7 @@ export function TopbarNotifications() {
                       className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2 py-1 font-bold disabled:opacity-60"
                     >
                       <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-                      إعادة المحاولة
+                      {t("notifications.retry")}
                     </button>
                   </div>
                 )}
@@ -346,14 +362,14 @@ export function TopbarNotifications() {
 
                 {loading && notifications.length > 0 && (
                   <div className="px-4 py-2 text-center text-[11px] font-semibold text-slate-500">
-                    جارٍ تحديث الإشعارات...
+                    {t("notifications.updating")}
                   </div>
                 )}
 
                 {notifications.length === 0 && !loadError ? (
                   <div className="py-10 text-center text-sm" style={{ color: "#94a3b8" }}>
                     <Bell className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                    لا توجد إشعارات
+                    {t("notifications.empty")}
                   </div>
                 ) : (
                   notifications.map((notification) => (
@@ -383,12 +399,12 @@ export function TopbarNotifications() {
                           {notification.body}
                         </p>
                         <p className="text-[11px] mt-1" style={{ color: "#94a3b8" }}>
-                          {timeAgo(notification.createdAt)}
+                          {timeAgo(notification.createdAt, locale)}
                         </p>
                       </div>
                       <button
                         type="button"
-                        aria-label={`حذف الإشعار ${notification.title ?? ""}`}
+                        aria-label={`${t("notifications.delete")} ${notification.title ?? ""}`}
                         disabled={mutationPending}
                         onClick={(event) => {
                           event.stopPropagation();

@@ -44,6 +44,41 @@ public class ClinicDayConsistencyTests
         portal.Should().Contain("ClinicTimeProvider.ClinicToday()");
     }
 
+    /// <summary>
+    /// The dashboard's own tests must ask the same clock the dashboard asks.
+    ///
+    /// <para>
+    /// `DashboardService` was moved onto `ClinicTimeProvider.ClinicToday()` and its tests were
+    /// left seeding `DateOnly.FromDateTime(DateTime.Today)`. The two agree for 21 hours out of
+    /// every 24, so the suite passed all evening and every local run, and the mismatch only
+    /// surfaced when CI first ran between 21:00 and 24:00 UTC — after midnight in Aden, where
+    /// the clinic's day has already rolled over and the server's has not. Four tests failed on
+    /// `main`, which deploys.
+    /// </para>
+    ///
+    /// <para>
+    /// The test above guards the production source. This guards the test that exercises it,
+    /// because a green suite is only evidence when the fixture and the code share a clock.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void DashboardAlertTests_SeedTheClinicDay_NotTheServerDay()
+    {
+        var root = FindRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(
+            root, "backend", "tests", "AqlanDentalPro.UnitTests", "Dashboard", "DashboardAlertsTests.cs"));
+
+        // If the file could not be read, every assertion below would check an empty string.
+        source.Length.Should().BeGreaterThan(1000);
+
+        source.Should().NotContain("DateOnly.FromDateTime(DateTime.Today)",
+            "the service reads ClinicToday, so a fixture on the server day is wrong for three "
+            + "hours every night");
+        source.Should().NotContain("DateOnly.FromDateTime(DateTime.UtcNow)",
+            "same reason — the clinic's calendar date is not the server's");
+        source.Should().Contain("ClinicTimeProvider.ClinicToday()");
+    }
+
     private static string FindRepositoryRoot()
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);

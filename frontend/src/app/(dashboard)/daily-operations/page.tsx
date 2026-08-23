@@ -21,10 +21,12 @@ import { extractErrorMessage } from "@/lib/errors";
 import { useSignalRClinicQueue } from "@/hooks/useSignalRClinicQueue";
 import api from "@/lib/api";
 import { NewLabOrderModal } from "@/components/lab/NewLabOrderModal";
+import { useT, useTf } from "@/i18n/LocaleProvider";
 
 import {
   NAVY, BLUE, ORANGE,
   TABS,
+  overdueOverrideNote,
   getTodayStr, fmtRial,
   computeDayStats, filterByTab,
   computeRoomOccupancy, getNextPatient,
@@ -137,14 +139,14 @@ function isFutureAppointmentBlock(error: unknown): boolean {
 type ModuleTab = DailyOperationsModuleTab;
 
 const MODULE_TABS: { key: ModuleTab; label: string; icon: React.ElementType; color: string }[] = [
-  { key: "appointments", label: "وصول اليوم",         icon: Calendar,      color: BLUE },
-  { key: "journey",      label: "رحلة المرضى",       icon: Activity,      color: NAVY },
-  { key: "queue",        label: "قائمة الانتظار",      icon: ClipboardList, color: ORANGE },
-  { key: "rooms",        label: "الغرف والعيادات",      icon: Building2,     color: NAVY },
-  { key: "checkout",     label: "جاهز للمحاسبة",      icon: CreditCard,    color: "#22c55e" },
-  { key: "booking",      label: "طلبات الحجز",        icon: Globe,         color: BLUE },
-  { key: "lab",          label: "المعمل",            icon: Activity,      color: "#8b5cf6" },
-  { key: "report",       label: "تقرير اليوم والعمولات", icon: Wallet,        color: "#16a34a" },
+  { key: "appointments", label: "dailyOps.module.appointments", icon: Calendar,      color: BLUE },
+  { key: "journey",      label: "dailyOps.module.journey",      icon: Activity,      color: NAVY },
+  { key: "queue",        label: "dailyOps.module.queue",        icon: ClipboardList, color: ORANGE },
+  { key: "rooms",        label: "dailyOps.module.rooms",        icon: Building2,     color: NAVY },
+  { key: "checkout",     label: "dailyOps.module.checkout",     icon: CreditCard,    color: "#22c55e" },
+  { key: "booking",      label: "dailyOps.module.booking",      icon: Globe,         color: BLUE },
+  { key: "lab",          label: "dailyOps.module.lab",          icon: Activity,      color: "#8b5cf6" },
+  { key: "report",       label: "dailyOps.module.report",       icon: Wallet,        color: "#16a34a" },
 ];
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -163,6 +165,8 @@ const TAB_ICONS: Record<string, React.ElementType> = {
    MAIN PAGE — Microsoft Fluent Design
    ═══════════════════════════════════════════════════════════════════════════ */
 export default function DailyOperationsPage() {
+  const t = useT();
+  const tf = useTf();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuthStore();
@@ -210,7 +214,7 @@ export default function DailyOperationsPage() {
   const { data: services = [] } = useServices();
   const { data: clinicSettings } = useClinicSettings();
   const { data: financeSummary } = useFinanceSummary();
-  const clinicName = clinicSettings?.clinicName ?? "مركز الدكتور عقلان";
+  const clinicName = clinicSettings?.clinicName ?? t("dailyOps.clinicFallback");
 
   // ── Queue wait time ──
   const { data: queueWaitTime } = useQueueWaitTime();
@@ -320,35 +324,35 @@ export default function DailyOperationsPage() {
   const handleDownloadReceipt = useCallback(async () => {
     const item = getActiveItem();
     if (!item) {
-      toast.error("يرجى اختيار مريض أولاً");
+      toast.error(t("dailyOps.toast.selectPatient"));
       return;
     }
     const latestPaymentId = selectedSummary?.financeSummary?.latestPayment?.id;
     if (!latestPaymentId) {
-      toast.error("لا توجد دفعة حديثة لتحميل سند");
+      toast.error(t("dailyOps.toast.noPaymentToDownload"));
       return;
     }
     try {
       const { downloadPdfFromApi } = await import("@/lib/pdfDownload");
       const receiptNum = selectedSummary?.financeSummary?.latestPayment?.receiptNumber ?? latestPaymentId;
       await downloadPdfFromApi(`/api/payments/${latestPaymentId}/pdf`, `receipt-${receiptNum}.pdf`);
-      toast.success("تم تحميل سند القبض");
+      toast.success(t("dailyOps.toast.receiptDownloaded"));
     } catch (err) {
-      const reason = err instanceof Error ? err.message : "خطأ";
-      toast.error(`فشل تحميل سند الدفع: ${reason}`);
+      const reason = err instanceof Error ? err.message : t("common.genericError");
+      toast.error(tf("dailyOps.toast.receiptDownloadFailed", { reason }));
     }
-  }, [getActiveItem, selectedSummary]);
+  }, [getActiveItem, selectedSummary, t, tf]);
 
   // ── Print receipt PDF for active item — prints the PDF itself, not the system page ──
   const handlePrintReceipt = useCallback(async () => {
     const item = getActiveItem();
     if (!item) {
-      toast.error("يرجى اختيار مريض أولاً");
+      toast.error(t("dailyOps.toast.selectPatient"));
       return;
     }
     const latestPaymentId = selectedSummary?.financeSummary?.latestPayment?.id;
     if (!latestPaymentId) {
-      toast.error("لا توجد دفعة حديثة لطباعة سند");
+      toast.error(t("dailyOps.toast.noPaymentToPrint"));
       return;
     }
     try {
@@ -356,10 +360,10 @@ export default function DailyOperationsPage() {
       const receiptNum = selectedSummary?.financeSummary?.latestPayment?.receiptNumber ?? latestPaymentId;
       await printPdfFromApi(`/api/payments/${latestPaymentId}/pdf`, `receipt-${receiptNum}.pdf`);
     } catch (err) {
-      const reason = err instanceof Error ? err.message : "خطأ";
-      toast.error(`فشل طباعة سند الدفع: ${reason}`);
+      const reason = err instanceof Error ? err.message : t("common.genericError");
+      toast.error(tf("dailyOps.toast.receiptPrintFailed", { reason }));
     }
-  }, [getActiveItem, selectedSummary]);
+  }, [getActiveItem, selectedSummary, t, tf]);
 
   // ── Computed ──
   const dayStats = useMemo(() => computeDayStats(items, financeSummary), [items, financeSummary]);
@@ -507,38 +511,38 @@ export default function DailyOperationsPage() {
         }
       }
 
-      const notesSuffix = overrideManager ? `[تجاوز متأخرات: بواسطة المدير ${overrideManager}]` : "";
+      const notesSuffix = overrideManager ? overdueOverrideNote(overrideManager) : "";
       const actionBody = notesSuffix ? { notes: notesSuffix } : {};
 
       if (actionType === "Intake") {
-        if (!item.appointmentId) { toast.error("لا يمكن تسجيل الوصول بدون موعد"); return; }
+        if (!item.appointmentId) { toast.error(t("dailyOps.toast.intakeNoAppointment")); return; }
         intakeMutation.mutate(
           { appointmentId: item.appointmentId, body: actionBody },
           {
-            onSuccess: () => toast.success("تم تسجيل وصول المريض"),
+            onSuccess: () => toast.success(t("dailyOps.toast.intakeDone")),
             onError: (err) => {
               if (openFutureOverrideIfAllowed(err, "Intake", item, actionBody)) return;
-              toast.error(extractErrorMessage(err, "فشل تسجيل الوصول"));
+              toast.error(extractErrorMessage(err, t("dailyOps.toast.intakeFailed")));
             },
           },
         );
       } else {
-        if (!item.appointmentId) { toast.error("لا يمكن إضافة المريض للانتظار بدون موعد"); return; }
+        if (!item.appointmentId) { toast.error(t("dailyOps.toast.queueNoAppointment")); return; }
         sendToQueueMutation.mutate(
           { appointmentId: item.appointmentId, body: actionBody },
           {
-            onSuccess: () => toast.success("تمت إضافة المريض للانتظار"),
+            onSuccess: () => toast.success(t("dailyOps.toast.queueDone")),
             onError: (err) => {
               if (openFutureOverrideIfAllowed(err, "SendToQueue", item, actionBody)) return;
-              toast.error(extractErrorMessage(err, "فشل إضافة المريض للانتظار"));
+              toast.error(extractErrorMessage(err, t("dailyOps.toast.queueFailed")));
             },
           },
         );
       }
     } catch (err) {
-      toast.error(extractErrorMessage(err, "فشل إتمام العملية"));
+      toast.error(extractErrorMessage(err, t("dailyOps.toast.actionFailed")));
     }
-  }, [intakeMutation, sendToQueueMutation, openFutureOverrideIfAllowed]);
+  }, [intakeMutation, sendToQueueMutation, openFutureOverrideIfAllowed, t]);
 
   const handleOverrideConfirm = useCallback((managerUsername: string) => {
     if (!pendingOverrideAction) return;
@@ -568,42 +572,42 @@ export default function DailyOperationsPage() {
     if (callActionType === "recall") {
       recallPatientMutation.mutate(
         { queueItemId: pendingCallItem.queueItemId, roomName },
-        { onSuccess: () => toast.success("تم إعادة النداء"), onError: (err) => toast.error(extractErrorMessage(err, "فشل إعادة النداء")) }
+        { onSuccess: () => toast.success(t("dailyOps.toast.recallDone")), onError: (err) => toast.error(extractErrorMessage(err, t("dailyOps.toast.recallFailed"))) }
       );
     } else {
       callPatientMutation.mutate(
         { queueItemId: pendingCallItem.queueItemId, roomName },
-        { onSuccess: () => toast.success("تم نداء المريض"), onError: (err) => toast.error(extractErrorMessage(err, "فشل نداء المريض")) }
+        { onSuccess: () => toast.success(t("dailyOps.toast.callDone")), onError: (err) => toast.error(extractErrorMessage(err, t("dailyOps.toast.callFailed"))) }
       );
     }
     setRoomSelectOpen(false);
     setPendingCallItem(null);
-  }, [pendingCallItem, callActionType, callPatientMutation, recallPatientMutation]);
+  }, [pendingCallItem, callActionType, callPatientMutation, recallPatientMutation, t]);
 
   const handleEnterRoom = useCallback((item: TodayJourneyItem) => {
     if (!item.queueItemId) return;
     enterRoomMutation.mutate(
       item.queueItemId,
-      { onSuccess: () => toast.success("تم دخول الغرفة"), onError: (err) => toast.error(extractErrorMessage(err, "فشل دخول الغرفة")) },
+      { onSuccess: () => toast.success(t("dailyOps.toast.enterRoomDone")), onError: (err) => toast.error(extractErrorMessage(err, t("dailyOps.toast.enterRoomFailed"))) },
     );
-  }, [enterRoomMutation]);
+  }, [enterRoomMutation, t]);
 
   const handleStartVisit = useCallback((item: TodayJourneyItem) => {
     if (!item.appointmentId) {
-      toast.error("لا يمكن بدء الزيارة دون موعد مرتبط");
+      toast.error(t("dailyOps.toast.startVisitNoAppointment"));
       return;
     }
     startVisitMutation.mutate(
       { appointmentId: item.appointmentId },
       {
-        onSuccess: () => toast.success("تم بدء الزيارة بنجاح"),
+        onSuccess: () => toast.success(t("dailyOps.toast.startVisitDone")),
         onError: (err) => {
           if (openFutureOverrideIfAllowed(err, "StartVisit", item)) return;
-          toast.error(extractErrorMessage(err, "فشل بدء الزيارة"));
+          toast.error(extractErrorMessage(err, t("dailyOps.toast.startVisitFailed")));
         },
       },
     );
-  }, [startVisitMutation, openFutureOverrideIfAllowed]);
+  }, [startVisitMutation, openFutureOverrideIfAllowed, t]);
 
   const handleFutureOverrideConfirm = useCallback((reason: string) => {
     const appointmentId = pendingFutureOverride?.item.appointmentId;
@@ -619,10 +623,10 @@ export default function DailyOperationsPage() {
       onSuccess: () => {
         setFutureOverrideOpen(false);
         setPendingFutureOverride(null);
-        toast.success("تم تنفيذ الإجراء وتسجيل التجاوز الإداري");
+        toast.success(t("dailyOps.toast.overrideDone"));
       },
       onError: (error: unknown) =>
-        toast.error(extractErrorMessage(error, "فشل تنفيذ التجاوز الإداري")),
+        toast.error(extractErrorMessage(error, t("dailyOps.toast.overrideFailed"))),
     };
 
     if (type === "Intake") {
@@ -641,16 +645,16 @@ export default function DailyOperationsPage() {
         callbacks,
       );
     }
-  }, [pendingFutureOverride, intakeMutation, sendToQueueMutation, startVisitMutation]);
+  }, [pendingFutureOverride, intakeMutation, sendToQueueMutation, startVisitMutation, t]);
 
   const handleQuickPayment = useCallback((item: TodayJourneyItem) => {
     if (!activeCashierSession) {
-      toast.error("يجب فتح وردية (صندوق الكاشير) أولاً قبل تسجيل أي مدفوعات. اذهب إلى المالية > الصندوق لفتح وردية.");
+      toast.error(t("dailyOps.toast.shiftRequired"));
       return;
     }
     setSelectedItem(item);
     setPaymentModalOpen(true);
-  }, [activeCashierSession]);
+  }, [activeCashierSession, t]);
 
   const handleCompleteVisit = useCallback((item: TodayJourneyItem) => {
     setSelectedItem(item);
@@ -659,17 +663,17 @@ export default function DailyOperationsPage() {
 
   const handleLeftWithoutCompletion = useCallback((item: TodayJourneyItem) => {
     if (!item.visitId) {
-      toast.error("لا توجد زيارة مفتوحة لتسجيل خروج بدون إكمال");
+      toast.error(t("dailyOps.toast.lwcNoVisit"));
       return;
     }
     setSelectedItem(item);
     setLeftWithoutReason("");
     setLeftWithoutModalOpen(true);
-  }, []);
+  }, [t]);
 
   const handleCreateDraftInvoice = useCallback(async (item: TodayJourneyItem) => {
     if (!item.visitId) {
-      toast.error("لا توجد زيارة مرتبطة لإنشاء الفاتورة");
+      toast.error(t("dailyOps.toast.invoiceNoVisit"));
       return;
     }
 
@@ -680,13 +684,13 @@ export default function DailyOperationsPage() {
       };
       toast.success(
         result?.isExisting || result?.IsExisting
-          ? "توجد فاتورة مسودة مسبقاً لهذه الزيارة"
-          : "تم إنشاء فاتورة مسودة للتحصيل"
+          ? t("dailyOps.toast.invoiceExists")
+          : t("dailyOps.toast.invoiceCreated")
       );
     } catch (err) {
-      toast.error(extractErrorMessage(err, "فشل إنشاء فاتورة التحصيل"));
+      toast.error(extractErrorMessage(err, t("dailyOps.toast.invoiceFailed")));
     }
-  }, [createDraftInvoiceMutation]);
+  }, [createDraftInvoiceMutation, t]);
 
   const handleBookAppointment = useCallback((item: TodayJourneyItem) => {
     setSelectedItem(item);
@@ -754,31 +758,31 @@ export default function DailyOperationsPage() {
     if (!undoAction) return;
     try {
       if (undoAction.type === "NoShow" || undoAction.type === "Cancel") {
-        if (!undoAction.appointmentId) { toast.error("لا يمكن التراجع بدون موعد"); return; }
+        if (!undoAction.appointmentId) { toast.error(t("dailyOps.toast.undoNoAppointment")); return; }
         await updateStatusMutation.mutateAsync({
           appointmentId: undoAction.appointmentId,
           status: undoAction.previousStatus,
         });
-        toast.success("تم التراجع عن الإجراء");
+        toast.success(t("dailyOps.toast.undoDone"));
       } else if (undoAction.type === "CancelQueue" && undoAction.queueItemId) {
-        if (!undoAction.appointmentId) { toast.error("لا يمكن التراجع بدون موعد"); return; }
+        if (!undoAction.appointmentId) { toast.error(t("dailyOps.toast.undoNoAppointment")); return; }
         await sendToQueueMutation.mutateAsync({ appointmentId: undoAction.appointmentId });
-        toast.success("تم التراجع — أعيد المريض لقائمة الانتظار");
+        toast.success(t("dailyOps.toast.undoQueueDone"));
       }
     } catch (err) {
-      toast.error(extractErrorMessage(err, "فشل التراجع"));
+      toast.error(extractErrorMessage(err, t("dailyOps.toast.undoFailed")));
     }
     setUndoAction(null);
-  }, [undoAction, updateStatusMutation, sendToQueueMutation]);
+  }, [undoAction, updateStatusMutation, sendToQueueMutation, t]);
 
   const handleConfirmAction = useCallback(async () => {
     if (!selectedItem) return;
     try {
       if (confirmDialogType === "NoShow") {
-        if (!selectedItem.appointmentId) { toast.error("لا يمكن تسجيل عدم الحضور بدون موعد"); return; }
+        if (!selectedItem.appointmentId) { toast.error(t("dailyOps.toast.noShowNoAppointment")); return; }
         const prevStatus = selectedItem.appointmentStatus;
         await updateStatusMutation.mutateAsync({ appointmentId: selectedItem.appointmentId, status: "NoShow" });
-        toast.success("تم تسجيل عدم الحضور");
+        toast.success(t("dailyOps.toast.noShowDone"));
         pushUndoAction({
           id: crypto.randomUUID(),
           type: "NoShow",
@@ -788,10 +792,10 @@ export default function DailyOperationsPage() {
           timestamp: Date.now(),
         });
       } else if (confirmDialogType === "Cancel") {
-        if (!selectedItem.appointmentId) { toast.error("لا يمكن إلغاء الموعد بدون موعد"); return; }
+        if (!selectedItem.appointmentId) { toast.error(t("dailyOps.toast.cancelNoAppointment")); return; }
         const prevStatus = selectedItem.appointmentStatus;
         await updateStatusMutation.mutateAsync({ appointmentId: selectedItem.appointmentId, status: "Cancelled" });
-        toast.success("تم إلغاء الموعد");
+        toast.success(t("dailyOps.toast.cancelDone"));
         pushUndoAction({
           id: crypto.randomUUID(),
           type: "Cancel",
@@ -803,7 +807,7 @@ export default function DailyOperationsPage() {
       } else if (confirmDialogType === "CancelQueue") {
         if (!selectedItem.queueItemId) return;
         await cancelQueueMutation.mutateAsync(selectedItem.queueItemId);
-        toast.success("تم إلغاء المريض من قائمة الانتظار");
+        toast.success(t("dailyOps.toast.queueCancelDone"));
         pushUndoAction({
           id: crypto.randomUUID(),
           type: "CancelQueue",
@@ -816,13 +820,13 @@ export default function DailyOperationsPage() {
       } else if (confirmDialogType === "Complete") {
         if (!selectedItem.queueItemId) return;
         await completeVisitMutation.mutateAsync({ queueItemId: selectedItem.queueItemId });
-        toast.success("تم إنهاء الزيارة");
+        toast.success(t("dailyOps.toast.visitClosed"));
       }
     } catch (err) {
-      toast.error(extractErrorMessage(err, "فشل تنفيذ الإجراء"));
+      toast.error(extractErrorMessage(err, t("dailyOps.toast.actionFailedGeneric")));
     }
     setConfirmDialogOpen(false);
-  }, [selectedItem, confirmDialogType, updateStatusMutation, cancelQueueMutation, completeVisitMutation, pushUndoAction]);
+  }, [selectedItem, confirmDialogType, updateStatusMutation, cancelQueueMutation, completeVisitMutation, pushUndoAction, t]);
 
   const handlePaymentConfirm = useCallback(async (amount: number, method: string, desc: string, notes: string, referenceNumber?: string, currency?: string, accountCurrency?: string, exchangeRateToAccountCurrency?: number) => {
     if (!selectedItem) return;
@@ -840,7 +844,7 @@ export default function DailyOperationsPage() {
         notes: notes || undefined,
         referenceNumber: referenceNumber || undefined,
       });
-      toast.success("تم تسجيل الدفعة بنجاح");
+      toast.success(t("dailyOps.toast.paymentDone"));
       setPaymentModalOpen(false);
 
       if (result?.id) {
@@ -853,9 +857,9 @@ export default function DailyOperationsPage() {
         }
       }
     } catch (err) {
-      toast.error(extractErrorMessage(err, "فشل تسجيل الدفعة"));
+      toast.error(extractErrorMessage(err, t("dailyOps.toast.paymentFailed")));
     }
-  }, [selectedItem, createPaymentMutation]);
+  }, [selectedItem, createPaymentMutation, t]);
 
   const handleCompleteVisitConfirm = useCallback(async (data: {
     serviceDesc: string; amountDue: number; isPaid: boolean;
@@ -882,7 +886,7 @@ export default function DailyOperationsPage() {
             proposedProcedure: data.proposedProcedure || undefined,
           },
         });
-        toast.success("تم إرسال المريض للاستقبال للتحصيل والخروج");
+        toast.success(t("dailyOps.toast.handoffDone"));
         setCompleteVisitModalOpen(false);
         return;
       }
@@ -891,13 +895,13 @@ export default function DailyOperationsPage() {
         // Checkout should only mark the appointment as completed.
         // Payment creation is handled separately via the payment flow,
         // not auto-created during checkout with a hardcoded method.
-        if (!selectedItem.appointmentId) { toast.error("لا يمكن إكمال الخروج بدون موعد"); return; }
+        if (!selectedItem.appointmentId) { toast.error(t("dailyOps.toast.checkoutNoAppointment")); return; }
         const validation = await validateFinancialClosureMutation.mutateAsync({
           patientId: selectedItem.patientId,
           visitId: selectedItem.visitId,
         });
         if (!validation.canClose) {
-          toast.error(validation.reason || "لا يمكن إكمال الخروج قبل تسوية الرصيد المالي");
+          toast.error(validation.reason || t("dailyOps.toast.checkoutBlocked"));
           return;
         }
         await checkoutMutation.mutateAsync({
@@ -907,23 +911,23 @@ export default function DailyOperationsPage() {
             nextAppointmentDate: data.needsFollowUp ? data.nextDate : undefined,
           },
         });
-        toast.success("تم إكمال الخروج بنجاح");
+        toast.success(t("dailyOps.toast.checkoutDone"));
         setCompleteVisitModalOpen(false);
         return;
       }
 
-      toast.error("لا يمكن إكمال الإجراء دون زيارة جاهزة للتحصيل");
+      toast.error(t("dailyOps.toast.checkoutNoVisit"));
     } catch (err) {
-      toast.error(extractErrorMessage(err, "فشل إنهاء الزيارة"));
+      toast.error(extractErrorMessage(err, t("dailyOps.toast.visitCloseFailed")));
     }
-  }, [selectedItem, handoffMutation, validateFinancialClosureMutation, checkoutMutation]);
+  }, [selectedItem, handoffMutation, validateFinancialClosureMutation, checkoutMutation, t]);
 
   const handleCheckoutConfirm = useCallback(async (data: {
     paymentAmount: number; paymentMethod: string; notes: string;
     nextDate?: string; nextServiceId?: string;
   }) => {
     if (!selectedItem) return;
-    if (!selectedItem.appointmentId) { toast.error("لا يمكن إكمال الخروج بدون موعد"); return; }
+    if (!selectedItem.appointmentId) { toast.error(t("dailyOps.toast.checkoutNoAppointment")); return; }
     try {
       // Checkout only marks the appointment as completed.
       // Payment creation is handled separately via the payment flow,
@@ -933,7 +937,7 @@ export default function DailyOperationsPage() {
         visitId: selectedItem.visitId,
       });
       if (!validation.canClose) {
-        toast.error(validation.reason || "لا يمكن إكمال الخروج قبل تسوية الرصيد المالي");
+        toast.error(validation.reason || t("dailyOps.toast.checkoutBlocked"));
         return;
       }
       await checkoutMutation.mutateAsync({
@@ -943,19 +947,19 @@ export default function DailyOperationsPage() {
           nextAppointmentDate: data.nextDate || undefined,
         },
       });
-      toast.success("تم إنهاء الزيارة بنجاح");
+      toast.success(t("dailyOps.toast.visitClosedOk"));
       setCompleteVisitModalOpen(false);
     } catch (err) {
-      toast.error(extractErrorMessage(err, "فشل إنهاء الزيارة"));
+      toast.error(extractErrorMessage(err, t("dailyOps.toast.visitCloseFailed")));
     }
-  }, [selectedItem, validateFinancialClosureMutation, checkoutMutation]);
+  }, [selectedItem, validateFinancialClosureMutation, checkoutMutation, t]);
 
   const handleLeftWithoutCompletionConfirm = useCallback(async () => {
     if (!selectedItem?.visitId) return;
 
     const reason = leftWithoutReason.trim();
     if (!reason) {
-      toast.error("يرجى كتابة سبب الخروج بدون إكمال");
+      toast.error(t("dailyOps.lwc.reasonRequired"));
       return;
     }
 
@@ -965,13 +969,13 @@ export default function DailyOperationsPage() {
         reason,
         status: "LeftWithoutCompletion",
       });
-      toast.success("تم تسجيل خروج المريض بدون إكمال");
+      toast.success(t("dailyOps.toast.lwcDone"));
       setLeftWithoutModalOpen(false);
       setLeftWithoutReason("");
     } catch (err) {
-      toast.error(extractErrorMessage(err, "فشل تسجيل خروج المريض بدون إكمال"));
+      toast.error(extractErrorMessage(err, t("dailyOps.toast.lwcFailed")));
     }
-  }, [selectedItem, leftWithoutReason, leftWithoutCompletionMutation]);
+  }, [selectedItem, leftWithoutReason, leftWithoutCompletionMutation, t]);
 
   const handleBookConfirm = useCallback(async (data: {
     doctorId: string; date: string; startTime: string; endTime: string;
@@ -989,12 +993,12 @@ export default function DailyOperationsPage() {
         appointmentType: data.type,
         notes: data.notes || undefined,
       });
-      toast.success("تم حجز الموعد بنجاح");
+      toast.success(t("dailyOps.toast.bookingDone"));
       setBookAppointmentModalOpen(false);
     } catch (err) {
-      toast.error(extractErrorMessage(err, "فشل حجز الموعد"));
+      toast.error(extractErrorMessage(err, t("dailyOps.toast.bookingFailed")));
     }
-  }, [selectedItem, createAppointmentMutation]);
+  }, [selectedItem, createAppointmentMutation, t]);
 
   const handleWalkInConfirm = useCallback(async (data: {
     patientName: string; patientPhone: string; doctorId: string;
@@ -1002,24 +1006,27 @@ export default function DailyOperationsPage() {
   }) => {
     try {
       await walkInMutation.mutateAsync(data);
-      toast.success("تم تسجيل المريض المشي وإضافته لقائمة الانتظار");
+      toast.success(t("dailyOps.toast.walkInDone"));
       setWalkInModalOpen(false);
     } catch (err) {
-      toast.error(extractErrorMessage(err, "فشل تسجيل المريض المشي"));
+      toast.error(extractErrorMessage(err, t("dailyOps.toast.walkInFailed")));
     }
-  }, [walkInMutation]);
+  }, [walkInMutation, t]);
 
   const handleBulkSms = useCallback(async () => {
     try {
       const result = await bulkSmsMutation.mutateAsync({
         appointmentIds: tomorrowItems.map(i => i.appointmentId).filter((id): id is string => !!id),
       });
-      toast.success(`تم إرسال ${result.succeeded} تذكير${result.failed > 0 ? ` (فشل ${result.failed})` : ""}`);
+      toast.success(
+        tf("dailyOps.toast.remindersSent", { sent: result.succeeded })
+        + (result.failed > 0 ? tf("dailyOps.toast.remindersFailedSuffix", { failed: result.failed }) : ""),
+      );
       setBulkSmsModalOpen(false);
     } catch (err) {
-      toast.error(extractErrorMessage(err, "فشل إرسال التذكيرات"));
+      toast.error(extractErrorMessage(err, t("dailyOps.toast.remindersFailed")));
     }
-  }, [bulkSmsMutation, tomorrowItems]);
+  }, [bulkSmsMutation, tomorrowItems, t, tf]);
 
   // ── Direct payment for unbooked patient ──
   const handleDirectPaymentConfirm = useCallback(async (data: {
@@ -1042,7 +1049,7 @@ export default function DailyOperationsPage() {
         notes: data.notes || undefined,
         referenceNumber: data.referenceNumber || undefined,
       });
-      toast.success(`تم تسجيل دفعة ${fmtRial(data.amount)} للمريض ${data.patientName} بنجاح`);
+      toast.success(tf("dailyOps.toast.directPaymentDone", { amount: fmtRial(data.amount), patient: data.patientName }));
       setDirectPaymentModalOpen(false);
 
       // Try to download PDF receipt
@@ -1056,22 +1063,22 @@ export default function DailyOperationsPage() {
         }
       }
     } catch (err) {
-      toast.error(extractErrorMessage(err, "فشل تسجيل الدفعة"));
+      toast.error(extractErrorMessage(err, t("dailyOps.toast.paymentFailed")));
     }
-  }, [createPaymentMutation]);
+  }, [createPaymentMutation, t, tf]);
 
   // ── Available status filters ──
   const statusFilters = [
-    { value: "", label: "الكل" },
-    { value: "Scheduled", label: "مجدول" },
-    { value: "Confirmed", label: "مؤكد" },
-    { value: "Arrived", label: "وصل" },
-    { value: "Waiting", label: "في الانتظار" },
-    { value: "InRoom", label: "داخل الغرفة" },
-    { value: "InProgress", label: "جاري العلاج" },
-    { value: "Completed", label: "مكتمل" },
-    { value: "NoShow", label: "لم يحضر" },
-    { value: "Cancelled", label: "ملغي" },
+    { value: "", label: t("dailyOps.status.all") },
+    { value: "Scheduled", label: t("dailyOps.status.scheduled") },
+    { value: "Confirmed", label: t("dailyOps.status.confirmed") },
+    { value: "Arrived", label: t("dailyOps.status.arrived") },
+    { value: "Waiting", label: t("dailyOps.status.waiting") },
+    { value: "InRoom", label: t("dailyOps.status.inRoom") },
+    { value: "InProgress", label: t("dailyOps.status.inProgress") },
+    { value: "Completed", label: t("dailyOps.status.completed") },
+    { value: "NoShow", label: t("dailyOps.status.noShow") },
+    { value: "Cancelled", label: t("dailyOps.status.cancelled") },
   ];
 
   // ── Side panel data ──
@@ -1098,8 +1105,8 @@ export default function DailyOperationsPage() {
               <Activity className="w-4 h-4 text-white" />
             </div>
             <div className="leading-tight">
-              <div className="text-sm font-extrabold" style={{ color: NAVY }}>التشغيل اليومي</div>
-              <div className="text-[10px] font-medium" style={{ color: "#94a3b8" }}>لوحة التحكم الموحدة</div>
+              <div className="text-sm font-extrabold" style={{ color: NAVY }}>{t("dailyOps.title")}</div>
+              <div className="text-[10px] font-medium" style={{ color: "#94a3b8" }}>{t("dailyOps.subtitle")}</div>
             </div>
           </div>
 
@@ -1114,7 +1121,7 @@ export default function DailyOperationsPage() {
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="بحث باسم المريض أو الهاتف..."
+              placeholder={t("dailyOps.searchPlaceholder")}
               className="w-full text-sm rounded-full border-0 pe-16 ps-9 py-1.5 outline-none focus:ring-2 focus:ring-[#3d7ab5]/20"
               style={{ background: "#f5f7fa", color: NAVY }}
             />
@@ -1139,7 +1146,7 @@ export default function DailyOperationsPage() {
             <select value={filterDoctor} onChange={e => setFilterDoctor(e.target.value)}
               className="text-xs font-semibold rounded-lg px-2 py-1.5 outline-none border-0 focus:ring-2 focus:ring-[#3d7ab5]/20 flex-shrink-0"
               style={{ background: "#f5f7fa", color: NAVY, maxWidth: 120 }}>
-              <option value="">👨‍⚕️ كل الأطباء</option>
+              <option value="">👨‍⚕️ {t("dailyOps.filter.allDoctors")}</option>
               {doctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           )}
@@ -1161,9 +1168,9 @@ export default function DailyOperationsPage() {
             <button onClick={() => window.open("/clinic-display", "_blank")}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition hover:opacity-90 flex-shrink-0"
               style={{ color: NAVY, border: `1.5px solid ${NAVY}40`, background: `${NAVY}08` }}
-              title="شاشة النداء">
+              title={t("dailyOps.action.clinicDisplay")}>
               <Monitor className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">شاشة النداء</span>
+              <span className="hidden md:inline">{t("dailyOps.action.clinicDisplay")}</span>
             </button>
           )}
 
@@ -1172,9 +1179,9 @@ export default function DailyOperationsPage() {
           <button onClick={() => setWalkInModalOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex-shrink-0"
             style={{ background: ORANGE }}
-            title="مريض مشي (Ctrl+N)">
+            title={t("dailyOps.action.walkInShortcut")}>
             <UserPlus className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">مريض مشي</span>
+            <span className="hidden md:inline">{t("dailyOps.action.walkIn")}</span>
           </button>
           )}
 
@@ -1182,19 +1189,19 @@ export default function DailyOperationsPage() {
           {canCollectPayment && (
             <button onClick={() => {
               if (!activeCashierSession) {
-                toast.error("يجب فتح وردية (صندوق الكاشير) أولاً قبل تسجيل أي مدفوعات. اذهب إلى المالية > الصندوق لفتح وردية.");
+                toast.error(t("dailyOps.toast.shiftRequired"));
                 return;
               }
               setDirectPaymentModalOpen(true);
             }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex-shrink-0 relative"
               style={{ background: activeCashierSession ? "#22c55e" : "#94a3b8" }}
-              title={activeCashierSession ? "تحصيل/دفع" : "يجب فتح وردية أولاً"}>
+              title={activeCashierSession ? t("dailyOps.action.collectPayment") : t("dailyOps.action.needsOpenShift")}>
               {/* Cashier session status dot */}
               <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white"
                 style={{ background: activeCashierSession ? "#16a34a" : "#ef4444" }} />
               <CreditCard className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">تحصيل/دفع</span>
+              <span className="hidden md:inline">{t("dailyOps.action.collectPayment")}</span>
             </button>
           )}
 
@@ -1202,7 +1209,7 @@ export default function DailyOperationsPage() {
           <div ref={moreMenuRef} className="relative flex-shrink-0">
             <button onClick={() => setMoreMenuOpen(!moreMenuOpen)}
               className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-gray-100"
-              title="المزيد">
+              title={t("dailyOps.action.more")}>
               <MoreHorizontal className="w-4 h-4" style={{ color: "#64748b" }} />
             </button>
 
@@ -1215,13 +1222,13 @@ export default function DailyOperationsPage() {
                   <button onClick={() => {
                     setMoreMenuOpen(false);
                     const item = getActiveItem();
-                    if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
+                    if (!item) { toast.error(t("dailyOps.toast.selectPatient")); return; }
                     handleIntake(item);
                   }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-green-50"
                     style={{ color: "#16a34a" }}>
                     <ClipboardCheck className="w-4 h-4" />
-                    <span>تسجيل وصول</span>
+                    <span>{t("dailyOps.action.checkIn")}</span>
                   </button>
                 )}
 
@@ -1230,7 +1237,7 @@ export default function DailyOperationsPage() {
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-[#1a3a5c08]"
                   style={{ color: NAVY }}>
                   <UserPlus className="w-4 h-4" />
-                  <span>مريض جديد</span>
+                  <span>{t("dailyOps.action.newPatient")}</span>
                 </button>
 
                 {/* دخول مباشر (Walk-In) */}
@@ -1239,7 +1246,7 @@ export default function DailyOperationsPage() {
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-orange-50"
                     style={{ color: ORANGE }}>
                     <LogIn className="w-4 h-4" />
-                    <span>دخول مباشر</span>
+                    <span>{t("dailyOps.action.directEntry")}</span>
                   </button>
                 )}
 
@@ -1248,13 +1255,13 @@ export default function DailyOperationsPage() {
                   <button onClick={() => {
                     setMoreMenuOpen(false);
                     const item = getActiveItem();
-                    if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
+                    if (!item) { toast.error(t("dailyOps.toast.selectPatient")); return; }
                     handleQuickPayment(item);
                   }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-emerald-50"
                     style={{ color: "#059669" }}>
                     <CreditCard className="w-4 h-4" />
-                    <span>تحصيل دفعة</span>
+                    <span>{t("dailyOps.action.collect")}</span>
                   </button>
                 )}
 
@@ -1263,13 +1270,13 @@ export default function DailyOperationsPage() {
                   <button onClick={() => {
                     setMoreMenuOpen(false);
                     const item = getActiveItem();
-                    if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
+                    if (!item) { toast.error(t("dailyOps.toast.selectPatient")); return; }
                     handleCallPatient(item);
                   }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-amber-50"
                     style={{ color: "#d97706" }}>
                     <Bell className="w-4 h-4" />
-                    <span>نداء المريض</span>
+                    <span>{t("dailyOps.action.callPatient")}</span>
                   </button>
                 )}
 
@@ -1278,7 +1285,7 @@ export default function DailyOperationsPage() {
                   <button onClick={() => {
                     setMoreMenuOpen(false);
                     const item = getActiveItem();
-                    if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
+                    if (!item) { toast.error(t("dailyOps.toast.selectPatient")); return; }
                     setPendingCallItem(item);
                     setCallActionType("recall");
                     setRoomSelectOpen(true);
@@ -1286,7 +1293,7 @@ export default function DailyOperationsPage() {
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-yellow-50"
                     style={{ color: "#ca8a04" }}>
                     <BellRing className="w-4 h-4" />
-                    <span>إعادة النداء</span>
+                    <span>{t("dailyOps.action.recall")}</span>
                   </button>
                 )}
 
@@ -1294,13 +1301,13 @@ export default function DailyOperationsPage() {
                 <button onClick={() => {
                   setMoreMenuOpen(false);
                   const item = getActiveItem();
-                  if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
+                  if (!item) { toast.error(t("dailyOps.toast.selectPatient")); return; }
                   handleBookAppointment(item);
                 }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-blue-50"
                   style={{ color: BLUE }}>
                   <CalendarPlus className="w-4 h-4" />
-                  <span>موعد قادم</span>
+                  <span>{t("dailyOps.action.nextAppointment")}</span>
                 </button>
 
                 {/* تحميل سند PDF (Download Receipt PDF) */}
@@ -1308,7 +1315,7 @@ export default function DailyOperationsPage() {
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-green-50"
                   style={{ color: "#16a34a" }}>
                   <Download className="w-4 h-4" />
-                  <span>تحميل سند PDF</span>
+                  <span>{t("dailyOps.action.downloadReceipt")}</span>
                 </button>
 
                 {/* طباعة سند مباشرة (Print Receipt — prints PDF only, not the system page) */}
@@ -1316,7 +1323,7 @@ export default function DailyOperationsPage() {
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-purple-50"
                   style={{ color: "#7c3aed" }}>
                   <Printer className="w-4 h-4" />
-                  <span>طباعة سند مباشرة</span>
+                  <span>{t("dailyOps.action.printReceipt")}</span>
                 </button>
 
                 <div className="my-1 border-t" style={{ borderColor: "#f1f5f9" }} />
@@ -1327,7 +1334,7 @@ export default function DailyOperationsPage() {
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-[#3d7ab508]"
                     style={{ color: BLUE }}>
                     <Megaphone className="w-4 h-4" />
-                    <span>إرسال تذكيرات</span>
+                    <span>{t("dailyOps.action.sendReminders")}</span>
                   </button>
                 )}
 
@@ -1336,7 +1343,7 @@ export default function DailyOperationsPage() {
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-gray-50"
                   style={{ color: "#64748b" }}>
                   <Printer className="w-4 h-4" />
-                  <span>طباعة جدول اليوم</span>
+                  <span>{t("dailyOps.action.printDaySheet")}</span>
                 </button>
 
                 {/* Refresh */}
@@ -1344,7 +1351,7 @@ export default function DailyOperationsPage() {
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-gray-50"
                   style={{ color: "#64748b" }}>
                   <RefreshCw className="w-4 h-4" />
-                  <span>تحديث (Ctrl+R)</span>
+                  <span>{t("dailyOps.action.refresh")}</span>
                 </button>
 
                 {/* Sound toggle */}
@@ -1352,7 +1359,7 @@ export default function DailyOperationsPage() {
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-gray-50"
                   style={{ color: soundEnabled ? "#64748b" : "#94a3b8" }}>
                   {soundEnabled ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
-                  <span>{soundEnabled ? "إيقاف صوت التنبيه" : "تشغيل صوت التنبيه"}</span>
+                  <span>{t(soundEnabled ? "dailyOps.action.soundOff" : "dailyOps.action.soundOn")}</span>
                 </button>
 
                 {/* Shortcuts help */}
@@ -1360,14 +1367,14 @@ export default function DailyOperationsPage() {
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-gray-50"
                   style={{ color: "#64748b" }}>
                   <Keyboard className="w-4 h-4" />
-                  <span>اختصارات لوحة المفاتيح</span>
+                  <span>{t("dailyOps.action.shortcuts")}</span>
                 </button>
               </div>
             )}
           </div>
 
           {/* SignalR indicator */}
-          <div className="flex items-center gap-1 w-6 h-6 rounded-full justify-center flex-shrink-0" title={signalrConnected ? "متصل مباشر" : "غير متصل"}>
+          <div className="flex items-center gap-1 w-6 h-6 rounded-full justify-center flex-shrink-0" title={t(signalrConnected ? "dailyOps.live.connected" : "dailyOps.live.disconnected")}>
             <span className="w-2.5 h-2.5 rounded-full" style={{ background: signalrConnected ? "#16a34a" : "#ef4444" }} />
           </div>
         </div>
@@ -1389,7 +1396,7 @@ export default function DailyOperationsPage() {
                   background: isActive ? tab.color + "08" : "transparent",
                 }}>
                 <TabIcon className="w-3.5 h-3.5" />
-                <span>{tab.label}</span>
+                <span>{t(tab.label)}</span>
                 {tab.key === "appointments" && items.length > 0 && (
                   <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
                     style={{ background: isActive ? tab.color : tab.color + "20", color: isActive ? "#fff" : tab.color }}>
@@ -1438,12 +1445,12 @@ export default function DailyOperationsPage() {
                 style={{ background: "#fef2f2", borderColor: "#fecaca" }}>
                 <div className="flex items-center gap-2 text-xs font-bold" style={{ color: "#b91c1c" }}>
                   <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                  تعذر تحميل مواعيد اليوم من الخادم — القوائم المعروضة غير مكتملة، لا تعتمد عليها
+                  {t("dailyOps.error.todayLoad")}
                 </div>
                 <button onClick={() => refetchItems()}
                   className="px-3 py-1.5 rounded-lg text-xs font-bold text-white flex-shrink-0 transition hover:opacity-90"
                   style={{ background: "#b91c1c" }}>
-                  إعادة المحاولة
+                  {t("dailyOps.error.retry")}
                 </button>
               </div>
             )}
@@ -1467,7 +1474,7 @@ export default function DailyOperationsPage() {
                           boxShadow: isActive ? `0 1px 3px ${tab.color}30` : "none",
                         }}>
                         {TabIcon && <TabIcon className="w-3.5 h-3.5" />}
-                        <span>{tab.label}</span>
+                        <span>{t(tab.label)}</span>
                         {count > 0 && (
                           <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
                             style={{
@@ -1486,29 +1493,29 @@ export default function DailyOperationsPage() {
                     <div className="flex items-center gap-1.5 ms-auto px-2.5 py-1 rounded-lg text-xs font-bold"
                       style={{ background: "linear-gradient(135deg, #f0f7ff, #faf5ff)", border: "1px solid #e0e7ff", color: NAVY }}>
                       <Activity className="w-3 h-3" style={{ color: BLUE }} />
-                      <span>التالي: {nextPatient.patientName}</span>
+                      <span>{tf("dailyOps.next.patient", { name: nextPatient.patientName })}</span>
                       {nextPatient.nextAction === "CallPatient" && (
                         <button onClick={() => handleCallPatient(nextPatient)}
                           className="px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: ORANGE }}>
-                          نداء
+                          {t("dailyOps.next.call")}
                         </button>
                       )}
                       {nextPatient.nextAction === "EnterRoom" && (
                         <button onClick={() => handleEnterRoom(nextPatient)}
                           className="px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: "#9333ea" }}>
-                          دخول
+                          {t("dailyOps.next.enter")}
                         </button>
                       )}
                       {nextPatient.nextAction === "StartVisit" && (
                         <button onClick={() => handleStartVisit(nextPatient)}
                           className="px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: "#dc2626" }}>
-                          بدء
+                          {t("dailyOps.next.start")}
                         </button>
                       )}
                       {(nextPatient.nextAction === "Intake" || nextPatient.nextAction === "SendToQueue") && (
                         <button onClick={() => handleIntake(nextPatient)}
                           className="px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: "#16a34a" }}>
-                          تسجيل
+                          {t("dailyOps.next.checkIn")}
                         </button>
                       )}
                     </div>
@@ -1600,13 +1607,13 @@ export default function DailyOperationsPage() {
                   <div className="flex items-center gap-2">
                     <CreditCard className="w-5 h-5 text-emerald-500" />
                     <div>
-                      <h3 className="text-xs font-bold" style={{ color: NAVY }}>المرضى الجاهزون للمحاسبة والتحصيل</h3>
-                      <p className="text-[10px] text-gray-400 font-medium">قائمة الحالات التي تم تسليمها من الأطباء بانتظار سداد الفاتورة والخروج</p>
+                      <h3 className="text-xs font-bold" style={{ color: NAVY }}>{t("dailyOps.checkout.heading")}</h3>
+                      <p className="text-[10px] text-gray-400 font-medium">{t("dailyOps.checkout.subheading")}</p>
                     </div>
                   </div>
                   {tabCounts.payments > 0 && (
                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200">
-                      {tabCounts.payments} حالات معلقة
+                      {tf("dailyOps.checkout.pendingCount", { count: tabCounts.payments })}
                     </span>
                   )}
                 </div>
@@ -1765,7 +1772,7 @@ export default function DailyOperationsPage() {
                 <AlertTriangle className="w-4.5 h-4.5 text-red-600" />
               </div>
               <div className="flex-1">
-                <h3 className="font-extrabold text-[15px]" style={{ color: NAVY }}>خرج بدون إكمال</h3>
+                <h3 className="font-extrabold text-[15px]" style={{ color: NAVY }}>{t("dailyOps.lwc.title")}</h3>
                 <p className="text-[11px] text-gray-500 mt-0.5">{selectedItem?.patientName}</p>
               </div>
               <button type="button" onClick={() => setLeftWithoutModalOpen(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition">
@@ -1775,16 +1782,16 @@ export default function DailyOperationsPage() {
 
             <div className="p-5 space-y-4">
               <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs leading-6 text-red-700">
-                هذه الحالة لا تُسجل دفعاً ولا تلغي بيانات المعمل. ستغلق مسار الزيارة تشغيلياً وتظهر في تقرير نهاية اليوم.
+                {t("dailyOps.lwc.notice")}
               </div>
               <div>
-                <label className="block text-xs font-bold mb-1.5" style={{ color: NAVY }}>سبب الخروج بدون إكمال *</label>
+                <label className="block text-xs font-bold mb-1.5" style={{ color: NAVY }}>{t("dailyOps.lwc.reasonLabel")}</label>
                 <textarea
                   value={leftWithoutReason}
                   onChange={(event) => setLeftWithoutReason(event.target.value)}
                   rows={4}
                   className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/15"
-                  placeholder="مثال: المريض غادر قبل استكمال الإجراء / رفض الانتظار / ظرف طارئ"
+                  placeholder={t("dailyOps.lwc.reasonPlaceholder")}
                 />
               </div>
               <div className="flex justify-end gap-2">
@@ -1793,7 +1800,7 @@ export default function DailyOperationsPage() {
                   onClick={() => setLeftWithoutModalOpen(false)}
                   className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-bold text-gray-600 hover:bg-gray-50"
                 >
-                  تراجع
+                  {t("dailyOps.lwc.back")}
                 </button>
                 <button
                   type="button"
@@ -1802,7 +1809,7 @@ export default function DailyOperationsPage() {
                   className="rounded-lg px-4 py-2 text-xs font-bold text-white disabled:opacity-60"
                   style={{ background: "#dc2626" }}
                 >
-                  {leftWithoutCompletionMutation.isPending ? "جار التسجيل..." : "تسجيل الحالة"}
+                  {t(leftWithoutCompletionMutation.isPending ? "dailyOps.lwc.saving" : "dailyOps.lwc.submit")}
                 </button>
               </div>
             </div>
@@ -1854,10 +1861,10 @@ export default function DailyOperationsPage() {
           if (!selectedItem?.queueItemId) return;
           try {
             await changeRoomMutation.mutateAsync({ queueItemId: selectedItem.queueItemId, roomName });
-            toast.success("تم تغيير الغرفة");
+            toast.success(t("dailyOps.toast.roomChanged"));
             setChangeRoomModalOpen(false);
           } catch (err) {
-            toast.error(extractErrorMessage(err, "فشل تغيير الغرفة"));
+            toast.error(extractErrorMessage(err, t("dailyOps.toast.roomChangeFailed")));
           }
         }}
       />

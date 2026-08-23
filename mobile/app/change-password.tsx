@@ -1,10 +1,12 @@
 import { useSession } from "@/auth/SessionProvider";
+import { useClinicBranding } from "@/brand";
+import { PrimaryButton } from "@/components/ui";
 import { ApiError } from "@/lib/api";
-import { colors, radius, spacing } from "@/theme";
+import { colors, radius, shadow, spacing } from "@/theme";
 import { Redirect, router } from "expo-router";
 import React, { useState } from "react";
 import {
-  ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -17,6 +19,7 @@ import {
 
 export default function ChangePasswordScreen() {
   const { isLoading, user, changePassword, signOut } = useSession();
+  const brand = useClinicBranding();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -46,6 +49,8 @@ export default function ChangePasswordScreen() {
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <View style={styles.card}>
+          <View style={styles.logoCard}><Image source={require("../assets/logo.png")} resizeMode="contain" style={styles.logo} /></View>
+          <Text style={styles.eyebrow}>حماية حسابك</Text>
           <Text style={styles.title}>تغيير كلمة المرور</Text>
           <Text style={styles.description}>
             {user?.mustChangePassword
@@ -64,9 +69,7 @@ export default function ChangePasswordScreen() {
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
-          <Pressable onPress={() => void submit()} disabled={submitting} style={styles.primaryButton}>
-            {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>حفظ والمتابعة</Text>}
-          </Pressable>
+          <PrimaryButton title="حفظ والمتابعة" variant="accent" loading={submitting} disabled={submitting} onPress={() => void submit()} />
 
           {user?.mustChangePassword ? (
             <Pressable onPress={() => void signOut()} disabled={submitting} style={styles.secondaryButton}>
@@ -78,22 +81,25 @@ export default function ChangePasswordScreen() {
             </Pressable>
           )}
         </View>
+        <Text numberOfLines={2} style={styles.clinic}>{brand.clinicName}</Text>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
+  safe: { flex: 1, backgroundColor: colors.primary },
   container: { flex: 1, justifyContent: "center", padding: spacing.lg },
-  card: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.lg, gap: spacing.sm },
-  title: { color: colors.text, fontSize: 24, fontWeight: "800", textAlign: "right" },
+  card: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.lg, gap: spacing.sm, ...shadow.floating },
+  logoCard: { width: 126, height: 74, alignSelf: "center", borderRadius: radius.md, backgroundColor: colors.white, alignItems: "center", justifyContent: "center", marginBottom: spacing.xs },
+  logo: { width: 108, height: 62 },
+  eyebrow: { color: colors.secondary, fontSize: 12, fontWeight: "900", textAlign: "right" },
+  title: { color: colors.text, fontSize: 24, fontWeight: "900", textAlign: "right" },
   description: { color: colors.muted, lineHeight: 22, textAlign: "right", marginBottom: spacing.sm },
   label: { color: colors.text, fontWeight: "700", textAlign: "right", marginTop: spacing.xs },
-  input: { minHeight: 50, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, paddingHorizontal: spacing.md, color: colors.text, textAlign: "right" },
+  input: { minHeight: 52, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, paddingHorizontal: spacing.md, color: colors.text, backgroundColor: colors.surfaceMuted, textAlign: "right" },
   error: { color: colors.danger, backgroundColor: colors.dangerSoft, borderRadius: radius.sm, padding: spacing.sm, textAlign: "right" },
-  primaryButton: { minHeight: 50, borderRadius: radius.sm, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", marginTop: spacing.sm },
-  primaryText: { color: "#fff", fontWeight: "800", fontSize: 16 },
   secondaryButton: { minHeight: 44, alignItems: "center", justifyContent: "center" },
-  secondaryText: { color: colors.muted, fontWeight: "700" }
+  secondaryText: { color: colors.muted, fontWeight: "800" },
+  clinic: { color: "rgba(255,255,255,0.64)", fontSize: 11, lineHeight: 18, textAlign: "center", marginTop: spacing.md }
 });

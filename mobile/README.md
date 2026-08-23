@@ -37,5 +37,8 @@ For a physical phone, the API URL must be reachable from the phone. Production b
 - Clinical photos, radiographs, documents, prescriptions and referrals
 - Lab orders, inventory operations and reports
 - Permission-aware settings, account and security screens
+- On-device release, API health, session and permission diagnostics
+- Official clinic identity with branded Android icon/splash and a unified RTL design system
+- Root gesture hardening and Arabic render-error recovery instead of a silent close
 
 The mobile app intentionally consumes the existing API instead of duplicating business logic.

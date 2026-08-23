@@ -1,12 +1,12 @@
 import { useSession } from "@/auth/SessionProvider";
-import { Card, PrimaryButton, Screen, StateMessage } from "@/components/ui";
+import { Card, PageHeader, PrimaryButton, Screen, StateMessage } from "@/components/ui";
 import { apiRequest } from "@/lib/api";
 import { appointmentStatusLabel, isoDateLocal } from "@/lib/format";
 import { OPERATIONAL_PERMISSION } from "@/lib/permissionContract";
 import type { Appointment } from "@/lib/types";
-import { colors, radius, spacing } from "@/theme";
+import { colors, radius, shadow, spacing } from "@/theme";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 
 const STATUS_FILTERS = [
@@ -38,27 +38,36 @@ export default function AppointmentsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<BusyAction>(null);
+  const activeRequest = useRef<AbortController | null>(null);
 
   const dateText = useMemo(() => isoDateLocal(date), [date]);
 
   const load = useCallback(async () => {
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
     setError(null);
     try {
       const query = new URLSearchParams({ from: dateText, to: dateText });
       if (patientId) query.set("patientId", patientId);
       if (statusFilter !== "all") query.set("status", statusFilter);
-      const result = await apiRequest<Appointment[]>(`/api/appointments?${query.toString()}`);
+      const result = await apiRequest<Appointment[]>(`/api/appointments?${query.toString()}`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       setAppointments(result ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "تعذر تحميل المواعيد");
+      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "تعذر تحميل المواعيد");
     } finally {
-      setLoading(false);
+      if (activeRequest.current === controller) {
+        activeRequest.current = null;
+        setLoading(false);
+      }
     }
   }, [dateText, patientId, statusFilter]);
 
   useEffect(() => {
     setLoading(true);
     void load();
+    return () => activeRequest.current?.abort();
   }, [load]);
 
   function moveDay(days: number) {
@@ -124,6 +133,7 @@ export default function AppointmentsScreen() {
 
   return (
     <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />}>
+      <PageHeader title="المواعيد" eyebrow="تنظيم يوم العيادة" subtitle={patientName ? `مواعيد المريض: ${patientName}` : "تنقّل بين الأيام وتابع الحالات والتذكيرات."} />
       {patientName ? <Text style={styles.filterBanner}>مواعيد: {patientName}</Text> : null}
 
       <View style={styles.topActions}>
@@ -238,17 +248,17 @@ const styles = StyleSheet.create({
   topActions: { flexDirection: "row-reverse", gap: spacing.sm, alignItems: "stretch" },
   recallButton: { minWidth: 92, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.warning, borderRadius: radius.sm, backgroundColor: colors.warningSoft, paddingHorizontal: spacing.sm, minHeight: 48 },
   recallButtonText: { color: colors.warning, fontWeight: "800" },
-  dateBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
-  dateButton: { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: radius.sm, paddingVertical: spacing.sm, paddingHorizontal: spacing.sm },
+  dateBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.sm, ...shadow.card },
+  dateButton: { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceMuted, borderRadius: radius.sm, paddingVertical: spacing.sm, paddingHorizontal: spacing.sm },
   dateButtonText: { color: colors.primary, fontSize: 12, fontWeight: "700" },
   dateCenter: { alignItems: "center" },
   date: { color: colors.text, fontWeight: "800" },
   today: { color: colors.primary, fontSize: 12, marginTop: 4 },
   statusFilters: { flexDirection: "row-reverse", flexWrap: "wrap", gap: spacing.xs },
-  statusFilter: { borderWidth: 1, borderColor: colors.border, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 7, backgroundColor: colors.surface },
-  statusFilterActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  statusFilter: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 7, backgroundColor: colors.surface },
+  statusFilterActive: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
   statusFilterText: { color: colors.text, fontSize: 12, fontWeight: "700" },
-  statusFilterTextActive: { color: colors.primary },
+  statusFilterTextActive: { color: colors.accentDark },
   appointmentHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: spacing.md },
   patient: { color: colors.text, fontSize: 17, fontWeight: "800", textAlign: "right" },
   status: { color: colors.primary, backgroundColor: colors.primarySoft, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, fontSize: 12, fontWeight: "700" },

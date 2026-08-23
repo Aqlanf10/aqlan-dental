@@ -5,9 +5,9 @@ import type {
   ConversationListResponse,
   MessagingUnreadCount
 } from "@/lib/types";
-import { colors, radius, spacing } from "@/theme";
+import { colors, radius, shadow, spacing } from "@/theme";
 import { router } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -29,32 +29,45 @@ export default function MessagesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const activeRequest = useRef<AbortController | null>(null);
 
-  const load = useCallback(async (queryText = search) => {
+  const load = useCallback(async (queryText: string) => {
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
     setError(null);
     try {
       const params = new URLSearchParams({ page: "1", pageSize: "50" });
       if (queryText.trim()) params.set("search", queryText.trim());
 
       const [list, unreadCount] = await Promise.all([
-        apiRequest<ConversationListResponse>(`/api/messages/conversations?${params.toString()}`),
-        apiRequest<MessagingUnreadCount>("/api/messages/unread-count")
+        apiRequest<ConversationListResponse>(`/api/messages/conversations?${params.toString()}`, { signal: controller.signal }),
+        apiRequest<MessagingUnreadCount>("/api/messages/unread-count", { signal: controller.signal })
       ]);
 
+      if (controller.signal.aborted) return;
       setConversations(list.data ?? []);
       setUnread(unreadCount);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "تعذر تحميل المحادثات");
+      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "تعذر تحميل المحادثات");
     } finally {
-      setLoading(false);
+      if (activeRequest.current === controller) {
+        activeRequest.current = null;
+        setLoading(false);
+      }
     }
-  }, [search]);
+  }, []);
+
+  useEffect(() => () => activeRequest.current?.abort(), []);
 
   useEffect(() => {
     const handle = setTimeout(() => {
       void load(search);
     }, 300);
-    return () => clearTimeout(handle);
+    return () => {
+      clearTimeout(handle);
+      activeRequest.current?.abort();
+    };
   }, [load, search]);
 
   async function refresh() {
@@ -69,11 +82,14 @@ export default function MessagesScreen() {
   return (
     <Screen scroll={false}>
       <View style={styles.header}>
-        <View>
+        <View style={styles.unreadCard}>
           <Text style={styles.unread}>{unread.totalUnread} غير مقروءة</Text>
           <Text style={styles.unreadSub}>{unread.unreadConversations} محادثة</Text>
         </View>
-        <Text style={styles.title}>الرسائل</Text>
+        <View>
+          <Text style={styles.eyebrow}>تواصل فريق المركز</Text>
+          <Text accessibilityRole="header" style={styles.title}>الرسائل</Text>
+        </View>
       </View>
 
       <TextInput
@@ -96,6 +112,8 @@ export default function MessagesScreen() {
           action={<PrimaryButton title="إعادة المحاولة" onPress={() => void load(search)} />}
         />
       ) : (
+        <>
+        {error ? <Text accessibilityRole="alert" style={styles.refreshError}>{error}</Text> : null}
         <FlatList
           data={conversations}
           keyExtractor={(item) => item.id}
@@ -109,6 +127,7 @@ export default function MessagesScreen() {
           }
           renderItem={({ item }) => <ConversationCard item={item} />}
         />
+        </>
       )}
     </Screen>
   );
@@ -169,17 +188,21 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: spacing.md
   },
-  title: { color: colors.text, fontSize: 25, fontWeight: "800", textAlign: "right" },
-  unread: { color: colors.primary, fontWeight: "800" },
-  unreadSub: { color: colors.muted, fontSize: 12, marginTop: 2 },
+  eyebrow: { color: colors.secondary, fontSize: 11, fontWeight: "900", textAlign: "right" },
+  title: { color: colors.text, fontSize: 25, fontWeight: "900", textAlign: "right" },
+  unreadCard: { backgroundColor: colors.primarySoft, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
+  unread: { color: colors.primary, fontWeight: "900", fontSize: 12 },
+  unreadSub: { color: colors.muted, fontSize: 10, marginTop: 2 },
   search: {
-    minHeight: 48,
+    minHeight: 54,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.sm,
     paddingHorizontal: spacing.md,
     backgroundColor: colors.surface,
-    color: colors.text
+    color: colors.text,
+    textAlign: "right",
+    ...shadow.card
   },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   list: { gap: spacing.sm, paddingBottom: spacing.xl },
@@ -189,10 +212,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radius.md,
     padding: spacing.md,
-    gap: spacing.sm
+    gap: spacing.sm,
+    ...shadow.card
   },
   cardHeader: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  cardTitle: { color: colors.text, fontSize: 16, fontWeight: "700", textAlign: "right" },
+  cardTitle: { color: colors.text, fontSize: 16, fontWeight: "800", textAlign: "right" },
   cardTitleUnread: { fontWeight: "900" },
   patient: { color: colors.primary, fontSize: 12, marginTop: 3, textAlign: "right" },
   preview: { color: colors.muted, lineHeight: 20, textAlign: "right" },
@@ -203,10 +227,11 @@ const styles = StyleSheet.create({
     height: 27,
     paddingHorizontal: 7,
     borderRadius: 14,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.accent,
     alignItems: "center",
     justifyContent: "center"
   },
   badgeText: { color: "#fff", fontWeight: "800", fontSize: 12 },
-  empty: { color: colors.muted, textAlign: "center" }
+  empty: { color: colors.muted, textAlign: "center" },
+  refreshError: { color: colors.danger, backgroundColor: colors.dangerSoft, borderRadius: radius.sm, padding: spacing.sm, textAlign: "right" }
 });

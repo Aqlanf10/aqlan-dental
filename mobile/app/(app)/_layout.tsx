@@ -1,34 +1,33 @@
 import { useSession } from "@/auth/SessionProvider";
+import { BrandLoading } from "@/components/ui";
 import { colors } from "@/theme";
 import { Redirect, Tabs } from "expo-router";
 import React from "react";
-import { ActivityIndicator, Text, View, type ColorValue } from "react-native";
+import { StyleSheet, Text, View, type ColorValue } from "react-native";
 
-const icon = (value: string) => ({ color }: { color: ColorValue }) => (
-  <Text style={{ color, fontSize: 18 }}>{value}</Text>
+const icon = (value: string) => ({ color, focused }: { color: ColorValue; focused: boolean }) => (
+  <View style={[styles.tabIcon, focused && styles.tabIconActive]}>
+    <Text style={[styles.tabIconText, { color }]}>{value}</Text>
+  </View>
 );
 
 export default function AppTabsLayout() {
   const { isLoading, user } = useSession();
 
   if (isLoading) {
-    return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background }}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
+    return <BrandLoading />;
   }
 
   if (!user) return <Redirect href="/sign-in" />;
   if (user.mustChangePassword) return <Redirect href="/change-password" />;
 
   return (
-    <Tabs screenOptions={{ headerTitleAlign: "center", headerStyle: { backgroundColor: colors.surface }, headerTintColor: colors.text, tabBarActiveTintColor: colors.primary, tabBarInactiveTintColor: colors.muted, tabBarStyle: { backgroundColor: colors.surface } }}>
-      <Tabs.Screen name="home" options={{ title: "الرئيسية", tabBarIcon: icon("⌂") }} />
-      <Tabs.Screen name="patients" options={{ title: "المرضى", tabBarIcon: icon("♙") }} />
-      <Tabs.Screen name="appointments" options={{ title: "المواعيد", tabBarIcon: icon("◷") }} />
-      <Tabs.Screen name="messages" options={{ title: "الرسائل", tabBarIcon: icon("✉") }} />
-      <Tabs.Screen name="account" options={{ title: "حسابي", tabBarIcon: icon("●") }} />
+    <Tabs screenOptions={{ headerTitleAlign: "center", headerStyle: { backgroundColor: colors.primary }, headerTintColor: colors.white, headerTitleStyle: { fontWeight: "900" }, headerShadowVisible: false, tabBarActiveTintColor: colors.accent, tabBarInactiveTintColor: colors.muted, tabBarLabelStyle: { fontSize: 11, fontWeight: "800", marginTop: 2 }, tabBarStyle: styles.tabBar, tabBarItemStyle: styles.tabItem }}>
+      <Tabs.Screen name="home" options={{ title: "الرئيسية", headerShown: false, tabBarIcon: icon("ر") }} />
+      <Tabs.Screen name="patients" options={{ title: "المرضى", tabBarIcon: icon("م") }} />
+      <Tabs.Screen name="appointments" options={{ title: "المواعيد", tabBarIcon: icon("ع") }} />
+      <Tabs.Screen name="messages" options={{ title: "الرسائل", tabBarIcon: icon("ل") }} />
+      <Tabs.Screen name="account" options={{ title: "حسابي", tabBarIcon: icon("ح") }} />
       <Tabs.Screen name="appointments-new" options={{ href: null, title: "حجز موعد" }} />
       <Tabs.Screen name="appointments-recall" options={{ href: null, title: "قائمة الاستدعاء" }} />
       <Tabs.Screen name="message-detail" options={{ href: null, title: "المحادثة" }} />
@@ -78,6 +77,15 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="lab-order-consume-inventory" options={{ href: null, title: "صرف مواد للمعمل" }} />
       <Tabs.Screen name="reports" options={{ href: null, title: "التقارير والإدارة" }} />
       <Tabs.Screen name="settings" options={{ href: null, title: "الإعدادات والحالة" }} />
+      <Tabs.Screen name="diagnostics" options={{ href: null, title: "تشخيص التطبيق" }} />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  tabBar: { height: 74, paddingTop: 8, paddingBottom: 9, backgroundColor: colors.surface, borderTopWidth: 0, shadowColor: "#102a43", shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 14 },
+  tabItem: { borderRadius: 14 },
+  tabIcon: { width: 28, height: 28, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceMuted },
+  tabIconActive: { backgroundColor: colors.accentSoft },
+  tabIconText: { fontSize: 14, fontWeight: "900" }
+});

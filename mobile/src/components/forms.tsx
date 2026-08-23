@@ -1,4 +1,4 @@
-import { colors, radius, spacing } from "@/theme";
+import { colors, radius, shadow, spacing } from "@/theme";
 import React from "react";
 import {
   Pressable,
@@ -137,13 +137,13 @@ export function SelectList({
 const styles = StyleSheet.create({
   field: { gap: spacing.xs },
   label: { color: colors.text, fontSize: 14, fontWeight: "700", textAlign: "right" },
-  input: { minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, backgroundColor: colors.surface, color: colors.text, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  input: { minHeight: 52, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, backgroundColor: colors.surface, color: colors.text, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, textAlign: "right", ...shadow.card },
   multiline: { minHeight: 96, textAlignVertical: "top" },
   choices: { flexDirection: "row-reverse", flexWrap: "wrap", gap: spacing.sm },
-  choice: { minHeight: 44, justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 999, backgroundColor: colors.surface, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  choiceSelected: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  choice: { minHeight: 44, justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, backgroundColor: colors.surface, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  choiceSelected: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
   choiceText: { color: colors.text, fontWeight: "600" },
-  choiceTextSelected: { color: colors.primary },
+  choiceTextSelected: { color: colors.accentDark },
   selectOption: { minHeight: 48, flexDirection: "row-reverse", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, backgroundColor: colors.surface, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   selectOptionSelected: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
   selectText: { color: colors.text, textAlign: "right", fontWeight: "600" },

@@ -1,13 +1,15 @@
 import { useSession } from "@/auth/SessionProvider";
-import { Card, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/components/ui";
-import { colors, radius, spacing } from "@/theme";
+import { useClinicBranding } from "@/brand";
+import { Card, PageHeader, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/components/ui";
+import { colors, radius, shadow, spacing } from "@/theme";
 import Constants from "expo-constants";
 import { router } from "expo-router";
 import React, { useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Image, StyleSheet, Text, View } from "react-native";
 
 export default function AccountScreen() {
   const { user, permissions, signOut, reload } = useSession();
+  const brand = useClinicBranding();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,8 +35,18 @@ export default function AccountScreen() {
 
   return (
     <Screen>
-      <SectionTitle>الحساب</SectionTitle>
+      <PageHeader title="حسابي" eyebrow="الجلسة والأمان" subtitle="بيانات الحساب الفعلية والصلاحيات القادمة من الخادم." />
       {error ? <StateMessage title="تعذر تنفيذ العملية" message={error} /> : null}
+      <View style={styles.profileCard}>
+        <View style={styles.profileLogo}><Image source={require("../../assets/logo.png")} resizeMode="contain" style={styles.logo} /></View>
+        <View style={styles.profileCopy}>
+          <Text style={styles.profileName}>{user?.doctorName || user?.username || "مستخدم المركز"}</Text>
+          <Text style={styles.profileRole}>{roleLabel(user?.role)}</Text>
+          <Text numberOfLines={2} style={styles.clinic}>{brand.clinicName}</Text>
+        </View>
+      </View>
+
+      <SectionTitle>بيانات الحساب</SectionTitle>
       <Card>
         <Row label="المستخدم" value={user?.username ?? "—"} />
         <Row label="الدور" value={user?.role ?? "—"} />
@@ -47,9 +59,12 @@ export default function AccountScreen() {
       </Card>
 
       <SectionTitle>الأمان</SectionTitle>
-      <PrimaryButton title="تغيير كلمة المرور" onPress={() => router.push("/change-password")} />
-      <PrimaryButton title="تحديث الجلسة والصلاحيات" loading={refreshing} disabled={refreshing} onPress={() => void refreshSession()} />
-      <PrimaryButton title="الإعدادات وحالة أسعار الصرف" onPress={() => router.push("/(app)/settings")} />
+      <View style={styles.actions}>
+        <PrimaryButton title="تغيير كلمة المرور" variant="secondary" onPress={() => router.push("/change-password")} />
+        <PrimaryButton title="تحديث الجلسة والصلاحيات" variant="secondary" loading={refreshing} disabled={refreshing} onPress={() => void refreshSession()} />
+        <PrimaryButton title="الإعدادات وحالة أسعار الصرف" variant="secondary" onPress={() => router.push("/(app)/settings")} />
+        <PrimaryButton title="تشخيص الاتصال ونسخة التطبيق" variant="secondary" onPress={() => router.push("/(app)/diagnostics")} />
+      </View>
 
       <SectionTitle>الصلاحيات الفعلية</SectionTitle>
       {user?.role === "Admin" ? (
@@ -63,7 +78,7 @@ export default function AccountScreen() {
       )}
 
       <SectionTitle>الجلسة</SectionTitle>
-      <PrimaryButton title="تسجيل الخروج من هذا الجهاز" loading={loading} disabled={loading} onPress={() => void logout()} />
+      <PrimaryButton title="تسجيل الخروج من هذا الجهاز" variant="danger" loading={loading} disabled={loading} onPress={() => void logout()} />
 
       <Text style={styles.version}>
         Aqlan Dental Pro Mobile · {Constants.expoConfig?.version ?? "0.1.0"}
@@ -72,11 +87,27 @@ export default function AccountScreen() {
   );
 }
 
+function roleLabel(role?: string): string {
+  const labels: Record<string, string> = {
+    Admin: "مدير النظام", Orthodontist: "أخصائي تقويم", GeneralDentist: "طبيب أسنان",
+    OralSurgeon: "جراح فم ووجه وفكين", Reception: "الاستقبال", Accountant: "المحاسبة",
+    Assistant: "مساعد العيادة", BranchManager: "مدير فرع"
+  };
+  return role ? labels[role] || role : "فريق المركز";
+}
+
 function Row({ label, value, last = false }: { label: string; value: string; last?: boolean }) {
   return <View style={[styles.row, last && { borderBottomWidth: 0 }]}><Text style={styles.value}>{value}</Text><Text style={styles.label}>{label}</Text></View>;
 }
 
 const styles = StyleSheet.create({
+  profileCard: { flexDirection: "row-reverse", alignItems: "center", gap: spacing.md, backgroundColor: colors.primary, borderRadius: radius.lg, padding: spacing.md, ...shadow.floating },
+  profileLogo: { width: 78, height: 68, borderRadius: radius.md, backgroundColor: colors.white, alignItems: "center", justifyContent: "center" },
+  logo: { width: 68, height: 54 },
+  profileCopy: { flex: 1, alignItems: "flex-end", gap: 3 },
+  profileName: { color: colors.white, fontSize: 18, fontWeight: "900", textAlign: "right" },
+  profileRole: { color: colors.accent, fontSize: 12, fontWeight: "800" },
+  clinic: { color: "rgba(255,255,255,0.60)", fontSize: 10, lineHeight: 16, textAlign: "right" },
   row: { minHeight: 48, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: spacing.md },
   label: { color: colors.muted, textAlign: "right", flexShrink: 1 },
   value: { color: colors.text, flex: 1, textAlign: "right", fontWeight: "600" },
@@ -84,5 +115,6 @@ const styles = StyleSheet.create({
   permission: { color: colors.primary, backgroundColor: colors.primarySoft, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 6, fontSize: 11, fontWeight: "700" },
   admin: { color: colors.primary, textAlign: "right", fontWeight: "700" },
   muted: { color: colors.muted, textAlign: "right" },
+  actions: { gap: spacing.sm },
   version: { color: colors.muted, textAlign: "center", fontSize: 12, paddingVertical: spacing.md }
 });

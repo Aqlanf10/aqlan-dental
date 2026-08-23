@@ -4,6 +4,14 @@ import type { MobileLoginResponse, MobileRefreshResponse } from "@/lib/types";
 const MOBILE_REFRESH_HEADER = "X-Aqlan-Refresh-Token";
 const REQUEST_TIMEOUT_MS = 30_000;
 
+export type ApiHealth = {
+  status: string;
+  timestamp?: string | null;
+  version?: string | null;
+  latencyMs: number;
+  serverOrigin: string;
+};
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -28,6 +36,39 @@ function getBaseUrl(): string {
   }
 
   return configured;
+}
+
+export function apiServerOrigin(): string {
+  return getBaseUrl();
+}
+
+export async function checkApiHealth(): Promise<ApiHealth> {
+  const serverOrigin = getBaseUrl();
+  const startedAt = Date.now();
+  const response = await fetchWithTimeout(`${serverOrigin}/health`, {
+    headers: { Accept: "application/json" }
+  });
+  const payload = await parsePayload(response);
+
+  if (!response.ok) {
+    throw new ApiError(
+      messageFromPayload(payload, `تعذر فحص الخادم (${response.status})`),
+      response.status,
+      payload
+    );
+  }
+
+  const data = payload && typeof payload === "object"
+    ? payload as { status?: unknown; timestamp?: unknown; version?: unknown }
+    : {};
+
+  return {
+    status: typeof data.status === "string" ? data.status : "healthy",
+    timestamp: typeof data.timestamp === "string" ? data.timestamp : null,
+    version: typeof data.version === "string" ? data.version : null,
+    latencyMs: Date.now() - startedAt,
+    serverOrigin
+  };
 }
 
 export function apiAssetUrl(path: string): string {

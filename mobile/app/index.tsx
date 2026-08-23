@@ -1,18 +1,13 @@
 import { useSession } from "@/auth/SessionProvider";
-import { colors } from "@/theme";
+import { BrandLoading } from "@/components/ui";
 import { Redirect } from "expo-router";
 import React from "react";
-import { ActivityIndicator, View } from "react-native";
 
 export default function Index() {
   const { isLoading, user } = useSession();
 
   if (isLoading) {
-    return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
+    return <BrandLoading />;
   }
 
   if (!user) return <Redirect href="/sign-in" />;

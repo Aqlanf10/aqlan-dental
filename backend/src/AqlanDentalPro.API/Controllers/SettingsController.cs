@@ -547,7 +547,8 @@ public class SettingsController(AppDbContext db, ICurrentUserService currentUser
         ["addressEn"]                = "Upper Al-Tahrir Street, Taiz, Yemen",
         ["leadDoctorEn"]             = "Dr. Aqlan Alkamel — Orthodontic Specialist",
         ["leadDoctorCredentialsEn"]  = "Central University of Manila — Philippines",
-        ["printLanguage"]            = "en",
+        // Arabic: it is what the clinic prints. English is a deliberate choice, not a default.
+        ["printLanguage"]            = "ar",
     };
 }
 

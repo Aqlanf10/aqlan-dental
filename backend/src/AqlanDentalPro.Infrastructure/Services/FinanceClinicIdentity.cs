@@ -32,6 +32,11 @@ public sealed class FinanceClinicIdentity
     private readonly string _location;
     private readonly string _receiptFooterText;
     private readonly bool _showLeadDoctor;
+    private readonly string _nameEn;
+    private readonly string _locationEn;
+    private readonly string _leadDoctorEn;
+    private readonly string _leadDoctorCredentialsEn;
+    private readonly bool _printEnglish;
 
     /// <summary>
     /// CORE-REQ-006 — the logo this clinic actually configured, resolved once alongside the
@@ -43,8 +48,16 @@ public sealed class FinanceClinicIdentity
     private FinanceClinicIdentity(
         string name, string leadDoctor, string leadDoctorTitle,
         string leadDoctorCredentials, string phones, string location,
-        string receiptFooterText, bool showLeadDoctor)
+        string receiptFooterText, bool showLeadDoctor,
+        string nameEn = "", string locationEn = "",
+        string leadDoctorEn = "", string leadDoctorCredentialsEn = "",
+        bool printEnglish = false)
     {
+        _nameEn = nameEn ?? "";
+        _locationEn = locationEn ?? "";
+        _leadDoctorEn = leadDoctorEn ?? "";
+        _leadDoctorCredentialsEn = leadDoctorCredentialsEn ?? "";
+        _printEnglish = printEnglish;
         _name = name;
         _leadDoctor = leadDoctor;
         _leadDoctorTitle = leadDoctorTitle;
@@ -55,17 +68,58 @@ public sealed class FinanceClinicIdentity
         _showLeadDoctor = showLeadDoctor;
     }
 
-    public string Name => Or(_name, DefaultName);
-    public string Location => Or(_location, DefaultLocation);
+    /// <summary>
+    /// CORE-REQ-006 — the print language, which is deliberately independent of the interface
+    /// language: the clinic can run its screens in English and still hand the patient an
+    /// Arabic receipt, or the reverse.
+    ///
+    /// <para>
+    /// Resolved here rather than in each generator because this class is already the single
+    /// reader every finance document goes through. The setting and the English identity keys
+    /// existed and were configurable from the Settings screen, but nothing in the
+    /// PDF-generating layer read either — so the switch changed nothing on the documents it
+    /// was named for. Every accessor below now answers in the chosen language, and each falls
+    /// back to Arabic when its English key is unset: a half-configured identity must not print
+    /// a blank clinic name.
+    /// </para>
+    /// </summary>
+    public bool PrintsEnglish => _printEnglish;
+
+    public string Name => _printEnglish && !string.IsNullOrWhiteSpace(_nameEn)
+        ? _nameEn
+        : Or(_name, DefaultName);
+
+    public string Location => _printEnglish && !string.IsNullOrWhiteSpace(_locationEn)
+        ? _locationEn
+        : Or(_location, DefaultLocation);
+
+    // Phone numbers are digits; they do not translate.
     public string Phones => Or(_phones, DefaultPhones);
-    public string LeadDoctor => _leadDoctor;
-    public string LeadDoctorTitle => _leadDoctorTitle;
-    public string LeadDoctorCredentials => _leadDoctorCredentials;
+
+    public string LeadDoctor => _printEnglish && !string.IsNullOrWhiteSpace(_leadDoctorEn)
+        ? _leadDoctorEn
+        : _leadDoctor;
+
+    /// <summary>
+    /// The English lead-doctor setting already carries the title ("Dr. … — Orthodontic
+    /// Specialist"), so printing a separate title line under it would repeat it.
+    /// </summary>
+    public string LeadDoctorTitle => _printEnglish && !string.IsNullOrWhiteSpace(_leadDoctorEn)
+        ? ""
+        : _leadDoctorTitle;
+
+    public string LeadDoctorCredentials =>
+        _printEnglish && !string.IsNullOrWhiteSpace(_leadDoctorCredentialsEn)
+            ? _leadDoctorCredentialsEn
+            : _leadDoctorCredentials;
 
     /// <summary>The lead-doctor identity block is printed only when configured.</summary>
-    public bool HasLeadDoctor => !string.IsNullOrWhiteSpace(_leadDoctor);
-    public bool HasLeadDoctorTitle => !string.IsNullOrWhiteSpace(_leadDoctorTitle);
-    public bool HasLeadDoctorCredentials => !string.IsNullOrWhiteSpace(_leadDoctorCredentials);
+    // These answer for the language actually being printed, not for the raw Arabic fields.
+    // Reading the raw field left a dangling separator on the English receipt — "Dr Aqlan — " —
+    // because the title is folded into the English doctor name and resolves to empty.
+    public bool HasLeadDoctor => !string.IsNullOrWhiteSpace(LeadDoctor);
+    public bool HasLeadDoctorTitle => !string.IsNullOrWhiteSpace(LeadDoctorTitle);
+    public bool HasLeadDoctorCredentials => !string.IsNullOrWhiteSpace(LeadDoctorCredentials);
 
     /// <summary>
     /// FIN-SETTINGS: custom receipt footer text (e.g. "شكراً لزيارتكم"). Empty when
@@ -100,6 +154,14 @@ public sealed class FinanceClinicIdentity
         // FIN-SETTINGS — receipt defaults
         FinanceSettingsKeys.ReceiptFooterText,
         FinanceSettingsKeys.ReceiptShowLeadDoctor,
+        // CORE-REQ-006 — print language and the English identity it selects. These live under
+        // website.* because that is where the owner already maintains them in Settings; the
+        // key's prefix says where it is edited, not who may read it.
+        "website.printLanguage",
+        "website.clinicNameEn",
+        "website.addressEn",
+        "website.leadDoctorEn",
+        "website.leadDoctorCredentialsEn",
     };
 
     /// <summary>Reads the clinic.* identity keys + finance receipt keys from Settings (no hardcoding).</summary>
@@ -114,6 +176,10 @@ public sealed class FinanceClinicIdentity
         bool showLeadDoctor = ParseBool(Get(FinanceSettingsKeys.ReceiptShowLeadDoctor),
             fallback: bool.TryParse(FinanceSettingsKeys.Defaults[FinanceSettingsKeys.ReceiptShowLeadDoctor], out var fb) && fb);
 
+        // Anything other than an explicit "en" prints Arabic — an unrecognised or empty value
+        // must not leave a document in no language.
+        var printEnglish = string.Equals(Get("website.printLanguage"), "en", StringComparison.OrdinalIgnoreCase);
+
         return new FinanceClinicIdentity(
             Get("clinic.name"),
             Get("clinic.lead_doctor"),
@@ -122,7 +188,12 @@ public sealed class FinanceClinicIdentity
             Get("clinic.phones"),
             Get("clinic.location"),
             Get(FinanceSettingsKeys.ReceiptFooterText),
-            showLeadDoctor)
+            showLeadDoctor,
+            Get("website.clinicNameEn"),
+            Get("website.addressEn"),
+            Get("website.leadDoctorEn"),
+            Get("website.leadDoctorCredentialsEn"),
+            printEnglish)
         {
             LogoBytes = await PdfLogoCache.ResolveAsync(db, ct),
         };

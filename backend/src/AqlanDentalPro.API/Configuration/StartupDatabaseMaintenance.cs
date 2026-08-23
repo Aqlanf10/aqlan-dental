@@ -1822,6 +1822,9 @@ public static class StartupDatabaseMaintenance
                 ["clinic.lead_doctor"]                = "د. عقلان الكامل",
                 ["clinic.lead_doctor_title"]          = "أخصائي تقويم الأسنان",
                 ["clinic.lead_doctor_credentials"]    = "جامعة مانيلا المركزية — الفلبين",
+                // CORE-REQ-006: seeded explicitly so the print language is a row the owner can
+                // see and change, not an implicit default buried in two places in the code.
+                ["website.printLanguage"]             = "ar",
             };
 
             // Matched by key, not by category: a key inserted under a different category by an

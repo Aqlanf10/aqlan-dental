@@ -59,13 +59,31 @@ public class PrintLanguageSettingTests
         branding["leadDoctorCredentialsEn"].Should().Be("Configured Credentials");
     }
 
+    /// <summary>
+    /// Reversed deliberately, with the reason recorded rather than the assertion just flipped.
+    ///
+    /// <para>
+    /// This used to assert English, on the grounds that "the patient-carried forms have always
+    /// printed English". That was true of two browser-printed forms — prescriptions and
+    /// radiology orders — and their English identity came from hardcoded literals, not from a
+    /// decision; CORE-REQ-006 moved those literals into Settings precisely so they stopped
+    /// being accidental.
+    /// </para>
+    ///
+    /// <para>
+    /// The setting now also governs the server-generated PDFs (receipts, statements,
+    /// invoices), which have always printed Arabic. One value cannot preserve both histories,
+    /// and for a clinic in Taiz whose patients read Arabic, Arabic is the right default for a
+    /// prescription. English stays one setting away.
+    /// </para>
+    /// </summary>
     [Fact]
-    public async Task Print_language_defaults_to_English()
+    public async Task Print_language_defaults_to_Arabic()
     {
         using var db = CreateDb();
 
-        (await GetBrandingAsync(db))["printLanguage"].Should().Be("en",
-            "the patient-carried forms have always printed English; the default must not change that");
+        (await GetBrandingAsync(db))["printLanguage"].Should().Be("ar",
+            "an unset print language must mean the language this clinic's documents are in");
     }
 
     [Fact]
@@ -78,16 +96,21 @@ public class PrintLanguageSettingTests
     }
 
     [Theory]
-    [InlineData("fr")]
-    [InlineData("")]
-    [InlineData("  EN  ")]
-    public async Task An_unusable_language_value_resolves_to_a_language_that_renders(string configured)
+    // A recognised value survives whitespace and case.
+    [InlineData("  EN  ", "en")]
+    [InlineData("AR", "ar")]
+    // Anything unusable falls back to the clinic's own language, not to English.
+    [InlineData("fr", "ar")]
+    [InlineData("", "ar")]
+    public async Task An_unusable_language_value_resolves_to_a_language_that_renders(
+        string configured, string expected)
     {
         using var db = CreateDb();
         await SetAsync(db, ("website.printLanguage", configured));
 
-        (await GetBrandingAsync(db))["printLanguage"].Should().Be("en",
-            "a typo in a settings row must not make a printed medical form render in no language");
+        (await GetBrandingAsync(db))["printLanguage"].Should().Be(expected,
+            "a typo in a settings row must not make a printed medical form render in no language, "
+            + "and the language it falls back to is the one this clinic prints in");
     }
 
     /// <summary>

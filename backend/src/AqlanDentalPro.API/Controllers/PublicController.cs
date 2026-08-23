@@ -111,10 +111,21 @@ public class PublicController : ControllerBase
     /// behaviour rather than being passed through — a typo in a settings row must not make a
     /// printed medical form render in no language at all.
     /// </summary>
+    /// <summary>
+    /// CORE-REQ-006 — an unset or unrecognised print language means Arabic.
+    ///
+    /// <para>
+    /// This defaulted to English, as did the Settings default map, and the key was never
+    /// seeded. That was harmless only for as long as nothing in the PDF layer read the
+    /// setting: the moment it did, every receipt, statement and lab order in a clinic whose
+    /// documents are Arabic would have printed in English. The default has to be the language
+    /// the clinic actually prints in.
+    /// </para>
+    /// </summary>
     private static string NormalizePrintLanguage(string? raw)
     {
         var value = (raw ?? "").Trim().ToLowerInvariant();
-        return value is "ar" or "en" ? value : "en";
+        return value is "ar" or "en" ? value : "ar";
     }
 
     [HttpGet("public/queue")]

@@ -12,18 +12,33 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
 {
     private const string FontName = PdfService.ArabicFontName;
 
-    /// <summary>Arabic currency symbol for the receipt amount display.
-    /// SAR = Saudi Riyal (ر.س), USD = US Dollar ($), else = Yemeni Rial (ر.ي).</summary>
-    private static string CurrencySymbol(string? currency) => currency switch
+    /// <summary>
+    /// Currency marker for the receipt amount, in the language the receipt prints in.
+    /// An Arabic «ر.ي» on an otherwise fully English receipt is the last thing the reader
+    /// cannot parse, so English documents use the ISO code instead.
+    /// </summary>
+    private string CurrencySymbol(string? currency) => currency switch
     {
-        "SAR" => "ر.س",
+        "SAR" => L("ر.س", "SAR"),
         "USD" => "$",
-        _ => "ر.ي"
+        _ => L("ر.ي", "YER")
     };
+
+    /// <summary>
+    /// CORE-REQ-006 — a label in the language this document prints in.
+    ///
+    /// <para>
+    /// The identity already switches language; leaving the body Arabic produced an English
+    /// letterhead over an Arabic receipt, which reads worse to the patient than either
+    /// language on its own. Only fixed chrome is translated — the patient's name, the service
+    /// description and the doctor's name are data and print exactly as entered.
+    /// </para>
+    /// </summary>
+    private string L(string ar, string en) => Identity.PrintsEnglish ? en : ar;
 
     public DocumentMetadata GetMetadata() => new()
     {
-        Title = $"سند قبض {Payment.ReceiptNumber}",
+        Title = $"{L("سند قبض", "Payment Receipt")} {Payment.ReceiptNumber}",
         Author = "Aqlan Dental Pro",
         Subject = "Payment Receipt"
     };
@@ -36,7 +51,10 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
                 page.Size(105, 148, Unit.Millimetre);
                 page.Margin(0.5f, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.ContentFromRightToLeft();
+                // The page direction has to follow the print language too: an English receipt
+                // laid out right-to-left puts the labels on the wrong side of their values.
+                if (!Identity.PrintsEnglish)
+                    page.ContentFromRightToLeft();
                 page.DefaultTextStyle(x => x.FontSize(8).FontFamily(FontName));
 
                 page.Header().Element(ComposeHeader);
@@ -79,11 +97,11 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
 
             column.Item().LineHorizontal(0.5f).LineColor("#1a3a5c");
 
-            column.Item().AlignCenter().Text("سند قبض")
+            column.Item().AlignCenter().Text(L("سند قبض", "Payment Receipt"))
                 .Bold().FontSize(12).FontColor("#f5922e");
-            column.Item().AlignCenter().Text($"رقم السند: {Payment.ReceiptNumber ?? "-"}")
+            column.Item().AlignCenter().Text($"{L("رقم السند", "Receipt no.")}: {Payment.ReceiptNumber ?? "-"}")
                 .FontSize(7).FontColor(Colors.Grey.Darken1);
-            column.Item().AlignCenter().Text($"التاريخ: {Payment.PaymentDate:yyyy-MM-dd}")
+            column.Item().AlignCenter().Text($"{L("التاريخ", "Date")}: {Payment.PaymentDate:yyyy-MM-dd}")
                 .FontSize(7).FontColor(Colors.Grey.Darken1);
 
             column.Item().LineHorizontal(0.5f).LineColor("#f5922e");
@@ -99,7 +117,7 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
             // Patient info
             column.Item().Row(row =>
             {
-                row.RelativeItem().Text("اسم المريض:").SemiBold().FontSize(8).FontColor("#1a3a5c");
+                row.RelativeItem().Text(L("اسم المريض:", "Patient name:")).SemiBold().FontSize(8).FontColor("#1a3a5c");
                 row.RelativeItem().Text($"{Payment.Patient?.FirstName} {Payment.Patient?.MiddleName} {Payment.Patient?.LastName}").FontSize(8);
             });
 
@@ -107,46 +125,46 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
             {
                 column.Item().Row(row =>
                 {
-                    row.RelativeItem().Text("رقم الملف:").SemiBold().FontSize(8).FontColor("#1a3a5c");
+                    row.RelativeItem().Text(L("رقم الملف:", "File no.:")).SemiBold().FontSize(8).FontColor("#1a3a5c");
                     row.RelativeItem().Text(Payment.Patient.PatientNumber).FontSize(8);
                 });
             }
 
             column.Item().Row(row =>
             {
-                row.RelativeItem().Text("الطبيب المعالج:").SemiBold().FontSize(8).FontColor("#1a3a5c");
-                row.RelativeItem().Text(Payment.Doctor?.Name ?? "غير محدد").FontSize(8);
+                row.RelativeItem().Text(L("الطبيب المعالج:", "Treating doctor:")).SemiBold().FontSize(8).FontColor("#1a3a5c");
+                row.RelativeItem().Text(Payment.Doctor?.Name ?? L("غير محدد", "Not specified")).FontSize(8);
             });
 
             // Payment method
             var methodLabel = Payment.PaymentMethod?.ToLower() switch
             {
-                "cash" => "نقداً",
-                "card" => "بطاقة",
-                "banktransfer" => "تحويل بنكي",
-                "mobilewallet" => "محفظة إلكترونية",
+                "cash" => L("نقداً", "Cash"),
+                "card" => L("بطاقة", "Card"),
+                "banktransfer" => L("تحويل بنكي", "Bank transfer"),
+                "mobilewallet" => L("محفظة إلكترونية", "Mobile wallet"),
                 _ => Payment.PaymentMethod ?? "—"
             };
             column.Item().Row(row =>
             {
-                row.RelativeItem().Text("طريقة الدفع:").SemiBold().FontSize(8).FontColor("#1a3a5c");
+                row.RelativeItem().Text(L("طريقة الدفع:", "Payment method:")).SemiBold().FontSize(8).FontColor("#1a3a5c");
                 row.RelativeItem().Text(methodLabel).FontSize(8);
             });
 
             // Service description
-            column.Item().Text($"البيان: {Payment.ServiceDescription ?? "دفعة مالية"}").FontSize(8).FontColor(Colors.Grey.Darken2);
+            column.Item().Text($"{L("البيان", "Description")}: {Payment.ServiceDescription ?? L("دفعة مالية", "Payment")}").FontSize(8).FontColor(Colors.Grey.Darken2);
 
             // Amount Box
             column.Item().AlignCenter().Background("#eef3f9").Border(1).BorderColor("#1a3a5c").Padding(6).Column(box =>
             {
-                box.Item().Text("المبلغ المقبوض").AlignCenter().FontSize(7).FontColor(Colors.Grey.Darken2);
+                box.Item().Text(L("المبلغ المقبوض", "Amount received")).AlignCenter().FontSize(7).FontColor(Colors.Grey.Darken2);
                 box.Item().Text($"{Payment.Amount:N0} {CurrencySymbol(Payment.Currency)}").AlignCenter().Bold().FontSize(16).FontColor("#1a3a5c");
             });
 
             // Notes
             if (!string.IsNullOrEmpty(Payment.Notes))
             {
-                column.Item().Text($"ملاحظات: {Payment.Notes}").FontSize(7).FontColor(Colors.Grey.Darken1);
+                column.Item().Text($"{L("ملاحظات", "Notes")}: {Payment.Notes}").FontSize(7).FontColor(Colors.Grey.Darken1);
             }
 
             // Signatures
@@ -155,19 +173,19 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
                 row.RelativeItem().AlignCenter().Column(col =>
                 {
                     col.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten1);
-                    col.Item().Text("المستلم / الصندوق").FontSize(7).FontColor(Colors.Grey.Darken1);
+                    col.Item().Text(L("المستلم / الصندوق", "Received by / Cashier")).FontSize(7).FontColor(Colors.Grey.Darken1);
                 });
                 row.ConstantItem(20);
                 row.RelativeItem().AlignCenter().Column(col =>
                 {
                     col.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten1);
-                    col.Item().Text("توقيع المريض").FontSize(7).FontColor(Colors.Grey.Darken1);
+                    col.Item().Text(L("توقيع المريض", "Patient signature")).FontSize(7).FontColor(Colors.Grey.Darken1);
                 });
                 row.ConstantItem(20);
                 row.RelativeItem().AlignCenter().Column(col =>
                 {
                     col.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten1);
-                    col.Item().Text("ختم المركز").FontSize(7).FontColor(Colors.Grey.Darken1);
+                    col.Item().Text(L("ختم المركز", "Clinic stamp")).FontSize(7).FontColor(Colors.Grey.Darken1);
                 });
             });
         });
@@ -185,7 +203,8 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
             // (preserves the prior behavior until the owner customizes it).
             var footerLine = !string.IsNullOrWhiteSpace(Identity.ReceiptFooterText)
                 ? Identity.ReceiptFooterText.Trim()
-                : "شكراً لثقتكم بنا — نتمنى لكم دوام الصحة والعافية";
+                : L("شكراً لثقتكم بنا — نتمنى لكم دوام الصحة والعافية",
+              "Thank you for your trust — we wish you continued good health");
             column.Item().AlignCenter().Text(footerLine)
                 .FontSize(6).FontColor(Colors.Grey.Darken1);
         });

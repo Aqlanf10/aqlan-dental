@@ -1,29 +1,17 @@
 import { useSession } from "@/auth/SessionProvider";
 import { Card, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/components/ui";
 import { apiRequest } from "@/lib/api";
+import { normalizeExchangeRates, normalizeStringRecord, type ExchangeRatesView } from "@/lib/settings";
 import { colors, spacing } from "@/theme";
 import { useFocusEffect } from "expo-router";
 import React, { useCallback, useState } from "react";
 import { ActivityIndicator, RefreshControl, StyleSheet, Text, View } from "react-native";
 
-type ExchangeRates = {
-  market: string;
-  marketLabel: string;
-  baseCurrency: string;
-  currencies: string[];
-  ratesToYer: Record<string, number>;
-  updatedOn?: string | null;
-  ageInDays: number;
-  staleAfterDays: number;
-  isStale: boolean;
-  markets: Array<{ key: string; label: string }>;
-};
-
 export default function SettingsScreen() {
   const { user, can, reload } = useSession();
   const isAdmin = user?.role === "Admin";
   const canReadFinanceSettings = can("reports.view");
-  const [rates, setRates] = useState<ExchangeRates | null>(null);
+  const [rates, setRates] = useState<ExchangeRatesView | null>(null);
   const [finance, setFinance] = useState<Record<string, string | null> | null>(null);
   const [general, setGeneral] = useState<Record<string, string> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,21 +22,21 @@ export default function SettingsScreen() {
   const load = useCallback(async () => {
     setError(null);
     const results = await Promise.allSettled([
-      apiRequest<ExchangeRates>("/api/settings/exchange-rates"),
+      apiRequest<unknown>("/api/settings/exchange-rates"),
       canReadFinanceSettings
-        ? apiRequest<Record<string, string | null>>("/api/settings/finance")
+        ? apiRequest<unknown>("/api/settings/finance")
         : Promise.resolve(null),
       isAdmin
-        ? apiRequest<Record<string, string>>("/api/settings")
+        ? apiRequest<unknown>("/api/settings")
         : Promise.resolve(null)
     ] as const);
     const [ratesResult, financeResult, generalResult] = results;
-    if (ratesResult.status === "fulfilled") setRates(ratesResult.value as ExchangeRates); else setRates(null);
+    if (ratesResult.status === "fulfilled") setRates(normalizeExchangeRates(ratesResult.value)); else setRates(null);
     if (canReadFinanceSettings) {
-      setFinance(financeResult.status === "fulfilled" ? financeResult.value : null);
+      setFinance(financeResult.status === "fulfilled" ? normalizeStringRecord(financeResult.value, true) : null);
     } else setFinance(null);
     if (isAdmin) {
-      setGeneral(generalResult.status === "fulfilled" ? generalResult.value : null);
+      setGeneral(generalResult.status === "fulfilled" ? normalizeStringRecord(generalResult.value) as Record<string, string> | null : null);
     } else setGeneral(null);
     const rejected = results.find((result) => result.status === "rejected") as PromiseRejectedResult | undefined;
     if (rejected) setError(rejected.reason instanceof Error ? rejected.reason.message : "تعذر تحميل بعض الإعدادات");

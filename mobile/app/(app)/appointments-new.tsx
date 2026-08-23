@@ -2,18 +2,20 @@ import { useSession } from "@/auth/SessionProvider";
 import { FormField, SelectList } from "@/components/forms";
 import { Card, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/components/ui";
 import { apiRequest } from "@/lib/api";
+import { normalizeAppointment, normalizeDoctorList } from "@/lib/appointments";
 import { isoDateLocal } from "@/lib/format";
+import { normalizePatientPage } from "@/lib/patients";
 import { OPERATIONAL_PERMISSION } from "@/lib/permissionContract";
+import { markRuntimeAction } from "@/lib/runtimeDiagnostics";
 import type {
   Appointment,
   AppointmentMutationInput,
   DoctorSummary,
-  PaginatedResponse,
   PatientListItem
 } from "@/lib/types";
 import { colors, radius, spacing } from "@/theme";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 export default function NewAppointmentScreen() {
@@ -41,6 +43,7 @@ export default function NewAppointmentScreen() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<Appointment | null>(null);
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     if (!canCreateAppointment) return;
@@ -49,8 +52,8 @@ export default function NewAppointmentScreen() {
       try {
         const query = new URLSearchParams({ status: "active" });
         if (user?.role !== "Admin" && user?.branchId) query.set("branchId", user.branchId);
-        const result = await apiRequest<DoctorSummary[]>(`/api/doctors?${query.toString()}`);
-        if (!cancelled) setDoctors(result ?? []);
+        const result = await apiRequest<unknown>(`/api/doctors?${query.toString()}`);
+        if (!cancelled) setDoctors(normalizeDoctorList(result));
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "تعذر تحميل الأطباء");
       }
@@ -73,10 +76,10 @@ export default function NewAppointmentScreen() {
           pageSize: "10",
           status: "active"
         });
-        const result = await apiRequest<PaginatedResponse<PatientListItem>>(
+        const result = await apiRequest<unknown>(
           `/api/patients?${query.toString()}`
         );
-        if (!cancelled) setPatientResults(result.data ?? []);
+        if (!cancelled) setPatientResults(normalizePatientPage(result).data);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "تعذر البحث عن المريض");
       }
@@ -97,6 +100,7 @@ export default function NewAppointmentScreen() {
   );
 
   async function submit() {
+    if (submittingRef.current) return;
     if (!canCreateAppointment) {
       setError("صلاحية إنشاء المواعيد غير مفعلة لهذا الحساب.");
       return;
@@ -119,17 +123,22 @@ export default function NewAppointmentScreen() {
       notes: notes.trim() || null
     };
 
+    submittingRef.current = true;
     setSubmitting(true);
     setError(null);
+    markRuntimeAction("حفظ موعد جديد", `${patientId}:${date}:${startTime}`);
     try {
-      const result = await apiRequest<Appointment>("/api/appointments", {
+      const result = await apiRequest<unknown>("/api/appointments", {
         method: "POST",
         body: JSON.stringify(request)
       });
-      setCreated(result);
+      const appointment = normalizeAppointment(result);
+      if (!appointment) throw new Error("تم الحفظ لكن استجابة الخادم غير مكتملة. ارجع إلى قائمة المواعيد للتأكد.");
+      setCreated(appointment);
     } catch (err) {
       setError(err instanceof Error ? err.message : "تعذر إنشاء الموعد");
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
@@ -158,7 +167,7 @@ export default function NewAppointmentScreen() {
         <PrimaryButton
           title="عرض مواعيد اليوم"
           onPress={() => router.replace({
-            pathname: "/(app)/appointments",
+            pathname: "/(app)/(tabs)/appointments",
             params: { patientId: created.patientId, patientName: created.patientName }
           })}
         />

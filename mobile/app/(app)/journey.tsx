@@ -231,7 +231,7 @@ function JourneyCard({
 
   return (
     <Card>
-      <Pressable onPress={() => router.push({ pathname: "/(app)/patients/[id]", params: { id: item.patientId } })}>
+      <Pressable onPress={() => router.push({ pathname: "/(app)/(tabs)/patients/[id]", params: { id: item.patientId } })}>
         <View style={styles.cardHeader}>
           <View style={styles.statusChip}>
             <Text style={styles.statusText}>{journeyStatusLabel(item.checkoutStatus ?? item.queueStatus ?? item.appointmentStatus)}</Text>

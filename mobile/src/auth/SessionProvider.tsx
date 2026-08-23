@@ -1,6 +1,7 @@
 import { apiRequest, mobileLogin, mobileLogout } from "@/lib/api";
 import { readTokens, replaceAccessToken } from "@/auth/tokenStore";
 import type { StaffUser, UserPermissions } from "@/lib/types";
+import { normalizePermissions, normalizeStaffUser } from "@/lib/session";
 import React, {
   createContext,
   type PropsWithChildren,
@@ -39,12 +40,15 @@ export function SessionProvider({ children }: PropsWithChildren) {
         return;
       }
 
-      const [me, permissionResponse] = await Promise.all([
-        apiRequest<StaffUser>("/api/auth/me"),
-        apiRequest<UserPermissions>("/api/auth/me/permissions")
+      const [meResult, permissionResult] = await Promise.allSettled([
+        apiRequest<unknown>("/api/auth/me"),
+        apiRequest<unknown>("/api/auth/me/permissions")
       ]);
+      if (meResult.status === "rejected") throw meResult.reason;
+      const me = normalizeStaffUser(meResult.value);
+      if (!me) throw new Error("استجابة الحساب غير مكتملة.");
       setUser(me);
-      setPermissions(permissionResponse.permissions ?? []);
+      setPermissions(permissionResult.status === "fulfilled" ? normalizePermissions(permissionResult.value).permissions : []);
     } catch {
       setUser(null);
       setPermissions([]);
@@ -62,8 +66,8 @@ export function SessionProvider({ children }: PropsWithChildren) {
     setUser(response.user);
 
     try {
-      const permissionResponse = await apiRequest<UserPermissions>("/api/auth/me/permissions");
-      setPermissions(permissionResponse.permissions ?? []);
+      const permissionResponse = await apiRequest<unknown>("/api/auth/me/permissions");
+      setPermissions(normalizePermissions(permissionResponse).permissions);
     } catch {
       setPermissions([]);
     }
@@ -72,9 +76,12 @@ export function SessionProvider({ children }: PropsWithChildren) {
   }, []);
 
   const signOut = useCallback(async () => {
-    await mobileLogout();
-    setUser(null);
-    setPermissions([]);
+    try {
+      await mobileLogout();
+    } finally {
+      setUser(null);
+      setPermissions([]);
+    }
   }, []);
 
   const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
@@ -86,13 +93,14 @@ export function SessionProvider({ children }: PropsWithChildren) {
     if (!response.accessToken) throw new Error("لم يُرجع الخادم جلسة محدثة.");
     await replaceAccessToken(response.accessToken);
 
-    const me = await apiRequest<StaffUser>("/api/auth/me");
+    const me = normalizeStaffUser(await apiRequest<unknown>("/api/auth/me"));
+    if (!me) throw new Error("استجابة الحساب بعد تغيير كلمة المرور غير مكتملة.");
     setUser(me);
   }, []);
 
   const can = useCallback(
     (permission: string) =>
-      user?.role.toLowerCase() === "admin" || permissions.includes(permission),
+      user?.role?.toLowerCase() === "admin" || permissions.includes(permission),
     [permissions, user?.role]
   );
 

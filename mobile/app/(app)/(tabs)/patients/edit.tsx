@@ -76,7 +76,7 @@ export default function EditPatientScreen() {
       method: "PUT",
       body: JSON.stringify(input)
     });
-    router.replace({ pathname: "/(app)/patients/[id]", params: { id } });
+    router.replace({ pathname: "/(app)/(tabs)/patients/[id]", params: { id } });
   }
 
   return (

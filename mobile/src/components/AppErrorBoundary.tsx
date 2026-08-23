@@ -1,4 +1,5 @@
 import { clearTokens } from "@/auth/tokenStore";
+import { clearLastRuntimeAction, readLastRuntimeAction } from "@/lib/runtimeDiagnostics";
 import { colors, radius, shadow, spacing } from "@/theme";
 import { router } from "expo-router";
 import React, { Component, type ErrorInfo, type PropsWithChildren } from "react";
@@ -18,11 +19,13 @@ export class AppErrorBoundary extends Component<PropsWithChildren, State> {
   }
 
   private retry = () => {
+    clearLastRuntimeAction();
     this.setState({ error: null });
     router.replace("/");
   };
 
   private signIn = async () => {
+    clearLastRuntimeAction();
     await clearTokens();
     this.setState({ error: null });
     router.replace("/sign-in");
@@ -31,6 +34,8 @@ export class AppErrorBoundary extends Component<PropsWithChildren, State> {
   render() {
     const { error } = this.state;
     if (!error) return this.props.children;
+    const action = readLastRuntimeAction();
+    const stackPreview = error.stack?.split("\n").slice(0, 6).join("\n");
 
     return (
       <SafeAreaView style={styles.safe}>
@@ -43,6 +48,12 @@ export class AppErrorBoundary extends Component<PropsWithChildren, State> {
               حدث خطأ غير متوقع أثناء عرض الشاشة. لم تُرسل أي بيانات ولم تُكرّر أي عملية. يمكنك العودة للرئيسية أو بدء جلسة جديدة.
             </Text>
             <Text selectable style={styles.technical}>{error.message || "خطأ عرض غير معروف"}</Text>
+            {action ? (
+              <Text selectable style={styles.context}>
+                آخر إجراء: {action.label}{action.target ? `\nالمسار: ${action.target}` : ""}
+              </Text>
+            ) : null}
+            {stackPreview ? <Text selectable style={styles.stack}>{stackPreview}</Text> : null}
             <Pressable accessibilityRole="button" onPress={this.retry} style={({ pressed }) => [styles.primary, pressed && styles.pressed]}>
               <Text style={styles.primaryText}>العودة الآمنة للرئيسية</Text>
             </Pressable>
@@ -66,6 +77,8 @@ const styles = StyleSheet.create({
   title: { color: colors.text, fontSize: 24, fontWeight: "900", textAlign: "center", marginTop: spacing.md },
   message: { color: colors.muted, lineHeight: 24, textAlign: "center", marginVertical: spacing.md },
   technical: { width: "100%", color: colors.danger, backgroundColor: colors.dangerSoft, borderRadius: radius.sm, padding: spacing.sm, textAlign: "left", marginBottom: spacing.md, fontSize: 12 },
+  context: { width: "100%", color: colors.primary, backgroundColor: colors.primarySoft, borderRadius: radius.sm, padding: spacing.sm, textAlign: "right", marginBottom: spacing.sm, fontSize: 12, lineHeight: 19 },
+  stack: { width: "100%", maxHeight: 116, color: colors.muted, backgroundColor: colors.surfaceMuted, borderRadius: radius.sm, padding: spacing.sm, textAlign: "left", marginBottom: spacing.md, fontSize: 10, lineHeight: 15 },
   primary: { width: "100%", minHeight: 52, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary, borderRadius: radius.sm },
   primaryText: { color: colors.white, fontWeight: "800", fontSize: 16 },
   secondary: { width: "100%", minHeight: 48, alignItems: "center", justifyContent: "center", marginTop: spacing.xs },

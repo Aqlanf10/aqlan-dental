@@ -1,5 +1,6 @@
 import { clearTokens, readTokens, writeTokens } from "@/auth/tokenStore";
 import type { MobileLoginResponse, MobileRefreshResponse } from "@/lib/types";
+import { normalizeMobileLoginResponse } from "@/lib/session";
 
 const MOBILE_REFRESH_HEADER = "X-Aqlan-Refresh-Token";
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -235,8 +236,8 @@ export async function mobileLogin(
     );
   }
 
-  const session = payload as MobileLoginResponse;
-  if (!session.accessToken || !session.refreshToken || !session.user) {
+  const session = normalizeMobileLoginResponse(payload);
+  if (!session) {
     throw new ApiError("استجابة تسجيل الدخول غير مكتملة", 500, payload);
   }
 

@@ -28,6 +28,23 @@ type PublicBrandResponse = {
   leadDoctorCredentialsAr?: string;
 };
 
+function brandText(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizePublicBrand(value: unknown): PublicBrandResponse | null {
+  if (!value || typeof value !== "object") return null;
+  const source = value as Record<string, unknown>;
+  return {
+    clinicName: brandText(source.clinicName ?? source.ClinicName),
+    address: brandText(source.address ?? source.Address),
+    phone: brandText(source.phone ?? source.Phone),
+    workingHours: brandText(source.workingHours ?? source.WorkingHours),
+    leadDoctorAr: brandText(source.leadDoctorAr ?? source.LeadDoctorAr),
+    leadDoctorCredentialsAr: brandText(source.leadDoctorCredentialsAr ?? source.LeadDoctorCredentialsAr)
+  };
+}
+
 const BrandContext = createContext<ClinicBranding>(clinicBrandFallback);
 
 export function BrandProvider({ children }: PropsWithChildren) {
@@ -35,19 +52,19 @@ export function BrandProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     let active = true;
-    apiRequest<PublicBrandResponse>("/api/public/website-settings")
-      .then((value) => { if (active) setRemote(value); })
+    apiRequest<unknown>("/api/public/website-settings")
+      .then((value) => { if (active) setRemote(normalizePublicBrand(value)); })
       .catch(() => { /* The official local identity remains available offline. */ });
     return () => { active = false; };
   }, []);
 
   const value = useMemo<ClinicBranding>(() => ({
-    clinicName: remote?.clinicName?.trim() || clinicBrandFallback.clinicName,
-    address: remote?.address?.trim() || clinicBrandFallback.address,
-    phone: remote?.phone?.trim() || clinicBrandFallback.phone,
-    workingHours: remote?.workingHours?.trim() || clinicBrandFallback.workingHours,
-    leadDoctor: remote?.leadDoctorAr?.trim() || clinicBrandFallback.leadDoctor,
-    credentials: remote?.leadDoctorCredentialsAr?.trim() || clinicBrandFallback.credentials
+    clinicName: remote?.clinicName || clinicBrandFallback.clinicName,
+    address: remote?.address || clinicBrandFallback.address,
+    phone: remote?.phone || clinicBrandFallback.phone,
+    workingHours: remote?.workingHours || clinicBrandFallback.workingHours,
+    leadDoctor: remote?.leadDoctorAr || clinicBrandFallback.leadDoctor,
+    credentials: remote?.leadDoctorCredentialsAr || clinicBrandFallback.credentials
   }), [remote]);
 
   return <BrandContext.Provider value={value}>{children}</BrandContext.Provider>;

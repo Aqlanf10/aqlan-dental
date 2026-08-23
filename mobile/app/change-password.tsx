@@ -37,7 +37,7 @@ export default function ChangePasswordScreen() {
     setError(null);
     try {
       await changePassword(currentPassword, newPassword);
-      router.replace("/(app)/home");
+      router.replace("/(app)/(tabs)/home");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "تعذر تغيير كلمة المرور الآن.");
     } finally {

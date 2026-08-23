@@ -1,5 +1,7 @@
 import { Card, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/components/ui";
 import { apiRequest } from "@/lib/api";
+import { normalizeNotifications } from "@/lib/notifications";
+import { markRuntimeAction } from "@/lib/runtimeDiagnostics";
 import type { NotificationItem, NotificationsResponse } from "@/lib/types";
 import { colors, radius, spacing } from "@/theme";
 import React, { useCallback, useEffect, useState } from "react";
@@ -21,11 +23,11 @@ export default function NotificationsScreen() {
         page: "1",
         pageSize: "50"
       });
-      const response = await apiRequest<NotificationsResponse>(
+      const response = normalizeNotifications(await apiRequest<unknown>(
         `/api/notifications?${params.toString()}`
-      );
-      setItems(response.data ?? []);
-      setUnreadCount(response.unreadCount ?? 0);
+      ));
+      setItems(response.data);
+      setUnreadCount(response.unreadCount);
     } catch (err) {
       setError(err instanceof Error ? err.message : "تعذر تحميل الإشعارات");
     } finally {
@@ -49,6 +51,7 @@ export default function NotificationsScreen() {
 
   async function markRead(item: NotificationItem) {
     if (item.isRead) return;
+    markRuntimeAction("تعليم إشعار كمقروء", item.id);
     try {
       await apiRequest<void>(`/api/notifications/${item.id}/read`, { method: "PUT" });
       setItems((current) =>
@@ -65,6 +68,7 @@ export default function NotificationsScreen() {
   }
 
   async function markAllRead() {
+    markRuntimeAction("تعليم كل الإشعارات كمقروءة");
     try {
       await apiRequest<void>("/api/notifications/read-all", { method: "PUT" });
       setUnreadCount(0);

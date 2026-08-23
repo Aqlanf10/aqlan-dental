@@ -2,6 +2,7 @@ import { useSession } from "@/auth/SessionProvider";
 import { Card, PageHeader, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/components/ui";
 import { apiRequest, apiServerOrigin, checkApiHealth, type ApiHealth } from "@/lib/api";
 import type { StaffUser, UserPermissions } from "@/lib/types";
+import { normalizePermissions, normalizeStaffUser } from "@/lib/session";
 import { colors, spacing } from "@/theme";
 import Constants from "expo-constants";
 import { useFocusEffect } from "expo-router";
@@ -26,8 +27,8 @@ export default function DiagnosticsScreen() {
 
     const [healthResult, sessionResult, permissionResult] = await Promise.allSettled([
       checkApiHealth(),
-      apiRequest<StaffUser>("/api/auth/me"),
-      apiRequest<UserPermissions>("/api/auth/me/permissions")
+      apiRequest<unknown>("/api/auth/me"),
+      apiRequest<unknown>("/api/auth/me/permissions")
     ] as const);
 
     if (healthResult.status === "fulfilled") setHealth(healthResult.value);
@@ -36,11 +37,11 @@ export default function DiagnosticsScreen() {
       setError(readableError(healthResult.reason, "تعذر الوصول إلى الخادم"));
     }
 
-    setSessionCheck(sessionResult.status === "fulfilled" ? "success" : "failed");
+    setSessionCheck(sessionResult.status === "fulfilled" && normalizeStaffUser(sessionResult.value) ? "success" : "failed");
     setPermissionsCheck(permissionResult.status === "fulfilled" ? "success" : "failed");
     setPermissionsCount(
       permissionResult.status === "fulfilled"
-        ? permissionResult.value.permissions?.length ?? 0
+        ? normalizePermissions(permissionResult.value).permissions.length
         : null
     );
     setCheckedAt(new Date().toLocaleString("ar-YE"));

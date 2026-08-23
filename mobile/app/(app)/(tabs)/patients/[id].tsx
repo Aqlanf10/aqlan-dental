@@ -118,10 +118,10 @@ export default function PatientDetailsScreen() {
       {canReadLab ? <PrimaryButton title="طلبات المعمل" onPress={() => router.push({ pathname: "/(app)/patient-lab", params: { patientId: patient.id, patientName } })} /> : null}
       {canReadFinance ? <PrimaryButton title="مالية المريض" onPress={() => router.push({ pathname: "/(app)/patient-finance", params: { patientId: patient.id, patientName } })} /> : null}
       {canCreateAppointment ? <PrimaryButton title="حجز موعد جديد" onPress={() => router.push({ pathname: "/(app)/appointments-new", params: { patientId: patient.id, patientName } })} /> : null}
-      <PrimaryButton title="عرض مواعيد المريض" onPress={() => router.push({ pathname: "/(app)/appointments", params: { patientId: patient.id, patientName } })} />
+      <PrimaryButton title="عرض مواعيد المريض" onPress={() => router.push({ pathname: "/(app)/(tabs)/appointments", params: { patientId: patient.id, patientName } })} />
       <PrimaryButton title="محادثة داخلية حول المريض" loading={messagingAction === "internal"} disabled={messagingAction !== null} onPress={() => void openPatientConversation("internal")} />
       <PrimaryButton title="مراسلة المريض — مرئية للمريض" loading={messagingAction === "patient"} disabled={messagingAction !== null} onPress={() => void openPatientConversation("patient")} />
-      {canEdit && !patient.isLimitedView ? <PrimaryButton title="تعديل بيانات المريض" onPress={() => router.push({ pathname: "/(app)/patients/edit", params: { id: patient.id } })} /> : null}
+      {canEdit && !patient.isLimitedView ? <PrimaryButton title="تعديل بيانات المريض" onPress={() => router.push({ pathname: "/(app)/(tabs)/patients/edit", params: { id: patient.id } })} /> : null}
     </Screen>
   );
 }

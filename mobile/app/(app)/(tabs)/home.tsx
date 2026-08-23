@@ -3,6 +3,7 @@ import { useClinicBranding } from "@/brand";
 import { Card, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/components/ui";
 import { apiRequest } from "@/lib/api";
 import { formatYemeniRial } from "@/lib/format";
+import { markRuntimeAction } from "@/lib/runtimeDiagnostics";
 import type { DashboardAlerts, DashboardStats } from "@/lib/types";
 import { colors, radius, shadow, spacing } from "@/theme";
 import { router } from "expo-router";
@@ -20,16 +21,18 @@ export default function DashboardScreen() {
 
   const load = useCallback(async () => {
     setError(null);
-    try {
-      const [statsResponse, alertsResponse] = await Promise.all([
-        apiRequest<DashboardStats>("/api/dashboard/stats"),
-        apiRequest<DashboardAlerts>("/api/dashboard/alerts")
-      ]);
-      setStats(statsResponse);
-      setAlerts(alertsResponse);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "تعذر تحميل لوحة التحكم");
-    }
+    const [statsResult, alertsResult] = await Promise.allSettled([
+      apiRequest<DashboardStats>("/api/dashboard/stats"),
+      apiRequest<DashboardAlerts>("/api/dashboard/alerts")
+    ]);
+
+    if (statsResult.status === "fulfilled") setStats(statsResult.value);
+    if (alertsResult.status === "fulfilled") setAlerts(alertsResult.value);
+
+    const failures = [statsResult, alertsResult]
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+      .map((result) => result.reason instanceof Error ? result.reason.message : "تعذر تحميل جزء من لوحة التحكم");
+    setError(failures.length > 0 ? Array.from(new Set(failures)).join(" — ") : null);
   }, []);
 
   useEffect(() => { void load(); }, [load]);
@@ -50,7 +53,7 @@ export default function DashboardScreen() {
         <View pointerEvents="none" style={styles.heroOrb} />
         <View style={styles.heroTop}>
           <View style={styles.logoTile}>
-            <Image source={require("../../assets/logo-white.png")} resizeMode="contain" style={styles.logo} />
+            <Image source={require("../../../assets/logo-white.png")} resizeMode="contain" style={styles.logo} />
           </View>
           <View style={styles.heroCopy}>
             <Text style={styles.heroEyebrow}>مساحة عمل المركز</Text>
@@ -70,14 +73,15 @@ export default function DashboardScreen() {
 
       <SectionTitle>الوصول السريع</SectionTitle>
       <View style={styles.actionsGrid}>
-        <QuickAction badge="ي" title="تشغيل اليوم" subtitle="الحضور والطابور" onPress={() => router.push("/(app)/journey")} emphasized />
-        <QuickAction badge="م" title="المرضى" subtitle="بحث وملفات" onPress={() => router.push("/(app)/patients")} />
-        <QuickAction badge="ع" title="المواعيد" subtitle="جدول اليوم" onPress={() => router.push("/(app)/appointments")} />
-        <QuickAction badge="ر" title="الرسائل" subtitle="التواصل الداخلي" onPress={() => router.push("/(app)/messages")} />
+        <QuickAction badge="ي" title="تشغيل اليوم" subtitle="الحضور والطابور" onPress={() => openRoute("تشغيل اليوم", "/(app)/journey")} emphasized />
+        <QuickAction badge="م" title="المرضى" subtitle="بحث وملفات" onPress={() => openRoute("المرضى", "/(app)/(tabs)/patients")} />
+        <QuickAction badge="ع" title="المواعيد" subtitle="جدول اليوم" onPress={() => openRoute("المواعيد", "/(app)/(tabs)/appointments")} />
+        <QuickAction badge="ر" title="الرسائل" subtitle="التواصل الداخلي" onPress={() => openRoute("الرسائل", "/(app)/(tabs)/messages")} />
       </View>
 
       <SectionTitle>مؤشرات اليوم</SectionTitle>
       {error && !stats ? <StateMessage title="تعذر تحميل لوحة التحكم" message={error} /> : null}
+      {error && stats ? <Text accessibilityRole="alert" style={styles.partialError}>{error}</Text> : null}
 
       {stats ? (
         <View style={styles.grid}>
@@ -87,7 +91,7 @@ export default function DashboardScreen() {
           <Metric title="إجمالي المرضى" value={stats.totalPatients} />
           <Metric title="حالات التقويم" value={stats.activeOrthoCases} />
           <Metric title="أعمال المعمل" value={stats.pendingLabOrders} tone="orange" />
-          {canSeeFinance ? <Metric title="إيراد الشهر" value={formatYemeniRial(stats.totalRevenueMTD)} wide tone="green" /> : null}
+          {canSeeFinance ? <Metric title="إيراد الشهر" value={formatYemeniRial(Number(stats.totalRevenueMTD) || 0)} wide tone="green" /> : null}
         </View>
       ) : !error ? <Card><Text style={styles.muted}>جارٍ تحميل مؤشرات المركز…</Text></Card> : null}
 
@@ -108,15 +112,20 @@ export default function DashboardScreen() {
         <>
           <SectionTitle>الإدارة</SectionTitle>
           <View style={styles.adminActions}>
-            {canViewReports ? <PrimaryButton title="التقارير ولوحة الإدارة" variant="secondary" onPress={() => router.push("/(app)/reports")} /> : null}
-            {isAdmin ? <PrimaryButton title="المخزون والمواد" variant="secondary" onPress={() => router.push("/(app)/inventory")} /> : null}
+            {canViewReports ? <PrimaryButton title="التقارير ولوحة الإدارة" variant="secondary" onPress={() => openRoute("التقارير", "/(app)/reports")} /> : null}
+            {isAdmin ? <PrimaryButton title="المخزون والمواد" variant="secondary" onPress={() => openRoute("المخزون", "/(app)/inventory")} /> : null}
           </View>
         </>
       ) : null}
 
-      <PrimaryButton title="عرض الإشعارات" variant="accent" onPress={() => router.push("/(app)/notifications")} />
+      <PrimaryButton title="عرض الإشعارات" variant="accent" onPress={() => openRoute("الإشعارات", "/(app)/notifications")} />
     </Screen>
   );
+}
+
+function openRoute(label: string, target: Parameters<typeof router.push>[0]): void {
+  markRuntimeAction(label, typeof target === "string" ? target : String(target.pathname));
+  router.push(target);
 }
 
 function roleLabel(role?: string): string {
@@ -194,5 +203,6 @@ const styles = StyleSheet.create({
   alertActive: { color: colors.danger },
   alertLabel: { color: colors.text, textAlign: "right" },
   muted: { color: colors.muted, textAlign: "right" },
+  partialError: { color: colors.danger, backgroundColor: colors.dangerSoft, borderRadius: radius.sm, padding: spacing.sm, textAlign: "right", lineHeight: 20 },
   adminActions: { gap: spacing.sm }
 });

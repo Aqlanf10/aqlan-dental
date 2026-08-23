@@ -12,5 +12,5 @@ export default function Index() {
 
   if (!user) return <Redirect href="/sign-in" />;
   if (user.mustChangePassword) return <Redirect href="/change-password" />;
-  return <Redirect href="/(app)/home" />;
+  return <Redirect href="/(app)/(tabs)/home" />;
 }

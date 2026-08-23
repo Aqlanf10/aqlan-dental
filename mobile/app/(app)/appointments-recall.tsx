@@ -102,7 +102,7 @@ export default function AppointmentsRecallScreen() {
         <Card key={item.patientId}>
           <Pressable
             onPress={() =>
-              router.push({ pathname: "/(app)/patients/[id]", params: { id: item.patientId } })
+              router.push({ pathname: "/(app)/(tabs)/patients/[id]", params: { id: item.patientId } })
             }
           >
             <View style={styles.header}>

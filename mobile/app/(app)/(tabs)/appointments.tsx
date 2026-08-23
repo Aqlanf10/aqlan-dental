@@ -1,8 +1,10 @@
 import { useSession } from "@/auth/SessionProvider";
 import { Card, PageHeader, PrimaryButton, Screen, StateMessage } from "@/components/ui";
 import { apiRequest } from "@/lib/api";
+import { normalizeAppointmentList } from "@/lib/appointments";
 import { appointmentStatusLabel, isoDateLocal } from "@/lib/format";
 import { OPERATIONAL_PERMISSION } from "@/lib/permissionContract";
+import { markRuntimeAction } from "@/lib/runtimeDiagnostics";
 import type { Appointment } from "@/lib/types";
 import { colors, radius, shadow, spacing } from "@/theme";
 import { router, useLocalSearchParams } from "expo-router";
@@ -51,9 +53,9 @@ export default function AppointmentsScreen() {
       const query = new URLSearchParams({ from: dateText, to: dateText });
       if (patientId) query.set("patientId", patientId);
       if (statusFilter !== "all") query.set("status", statusFilter);
-      const result = await apiRequest<Appointment[]>(`/api/appointments?${query.toString()}`, { signal: controller.signal });
+      const result = await apiRequest<unknown>(`/api/appointments?${query.toString()}`, { signal: controller.signal });
       if (controller.signal.aborted) return;
-      setAppointments(result ?? []);
+      setAppointments(normalizeAppointmentList(result));
     } catch (err) {
       if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "تعذر تحميل المواعيد");
     } finally {
@@ -89,6 +91,7 @@ export default function AppointmentsScreen() {
       return;
     }
     if (busy) return;
+    markRuntimeAction("تغيير حالة الموعد", `${item.id}:${status}`);
     setBusy({ id: item.id, action: status });
     setError(null);
     setNotice(null);
@@ -107,6 +110,7 @@ export default function AppointmentsScreen() {
 
   async function sendReminder(item: Appointment, channel: "whatsapp" | "email") {
     if (busy) return;
+    markRuntimeAction("إرسال تذكير موعد", `${item.id}:${channel}`);
     setBusy({ id: item.id, action: channel });
     setError(null);
     setNotice(null);
@@ -141,15 +145,21 @@ export default function AppointmentsScreen() {
           <View style={{ flex: 1 }}>
             <PrimaryButton
               title="حجز موعد جديد"
-              onPress={() => router.push({
-                pathname: "/(app)/appointments-new",
-                params: patientId ? { patientId, patientName: patientName ?? "", date: dateText } : { date: dateText }
-              })}
+              onPress={() => {
+                markRuntimeAction("فتح حجز موعد جديد", patientId);
+                router.push({
+                  pathname: "/(app)/appointments-new",
+                  params: patientId ? { patientId, patientName: patientName ?? "", date: dateText } : { date: dateText }
+                });
+              }}
             />
           </View>
         ) : null}
         {!patientId ? (
-          <Pressable onPress={() => router.push("/(app)/appointments-recall")} style={styles.recallButton}>
+          <Pressable onPress={() => {
+            markRuntimeAction("فتح قائمة الاستدعاء");
+            router.push("/(app)/appointments-recall");
+          }} style={styles.recallButton}>
             <Text style={styles.recallButtonText}>الاستدعاء</Text>
           </Pressable>
         ) : null}
@@ -194,7 +204,10 @@ export default function AppointmentsScreen() {
           const reminderEligible = ["Scheduled", "Confirmed"].includes(item.status);
           return (
             <Card key={item.id}>
-              <Pressable onPress={() => router.push({ pathname: "/(app)/patients/[id]", params: { id: item.patientId } })}>
+              <Pressable onPress={() => {
+                markRuntimeAction("فتح المريض من الموعد", item.patientId);
+                router.push({ pathname: "/(app)/(tabs)/patients/[id]", params: { id: item.patientId } });
+              }}>
                 <View style={styles.appointmentHeader}>
                   <Text style={styles.status}>{appointmentStatusLabel(item.status)}</Text>
                   <View style={{ flex: 1 }}>

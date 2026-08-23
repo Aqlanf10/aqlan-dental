@@ -226,7 +226,7 @@ export default function JourneySummaryScreen() {
       <PrimaryButton
         title="فتح ملف المريض الكامل"
         onPress={() =>
-          router.push({ pathname: "/(app)/patients/[id]", params: { id: summary.patient.id } })
+          router.push({ pathname: "/(app)/(tabs)/patients/[id]", params: { id: summary.patient.id } })
         }
       />
     </Screen>

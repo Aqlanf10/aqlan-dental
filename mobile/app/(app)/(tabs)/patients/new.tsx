@@ -58,7 +58,7 @@ export default function NewPatientScreen() {
         <PrimaryButton
           title="فتح ملف المريض"
           onPress={() =>
-            router.replace({ pathname: "/(app)/patients/[id]", params: { id: created.id } })
+            router.replace({ pathname: "/(app)/(tabs)/patients/[id]", params: { id: created.id } })
           }
         />
       </Screen>

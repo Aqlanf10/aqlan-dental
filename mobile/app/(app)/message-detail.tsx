@@ -1,6 +1,12 @@
 import { useSession } from "@/auth/SessionProvider";
 import { Card, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/components/ui";
 import { apiAssetUrl, apiRequest } from "@/lib/api";
+import {
+  normalizeConversationDetail,
+  normalizeConversationMessage,
+  normalizePollMessages
+} from "@/lib/messages";
+import { markRuntimeAction } from "@/lib/runtimeDiagnostics";
 import type { ConversationDetail, ConversationMessage } from "@/lib/types";
 import { colors, radius, spacing } from "@/theme";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -18,7 +24,6 @@ import {
 
 const POLL_INTERVAL_MS = 5000;
 
-type PollResponse = { messages: ConversationMessage[] };
 type RenderAttachment = {
   key: string;
   url: string;
@@ -39,6 +44,7 @@ export default function MessageDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const lastSeenRef = useRef<string | null>(null);
   const pollingRef = useRef(false);
+  const sendingRef = useRef(false);
 
   const markAsRead = useCallback(async () => {
     if (!id) return;
@@ -58,11 +64,13 @@ export default function MessageDetailScreen() {
 
     setError(null);
     try {
-      const result = await apiRequest<ConversationDetail>(
+      const result = await apiRequest<unknown>(
         `/api/messages/conversations/${id}?page=1&pageSize=50`
       );
-      setConversation(result);
-      lastSeenRef.current = newestTimestamp(result.messages) ?? result.createdAt;
+      const normalized = normalizeConversationDetail(result);
+      if (!normalized) throw new Error("استجابة المحادثة غير مكتملة.");
+      setConversation(normalized);
+      lastSeenRef.current = newestTimestamp(normalized.messages) ?? normalized.createdAt;
       await markAsRead();
     } catch (err) {
       setError(err instanceof Error ? err.message : "تعذر تحميل المحادثة");
@@ -86,10 +94,10 @@ export default function MessageDetailScreen() {
 
         pollingRef.current = true;
         try {
-          const response = await apiRequest<PollResponse>(
+          const response = await apiRequest<unknown>(
             `/api/messages/conversations/${id}/poll?since=${encodeURIComponent(since)}`
           );
-          const incoming = response.messages ?? [];
+          const incoming = normalizePollMessages(response);
           if (!active || incoming.length === 0) return;
 
           setConversation((current) =>
@@ -129,18 +137,22 @@ export default function MessageDetailScreen() {
 
   async function send() {
     const content = text.trim();
-    if (!id || !content || sending) return;
+    if (!id || !content || sendingRef.current) return;
 
+    sendingRef.current = true;
     setSending(true);
     setError(null);
+    markRuntimeAction("إرسال رسالة", id);
     try {
-      const message = await apiRequest<ConversationMessage>(
+      const response = await apiRequest<unknown>(
         `/api/messages/conversations/${id}/messages`,
         {
           method: "POST",
           body: JSON.stringify({ content })
         }
       );
+      const message = normalizeConversationMessage(response);
+      if (!message) throw new Error("تم الإرسال لكن استجابة الخادم غير مكتملة. حدّث المحادثة للتأكد.");
       setConversation((current) =>
         current ? { ...current, messages: mergeMessages(current.messages, [message]) } : current
       );
@@ -151,6 +163,7 @@ export default function MessageDetailScreen() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "تعذر إرسال الرسالة");
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   }

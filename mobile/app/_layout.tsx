@@ -1,3 +1,4 @@
+import "@/polyfills";
 import { SessionProvider } from "@/auth/SessionProvider";
 import { BrandProvider } from "@/brand";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";

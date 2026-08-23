@@ -1,5 +1,7 @@
 import { Card, PrimaryButton, Screen, StateMessage } from "@/components/ui";
 import { apiRequest } from "@/lib/api";
+import { normalizeConversationList, normalizeUnreadCount } from "@/lib/messages";
+import { markRuntimeAction } from "@/lib/runtimeDiagnostics";
 import type {
   ConversationListItem,
   ConversationListResponse,
@@ -40,14 +42,19 @@ export default function MessagesScreen() {
       const params = new URLSearchParams({ page: "1", pageSize: "50" });
       if (queryText.trim()) params.set("search", queryText.trim());
 
-      const [list, unreadCount] = await Promise.all([
-        apiRequest<ConversationListResponse>(`/api/messages/conversations?${params.toString()}`, { signal: controller.signal }),
-        apiRequest<MessagingUnreadCount>("/api/messages/unread-count", { signal: controller.signal })
+      const [listResult, unreadResult] = await Promise.allSettled([
+        apiRequest<unknown>(`/api/messages/conversations?${params.toString()}`, { signal: controller.signal }),
+        apiRequest<unknown>("/api/messages/unread-count", { signal: controller.signal })
       ]);
 
       if (controller.signal.aborted) return;
-      setConversations(list.data ?? []);
-      setUnread(unreadCount);
+      if (listResult.status === "rejected") throw listResult.reason;
+      setConversations(normalizeConversationList(listResult.value).data);
+      if (unreadResult.status === "fulfilled") {
+        setUnread(normalizeUnreadCount(unreadResult.value));
+      } else {
+        setUnread({ totalUnread: 0, unreadConversations: 0 });
+      }
     } catch (err) {
       if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "تعذر تحميل المحادثات");
     } finally {
@@ -140,9 +147,10 @@ function ConversationCard({ item }: { item: ConversationListItem }) {
 
   return (
     <Pressable
-      onPress={() =>
-        router.push({ pathname: "/(app)/message-detail", params: { id: item.id } })
-      }
+      onPress={() => {
+        markRuntimeAction("فتح محادثة", item.id);
+        router.push({ pathname: "/(app)/message-detail", params: { id: item.id } });
+      }}
       style={({ pressed }) => [styles.card, pressed && { opacity: 0.82 }]}
     >
       <View style={styles.cardHeader}>

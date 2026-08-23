@@ -1,9 +1,10 @@
 import { useSession } from "@/auth/SessionProvider";
 import { useClinicBranding } from "@/brand";
 import { ApiError } from "@/lib/api";
+import { markRuntimeAction } from "@/lib/runtimeDiagnostics";
 import { colors, radius, shadow, spacing } from "@/theme";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -26,18 +27,22 @@ export default function SignInScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const submittingRef = useRef(false);
 
   async function submit() {
+    if (submittingRef.current) return;
     if (!username.trim() || !password) {
       setError("أدخل اسم المستخدم وكلمة المرور.");
       return;
     }
 
+    submittingRef.current = true;
     setLoading(true);
     setError(null);
+    markRuntimeAction("تسجيل الدخول", "/api/auth/mobile/login");
     try {
       const user = await signIn(username.trim(), password);
-      router.replace(user.mustChangePassword ? "/change-password" : "/(app)/home");
+      router.replace(user.mustChangePassword ? "/change-password" : "/(app)/(tabs)/home");
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -45,6 +50,7 @@ export default function SignInScreen() {
           : "تعذر الاتصال بالنظام. تحقق من الإنترنت وإعداد رابط الخادم."
       );
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   }
@@ -83,6 +89,7 @@ export default function SignInScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
                 textContentType="username"
+                autoComplete="username"
                 style={styles.input}
                 placeholder="أدخل اسم المستخدم"
                 placeholderTextColor={colors.muted}
@@ -102,6 +109,7 @@ export default function SignInScreen() {
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
                   textContentType="password"
+                  autoComplete="current-password"
                   style={styles.passwordInput}
                   placeholder="••••••••"
                   placeholderTextColor={colors.muted}

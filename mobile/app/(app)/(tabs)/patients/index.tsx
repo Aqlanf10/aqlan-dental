@@ -1,7 +1,8 @@
 import { useSession } from "@/auth/SessionProvider";
 import { Card, PrimaryButton, Screen, StateMessage } from "@/components/ui";
 import { apiRequest } from "@/lib/api";
-import type { PaginatedResponse, PatientListItem } from "@/lib/types";
+import { normalizePatientPage, patientInitial } from "@/lib/patients";
+import type { PatientListItem } from "@/lib/types";
 import { colors, radius, shadow, spacing } from "@/theme";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -40,11 +41,12 @@ export default function PatientsScreen() {
       });
       if (search.trim()) params.set("search", search.trim());
 
-      const result = await apiRequest<PaginatedResponse<PatientListItem>>(
+      const response = await apiRequest<unknown>(
         `/api/patients?${params.toString()}`,
         { signal: controller.signal }
       );
       if (controller.signal.aborted) return;
+      const result = normalizePatientPage(response);
       setPatients(result.data ?? []);
       setTotalCount(result.totalCount ?? 0);
     } catch (err) {
@@ -89,7 +91,7 @@ export default function PatientsScreen() {
       </View>
 
       {canCreate ? (
-        <PrimaryButton title="إضافة مريض جديد" variant="accent" onPress={() => router.push("/(app)/patients/new")} />
+        <PrimaryButton title="إضافة مريض جديد" variant="accent" onPress={() => router.push("/(app)/(tabs)/patients/new")} />
       ) : null}
 
       <TextInput
@@ -130,7 +132,7 @@ export default function PatientsScreen() {
           renderItem={({ item }) => (
             <Pressable
               onPress={() =>
-                router.push({ pathname: "/(app)/patients/[id]", params: { id: item.id } })
+                router.push({ pathname: "/(app)/(tabs)/patients/[id]", params: { id: item.id } })
               }
               style={({ pressed }) => [styles.patientCard, pressed && { opacity: 0.8 }]}
             >
@@ -153,10 +155,6 @@ export default function PatientsScreen() {
       )}
     </Screen>
   );
-}
-
-function patientInitial(name: string): string {
-  return name.trim().charAt(0) || "م";
 }
 
 const styles = StyleSheet.create({

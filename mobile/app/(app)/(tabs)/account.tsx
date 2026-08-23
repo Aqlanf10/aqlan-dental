@@ -2,9 +2,10 @@ import { useSession } from "@/auth/SessionProvider";
 import { useClinicBranding } from "@/brand";
 import { Card, PageHeader, PrimaryButton, Screen, SectionTitle, StateMessage } from "@/components/ui";
 import { colors, radius, shadow, spacing } from "@/theme";
+import { markRuntimeAction } from "@/lib/runtimeDiagnostics";
 import Constants from "expo-constants";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
 
 export default function AccountScreen() {
@@ -13,16 +14,21 @@ export default function AccountScreen() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const logoutRef = useRef(false);
 
   async function logout() {
+    if (logoutRef.current) return;
+    logoutRef.current = true;
     setLoading(true);
     setError(null);
+    markRuntimeAction("تسجيل الخروج");
     try {
       await signOut();
       router.replace("/sign-in");
     } catch (err) {
       setError(err instanceof Error ? err.message : "تعذر تسجيل الخروج");
     } finally {
+      logoutRef.current = false;
       setLoading(false);
     }
   }
@@ -38,7 +44,7 @@ export default function AccountScreen() {
       <PageHeader title="حسابي" eyebrow="الجلسة والأمان" subtitle="بيانات الحساب الفعلية والصلاحيات القادمة من الخادم." />
       {error ? <StateMessage title="تعذر تنفيذ العملية" message={error} /> : null}
       <View style={styles.profileCard}>
-        <View style={styles.profileLogo}><Image source={require("../../assets/logo.png")} resizeMode="contain" style={styles.logo} /></View>
+        <View style={styles.profileLogo}><Image source={require("../../../assets/logo.png")} resizeMode="contain" style={styles.logo} /></View>
         <View style={styles.profileCopy}>
           <Text style={styles.profileName}>{user?.doctorName || user?.username || "مستخدم المركز"}</Text>
           <Text style={styles.profileRole}>{roleLabel(user?.role)}</Text>
@@ -60,10 +66,10 @@ export default function AccountScreen() {
 
       <SectionTitle>الأمان</SectionTitle>
       <View style={styles.actions}>
-        <PrimaryButton title="تغيير كلمة المرور" variant="secondary" onPress={() => router.push("/change-password")} />
+        <PrimaryButton title="تغيير كلمة المرور" variant="secondary" onPress={() => { markRuntimeAction("فتح تغيير كلمة المرور"); router.push("/change-password"); }} />
         <PrimaryButton title="تحديث الجلسة والصلاحيات" variant="secondary" loading={refreshing} disabled={refreshing} onPress={() => void refreshSession()} />
-        <PrimaryButton title="الإعدادات وحالة أسعار الصرف" variant="secondary" onPress={() => router.push("/(app)/settings")} />
-        <PrimaryButton title="تشخيص الاتصال ونسخة التطبيق" variant="secondary" onPress={() => router.push("/(app)/diagnostics")} />
+        <PrimaryButton title="الإعدادات وحالة أسعار الصرف" variant="secondary" onPress={() => { markRuntimeAction("فتح الإعدادات"); router.push("/(app)/settings"); }} />
+        <PrimaryButton title="تشخيص الاتصال ونسخة التطبيق" variant="secondary" onPress={() => { markRuntimeAction("فتح التشخيص"); router.push("/(app)/diagnostics"); }} />
       </View>
 
       <SectionTitle>الصلاحيات الفعلية</SectionTitle>

@@ -22,6 +22,8 @@ Deliver two independent Android applications backed by the existing Aqlan Dental
 - **MOBILE-REQ-008:** Failure of either mobile bundle must not change the web application. Patient routes remain a separately authorized API surface and a separately deployable client.
 - **MOBILE-REQ-009:** Arabic RTL is the initial UI language; English localization is added without changing API contracts.
 - **MOBILE-REQ-010:** Every mobile pull request must pass backend authorization tests and its app-specific typecheck/export workflow.
+- **MOBILE-REQ-011:** The patient network client must validate the normalized URL, reject absolute/protocol-relative/traversal paths, and prove that every request remains under `/api/portal/`.
+- **MOBILE-REQ-012:** Production release must not claim independent concurrent patient sessions until the server either stores refresh sessions per device or the owner explicitly accepts the current one-refresh-token-per-account limitation.
 
 ## Non-goals for the first slice
 

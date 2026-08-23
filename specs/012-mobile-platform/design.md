@@ -15,10 +15,10 @@
 
 - The apps are separate build artifacts with distinct Android package IDs.
 - Tokens are audience-separated by server claims/policies and locally separated by key names.
-- The patient client has a narrow API module whose base path is fixed to `/api/portal`.
+- The patient client has a narrow API module whose normalized URL must remain under `/api/portal/`; traversal and absolute/protocol-relative paths fail closed.
 - Browser cookie behavior is unchanged. Explicit native aliases carry refresh tokens through a patient-specific header.
 - Business logic stays in existing backend services. Mobile clients render DTOs and submit validated commands; they do not write PostgreSQL directly.
-- The first slice adds no migration and no deployment configuration change.
+- The first slice adds no migration and no production deployment configuration change.
 
 ## Failure containment
 
@@ -35,6 +35,17 @@ The backend remains a modular monolith in this slice, so process-level isolation
 5. On 401, the app calls the explicit native refresh alias with the expired access token plus `X-Aqlan-Portal-Refresh-Token`.
 6. Logout revokes the stored server hash and deletes the device copy.
 
+## Known session limitation and release gate
+
+`PatientAccount` currently stores one `RefreshTokenHash` for the whole account. A login or refresh from the patient app can therefore replace the browser portal refresh token, and browser refresh can replace the phone token. Logout also revokes that shared hash.
+
+This does not widen data access, but it prevents a truthful claim of independent simultaneous web/mobile sessions. Before production rollout, choose and verify one of:
+
+1. add append-oriented per-device patient refresh sessions with rotation/revocation tests; or
+2. explicitly accept a single active patient session and communicate it to patients.
+
+No production-ready status is allowed while this choice remains implicit.
+
 ## Rollback
 
-Revert the feature commit. No schema rollback is needed. Existing staff mobile and both web surfaces remain unchanged.
+Revert the feature commits. No schema rollback is needed for the first slice. Existing staff mobile and both web surfaces remain unchanged.

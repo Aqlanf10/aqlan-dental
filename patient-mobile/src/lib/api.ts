@@ -16,6 +16,30 @@ function baseUrl(): string {
   return configured;
 }
 
+/**
+ * MOBILE-REQ-011: resolve every patient request inside the portal namespace
+ * after URL normalization. A textual prefix check alone is not sufficient:
+ * "/../auth/me" would otherwise normalize from /api/portal to /api/auth.
+ */
+export function portalUrl(path: string): string {
+  if (!path.startsWith("/") || path.startsWith("//") || path.startsWith("/api/")) {
+    throw new Error("مسار بوابة المرضى غير صالح.");
+  }
+
+  const origin = new URL(`${baseUrl()}/`);
+  const resolved = new URL(`${PORTAL_PREFIX}${path}`, origin);
+
+  if (
+    resolved.origin !== origin.origin ||
+    (resolved.pathname !== PORTAL_PREFIX &&
+      !resolved.pathname.startsWith(`${PORTAL_PREFIX}/`))
+  ) {
+    throw new Error("مسار بوابة المرضى غير صالح.");
+  }
+
+  return resolved.toString();
+}
+
 async function payload(response: Response): Promise<unknown> {
   const text = await response.text();
   if (!text) return null;
@@ -42,7 +66,7 @@ async function refresh(): Promise<boolean> {
     const tokens = await readTokens();
     if (!tokens) return false;
     try {
-      const response = await fetch(`${baseUrl()}${PORTAL_PREFIX}/mobile/auth/refresh-token`, {
+      const response = await fetch(portalUrl("/mobile/auth/refresh-token"), {
         method: "POST",
         headers: {
           Accept: "application/json",
@@ -71,17 +95,14 @@ export async function portalRequest<T>(
   init: RequestInit = {},
   retry = true
 ): Promise<T> {
-  if (!path.startsWith("/") || path.startsWith("/api/")) {
-    throw new Error("مسار بوابة المرضى غير صالح.");
-  }
-
+  const requestUrl = portalUrl(path);
   const tokens = await readTokens();
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (tokens?.accessToken) headers.set("Authorization", `Bearer ${tokens.accessToken}`);
 
-  const response = await fetch(`${baseUrl()}${PORTAL_PREFIX}${path}`, { ...init, headers });
+  const response = await fetch(requestUrl, { ...init, headers });
   if (response.status === 401 && retry && tokens?.refreshToken && (await refresh())) {
     return portalRequest<T>(path, init, false);
   }
@@ -92,7 +113,7 @@ export async function portalRequest<T>(
 }
 
 export async function patientLogin(username: string, password: string): Promise<PatientAuthResponse> {
-  const response = await fetch(`${baseUrl()}${PORTAL_PREFIX}/mobile/auth/login`, {
+  const response = await fetch(portalUrl("/mobile/auth/login"), {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({ username, password })

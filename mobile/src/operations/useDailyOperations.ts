@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { ApiError } from '@/api/client';
 import { createDailyOperationsApi } from '@/api/dailyOperationsApi';
 import { useAuth } from '@/auth/AuthProvider';
 import type { ClinicRoom, DailyOperationAction, DailyOperationInput, DailyPatient } from '@/types/dailyOperations';
@@ -25,7 +26,9 @@ export function useDailyOperations(enabled = true) {
     return () => { mounted.current = false; };
   }, []);
 
-  const load = useCallback(async (initial = false) => {
+  // `keepError` exists for the conflict path: re-reading the list must not silently wipe the
+  // message explaining why the row just changed under the user's finger.
+  const load = useCallback(async (initial = false, keepError = false) => {
     if (!enabled) {
       setLoading(false);
       setRefreshing(false);
@@ -34,7 +37,7 @@ export function useDailyOperations(enabled = true) {
     const requestSequence = ++sequence.current;
     if (initial) setLoading(true);
     else setRefreshing(true);
-    setError(null);
+    if (!keepError) setError(null);
     try {
       const [nextItems, nextRooms] = await Promise.all([
         api.today(),
@@ -98,6 +101,11 @@ export function useDailyOperations(enabled = true) {
       return true;
     } catch (nextError) {
       if (mounted.current) setError(nextError);
+      // A 409 means another device already moved this patient on. Showing the message while
+      // leaving the stale row on screen invites the user to tap again at something that no
+      // longer exists, so the list is re-read to show what actually happened. Only on 409:
+      // a network failure should not trigger a second request while the first may still land.
+      if (nextError instanceof ApiError && nextError.status === 409) await load(false, true);
       return false;
     } finally {
       actionInFlight.current = false;

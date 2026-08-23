@@ -309,7 +309,8 @@ function PatientDetails({ item, busyAction, onAction }: {
   if (status === 'called' && item.queueItemId && hasPermission('clinic_queue.approve') && !paymentBlocked) actions.push('enter-room');
   if (status === 'inroom' && item.appointmentId && (user?.role === 'Doctor' || hasPermission('visits.edit'))) actions.push('start-visit');
   const isDoctorRole = user?.role === 'Admin' || user?.role === 'Orthodontist' || user?.role === 'GeneralDentist' || user?.role === 'OralSurgeon';
-  if (status === 'inprogress' && item.visitId && isDoctorRole && hasPermission('visits.edit')) actions.push('handoff');
+  const shouldHandoff = status === 'inprogress' || item.nextAction === 'HandoffToReception';
+  if (shouldHandoff && item.visitId && isDoctorRole) actions.push('handoff');
 
   return (
     <View style={styles.detailsCard}>

@@ -162,10 +162,22 @@ public class LabOrderQueryService
 
     // ─── GET /api/lab-orders/pending-count ──────────────────────────────────
 
+    /// <summary>
+    /// Statuses that mean "the clinic is still waiting on this appliance".
+    ///
+    /// <para>
+    /// Shared so that every screen answering «كم تركيبة معلّقة؟» answers the same. The
+    /// dashboard used to keep its own narrower list — sent and manufacturing only — so an
+    /// appliance in try-in or being remade was pending on the lab page and invisible on the
+    /// dashboard. Measured on a real database: the lab page said 4 and the dashboard said 3,
+    /// which understates exactly the pile-up the dashboard exists to surface.
+    /// </para>
+    /// </summary>
+    public static readonly string[] PendingStatuses = ["sent", "manufacturing", "tryIn", "remake"];
+
     public async Task<int> GetPendingCountAsync()
     {
-        return await ScopedOrders()
-            .CountAsync(l => l.Status == "sent" || l.Status == "manufacturing" || l.Status == "tryIn" || l.Status == "remake");
+        return await ScopedOrders().CountAsync(l => PendingStatuses.Contains(l.Status));
     }
 
     // ─── GET /api/lab-orders/today ──────────────────────────────────────────

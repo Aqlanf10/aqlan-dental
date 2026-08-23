@@ -51,21 +51,23 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
 {
     public async Task<DashboardStats> GetStatsAsync(bool includeFinance = true)
     {
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = ClinicTimeProvider.ClinicToday();
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
 
         var apptQuery = db.Appointments.Where(a => a.AppointmentDate == today);
         if (branchId.HasValue) apptQuery = apptQuery.Where(a => a.BranchId == branchId);
 
-        var todayStart = DateTime.UtcNow.Date;
-        var todayEnd   = todayStart.AddDays(1);
+        // "New patients today" is a clinic-day question, so the UTC window is derived from the
+        // clinic date rather than from midnight UTC. ToUtcRange already exists for exactly this.
+        var (todayStart, todayEnd) = ClinicTimeProvider.ToUtcRange(today);
         var patientQuery = db.Patients.Where(p => p.CreatedAt >= todayStart && p.CreatedAt < todayEnd);
         if (branchId.HasValue) patientQuery = patientQuery.Where(p => p.BranchId == branchId);
 
         var orthoQuery = db.OrthoCases.ActiveCases();
         if (branchId.HasValue) orthoQuery = orthoQuery.Where(o => o.BranchId == branchId);
 
-        var labQuery = db.LabOrders.Where(l => l.Status == "sent" || l.Status == "manufacturing");
+        // One definition of "pending", shared with /api/lab-orders/pending-count.
+        var labQuery = db.LabOrders.Where(l => LabOrderQueryService.PendingStatuses.Contains(l.Status));
         if (branchId.HasValue) labQuery = labQuery.Where(l => l.Patient != null && l.Patient.BranchId == branchId);
 
         var monthStart = new DateOnly(today.Year, today.Month, 1);
@@ -135,12 +137,16 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
     /// </summary>
     public async Task<DashboardAlerts> GetAlertsAsync(int longWaitMinutes = 30, int recallWindowDays = 30)
     {
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = ClinicTimeProvider.ClinicToday();
         var tomorrow = today.AddDays(1);
         var nowUtc = DateTime.UtcNow;
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
 
-        // التراكيب المتأخرة — same definition as /api/lab-orders/overdue
+        // التراكيب المتأخرة — the same definition as /api/lab-orders/overdue, which this
+        // comment already claimed while the two used different clocks: that endpoint reads
+        // ClinicToday and this read the server's date. On Railway (UTC) they disagreed every
+        // night between 00:00 and 03:00 Yemen time, so the dashboard and the lab page showed
+        // different counts for the same thing.
         var overdueLabQuery = db.LabOrders.Where(l =>
             l.IsActive
             && l.ExpectedDate != null && l.ExpectedDate < today
@@ -196,7 +202,7 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
 
     public async Task<DashboardCharts> GetChartsAsync(bool includeFinance = true)
     {
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = ClinicTimeProvider.ClinicToday();
         var thirtyDaysAgo = today.AddDays(-29);
 
         var chartBranchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;

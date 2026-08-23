@@ -1,13 +1,15 @@
 {
   "name": "aqlan-dental-mobile",
-  "version": "0.1.0",
+  "version": "1.0.0-alpha.1",
   "private": true,
-  "main": "expo-router/entry",
+  "main": "index.js",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "typecheck": "tsc --noEmit",
+    "test:i18n": "node scripts/check-translations.mjs",
+    "verify": "npm run test:i18n && npm run typecheck",
     "doctor": "npx expo-doctor@latest",
     "export:android": "expo export --platform android --output-dir dist-android",
     "export:ios": "expo export --platform ios --output-dir dist-ios"
@@ -15,12 +17,12 @@
   "dependencies": {
     "expo": "~57.0.9",
     "expo-constants": "~57.0.8",
-    "expo-linking": "~57.0.4",
     "expo-router": "~57.0.9",
     "expo-secure-store": "~57.0.1",
     "expo-splash-screen": "~57.0.5",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
+    "react-dom": "19.2.3",
     "react-native": "0.86.2",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-reanimated": "4.5.1",

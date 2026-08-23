@@ -1,21 +1,25 @@
-import { useSession } from "@/auth/SessionProvider";
-import { colors } from "@/theme";
-import { Redirect } from "expo-router";
-import React from "react";
-import { ActivityIndicator, View } from "react-native";
+import { Redirect } from 'expo-router';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
-export default function Index() {
-  const { isLoading, user } = useSession();
+import { useAuth } from '@/auth/AuthProvider';
+import { useLocale } from '@/i18n/LocaleProvider';
+import { colors } from '@/theme/tokens';
 
-  if (isLoading) {
+export default function IndexScreen() {
+  const { initializing, user } = useAuth();
+  const { ready } = useLocale();
+
+  if (initializing || !ready) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator size="large" color={colors.primary} />
+      <View style={styles.loading}>
+        <ActivityIndicator color={colors.orange500} size="large" />
       </View>
     );
   }
 
-  if (!user) return <Redirect href="/sign-in" />;
-  if (user.mustChangePassword) return <Redirect href="/change-password" />;
-  return <Redirect href="/(app)/home" />;
+  return <Redirect href={user ? '/home' : '/sign-in'} />;
 }
+
+const styles = StyleSheet.create({
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.blue50 },
+});

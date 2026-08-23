@@ -1,29 +1,25 @@
-import { SessionProvider } from "@/auth/SessionProvider";
-import { colors } from "@/theme";
-import { Stack } from "expo-router";
-import React from "react";
-import { I18nManager } from "react-native";
-import "react-native-gesture-handler";
-import "react-native-reanimated";
+import 'react-native-gesture-handler';
 
-I18nManager.allowRTL(true);
+import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+
+import { AuthProvider } from '@/auth/AuthProvider';
+import { AppErrorBoundary } from '@/errors/AppErrorBoundary';
+import { LocaleProvider } from '@/i18n/LocaleProvider';
 
 export default function RootLayout() {
   return (
-    <SessionProvider>
-      <Stack
-        screenOptions={{
-          headerStyle: { backgroundColor: colors.surface },
-          headerTintColor: colors.text,
-          headerTitleAlign: "center",
-          contentStyle: { backgroundColor: colors.background }
-        }}
-      >
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="sign-in" options={{ headerShown: false }} />
-        <Stack.Screen name="change-password" options={{ title: "تغيير كلمة المرور", headerBackVisible: false }} />
-        <Stack.Screen name="(app)" options={{ headerShown: false }} />
-      </Stack>
-    </SessionProvider>
+    <LocaleProvider>
+      <AppErrorBoundary>
+        <AuthProvider>
+          <StatusBar style="dark" />
+          <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="sign-in" />
+            <Stack.Screen name="home" />
+          </Stack>
+        </AuthProvider>
+      </AppErrorBoundary>
+    </LocaleProvider>
   );
 }

@@ -1,35 +1,30 @@
-# Aqlan Dental Pro Mobile
+# Aqlan Dental Pro Mobile V2
 
-Native Android/iOS client for the existing **Aqlan Dental Pro** system.
+إعادة بناء نظيفة لتطبيق موظفي مركز الدكتور عقلان الكامل، مع اعتماد العربية والإنجليزية من طبقة الأساس.
 
-## Architecture
+## الحالة الحالية
 
-- Expo SDK 57 / React Native
-- Expo Router
-- Existing ASP.NET Core API and PostgreSQL database
-- Same staff accounts, role authorization, branch scoping and patient-access rules as the web app
-- Access and refresh tokens are stored only in `expo-secure-store`
-- Native refresh uses `/api/auth/mobile/*`; web auth remains cookie-based and unchanged
-- Temporary-password users are forced through the existing server-side change-password policy before app access
+الوحدة صفر مكتملة في الكود: الهوية، نظام التصميم، الترجمة والاتجاه الديناميكي، تسجيل الدخول الأصلي، التخزين الآمن للجلسة، تجديد الجلسة، وتحميل صلاحيات المستخدم.
 
-## Local setup
+لا توجد أزرار وهمية لوحدات لم تُبنَ بعد. شاشة مساحة العمل تعرض الوحدة التشغيلية التالية فقط بوصفها مرحلة قادمة.
 
-1. Copy `.env.example` to `.env`.
-2. Set `EXPO_PUBLIC_API_URL`.
-3. Run `npm install`.
-4. Run `npm run typecheck`.
-5. Run `npm start`.
+## التشغيل
 
-For a physical phone, the API URL must be reachable from the phone. Production builds require HTTPS.
+```bash
+npm install
+cp .env.example .env
+npm run verify
+npm start
+```
 
-## V1 screens
+يستخدم البناء الرسمي `https://aqlan-dental.vercel.app` من مسار CI. يمكن تغيير العنوان عبر `EXPO_PUBLIC_API_URL` في بيئة التطوير.
 
-- Staff sign-in
-- Mandatory temporary-password change
-- Dashboard stats and attention alerts
-- Patient search/list
-- Patient profile
-- Appointment day view
-- Account/session screen
+## قواعد اللغة
 
-The mobile app intentionally consumes the existing API instead of duplicating business logic.
+- العربية هي اللغة الافتراضية.
+- التبديل إلى الإنجليزية فوري ومحفوظ على الجهاز.
+- كل مكوّن يحدد RTL أو LTR من اللغة الحالية، من دون إعادة تشغيل التطبيق أو الهاتف.
+- لغة الطباعة مستقلة عن لغة واجهة التطبيق وتظل إعدادًا تابعًا للنظام الخلفي.
+- أي نص جديد للمستخدم يجب أن يضاف إلى ملفي `ar.json` و`en.json`، ثم يمر باختبار `npm run test:i18n`.
+
+راجع [نطاق المنتج](docs/PRODUCT_SCOPE_AR.md)، [المعمارية](docs/ARCHITECTURE.md)، و[بوابات الجودة](docs/QUALITY_GATES.md).

@@ -15,6 +15,14 @@ public class PdfService : IPdfService
     private readonly AppDbContext _db;
     private readonly ILogger<PdfService> _logger;
 
+    /// <summary>
+    /// Optional so the receipt can show the balance the patient still owes — the one field the
+    /// browser-printed receipt in the patient file had and this PDF did not. Read through the
+    /// same service that receipt calls, so the two documents cannot quote different balances.
+    /// Null-tolerant: a receipt must still print if the summary cannot be computed.
+    /// </summary>
+    private readonly IFinanceReadService? _financeRead;
+
     // IMPORTANT: This must match the font family name embedded in the .ttf file.
     // The NotoNaskhArabic-Regular.ttf has NameID 1 = "Noto Naskh Arabic" (with spaces).
     // Previously this was incorrectly set to "NotoNaskhArabic" (no spaces), causing
@@ -26,9 +34,15 @@ public class PdfService : IPdfService
     private static readonly object _fontLock = new();
 
     public PdfService(AppDbContext db, ILogger<PdfService> logger)
+        : this(db, logger, null)
+    {
+    }
+
+    public PdfService(AppDbContext db, ILogger<PdfService> logger, IFinanceReadService? financeRead)
     {
         _db = db;
         _logger = logger;
+        _financeRead = financeRead;
         EnsureFontsRegistered();
     }
 
@@ -155,7 +169,25 @@ public class PdfService : IPdfService
         EnsureFontsRegistered();
 
         var identity = await FinanceClinicIdentity.ResolveAsync(_db);
-        var document = new PaymentReceiptDocument(payment, identity);
+
+        // A wrong balance on a receipt is worse than no balance, so a failure here omits the
+        // line rather than printing a guess.
+        decimal? outstanding = null;
+        if (_financeRead is not null)
+        {
+            try
+            {
+                outstanding = (await _financeRead.GetPatientFinanceSummaryAsync(payment.PatientId))
+                    .OutstandingBalance;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Receipt {PaymentId}: patient balance unavailable; printing without it", paymentId);
+            }
+        }
+
+        var document = new PaymentReceiptDocument(payment, identity, outstanding);
         // CLIN-12: QuestPDF rasterization is CPU-bound — offload to the thread pool
         // so the request thread is released while the PDF is composed.
         var bytes = await Task.Run(() => document.GeneratePdf());

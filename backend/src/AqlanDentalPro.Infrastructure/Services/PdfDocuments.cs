@@ -8,7 +8,10 @@ using QuestPDF.Infrastructure;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
-public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payment, FinanceClinicIdentity Identity) : IDocument
+public class PaymentReceiptDocument(
+    AqlanDentalPro.Domain.Entities.Payment Payment,
+    FinanceClinicIdentity Identity,
+    decimal? OutstandingBalance = null) : IDocument
 {
     private const string FontName = PdfService.ArabicFontName;
 
@@ -165,6 +168,28 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
             if (!string.IsNullOrEmpty(Payment.Notes))
             {
                 column.Item().Text($"{L("ملاحظات", "Notes")}: {Payment.Notes}").FontSize(7).FontColor(Colors.Grey.Darken1);
+            }
+
+            // Note for anyone tempted again: column.Item().Extend() here swallows the
+            // remaining height and the signature row vanishes from the rendered page. The
+            // 43 mm of white space below the signatures is the footer being anchored to the
+            // bottom of a fixed-height slip; leave it rather than break the signatures.
+
+            // The balance still owed. The browser-printed receipt in the patient file has
+            // always shown this and it is usually the first thing the patient asks; the PDF
+            // did not. Omitted rather than printed as zero when it could not be computed, so
+            // a blank is never mistaken for "nothing due".
+            if (OutstandingBalance is { } balance)
+            {
+                column.Item().PaddingTop(2).Row(row =>
+                {
+                    row.RelativeItem().Text(L("الرصيد المتبقي:", "Balance due:"))
+                        .SemiBold().FontSize(8).FontColor("#1a3a5c");
+                    row.RelativeItem().AlignLeft()
+                        .Text($"{balance:N0} {CurrencySymbol(Payment.Currency)}")
+                        .SemiBold().FontSize(8)
+                        .FontColor(balance > 0 ? "#92400e" : "#166534");
+                });
             }
 
             // Signatures

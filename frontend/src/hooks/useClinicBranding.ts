@@ -55,6 +55,21 @@ export interface ClinicBranding {
  * according to `printLanguage`, defaulting to English so nothing changes for a clinic that has
  * not chosen.
  */
+/**
+ * Identity for the *interface*, chosen by the language the user is reading.
+ *
+ * Deliberately separate from `printIdentity`: CORE-REQ-006 makes the print language an
+ * independent setting, so a clinic can run the screens in English and still print Arabic
+ * forms. Reusing `printIdentity` here would silently tie the two together again.
+ */
+export function interfaceIdentity(branding: ClinicBranding, locale: string) {
+  const arabic = locale !== "en";
+  return {
+    clinicName: arabic ? branding.clinicName : branding.clinicNameEn,
+    clinicAddress: arabic ? branding.address : branding.addressEn,
+  };
+}
+
 export function printIdentity(branding: ClinicBranding) {
   const arabic = branding.printLanguage === "ar";
   return {

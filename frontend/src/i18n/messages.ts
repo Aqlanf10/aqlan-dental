@@ -85,6 +85,20 @@ export const ar: Bundle = {
   "lab.materials": "المواد",
   "lab.sendToLab": "واتساب",
   "lab.expectedDate": "تاريخ الاستلام المتوقع",
+
+  // ── Top bar ───────────────────────────────────────────────────────────────
+  "topbar.messages": "الرسائل",
+  "topbar.logout": "تسجيل الخروج",
+  "topbar.password.current": "كلمة المرور الحالية",
+  "topbar.password.new": "كلمة المرور الجديدة (8 أحرف+)",
+  "topbar.password.confirm": "تأكيد كلمة المرور الجديدة",
+  "topbar.password.mismatch": "كلمة المرور الجديدة غير متطابقة",
+  "topbar.password.tooShort": "يجب أن تكون 8 أحرف على الأقل",
+  "topbar.save": "حفظ",
+  "topbar.saving": "جارٍ الحفظ...",
+  "common.genericError": "حدث خطأ",
+  "topbar.avatarInitialFallback": "م",
+  "topbar.changePassword": "تغيير كلمة المرور",
 };
 
 export const en: Bundle = {
@@ -160,6 +174,20 @@ export const en: Bundle = {
   "lab.materials": "Materials",
   "lab.sendToLab": "WhatsApp",
   "lab.expectedDate": "Expected return date",
+
+  // ── Top bar ───────────────────────────────────────────────────────────────
+  "topbar.messages": "Messages",
+  "topbar.logout": "Sign out",
+  "topbar.password.current": "Current password",
+  "topbar.password.new": "New password (8+ characters)",
+  "topbar.password.confirm": "Confirm new password",
+  "topbar.password.mismatch": "The new passwords do not match",
+  "topbar.password.tooShort": "Must be at least 8 characters",
+  "topbar.save": "Save",
+  "topbar.saving": "Saving…",
+  "common.genericError": "Something went wrong",
+  "topbar.avatarInitialFallback": "U",
+  "topbar.changePassword": "Change password",
 };
 
 export const BUNDLES: Record<string, Bundle> = { ar, en };

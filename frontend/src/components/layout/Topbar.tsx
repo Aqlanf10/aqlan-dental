@@ -10,24 +10,31 @@ import { useUnreadCount } from "@/hooks/useMessaging";
 import { TopbarSearch } from "@/components/layout/TopbarSearch";
 import { TopbarNotifications } from "@/components/layout/TopbarNotifications";
 import { LanguageSwitcher } from "@/components/shared/LanguageSwitcher";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { useClinicBranding, interfaceIdentity } from "@/hooks/useClinicBranding";
 
 /* ─── Live Clock — matches ZIP ─────────────────────────────────────────────── */
 // FE-31: Wrapped in React.memo so the parent Topbar does not re-render every second
 // when the clock's internal `now` state updates (the clock has no props anyway).
 const LiveClock = memo(function LiveClock() {
+  const { locale } = useLocale();
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const days = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
-  const months = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+  // CORE-REQ-006: the day and month names came from two hardcoded Arabic arrays, so the clock
+  // stayed Arabic in English. Intl already knows both calendars — and keeps Western digits in
+  // Arabic (ar-EG rather than plain ar), which is what the clinic's printed forms use.
+  const dateLocale = locale === "ar" ? "ar-EG" : "en-GB";
   const hours = now.getHours().toString().padStart(2, "0");
   const minutes = now.getMinutes().toString().padStart(2, "0");
   const seconds = now.getSeconds().toString().padStart(2, "0");
-  const dayName = days[now.getDay()];
-  const dateString = `${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
+  const dayName = new Intl.DateTimeFormat(dateLocale, { weekday: "long" }).format(now);
+  const dateString = new Intl.DateTimeFormat(dateLocale, {
+    day: "numeric", month: "long", year: "numeric",
+  }).format(now);
 
   return (
     <div
@@ -58,6 +65,9 @@ const LiveClock = memo(function LiveClock() {
 });
 
 export function Topbar() {
+  const t = useT();
+  const { locale } = useLocale();
+  const identity = interfaceIdentity(useClinicBranding(), locale);
   const { user } = useAuthStore();
   const router = useRouter();
   const { data: messageUnreadData } = useUnreadCount();
@@ -67,8 +77,12 @@ export function Topbar() {
       className="h-16 flex items-center justify-between px-6 flex-shrink-0"
       style={{ background: "#fff", borderBottom: "1px solid #e8f0f9" }}
     >
+      {/* CORE-REQ-006: the centre's name and city were hardcoded here — a fourth reader of the
+          identity the settings own, and one that stayed Arabic in English. Both now come from
+          the branding hook, which already resolves the right language. */}
       <div className="text-lg font-extrabold" style={{ color: "#0d2137" }}>
-        مركز د. عقلان الكامل — تعز
+        {identity.clinicName}
+        {identity.clinicAddress ? ` — ${identity.clinicAddress}` : ""}
       </div>
 
       <div className="flex items-center gap-3.5">
@@ -79,7 +93,7 @@ export function Topbar() {
           onClick={() => router.push("/messages")}
           className="relative w-[38px] h-[38px] rounded-lg flex items-center justify-center transition-colors"
           style={{ background: "#eef3f9", color: "#64748b" }}
-          title="الرسائل"
+          title={t("topbar.messages")}
         >
           <MessageCircle className="w-[18px] h-[18px]" />
           {messageUnreadData && messageUnreadData.totalUnread > 0 && (
@@ -110,6 +124,7 @@ export function Topbar() {
 }
 
 function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<typeof useRouter> }) {
+  const t = useT();
   const { logout } = useAuthStore();
   const [open, setOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
@@ -137,11 +152,11 @@ function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<t
   const handleChangePassword = async (event: React.FormEvent) => {
     event.preventDefault();
     if (passwordForm.next !== passwordForm.confirm) {
-      setPasswordError("كلمة المرور الجديدة غير متطابقة");
+      setPasswordError(t("topbar.password.mismatch"));
       return;
     }
     if (passwordForm.next.length < 8) {
-      setPasswordError("يجب أن تكون 8 أحرف على الأقل");
+      setPasswordError(t("topbar.password.tooShort"));
       return;
     }
 
@@ -157,7 +172,7 @@ function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<t
       setPasswordForm({ current: "", next: "", confirm: "" });
     } catch (error: unknown) {
       const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setPasswordError(message ?? "حدث خطأ");
+      setPasswordError(message ?? t("common.genericError"));
     } finally {
       setPasswordSaving(false);
     }
@@ -182,7 +197,7 @@ function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<t
             border: "2px solid #dce8f5",
           }}
         >
-          {user?.doctorInitials ?? user?.username?.charAt(0).toUpperCase() ?? "م"}
+          {user?.doctorInitials ?? user?.username?.charAt(0).toUpperCase() ?? t("topbar.avatarInitialFallback")}
         </div>
       </button>
 
@@ -214,7 +229,7 @@ function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<t
                 onMouseLeave={(event) => (event.currentTarget.style.background = "transparent")}
               >
                 <KeyRound className="w-[15px] h-[15px]" style={{ color: "#64748b" }} />
-                تغيير كلمة المرور
+                {t("topbar.changePassword")}
               </button>
               <div style={{ borderTop: "1px solid #f1f5f9" }}>
                 <button
@@ -226,14 +241,14 @@ function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<t
                   onMouseLeave={(event) => (event.currentTarget.style.background = "transparent")}
                 >
                   <LogOut className="w-[15px] h-[15px]" style={{ color: "#ef4444" }} />
-                  تسجيل الخروج
+                  {t("topbar.logout")}
                 </button>
               </div>
             </div>
           ) : (
             <form onSubmit={handleChangePassword} className="p-4 space-y-3">
               <p className="text-sm font-semibold" style={{ color: "#0d2137" }}>
-                تغيير كلمة المرور
+                {t("topbar.changePassword")}
               </p>
               {passwordError && (
                 <p
@@ -245,7 +260,7 @@ function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<t
               )}
               <input
                 type="password"
-                placeholder="كلمة المرور الحالية"
+                placeholder={t("topbar.password.current")}
                 value={passwordForm.current}
                 onChange={(event) =>
                   setPasswordForm({ ...passwordForm, current: event.target.value })
@@ -257,7 +272,7 @@ function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<t
               />
               <input
                 type="password"
-                placeholder="كلمة المرور الجديدة (8 أحرف+)"
+                placeholder={t("topbar.password.new")}
                 value={passwordForm.next}
                 onChange={(event) => setPasswordForm({ ...passwordForm, next: event.target.value })}
                 className="w-full text-sm px-3 py-2 rounded-lg outline-none"
@@ -267,7 +282,7 @@ function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<t
               />
               <input
                 type="password"
-                placeholder="تأكيد كلمة المرور الجديدة"
+                placeholder={t("topbar.password.confirm")}
                 value={passwordForm.confirm}
                 onChange={(event) =>
                   setPasswordForm({ ...passwordForm, confirm: event.target.value })
@@ -286,7 +301,7 @@ function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<t
                   onMouseEnter={(event) => (event.currentTarget.style.background = "#2d5e8e")}
                   onMouseLeave={(event) => (event.currentTarget.style.background = "#3d7ab5")}
                 >
-                  {passwordSaving ? "جارٍ الحفظ..." : "حفظ"}
+                  {passwordSaving ? t("topbar.saving") : t("topbar.save")}
                 </button>
                 <button
                   type="button"
@@ -299,7 +314,7 @@ function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<t
                   onMouseEnter={(event) => (event.currentTarget.style.background = "#f7fafd")}
                   onMouseLeave={(event) => (event.currentTarget.style.background = "transparent")}
                 >
-                  إلغاء
+                  {t("common.cancel")}
                 </button>
               </div>
             </form>

@@ -4,25 +4,13 @@ using System.Text.Json;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 
 namespace AqlanDentalPro.API.Services;
-
-/// <summary>
-/// Clinic identity strings used in the ceph report header/footer/signature.
-/// Every value falls back to an empty string when its Settings key is missing —
-/// report generation must never crash because of missing configuration.
-/// </summary>
-public sealed record CephReportClinicIdentity(
-    string ClinicName,
-    string LeadDoctor,
-    string LeadDoctorTitle,
-    string LeadDoctorCredentials,
-    string Phones,
-    string Location);
 
 /// <summary>
 /// Ceph batch C-C — Arabic cephalometric analysis PDF report (QuestPDF).
@@ -159,7 +147,7 @@ public class CephReportPdfGenerator(AppDbContext db)
         if (analysis is null)
             throw new ArgumentException($"Ceph analysis {analysisId} not found.", nameof(analysisId));
 
-        var identity = await ResolveClinicIdentityAsync(db);
+        var identity = await FinanceClinicIdentity.ResolveAsync(db);
 
         var norms = await db.CephNorms.Where(n => n.IsActive).ToListAsync();
         var normByName = norms
@@ -191,33 +179,11 @@ public class CephReportPdfGenerator(AppDbContext db)
         return await Task.Run(() => Generate(analysis, identity, normByName, vtoScenarios, xrayImageBytes));
     }
 
-    /// <summary>
-    /// Reads the clinic identity Settings keys used by the report.
-    /// Missing keys resolve to empty strings — never throws for missing config.
-    /// Static + public so tests can verify settings resolution directly.
-    /// </summary>
-    public static async Task<CephReportClinicIdentity> ResolveClinicIdentityAsync(AppDbContext db)
-    {
-        string[] keys =
-        [
-            "clinic.name", "clinic.lead_doctor", "clinic.lead_doctor_title",
-            "clinic.lead_doctor_credentials", "clinic.phones", "clinic.location",
-        ];
-
-        var settings = await db.Settings
-            .Where(s => keys.Contains(s.Key))
-            .ToDictionaryAsync(s => s.Key, s => s.Value);
-
-        string Get(string key) => settings.TryGetValue(key, out var v) ? v ?? string.Empty : string.Empty;
-
-        return new CephReportClinicIdentity(
-            ClinicName:            Get("clinic.name"),
-            LeadDoctor:            Get("clinic.lead_doctor"),
-            LeadDoctorTitle:       Get("clinic.lead_doctor_title"),
-            LeadDoctorCredentials: Get("clinic.lead_doctor_credentials"),
-            Phones:                Get("clinic.phones"),
-            Location:              Get("clinic.location"));
-    }
+    // CORE-REQ-006 (print slice) — this used to hold its own reader of the
+    // clinic.* Settings keys with its own fallback (empty strings). It now
+    // resolves through FinanceClinicIdentity, the single reader every
+    // other document goes through, so this report can never disagree with a
+    // receipt about the clinic's name, doctor, or logo again.
 
     /// <summary>
     /// Resolves a relative upload URL (e.g. "/uploads/{file}") to a local file
@@ -267,7 +233,7 @@ public class CephReportPdfGenerator(AppDbContext db)
 
     private static byte[] Generate(
         CephAnalysis analysis,
-        CephReportClinicIdentity identity,
+        FinanceClinicIdentity identity,
         IReadOnlyDictionary<string, CephNorm> normByName,
         List<CephVtoScenario> vtoScenarios,
         byte[]? xrayImageBytes)
@@ -320,7 +286,7 @@ public class CephReportPdfGenerator(AppDbContext db)
     }
 
     // ── Header: clinic identity (from Settings — no hardcoding) + report meta ──
-    private static void ComposeHeader(IContainer container, CephAnalysis analysis, CephReportClinicIdentity identity)
+    private static void ComposeHeader(IContainer container, CephAnalysis analysis, FinanceClinicIdentity identity)
     {
         container.Column(column =>
         {
@@ -328,15 +294,16 @@ public class CephReportPdfGenerator(AppDbContext db)
             {
                 row.RelativeItem().Row(idRow =>
                 {
-                    // Clinic logo (cached bytes — CLIN-12: avoids sync file I/O per render).
-                    // Fallback is graceful — when no logo file exists the clinic name
+                    // Clinic logo — resolved with the rest of the identity (CORE-REQ-006),
+                    // so the report and every other document read the exact same source.
+                    // Fallback is graceful — when no logo is configured the clinic name
                     // text alone heads the report; no broken image is ever shown.
-                    if (AqlanDentalPro.Infrastructure.Services.PdfLogoCache.TryGetLogo(out var logoBytes))
+                    if (identity.LogoBytes is { Length: > 0 } logoBytes)
                         idRow.ConstantItem(48).PaddingLeft(8).AlignTop().Image(logoBytes);
 
                     idRow.RelativeItem().Column(col =>
                     {
-                        col.Item().Text(identity.ClinicName).Bold().FontSize(15).FontFamily(FontName);
+                        col.Item().Text(identity.Name).Bold().FontSize(15).FontFamily(FontName);
                         // Lead doctor block: name (bold) / title / credentials (smaller, muted)
                         col.Item().Text(identity.LeadDoctor).Bold().FontSize(11).FontFamily(FontName);
                         col.Item().Text(identity.LeadDoctorTitle).FontSize(9).FontFamily(FontName);
@@ -363,7 +330,7 @@ public class CephReportPdfGenerator(AppDbContext db)
     private static void ComposeContent(
         IContainer container,
         CephAnalysis analysis,
-        CephReportClinicIdentity identity,
+        FinanceClinicIdentity identity,
         List<CephLandmark> landmarks,
         List<CephMeasurement> measurements,
         IReadOnlyDictionary<string, CephNorm> normByName,
@@ -639,7 +606,7 @@ public class CephReportPdfGenerator(AppDbContext db)
     }
 
     // ── Footer: phones/location (Settings) + page numbers ──
-    private static void ComposeFooter(IContainer container, CephReportClinicIdentity identity)
+    private static void ComposeFooter(IContainer container, FinanceClinicIdentity identity)
     {
         container.Column(column =>
         {

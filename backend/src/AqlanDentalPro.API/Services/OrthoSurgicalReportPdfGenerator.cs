@@ -72,19 +72,19 @@ public class OrthoSurgicalReportPdfGenerator(AppDbContext db)
     public async Task<byte[]> GenerateDoctorReportAsync(Guid orthoSurgicalCaseId)
     {
         var data = await LoadAsync(orthoSurgicalCaseId);
-        var identity = await CephReportPdfGenerator.ResolveClinicIdentityAsync(db);
+        var identity = await FinanceClinicIdentity.ResolveAsync(db);
         return await Task.Run(() => GenerateDoctorReport(data, identity));
     }
 
     public async Task<byte[]> GeneratePatientExplanationAsync(Guid orthoSurgicalCaseId)
     {
         var data = await LoadAsync(orthoSurgicalCaseId);
-        var identity = await CephReportPdfGenerator.ResolveClinicIdentityAsync(db);
+        var identity = await FinanceClinicIdentity.ResolveAsync(db);
         return await Task.Run(() => GeneratePatientExplanation(data, identity));
     }
 
     // ── Doctor report ──────────────────────────────────────────────────────────────
-    private static byte[] GenerateDoctorReport(ReportData data, CephReportClinicIdentity identity)
+    private static byte[] GenerateDoctorReport(ReportData data, FinanceClinicIdentity identity)
     {
         QuestPDF.Settings.License = LicenseType.Community;
         AqlanDentalPro.Infrastructure.Services.PdfService.EnsureFontsRegistered();
@@ -109,7 +109,7 @@ public class OrthoSurgicalReportPdfGenerator(AppDbContext db)
         return doc.GeneratePdf();
     }
 
-    private static void ComposeDoctorContent(IContainer container, ReportData data, CephReportClinicIdentity identity)
+    private static void ComposeDoctorContent(IContainer container, ReportData data, FinanceClinicIdentity identity)
     {
         var c = data.Case;
         container.Column(column =>
@@ -225,7 +225,7 @@ public class OrthoSurgicalReportPdfGenerator(AppDbContext db)
     }
 
     // ── Patient explanation ────────────────────────────────────────────────────────
-    private static byte[] GeneratePatientExplanation(ReportData data, CephReportClinicIdentity identity)
+    private static byte[] GeneratePatientExplanation(ReportData data, FinanceClinicIdentity identity)
     {
         QuestPDF.Settings.License = LicenseType.Community;
         AqlanDentalPro.Infrastructure.Services.PdfService.EnsureFontsRegistered();
@@ -250,7 +250,7 @@ public class OrthoSurgicalReportPdfGenerator(AppDbContext db)
         return doc.GeneratePdf();
     }
 
-    private static void ComposePatientContent(IContainer container, ReportData data, CephReportClinicIdentity identity)
+    private static void ComposePatientContent(IContainer container, ReportData data, FinanceClinicIdentity identity)
     {
         var c = data.Case;
         var plan = c.JointPlan;
@@ -299,7 +299,7 @@ public class OrthoSurgicalReportPdfGenerator(AppDbContext db)
     }
 
     // ── Shared layout ──────────────────────────────────────────────────────────────
-    private static void ComposeHeader(IContainer container, OrthoSurgicalCase c, CephReportClinicIdentity identity, string title)
+    private static void ComposeHeader(IContainer container, OrthoSurgicalCase c, FinanceClinicIdentity identity, string title)
     {
         container.Column(column =>
         {
@@ -307,7 +307,7 @@ public class OrthoSurgicalReportPdfGenerator(AppDbContext db)
             {
                 row.RelativeItem().Column(col =>
                 {
-                    col.Item().Text(identity.ClinicName).Bold().FontSize(15).FontFamily(FontName);
+                    col.Item().Text(identity.Name).Bold().FontSize(15).FontFamily(FontName);
                     col.Item().Text(identity.LeadDoctor).Bold().FontSize(11).FontFamily(FontName);
                     col.Item().Text(identity.LeadDoctorTitle).FontSize(9).FontFamily(FontName);
                     col.Item().Text(identity.LeadDoctorCredentials)
@@ -326,7 +326,7 @@ public class OrthoSurgicalReportPdfGenerator(AppDbContext db)
         });
     }
 
-    private static void ComposeFooter(IContainer container, CephReportClinicIdentity identity)
+    private static void ComposeFooter(IContainer container, FinanceClinicIdentity identity)
     {
         container.Column(column =>
         {
@@ -347,7 +347,7 @@ public class OrthoSurgicalReportPdfGenerator(AppDbContext db)
         });
     }
 
-    private static void SignatureBlock(ColumnDescriptor column, CephReportClinicIdentity identity) =>
+    private static void SignatureBlock(ColumnDescriptor column, FinanceClinicIdentity identity) =>
         column.Item().PaddingTop(12).Row(row =>
         {
             row.RelativeItem();

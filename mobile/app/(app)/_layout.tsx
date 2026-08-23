@@ -44,6 +44,9 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="patient-ortho" options={{ href: null, title: "تقويم الأسنان" }} />
       <Tabs.Screen name="ortho-case" options={{ href: null, title: "حالة التقويم" }} />
       <Tabs.Screen name="ortho-visit-new" options={{ href: null, title: "زيارة تقويمية" }} />
+      <Tabs.Screen name="ortho-surgical" options={{ href: null, title: "التخطيط التقويمي الجراحي" }} />
+      <Tabs.Screen name="ortho-surgical-new" options={{ href: null, title: "خطة جراحية تقويمية جديدة" }} />
+      <Tabs.Screen name="ortho-surgical-case" options={{ href: null, title: "الخطة الجراحية التقويمية" }} />
       <Tabs.Screen name="patient-general" options={{ href: null, title: "الأسنان العامة" }} />
       <Tabs.Screen name="general-tooth" options={{ href: null, title: "حالة السن" }} />
       <Tabs.Screen name="general-treatment-new" options={{ href: null, title: "تسجيل علاج عام" }} />

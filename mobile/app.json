@@ -2,7 +2,7 @@
   "expo": {
     "name": "Aqlan Dental Pro",
     "slug": "aqlan-dental-pro",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "orientation": "portrait",
     "scheme": "aqlandental",
     "userInterfaceStyle": "automatic",
@@ -11,7 +11,8 @@
       "bundleIdentifier": "com.aqlan.dentalpro"
     },
     "android": {
-      "package": "com.aqlan.dentalpro"
+      "package": "com.aqlan.dentalpro",
+      "versionCode": 2
     },
     "plugins": [
       "expo-router",

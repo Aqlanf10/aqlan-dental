@@ -22,14 +22,20 @@ Native Android/iOS client for the existing **Aqlan Dental Pro** system.
 
 For a physical phone, the API URL must be reachable from the phone. Production builds require HTTPS.
 
-## V1 screens
+## Mobile workspaces
 
 - Staff sign-in
 - Mandatory temporary-password change
 - Dashboard stats and attention alerts
-- Patient search/list
-- Patient profile
-- Appointment day view
-- Account/session screen
+- Patient search, create, edit and profile workspaces
+- Daily and recall appointments
+- Daily Operations / Patient Journey
+- Clinical visits and handoff to reception
+- Patient finance, statements and safe payment entry
+- Orthodontics, general dentistry and FDI charting
+- Oral surgery and shared orthognathic planning
+- Clinical photos, radiographs, documents, prescriptions and referrals
+- Lab orders, inventory operations and reports
+- Permission-aware settings, account and security screens
 
 The mobile app intentionally consumes the existing API instead of duplicating business logic.

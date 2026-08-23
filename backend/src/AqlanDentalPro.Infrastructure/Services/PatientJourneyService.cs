@@ -36,6 +36,7 @@ public class PatientJourneyService(
     /// <summary>Returns today's patient journey list combining appointments,
     /// queue status, visit data, and payment info.</summary>
     public async Task<IActionResult> GetTodayAsync(
+        ClaimsPrincipal user,
         DateOnly queryDate,
         AppointmentStatus? statusFilter,
         Guid? doctorId,
@@ -190,8 +191,11 @@ public class PatientJourneyService(
             // Patients with an active orthodontic case — single prefetch query for all today's patients
             var orthoSummaries = await LoadOrthoJourneySummariesAsync(patientIds);
 
-            // Privacy: Doctors must not see patient phone numbers
+            // Privacy: Doctors must not see patient phone numbers or financial amounts.
             var isDoctor = patientAccessService.IsDoctor;
+            var canViewFinancialAmounts = !isDoctor &&
+                (await HasFinancePermissionAsync(user, "finance.patient_balance", "view") ||
+                 await HasFinancePermissionAsync(user, "finance", "view"));
 
             // Build journey items
             var result = appointments.Select(a =>
@@ -257,7 +261,8 @@ public class PatientJourneyService(
                     CanEnterWithoutPayment = !paymentBeforeEntryRequired,
                     ManagerOverrideAllowed = paymentBeforeEntryRequired,
                     CheckoutStatus = checkoutStatus,
-                    AmountDueReference = visit?.AmountDueReference,
+                    ReadyForCheckoutAt = visit?.ReadyForCheckoutAt,
+                    AmountDueReference = canViewFinancialAmounts ? visit?.AmountDueReference : null,
                     TreatmentDone = visit?.TreatmentDone,
                     ProposedProcedure = visit?.ProposedProcedure,
                     ChiefComplaint = visit?.ChiefComplaint,
@@ -376,7 +381,8 @@ public class PatientJourneyService(
                         CanEnterWithoutPayment = true,
                         ManagerOverrideAllowed = false,
                         CheckoutStatus = checkoutStatus,
-                        AmountDueReference = visit?.AmountDueReference,
+                        ReadyForCheckoutAt = visit?.ReadyForCheckoutAt,
+                        AmountDueReference = canViewFinancialAmounts ? visit?.AmountDueReference : null,
                         TreatmentDone = visit?.TreatmentDone,
                         ProposedProcedure = visit?.ProposedProcedure,
                         ChiefComplaint = visit?.ChiefComplaint,

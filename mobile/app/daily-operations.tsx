@@ -69,7 +69,7 @@ export default function DailyOperationsScreen() {
   const [handoffRequest, setHandoffRequest] = useState<DailyPatient | null>(null);
   const canViewAmount = hasPermission('finance.patient_balance.view') || hasPermission('finance.view');
   const isFinanceRole = user?.role === 'Admin' || user?.role === 'Reception' || user?.role === 'Accountant';
-  const canCreateDraft = isFinanceRole && (hasPermission('finance.invoices.create') || hasPermission('invoices.create'));
+  const canCreateDraft = isFinanceRole && hasPermission('finance.view');
 
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -79,7 +79,7 @@ export default function DailyOperationsScreen() {
         ? !item.queueItemId || ['scheduled', 'confirmed', 'arrived'].includes(status)
         : tab === 'waiting'
           ? Boolean(item.queueItemId) && !['completed', 'cancelled', 'canceled', 'noshow'].includes(status)
-          : item.checkoutStatus === 'ReadyForCheckout' || item.nextAction === 'Checkout';
+          : item.checkoutStatus === 'ReadyForCheckout';
       if (!inTab) return false;
       if (!normalizedQuery) return true;
       return [item.patientName, item.patientNumber, item.patientPhone, item.doctorName, item.roomName]
@@ -90,6 +90,19 @@ export default function DailyOperationsScreen() {
   const selected = useMemo(() => (
     filtered.find((item) => patientKey(item) === selectedId) ?? filtered[0] ?? null
   ), [filtered, selectedId]);
+  const selectedKey = selected ? patientKey(selected) : null;
+  const summary = useMemo(() => {
+    let arrivals = 0;
+    let waiting = 0;
+    let accounting = 0;
+    for (const item of operations.items) {
+      const status = normalizedStatus(item);
+      if (item.checkoutStatus === 'ReadyForCheckout') accounting += 1;
+      else if (!item.queueItemId) arrivals += 1;
+      else if (!['completed', 'cancelled', 'canceled'].includes(status)) waiting += 1;
+    }
+    return { arrivals, waiting, accounting };
+  }, [operations.items]);
 
   const runRoomAction = useCallback((roomName?: string) => {
     if (!roomRequest) return;
@@ -133,7 +146,7 @@ export default function DailyOperationsScreen() {
         data={canView && !operations.loading ? filtered : []}
         keyExtractor={patientKey}
         keyboardShouldPersistTaps="handled"
-        ListEmptyComponent={canView && !operations.loading ? <EmptyState query={query} /> : null}
+        ListEmptyComponent={canView && !operations.loading ? <EmptyState query={query} tab={tab} /> : null}
         ListHeaderComponent={(
           <View style={styles.headerContent}>
             <View style={[styles.topBar, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
@@ -148,9 +161,9 @@ export default function DailyOperationsScreen() {
             </View>
 
             <View style={[styles.summaryRow, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
-              <Summary value={operations.items.filter((item) => !item.queueItemId).length} label={t('ops.arrivals')} />
-              <Summary value={operations.items.filter((item) => Boolean(item.queueItemId) && !['completed', 'cancelled', 'canceled'].includes(normalizedStatus(item))).length} label={t('ops.waiting')} />
-              <Summary value={operations.items.filter((item) => item.checkoutStatus === 'ReadyForCheckout' || item.nextAction === 'Checkout').length} label={t('ops.readyForAccounting')} />
+              <Summary value={summary.arrivals} label={t('ops.arrivals')} />
+              <Summary value={summary.waiting} label={t('ops.waiting')} />
+              <Summary value={summary.accounting} label={t('ops.readyForAccounting')} />
             </View>
 
             {!canView ? <AlertBanner message={t('ops.noAccess')} /> : null}
@@ -211,7 +224,7 @@ export default function DailyOperationsScreen() {
             onCreateDraft={createDraft}
           />
         ) : (
-          <PatientCard item={item} onPress={() => setSelectedId(patientKey(item))} selected={selected ? patientKey(selected) === patientKey(item) : false} />
+          <PatientCard item={item} onSelect={setSelectedId} selected={selectedKey === patientKey(item)} />
         )}
         showsVerticalScrollIndicator={false}
       />
@@ -265,11 +278,16 @@ function TabButton({ active, label, onPress }: { active: boolean; label: string;
   );
 }
 
-const PatientCard = memo(function PatientCard({ item, selected, onPress }: { item: DailyPatient; selected: boolean; onPress: () => void }) {
+const PatientCard = memo(function PatientCard({ item, selected, onSelect }: { item: DailyPatient; selected: boolean; onSelect: (id: string) => void }) {
   const { isRtl, t } = useLocale();
   const statusKey = statusKeys[normalizedStatus(item)];
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={[styles.patientCard, selected && styles.selectedCard]}>
+    <Pressable
+      accessibilityLabel={`${item.patientName}, ${statusKey ? t(statusKey) : item.queueStatus || item.appointmentStatus}`}
+      accessibilityRole="button"
+      onPress={() => onSelect(patientKey(item))}
+      style={[styles.patientCard, selected && styles.selectedCard]}
+    >
       <View style={[styles.patientHeading, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
         <View style={styles.avatar}><AppText variant="subheading" color={colors.white} style={styles.center}>{item.patientName.trim().charAt(0)}</AppText></View>
         <View style={styles.patientCopy}>
@@ -368,12 +386,14 @@ function DetailRow({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-function EmptyState({ query }: { query: string }) {
+function EmptyState({ query, tab }: { query: string; tab: Tab }) {
   const { t } = useLocale();
   return (
     <View style={styles.emptyBox}>
       <AppText variant="heading" style={styles.center}>{query ? t('ops.noSearchResults') : t('ops.empty')}</AppText>
-      <AppText color={colors.muted} style={styles.center}>{query ? t('ops.changeSearch') : t('ops.emptyDescription')}</AppText>
+      <AppText color={colors.muted} style={styles.center}>
+        {query ? t('ops.changeSearch') : tab === 'accounting' ? t('ops.readyForAccountingEmpty') : t('ops.emptyDescription')}
+      </AppText>
     </View>
   );
 }

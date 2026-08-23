@@ -23,7 +23,7 @@ export function HandoffModal({ allowAmount, busy, errorMessage, item, onClose, o
   const [proposedProcedure, setProposedProcedure] = useState('');
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
-  const [validationError, setValidationError] = useState(false);
+  const [validationError, setValidationError] = useState<'treatment' | 'amount' | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -32,7 +32,7 @@ export function HandoffModal({ allowAmount, busy, errorMessage, item, onClose, o
     setProposedProcedure(item.proposedProcedure ?? '');
     setAmount(allowAmount && item.amountDueReference ? String(item.amountDueReference) : '');
     setNotes('');
-    setValidationError(false);
+    setValidationError(null);
   }, [allowAmount, item, visible]);
 
   const textStyle = { textAlign: isRtl ? 'right' as const : 'left' as const, writingDirection: isRtl ? 'rtl' as const : 'ltr' as const };
@@ -40,15 +40,20 @@ export function HandoffModal({ allowAmount, busy, errorMessage, item, onClose, o
   const submit = () => {
     const treatment = treatmentDone.trim();
     if (!treatment) {
-      setValidationError(true);
+      setValidationError('treatment');
       return;
     }
     const parsedAmount = allowAmount && amount.trim() ? Number(amount) : undefined;
+    if (parsedAmount !== undefined && (!Number.isFinite(parsedAmount) || parsedAmount <= 0)) {
+      setValidationError('amount');
+      return;
+    }
+    setValidationError(null);
     onSubmit({
       treatmentDone: treatment,
       diagnosis: diagnosis.trim() || undefined,
       proposedProcedure: proposedProcedure.trim() || undefined,
-      amountDue: parsedAmount && parsedAmount > 0 ? parsedAmount : undefined,
+      amountDue: parsedAmount,
       notes: notes.trim() || undefined,
     });
   };
@@ -66,14 +71,14 @@ export function HandoffModal({ allowAmount, busy, errorMessage, item, onClose, o
                 accessibilityLabel={t('ops.treatmentDone')}
                 editable={!busy}
                 multiline
-                onChangeText={(value) => { setTreatmentDone(value); setValidationError(false); }}
+                onChangeText={(value) => { setTreatmentDone(value); setValidationError(null); }}
                 placeholder={t('ops.treatmentDonePlaceholder')}
                 placeholderTextColor={colors.muted}
                 style={[styles.input, styles.multiline, textStyle]}
                 value={treatmentDone}
               />
             </Field>
-            {validationError ? <AppText variant="caption" color={colors.danger}>{t('ops.treatmentRequired')}</AppText> : null}
+            {validationError === 'treatment' ? <AppText variant="caption" color={colors.danger}>{t('ops.treatmentRequired')}</AppText> : null}
 
             <Field label={t('ops.diagnosis')}>
               <TextInput accessibilityLabel={t('ops.diagnosis')} editable={!busy} onChangeText={setDiagnosis} placeholder={t('ops.optional')} placeholderTextColor={colors.muted} style={[styles.input, textStyle]} value={diagnosis} />
@@ -83,12 +88,17 @@ export function HandoffModal({ allowAmount, busy, errorMessage, item, onClose, o
             </Field>
             {allowAmount ? (
               <Field label={t('ops.referenceAmount')}>
-                <TextInput accessibilityLabel={t('ops.referenceAmount')} editable={!busy} keyboardType="decimal-pad" onChangeText={setAmount} placeholder={t('ops.optional')} placeholderTextColor={colors.muted} style={[styles.input, textStyle]} value={amount} />
+                <TextInput accessibilityLabel={t('ops.referenceAmount')} editable={!busy} keyboardType="decimal-pad" onChangeText={(value) => { setAmount(value); setValidationError(null); }} placeholder={t('ops.optional')} placeholderTextColor={colors.muted} style={[styles.input, textStyle]} value={amount} />
               </Field>
             ) : null}
+            {validationError === 'amount' ? <AppText variant="caption" color={colors.danger}>{t('ops.referenceAmountInvalid')}</AppText> : null}
             <Field label={t('ops.handoffNotes')}>
               <TextInput accessibilityLabel={t('ops.handoffNotes')} editable={!busy} multiline onChangeText={setNotes} placeholder={t('ops.optional')} placeholderTextColor={colors.muted} style={[styles.input, styles.multiline, textStyle]} value={notes} />
             </Field>
+
+            <View style={styles.safetyNote}>
+              <AppText variant="caption" color={colors.navy700}>{t('ops.handoffNoAutomaticPayment')}</AppText>
+            </View>
 
             {errorMessage ? <View accessibilityRole="alert" style={styles.error}><AppText variant="caption" color={colors.danger}>{errorMessage}</AppText></View> : null}
             <View style={[styles.actions, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
@@ -123,6 +133,7 @@ const styles = StyleSheet.create({
   input: { minHeight: 48, paddingHorizontal: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.blue50, color: colors.ink, fontSize: 15 },
   multiline: { minHeight: 88, paddingTop: spacing.md, textAlignVertical: 'top' },
   error: { padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.dangerSoft },
+  safetyNote: { padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.blue100 },
   actions: { gap: spacing.sm },
   button: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md },
   primary: { backgroundColor: colors.orange600 },

@@ -34,7 +34,14 @@ export const ReadyForAccountingCard = memo(function ReadyForAccountingCard({ bus
         <Row label={t('ops.serviceOrProcedure')} value={procedure} />
         {canViewAmount ? <Row label={t('ops.referenceAmount')} value={amount} /> : null}
         <Row label={t('ops.draftStatus')} value={t(item.hasDraftInvoice ? 'ops.draftExists' : 'ops.noDraft')} />
-        <Row label={t('ops.nextStep')} value={item.hasDraftInvoice ? t('ops.reviewDraft') : t('ops.createDraftNext')} />
+        <Row
+          label={t('ops.nextStep')}
+          value={item.hasDraftInvoice
+            ? t('ops.reviewDraft')
+            : canCreateDraft
+              ? t('ops.createDraftNext')
+              : t('ops.awaitFinanceUser')}
+        />
       </View>
       {canCreateDraft && !item.hasDraftInvoice && item.visitId ? (
         <Pressable accessibilityRole="button" disabled={busy} onPress={() => onCreateDraft(item)} style={[styles.button, busy && styles.disabled]}>

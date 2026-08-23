@@ -8,6 +8,7 @@ using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Infrastructure.Services;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -116,6 +117,50 @@ public class PatientJourneyFinancialRulesTests
         Get<bool>(item, "HasLabOrder").Should().BeTrue();
         Get<string>(item, "LabOrderStatus").Should().Be("Ready");
         Get<string>(item, "NextAction").Should().Be("Checkout");
+    }
+
+    [Fact]
+    public async Task GetToday_Doctor_DoesNotReceiveReferenceAmount()
+    {
+        await using var db = CreateDb();
+        var today = ClinicTimeProvider.ClinicToday();
+        var seeded = SeedAppointment(db, today, appointmentType: "Treatment", requiresFee: false, fee: 0m);
+        db.Visits.Add(new Visit
+        {
+            PatientId = seeded.Patient.Id,
+            AppointmentId = seeded.Appointment.Id,
+            VisitDate = today,
+            CheckoutStatus = "ReadyForCheckout",
+            AmountDueReference = 750m,
+            IsActive = true
+        });
+        await db.SaveChangesAsync();
+
+        var item = await GetSingleJourneyItem(db, today, isDoctor: true);
+
+        GetNullable<decimal>(item, "AmountDueReference").Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetToday_FinancialUser_ReceivesReferenceAmount()
+    {
+        await using var db = CreateDb();
+        var today = ClinicTimeProvider.ClinicToday();
+        var seeded = SeedAppointment(db, today, appointmentType: "Treatment", requiresFee: false, fee: 0m);
+        db.Visits.Add(new Visit
+        {
+            PatientId = seeded.Patient.Id,
+            AppointmentId = seeded.Appointment.Id,
+            VisitDate = today,
+            CheckoutStatus = "ReadyForCheckout",
+            AmountDueReference = 750m,
+            IsActive = true
+        });
+        await db.SaveChangesAsync();
+
+        var item = await GetSingleJourneyItem(db, today);
+
+        GetNullable<decimal>(item, "AmountDueReference").Should().Be(750m);
     }
 
     [Fact]
@@ -279,10 +324,10 @@ public class PatientJourneyFinancialRulesTests
 
     private static bool HasProperty(object obj, string name) => obj.GetType().GetProperty(name) != null;
 
-    private static async Task<object> GetSingleJourneyItem(AppDbContext db, DateOnly date)
+    private static async Task<object> GetSingleJourneyItem(AppDbContext db, DateOnly date, bool isDoctor = false)
     {
         var logger = new CapturingLogger<PatientJourneyService>();
-        var controller = BuildController(db, logger);
+        var controller = BuildController(db, logger, isDoctor);
         var result = await controller.GetToday(date.ToString("yyyy-MM-dd"), status: null, doctorId: null, serviceId: null, roomId: null);
         if (result is not OkObjectResult ok)
         {
@@ -292,11 +337,14 @@ public class PatientJourneyFinancialRulesTests
         return list.Should().ContainSingle().Subject;
     }
 
-    private static PatientJourneyController BuildController(AppDbContext db, ILogger<PatientJourneyService>? journeyLogger = null)
+    private static PatientJourneyController BuildController(
+        AppDbContext db,
+        ILogger<PatientJourneyService>? journeyLogger = null,
+        bool isDoctor = false)
     {
         var access = new Mock<IPatientAccessService>();
-        access.SetupGet(x => x.IsDoctor).Returns(false);
-        access.SetupGet(x => x.HasFullAccess).Returns(true);
+        access.SetupGet(x => x.IsDoctor).Returns(isDoctor);
+        access.SetupGet(x => x.HasFullAccess).Returns(!isDoctor);
         access.SetupGet(x => x.IsReception).Returns(false);
         access.Setup(x => x.GetAccessiblePatientIdsAsync()).ReturnsAsync((HashSet<Guid>?)null);
 
@@ -319,7 +367,16 @@ public class PatientJourneyFinancialRulesTests
             push.Object,
             NullLogger<CheckoutService>.Instance);
 
-        return new PatientJourneyController(journeyService, checkoutService);
+        return new PatientJourneyController(journeyService, checkoutService)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = PrincipalInRole(isDoctor ? "GeneralDentist" : "Admin")
+                }
+            }
+        };
     }
 
     private static (Patient Patient, Appointment Appointment, ClinicService Service) SeedAppointment(
@@ -385,6 +442,13 @@ public class PatientJourneyFinancialRulesTests
         var property = item.GetType().GetProperty(propertyName);
         property.Should().NotBeNull($"journey item should include {propertyName}");
         return (T)property!.GetValue(item)!;
+    }
+
+    private static T? GetNullable<T>(object item, string propertyName) where T : struct
+    {
+        var property = item.GetType().GetProperty(propertyName);
+        property.Should().NotBeNull($"journey item should include {propertyName}");
+        return (T?)property!.GetValue(item);
     }
 
     private sealed class CapturingLogger<T> : ILogger<T>

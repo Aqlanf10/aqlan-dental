@@ -170,11 +170,6 @@ public class PaymentReceiptDocument(
                 column.Item().Text($"{L("ملاحظات", "Notes")}: {Payment.Notes}").FontSize(7).FontColor(Colors.Grey.Darken1);
             }
 
-            // Note for anyone tempted again: column.Item().Extend() here swallows the
-            // remaining height and the signature row vanishes from the rendered page. The
-            // 43 mm of white space below the signatures is the footer being anchored to the
-            // bottom of a fixed-height slip; leave it rather than break the signatures.
-
             // The balance still owed. The browser-printed receipt in the patient file has
             // always shown this and it is usually the first thing the patient asks; the PDF
             // did not. Omitted rather than printed as zero when it could not be computed, so
@@ -192,8 +187,21 @@ public class PaymentReceiptDocument(
                 });
             }
 
-            // Signatures
-            column.Item().Row(row =>
+            // Signatures, held at the bottom of the content area.
+            //
+            // The slip prints on fixed-height quarter-A4 stock with the footer anchored to the
+            // bottom, so this row used to stop ~43 mm short of it: a third of the slip blank
+            // and the footer stranded under the gap. Extending this item and aligning its
+            // content to the bottom moves that space above the lines, which is where someone
+            // signs anyway.
+            //
+            // A bare `column.Item().Extend()` spacer does NOT work: an extending item with no
+            // child swallows the remaining height and the signature row disappears from the
+            // rendered page, with a clean build and no failing test. The extending item has to
+            // carry the row, as it does here. Both variants were checked by rasterising the
+            // page and looking at it — text extraction cannot read this font's shaped Arabic
+            // and reports every one of these labels as missing either way.
+            column.Item().Extend().AlignBottom().Row(row =>
             {
                 row.RelativeItem().AlignCenter().Column(col =>
                 {

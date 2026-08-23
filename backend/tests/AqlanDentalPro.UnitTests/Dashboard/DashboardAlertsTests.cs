@@ -103,8 +103,10 @@ public class DashboardAlertsTests
     public async Task LongWaiting_CountsOnlyWaitingOlderThanThreshold()
     {
         await using var db = CreateDb();
-        // QueueDate is a clinic-local calendar date while CreatedAt is UTC.
-        // Using the UTC date makes this test fail after local midnight in Aden.
+        // QueueDate is a clinic-local calendar date while CreatedAt is UTC, so the two
+        // must be seeded from their own clocks: the date from the clinic's, the timestamps
+        // from the server's. This comment sat above a DateTime.Today line saying exactly
+        // that, and the test still failed the first time CI ran after Aden midnight.
         var today = ClinicTimeProvider.ClinicToday();
         var p = NewPatient();
         db.Patients.Add(p);

@@ -157,6 +157,41 @@ public class OperationalFrictionTests
     }
 
     /// <summary>
+    /// The clinic's configured opening float has to reach the drawer.
+    ///
+    /// <para>
+    /// `finance.cashier_session.default_opening_balance` was editable in Settings and read by
+    /// nothing, so reception retyped the same figure at the start of every shift. Found by
+    /// scanning every settings key the screen offers for a backend reader — the same shape as
+    /// the roles screen's dead switches and the print language.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void The_opening_float_is_nullable_so_the_configured_default_can_apply()
+    {
+        var property = typeof(OpenSessionRequest).GetProperty(
+            nameof(OpenSessionRequest.OpeningBalance), BindingFlags.Public | BindingFlags.Instance);
+
+        property.Should().NotBeNull();
+        property!.PropertyType.Should().Be(typeof(decimal?),
+            "as a plain decimal, an unstated float and a deliberately empty drawer both arrive "
+            + "as 0, and the configured default could never be told apart from a real zero");
+
+        var source = Read("src", "AqlanDentalPro.API", "Controllers", "CashierSessionsController.cs");
+        source.Should().Contain("FinanceSettingsKeys.CashierDefaultOpeningBalance",
+            "the endpoint must actually read the setting, not merely accept a nullable");
+        // The setting applies only when nothing was stated, so an explicit float — including a
+        // deliberate zero — still wins. Asserted as the coalescing order rather than an exact
+        // source line, which the reader's optional-parameter refactor already broke once.
+        var openingIndex = source.IndexOf("req.OpeningBalance\n            ??", StringComparison.Ordinal);
+        openingIndex.Should().BeGreaterThan(-1,
+            "the request value must be the left side of the coalesce, not the fallback");
+        source.IndexOf("CashierDefaultOpeningBalance", openingIndex, StringComparison.Ordinal)
+            .Should().BeGreaterThan(openingIndex,
+                "the configured default must sit on the right of that coalesce");
+    }
+
+    /// <summary>
     /// Guards the tests above against passing for the wrong reason: if the files could not be
     /// read, every Contain assertion would be checking an empty string.
     /// </summary>

@@ -4,7 +4,7 @@ import { useLocale } from '@/i18n/LocaleProvider';
 import { colors, radius, spacing } from '@/theme/tokens';
 import { AppText } from './AppText';
 
-export function LanguageSwitch() {
+export function LanguageSwitch({ compact = false }: { compact?: boolean }) {
   const { locale, setLocale, t } = useLocale();
   return (
     <View style={styles.container} accessibilityRole="radiogroup">
@@ -17,7 +17,7 @@ export function LanguageSwitch() {
             accessibilityState={{ checked: selected }}
             key={item}
             onPress={() => setLocale(item)}
-            style={({ pressed }) => [styles.option, selected && styles.selected, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.option, compact && styles.compactOption, selected && styles.selected, pressed && styles.pressed]}
           >
             <AppText variant="caption" color={selected ? colors.white : colors.navy800} style={styles.centerText}>
               {item === 'ar' ? t('language.arabic') : t('language.english')}
@@ -41,6 +41,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   option: { minWidth: 80, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill },
+  compactOption: { minWidth: 48, paddingHorizontal: spacing.sm, paddingVertical: 7 },
   selected: { backgroundColor: colors.navy900 },
   pressed: { opacity: 0.75 },
   centerText: { textAlign: 'center' },

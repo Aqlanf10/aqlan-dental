@@ -17,6 +17,7 @@ export default function RootLayout() {
             <Stack.Screen name="index" />
             <Stack.Screen name="sign-in" />
             <Stack.Screen name="home" />
+            <Stack.Screen name="daily-operations" />
           </Stack>
         </AuthProvider>
       </AppErrorBoundary>

@@ -1,5 +1,5 @@
 import { Redirect, router } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { useAuth } from '@/auth/AuthProvider';
 import { AppScreen } from '@/components/AppScreen';
@@ -64,11 +64,19 @@ export default function HomeScreen() {
           <InfoRow label={t('home.permissions')} value={String(permissions?.permissions.length ?? 0)} />
         </View>
 
-        <View style={styles.nextCard}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push('/daily-operations')}
+          style={({ pressed }) => [styles.nextCard, pressed && styles.nextCardPressed]}
+        >
           <AppText variant="caption" color={colors.orange600}>{t('home.nextUnit')}</AppText>
           <AppText variant="heading" color={colors.navy900}>{t('home.nextUnitName')}</AppText>
           <AppText color={colors.muted}>{t('home.nextUnitDescription')}</AppText>
-        </View>
+          <View style={[styles.openRow, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+            <AppText variant="label" color={colors.navy900}>{t('home.openUnit')}</AppText>
+            <AppText variant="heading" color={colors.orange600}>{isRtl ? '←' : '→'}</AppText>
+          </View>
+        </Pressable>
 
         <PrimaryButton busy={busy} label={t('auth.signOut')} onPress={logout} tone="secondary" />
       </View>
@@ -108,4 +116,6 @@ const styles = StyleSheet.create({
   infoLabel: { flex: 1 },
   infoValue: { flex: 1, textAlign: 'auto' },
   nextCard: { gap: spacing.sm, padding: spacing.xl, borderRadius: radius.lg, backgroundColor: colors.orange100, borderWidth: 1, borderColor: '#FFD7A3' },
+  nextCardPressed: { opacity: 0.82, transform: [{ scale: 0.99 }] },
+  openRow: { alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, paddingTop: spacing.sm },
 });

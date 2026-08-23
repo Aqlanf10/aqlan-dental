@@ -11,7 +11,7 @@ export class ApiError extends Error {
   }
 }
 
-type RequestOptions = RequestInit & {
+export type RequestOptions = RequestInit & {
   accessToken?: string;
   refreshToken?: string;
   timeoutMs?: number;
@@ -27,7 +27,8 @@ export async function requestJson(path: string, options: RequestOptions = {}): P
   if (options.refreshToken) headers.set('X-Aqlan-Refresh-Token', options.refreshToken);
 
   try {
-    const response = await fetch(`${API_URL}${path}`, { ...options, headers, signal: controller.signal });
+    const { accessToken: _accessToken, refreshToken: _refreshToken, timeoutMs: _timeoutMs, ...fetchOptions } = options;
+    const response = await fetch(`${API_URL}${path}`, { ...fetchOptions, headers, signal: controller.signal });
     const text = await response.text();
     let payload: unknown = null;
     if (text) {
@@ -66,4 +67,9 @@ export function readString(value: unknown, key: string): string | null {
 export function readBoolean(value: unknown, key: string, fallback = false): boolean {
   if (!isRecord(value)) return fallback;
   return typeof value[key] === 'boolean' ? value[key] : fallback;
+}
+
+export function readNumber(value: unknown, key: string): number | null {
+  if (!isRecord(value)) return null;
+  return typeof value[key] === 'number' && Number.isFinite(value[key]) ? value[key] : null;
 }

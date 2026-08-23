@@ -99,8 +99,16 @@ public class OperationalFrictionTests
     {
         var source = Read("src", "AqlanDentalPro.Infrastructure", "Services", "PaymentService.cs");
 
-        source.Should().Contain("أصدِر الفاتورة أولًا",
-            "the cashier must be told to issue the invoice, not merely that only issued ones can be paid");
+        // Second dry run: "أصدِر الفاتورة أولًا" was itself wrong for the person who reads it.
+        // Reception holds finance.payments.create but is view-only on finance.invoices, so the
+        // instruction pointed at a 403. Verified live — the issue endpoint answered
+        // «غير مصرح لك بهذا الإجراء المالي» to the same account the refusal was addressed to.
+        source.Should().Contain("الإصدار من صلاحية المحاسب أو المدير",
+            "the refusal must name who can issue, not tell reception to do it themselves");
+        source.Should().Contain("سجّل الدفعة على حساب المريض مباشرة بدون فاتورة",
+            "reception's own path still works and the message should say so");
+        source.Should().NotContain("أصدِر الفاتورة أولًا ثم سجّل الدفعة",
+            "the old wording instructed reception to perform an action they are refused");
     }
 
     // ── Second dry run, walked as Reception ──────────────────────────────────

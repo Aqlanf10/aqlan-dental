@@ -170,7 +170,13 @@ public class PaymentService(
                 throw new ArgumentException("الفاتورة المحددة غير موجودة");
             // Only Issued invoices can receive payments
             if (invoice.Status != InvoiceStatus.Issued)
-                throw new ArgumentException("لا يمكن تسجيل دفعة على فاتورة غير مُصدَرة — أصدِر الفاتورة أولًا ثم سجّل الدفعة.");
+                // The wording deliberately names who can issue. Reception holds
+                // finance.payments.create but is view-only on finance.invoices, so telling
+                // them to "issue it first" pointed at a button they get 403 from. Their own
+                // path — a payment on the patient account, with no invoice — still works.
+                throw new ArgumentException(
+                    "لا يمكن تسجيل دفعة على فاتورة غير مُصدَرة. الإصدار من صلاحية المحاسب أو المدير — "
+                    + "اطلب إصدارها ثم سجّل الدفعة، أو سجّل الدفعة على حساب المريض مباشرة بدون فاتورة.");
             // Payment patient must match invoice patient
             if (req.PatientId != invoice.PatientId)
                 throw new ArgumentException("المريض في الدفعة لا يطابق المريض في الفاتورة");

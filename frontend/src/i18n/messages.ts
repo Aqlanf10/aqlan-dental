@@ -99,6 +99,31 @@ export const ar: Bundle = {
   "common.genericError": "حدث خطأ",
   "topbar.avatarInitialFallback": "م",
   "topbar.changePassword": "تغيير كلمة المرور",
+
+  // Sidebar entries that had no key, so they stayed Arabic in English.
+  "nav.appointmentsRecall": "قائمة الاستدعاء",
+  "nav.financeV3": "المالية",
+  "nav.inventorySuppliers": "الموردون",
+  "nav.inventoryPurchases": "أوامر الشراء",
+  "nav.hrAttendance": "الحضور والانصراف",
+  "nav.hrSalaries": "الرواتب",
+  "nav.hrAdvances": "السلف",
+  "nav.hrLeaves": "الإجازات",
+
+  // ── Sidebar section headings ──────────────────────────────────────────────
+  "nav.section.main": "رئيسي",
+  "nav.section.clinic": "العيادة",
+  "nav.section.specialties": "تخصصات",
+  "nav.section.communication": "التواصل",
+  "nav.section.reports": "تقارير",
+  "nav.section.administration": "الإدارة",
+  "nav.section.hr": "الموارد البشرية",
+  "nav.badge.updated": "محدّث",
+
+  // A doctor sees their own list, not the clinic-wide one.
+  "nav.mySchedule": "مواعيدي",
+  "nav.myPatients": "مرضاي",
+  "nav.section.system": "النظام",
 };
 
 export const en: Bundle = {
@@ -188,6 +213,30 @@ export const en: Bundle = {
   "common.genericError": "Something went wrong",
   "topbar.avatarInitialFallback": "U",
   "topbar.changePassword": "Change password",
+
+  "nav.ceph": "Cephalometrics",
+  "nav.appointmentsRecall": "Recall list",
+  "nav.financeV3": "Finance",
+  "nav.inventorySuppliers": "Suppliers",
+  "nav.inventoryPurchases": "Purchase orders",
+  "nav.hrAttendance": "Attendance",
+  "nav.hrSalaries": "Salaries",
+  "nav.hrAdvances": "Advances",
+  "nav.hrLeaves": "Leave",
+
+  // ── Sidebar section headings ──────────────────────────────────────────────
+  "nav.section.main": "Main",
+  "nav.section.clinic": "Clinic",
+  "nav.section.specialties": "Specialties",
+  "nav.section.communication": "Communication",
+  "nav.section.reports": "Reports",
+  "nav.section.administration": "Administration",
+  "nav.section.hr": "Human resources",
+  "nav.badge.updated": "Updated",
+
+  "nav.mySchedule": "My schedule",
+  "nav.myPatients": "My patients",
+  "nav.section.system": "System",
 };
 
 export const BUNDLES: Record<string, Bundle> = { ar, en };

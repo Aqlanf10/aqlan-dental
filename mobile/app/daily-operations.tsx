@@ -3,7 +3,7 @@ import { memo, useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ApiError } from '@/api/client';
+import { ApiError, SessionRenewedError } from '@/api/client';
 import { useAuth } from '@/auth/AuthProvider';
 import { AlertBanner } from '@/components/AlertBanner';
 import { AppText } from '@/components/AppText';
@@ -407,6 +407,9 @@ function NoticeBanner({ message }: { message: string }) {
 }
 
 function describeError(error: unknown, t: (key: TranslationKey) => string) {
+  // Distinct from an expired session: the staff member is still signed in, and the action
+  // simply was not sent. Telling them to sign in again here would be wrong and alarming.
+  if (error instanceof SessionRenewedError) return t('auth.sessionRenewed');
   if (error instanceof ApiError) {
     if (error.status === 401) return t('auth.sessionExpired');
     if (error.status === 403) return t('ops.forbidden');

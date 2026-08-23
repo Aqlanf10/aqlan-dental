@@ -1,6 +1,6 @@
 import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
-import { ApiError, requestJson, type RequestOptions } from '@/api/client';
+import { ApiError, SessionRenewedError, requestJson, type RequestOptions } from '@/api/client';
 import { authApi } from '@/api/authApi';
 import type { Permissions, Session, StaffUser } from '@/types/auth';
 import { clearSession, loadStoredSession, saveSession } from './sessionStorage';
@@ -119,8 +119,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (!(error instanceof ApiError) || error.status !== 401) throw error;
       const method = (options.method ?? 'GET').toUpperCase();
       if (method !== 'GET') {
-        await discardSession();
-        throw new ApiError('Session expired', 401, 'server');
+        // A state-changing request is never replayed: a handoff or a draft invoice sent twice
+        // because a token lapsed mid-tap is worse than asking for one more tap.
+        //
+        // It is also not a reason to sign the doctor out. The access token lives 15 minutes,
+        // so an examination that runs longer than that guarantees the next POST returns 401 —
+        // and discarding the session there threw staff back to the login screen in the middle
+        // of the clinic, losing the handoff they had just typed. The token is renewed, the
+        // session is kept, and the caller is told to confirm again.
+        try {
+          await refreshSession();
+        } catch {
+          await discardSession();
+          throw new ApiError('Session expired', 401, 'server');
+        }
+        throw new SessionRenewedError();
       }
       try {
         const refreshed = await refreshSession();

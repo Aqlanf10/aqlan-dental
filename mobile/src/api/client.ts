@@ -11,6 +11,20 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The access token expired during a state-changing request, and was renewed.
+ *
+ * The request itself was deliberately NOT replayed: a handoff or a draft invoice must never
+ * be sent twice because a token happened to lapse between the tap and the server. The staff
+ * member is still signed in and only has to confirm again.
+ */
+export class SessionRenewedError extends Error {
+  constructor() {
+    super('Session renewed; the action was not sent');
+    this.name = 'SessionRenewedError';
+  }
+}
+
 export type RequestOptions = RequestInit & {
   accessToken?: string;
   refreshToken?: string;

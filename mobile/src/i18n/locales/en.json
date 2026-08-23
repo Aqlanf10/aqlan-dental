@@ -28,6 +28,7 @@
   "auth.accountLocked": "Sign-in attempts are temporarily paused. Try again later.",
   "auth.invalidResponse": "The server response could not be verified.",
   "auth.sessionExpired": "Your session expired. Sign in again.",
+  "auth.sessionRenewed": "Your session was renewed. The action was not sent — please confirm it again.",
   "auth.networkError": "The server could not be reached. Check your connection and try again.",
   "auth.genericError": "Sign-in is unavailable right now. Try again.",
   "auth.serverMessageNote": "Some server messages may remain in Arabic until error codes are standardized.",

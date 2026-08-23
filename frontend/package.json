@@ -15,6 +15,8 @@
     "test:clinic-announcement": "npx tsx scripts/test-clinic-announcement.ts"
   },
   "dependencies": {
+    "@capacitor/android": "^6.2.1",
+    "@capacitor/core": "^6.2.1",
     "@hookform/resolvers": "^5.2.2",
     "@microsoft/signalr": "^8.0.0",
     "@radix-ui/react-avatar": "^1.1.11",
@@ -44,6 +46,7 @@
     "zustand": "5.0.13"
   },
   "devDependencies": {
+    "@capacitor/cli": "^6.2.1",
     "@playwright/test": "^1.50.0",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.9.1",

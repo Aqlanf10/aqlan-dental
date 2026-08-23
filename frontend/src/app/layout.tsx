@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import { Providers } from "@/providers";
 import { RecaptchaProvider } from "@/lib/recaptcha";
+import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar";
 import "./globals.css";
 
 const tajawal = localFont({
@@ -22,7 +23,24 @@ export const metadata: Metadata = {
   description: "نظام إدارة مركز د. عقلان الكامل لطب وتقويم الأسنان — تعز، اليمن",
   icons: {
     icon: "/logo.png",
+    apple: "/logo-icon.png",
   },
+  // Makes the mobile screen installable on Android from Chrome's "add to home screen".
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "عقلان",
+    statusBarStyle: "default",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0e7490",
+  // viewport-fit=cover so the fixed bottom bar on /m can sit above the phone's home indicator
+  // instead of underneath it.
+  viewportFit: "cover",
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({
@@ -34,6 +52,7 @@ export default function RootLayout({
         <RecaptchaProvider>
           <Providers>{children}</Providers>
         </RecaptchaProvider>
+        <ServiceWorkerRegistrar />
       </body>
     </html>
   );

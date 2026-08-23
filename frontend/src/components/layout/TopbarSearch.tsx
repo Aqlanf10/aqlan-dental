@@ -1,5 +1,7 @@
 "use client";
 
+import { useT } from "@/i18n/LocaleProvider";
+
 import { useEffect, useRef, useState } from "react";
 import { Calendar, GitBranch, Search, User, X } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -12,6 +14,8 @@ interface SearchResult {
 }
 
 export function TopbarSearch() {
+  const t = useT();
+
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult | null>(null);
@@ -146,8 +150,8 @@ export function TopbarSearch() {
         onFocus={() => {
           if (query.length >= 2 && (searching || failed || results !== null)) setOpen(true);
         }}
-        placeholder="بحث سريع... (Ctrl+K)"
-        aria-label="البحث السريع"
+        placeholder={`${t("search.title")}… (Ctrl+K)`}
+        aria-label={t("search.title")}
         className="pe-9 ps-3 py-[7px] text-[13px] rounded-lg outline-none"
         style={{
           width: 220,
@@ -164,7 +168,7 @@ export function TopbarSearch() {
       {query && (
         <button
           type="button"
-          aria-label="مسح البحث"
+          aria-label={t("search.clear")}
           onClick={resetSearch}
           className="absolute right-2.5 top-1/2 -translate-y-1/2"
           style={{ color: "#94a3b8" }}
@@ -180,22 +184,22 @@ export function TopbarSearch() {
         >
           {searching ? (
             <div className="p-4 text-center text-sm" style={{ color: "#94a3b8" }}>
-              جارٍ البحث...
+              {t("search.searching")}
             </div>
           ) : failed ? (
             <div className="p-4 text-center text-sm" style={{ color: "#dc2626" }}>
-              تعذّر البحث، تحقق من الاتصال
+              {t("search.error")}
             </div>
           ) : !hasResults ? (
             <div className="p-4 text-center text-sm" style={{ color: "#94a3b8" }}>
-              لا توجد نتائج لـ &ldquo;{query}&rdquo;
+              {t("search.noResults")} &ldquo;{query}&rdquo;
             </div>
           ) : (
             <div className="py-1">
               {results!.patients.length > 0 && (
                 <div>
                   <div className="px-3 py-1.5 text-xs font-semibold" style={{ color: "#94a3b8", background: "#f7fafd" }}>
-                    المرضى
+                    {t("nav.patients")}
                   </div>
                   {results!.patients.map((patient) => (
                     <button
@@ -223,7 +227,7 @@ export function TopbarSearch() {
               {results!.orthoCases.length > 0 && (
                 <div>
                   <div className="px-3 py-1.5 text-xs font-semibold" style={{ color: "#94a3b8", background: "#f7fafd" }}>
-                    التقويم
+                    {t("nav.ortho")}
                   </div>
                   {results!.orthoCases.map((orthoCase) => (
                     <button
@@ -251,7 +255,7 @@ export function TopbarSearch() {
               {results!.appointments.length > 0 && (
                 <div>
                   <div className="px-3 py-1.5 text-xs font-semibold" style={{ color: "#94a3b8", background: "#f7fafd" }}>
-                    المواعيد
+                    {t("nav.appointments")}
                   </div>
                   {results!.appointments.map((appointment) => (
                     <button

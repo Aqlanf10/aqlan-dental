@@ -1,10 +1,14 @@
 "use client";
 
+import { useT } from "@/i18n/LocaleProvider";
+
 import { useState } from "react";
 import { ShieldAlert, LogOut, Loader2 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 
 export function ImpersonationBanner() {
+  const t = useT();
+
   const { isImpersonating, user, stopImpersonation } = useAuthStore();
   const [stopping, setStopping] = useState(false);
 
@@ -30,8 +34,8 @@ export function ImpersonationBanner() {
     >
       <ShieldAlert className="w-4 h-4 flex-shrink-0" />
       <span>
-        أنت الآن داخل النظام كـ <strong>{user?.username ?? "مستخدم"}</strong>
-        {user?.doctorName && ` (${user.doctorName})`} بواسطة المدير
+        {t("impersonation.youAreNow")} <strong>{user?.username ?? t("impersonation.user")}</strong>
+        {user?.doctorName && ` (${user.doctorName})`} {t("impersonation.byAdmin")}
       </span>
       <button
         onClick={handleStop}
@@ -49,7 +53,7 @@ export function ImpersonationBanner() {
         ) : (
           <LogOut className="w-3.5 h-3.5" />
         )}
-        العودة لحساب المدير
+        {t("impersonation.returnToAdmin")}
       </button>
     </div>
   );

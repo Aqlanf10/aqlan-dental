@@ -124,6 +124,35 @@ export const ar: Bundle = {
   "nav.mySchedule": "مواعيدي",
   "nav.myPatients": "مرضاي",
   "nav.section.system": "النظام",
+
+  // ── Notifications ─────────────────────────────────────────────────────────
+  "notifications.title": "الإشعارات",
+  "notifications.refreshing": "جارٍ التحديث...",
+  "notifications.markAllRead": "تحديد الكل كمقروء",
+  "notifications.loading": "جارٍ تحميل الإشعارات",
+  "notifications.updating": "جارٍ تحديث الإشعارات...",
+  "notifications.empty": "لا توجد إشعارات",
+  "notifications.delete": "حذف الإشعار",
+  "notifications.retry": "إعادة المحاولة",
+  "notifications.error.load": "تعذّر تحميل الإشعارات",
+  "notifications.error.markAll": "تعذّر تعليم الإشعارات كمقروءة",
+  "notifications.error.markOne": "تعذّر تعليم الإشعار كمقروء",
+  "notifications.error.delete": "تعذّر حذف الإشعار",
+  "notifications.error.keptPrevious": "لم يتم استبدال الإشعارات المحمّلة سابقًا.",
+  "notifications.error.retryHint": "يمكنك إعادة المحاولة دون فقدان أي بيانات.",
+
+  // ── Quick search ──────────────────────────────────────────────────────────
+  "search.title": "البحث السريع",
+  "search.clear": "مسح البحث",
+  "search.searching": "جارٍ البحث...",
+  "search.error": "تعذّر البحث، تحقق من الاتصال",
+  "search.noResults": "لا توجد نتائج لـ",
+
+  // ── Impersonation ─────────────────────────────────────────────────────────
+  "impersonation.youAreNow": "أنت الآن داخل النظام كـ",
+  "impersonation.user": "مستخدم",
+  "impersonation.byAdmin": "بواسطة المدير",
+  "impersonation.returnToAdmin": "العودة لحساب المدير",
 };
 
 export const en: Bundle = {
@@ -237,6 +266,35 @@ export const en: Bundle = {
   "nav.mySchedule": "My schedule",
   "nav.myPatients": "My patients",
   "nav.section.system": "System",
+
+  // ── Notifications ─────────────────────────────────────────────────────────
+  "notifications.title": "Notifications",
+  "notifications.refreshing": "Refreshing…",
+  "notifications.markAllRead": "Mark all as read",
+  "notifications.loading": "Loading notifications",
+  "notifications.updating": "Updating notifications…",
+  "notifications.empty": "No notifications",
+  "notifications.delete": "Delete notification",
+  "notifications.retry": "Try again",
+  "notifications.error.load": "Could not load notifications",
+  "notifications.error.markAll": "Could not mark notifications as read",
+  "notifications.error.markOne": "Could not mark the notification as read",
+  "notifications.error.delete": "Could not delete the notification",
+  "notifications.error.keptPrevious": "The notifications already loaded were not replaced.",
+  "notifications.error.retryHint": "You can try again without losing anything.",
+
+  // ── Quick search ──────────────────────────────────────────────────────────
+  "search.title": "Quick search",
+  "search.clear": "Clear search",
+  "search.searching": "Searching…",
+  "search.error": "Search failed — check the connection",
+  "search.noResults": "No results for",
+
+  // ── Impersonation ─────────────────────────────────────────────────────────
+  "impersonation.youAreNow": "You are signed in as",
+  "impersonation.user": "user",
+  "impersonation.byAdmin": "by the administrator",
+  "impersonation.returnToAdmin": "Return to the admin account",
 };
 
 export const BUNDLES: Record<string, Bundle> = { ar, en };

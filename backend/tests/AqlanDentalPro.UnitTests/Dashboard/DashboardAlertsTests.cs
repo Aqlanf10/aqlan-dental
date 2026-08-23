@@ -59,7 +59,7 @@ public class DashboardAlertsTests
     public async Task OverdueLabOrders_CountsOnlyPastExpectedAndNotTerminal()
     {
         await using var db = CreateDb();
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = ClinicTimeProvider.ClinicToday();
         var patient = NewPatient();
         db.Patients.Add(patient);
 
@@ -81,7 +81,7 @@ public class DashboardAlertsTests
     public async Task NoShowToday_And_UnconfirmedTomorrow_AreCounted()
     {
         await using var db = CreateDb();
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = ClinicTimeProvider.ClinicToday();
         var p1 = NewPatient();
         var p2 = NewPatient();
         db.Patients.AddRange(p1, p2);
@@ -103,9 +103,11 @@ public class DashboardAlertsTests
     public async Task LongWaiting_CountsOnlyWaitingOlderThanThreshold()
     {
         await using var db = CreateDb();
-        // QueueDate is a clinic-local calendar date while CreatedAt is UTC.
-        // Using the UTC date makes this test fail after local midnight in Aden.
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        // QueueDate is a clinic-local calendar date while CreatedAt is UTC, so the two
+        // must be seeded from their own clocks: the date from the clinic's, the timestamps
+        // from the server's. This comment sat above a DateTime.Today line saying exactly
+        // that, and the test still failed the first time CI ran after Aden midnight.
+        var today = ClinicTimeProvider.ClinicToday();
         var p = NewPatient();
         db.Patients.Add(p);
 
@@ -130,7 +132,7 @@ public class DashboardAlertsTests
     public async Task RecallCandidates_ExcludesPatientsWithUpcomingAppointment()
     {
         await using var db = CreateDb();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ClinicTimeProvider.ClinicToday();
         var missedNoFuture = NewPatient();
         var missedWithFuture = NewPatient();
         db.Patients.AddRange(missedNoFuture, missedWithFuture);
@@ -152,7 +154,7 @@ public class DashboardAlertsTests
     public async Task BranchScoping_NonAdminSeesOnlyOwnBranch()
     {
         await using var db = CreateDb();
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = ClinicTimeProvider.ClinicToday();
         var myBranch = Guid.NewGuid();
         var otherBranch = Guid.NewGuid();
         var mine = NewPatient(myBranch);

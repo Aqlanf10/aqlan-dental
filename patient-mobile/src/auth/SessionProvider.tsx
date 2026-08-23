@@ -7,7 +7,7 @@ type PatientSession = {
   loading: boolean;
   profile: PatientProfile | null;
   mustChangePassword: boolean;
-  signIn: (username: string, password: string) => Promise<void>;
+  signIn: (username: string, password: string) => Promise<PatientAuthResponse>;
   signOut: () => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 };
@@ -37,6 +37,7 @@ export function PatientSessionProvider({ children }: PropsWithChildren) {
     const session = await patientLogin(username, password);
     setProfile(session.profile);
     setMustChangePassword(session.mustChangePassword);
+    return session;
   }, []);
 
   const signOut = useCallback(async () => {

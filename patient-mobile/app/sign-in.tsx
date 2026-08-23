@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 export default function SignIn() {
-  const { signIn, mustChangePassword } = usePatientSession();
+  const { signIn } = usePatientSession();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -13,8 +13,8 @@ export default function SignIn() {
   const submit = async () => {
     setBusy(true); setError("");
     try {
-      await signIn(username.trim(), password);
-      router.replace(mustChangePassword ? "/change-password" : "/(app)/home");
+      const session = await signIn(username.trim(), password);
+      router.replace(session.mustChangePassword ? "/change-password" : "/(app)/home");
     } catch (value) {
       setError(value instanceof Error ? value.message : "تعذر تسجيل الدخول");
     } finally {

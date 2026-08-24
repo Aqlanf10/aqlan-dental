@@ -85,6 +85,6 @@ describe("CephWebCephImportDialog", () => {
     expect((body as FormData).get("anchorX")).toBe("100");
     expect((body as FormData).get("anchorY")).toBe("80");
     expect(onImported).toHaveBeenCalledWith(analysis, expect.objectContaining({ imported: 58 }));
-    expect(screen.getByText("تم استيراد 58 من 58 نقطة")).toBeInTheDocument();
+    expect(await screen.findByText("تم استيراد 58 من 58 نقطة")).toBeInTheDocument();
   });
 });

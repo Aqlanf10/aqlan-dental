@@ -3,6 +3,7 @@ using System.Text.Json;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
@@ -59,7 +60,7 @@ public class OrthoModelAnalysisReportPdfGenerator(AppDbContext db)
         if (analysis is null)
             throw new ArgumentException("Model analysis not found.", nameof(analysisId));
 
-        var identity = await CephReportPdfGenerator.ResolveClinicIdentityAsync(db);
+        var identity = await FinanceClinicIdentity.ResolveAsync(db);
         DentalModelAnalysisResult? result = null;
         try { result = JsonSerializer.Deserialize<DentalModelAnalysisResult>(analysis.ResultDataJson, JsonOptions); }
         catch (JsonException) { /* fall back to entity summary columns only */ }
@@ -70,7 +71,7 @@ public class OrthoModelAnalysisReportPdfGenerator(AppDbContext db)
         return await Task.Run(() => Generate(analysis, result, identity));
     }
 
-    private static byte[] Generate(ModelAnalysis analysis, DentalModelAnalysisResult? result, CephReportClinicIdentity identity)
+    private static byte[] Generate(ModelAnalysis analysis, DentalModelAnalysisResult? result, FinanceClinicIdentity identity)
     {
         QuestPDF.Settings.License = LicenseType.Community;
         AqlanDentalPro.Infrastructure.Services.PdfService.EnsureFontsRegistered();
@@ -94,7 +95,7 @@ public class OrthoModelAnalysisReportPdfGenerator(AppDbContext db)
         return doc.GeneratePdf();
     }
 
-    private static void ComposeHeader(IContainer container, ModelAnalysis analysis, CephReportClinicIdentity identity)
+    private static void ComposeHeader(IContainer container, ModelAnalysis analysis, FinanceClinicIdentity identity)
     {
         container.Column(column =>
         {
@@ -102,13 +103,13 @@ public class OrthoModelAnalysisReportPdfGenerator(AppDbContext db)
             {
                 row.RelativeItem().Row(idRow =>
                 {
-                    // CLIN-12: logo bytes are cached statically — no per-render file I/O.
-                    if (AqlanDentalPro.Infrastructure.Services.PdfLogoCache.TryGetLogo(out var logoBytes))
+                    // Clinic logo — resolved with the rest of the identity (CORE-REQ-006).
+                    if (identity.LogoBytes is { Length: > 0 } logoBytes)
                         idRow.ConstantItem(48).PaddingLeft(8).AlignTop().Image(logoBytes);
 
                     idRow.RelativeItem().Column(col =>
                     {
-                        col.Item().Text(identity.ClinicName).Bold().FontSize(15).FontFamily(FontName);
+                        col.Item().Text(identity.Name).Bold().FontSize(15).FontFamily(FontName);
                         col.Item().Text(identity.LeadDoctor).Bold().FontSize(11).FontFamily(FontName);
                         col.Item().Text(identity.LeadDoctorTitle).FontSize(9).FontFamily(FontName);
                         col.Item().Text(identity.LeadDoctorCredentials)
@@ -131,7 +132,7 @@ public class OrthoModelAnalysisReportPdfGenerator(AppDbContext db)
     }
 
     private static void ComposeContent(
-        IContainer container, ModelAnalysis analysis, DentalModelAnalysisResult? result, CephReportClinicIdentity identity)
+        IContainer container, ModelAnalysis analysis, DentalModelAnalysisResult? result, FinanceClinicIdentity identity)
     {
         container.Column(column =>
         {
@@ -236,7 +237,7 @@ public class OrthoModelAnalysisReportPdfGenerator(AppDbContext db)
         });
     }
 
-    private static void ComposeFooter(IContainer container, CephReportClinicIdentity identity)
+    private static void ComposeFooter(IContainer container, FinanceClinicIdentity identity)
     {
         container.Column(column =>
         {

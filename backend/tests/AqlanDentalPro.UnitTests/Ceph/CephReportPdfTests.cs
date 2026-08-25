@@ -1,6 +1,7 @@
 using AqlanDentalPro.API.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -218,9 +219,9 @@ public class CephReportPdfTests
             new Setting { Key = "clinic.location", Value = "تعز — اليمن" });
         await db.SaveChangesAsync();
 
-        var identity = await CephReportPdfGenerator.ResolveClinicIdentityAsync(db);
+        var identity = await FinanceClinicIdentity.ResolveAsync(db);
 
-        identity.ClinicName.Should().Be("مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان");
+        identity.Name.Should().Be("مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان");
         identity.LeadDoctor.Should().Be("د. عقلان الكامل");
         identity.LeadDoctorTitle.Should().Be("أخصائي تقويم الأسنان");
         identity.LeadDoctorCredentials.Should().Be("جامعة مانيلا المركزية — الفلبين");
@@ -228,19 +229,25 @@ public class CephReportPdfTests
         identity.Location.Should().Be("تعز — اليمن");
     }
 
+    /// <summary>
+    /// CORE-REQ-006 (print slice) — this report now resolves identity through
+    /// <see cref="FinanceClinicIdentity"/>, the same reader every other document uses, so an
+    /// unconfigured clinic falls back to the real centre name/location/phones (not blank text)
+    /// exactly like a receipt or statement would.
+    /// </summary>
     [Fact]
-    public async Task ResolveClinicIdentityAsync_MissingKeys_FallsBackToEmptyStrings()
+    public async Task ResolveClinicIdentityAsync_MissingKeys_FallsBackToRealClinicDefaults()
     {
         await using var db = CreateDb(); // no Settings rows at all
 
-        var identity = await CephReportPdfGenerator.ResolveClinicIdentityAsync(db);
+        var identity = await FinanceClinicIdentity.ResolveAsync(db);
 
-        identity.ClinicName.Should().BeEmpty();
+        identity.Name.Should().Be(FinanceClinicIdentity.DefaultName);
+        identity.Location.Should().Be(FinanceClinicIdentity.DefaultLocation);
+        identity.Phones.Should().Be(FinanceClinicIdentity.DefaultPhones);
         identity.LeadDoctor.Should().BeEmpty();
         identity.LeadDoctorTitle.Should().BeEmpty();
         identity.LeadDoctorCredentials.Should().BeEmpty();
-        identity.Phones.Should().BeEmpty();
-        identity.Location.Should().BeEmpty();
     }
 
     [Fact]
@@ -254,8 +261,8 @@ public class CephReportPdfTests
             "the lead doctor name must come from Settings (clinic.lead_doctor) — no hardcoding");
         content.Should().NotContain("جامعة مانيلا",
             "credentials must come from Settings (clinic.lead_doctor_credentials) — no hardcoding");
-        content.Should().Contain("clinic.lead_doctor_credentials",
-            "the generator must read the credentials Settings key");
+        content.Should().Contain("FinanceClinicIdentity",
+            "the generator must resolve identity through the single shared reader");
     }
 
     // ─── Uploads path resolution ──────────────────────────────────────────

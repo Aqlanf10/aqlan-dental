@@ -55,10 +55,6 @@ public class ClinicIdentitySingleSourceTests
         "StartupDatabaseMaintenance.cs",
         "ClinicTimeZoneInitializer.cs",
         "SettingsController.cs",
-        // Its own reader predates this rule and reads the same keys with the same meaning.
-        // Left in place deliberately rather than folded in blind: the ceph report renders a
-        // different header block, and rewriting it belongs to the print slice, not this one.
-        "CephReportPdfGenerator.cs",
     ];
 
     /// <summary>

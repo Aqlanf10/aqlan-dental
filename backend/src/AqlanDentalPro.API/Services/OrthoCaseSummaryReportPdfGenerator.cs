@@ -40,7 +40,7 @@ public class OrthoCaseSummaryReportPdfGenerator(AppDbContext db)
         if (orthoCase is null)
             throw new ArgumentException("Ortho case not found.", nameof(orthoCaseId));
 
-        var identity = await CephReportPdfGenerator.ResolveClinicIdentityAsync(db);
+        var identity = await FinanceClinicIdentity.ResolveAsync(db);
         var finance = await ResolveFinanceAsync(orthoCase);
 
         // CLIN-12: CPU-bound QuestPDF generation is offloaded to the thread pool so the
@@ -81,7 +81,7 @@ public class OrthoCaseSummaryReportPdfGenerator(AppDbContext db)
         return new FinanceSummary(total, paid, Math.Max(0, total - paid));
     }
 
-    private static byte[] Generate(OrthoCase orthoCase, CephReportClinicIdentity identity, FinanceSummary finance)
+    private static byte[] Generate(OrthoCase orthoCase, FinanceClinicIdentity identity, FinanceSummary finance)
     {
         QuestPDF.Settings.License = LicenseType.Community;
         AqlanDentalPro.Infrastructure.Services.PdfService.EnsureFontsRegistered();
@@ -105,7 +105,7 @@ public class OrthoCaseSummaryReportPdfGenerator(AppDbContext db)
         return doc.GeneratePdf();
     }
 
-    private static void ComposeHeader(IContainer container, OrthoCase orthoCase, CephReportClinicIdentity identity)
+    private static void ComposeHeader(IContainer container, OrthoCase orthoCase, FinanceClinicIdentity identity)
     {
         container.Column(column =>
         {
@@ -113,7 +113,7 @@ public class OrthoCaseSummaryReportPdfGenerator(AppDbContext db)
             {
                 row.RelativeItem().Column(col =>
                 {
-                    col.Item().Text(identity.ClinicName).Bold().FontSize(15).FontFamily(FontName);
+                    col.Item().Text(identity.Name).Bold().FontSize(15).FontFamily(FontName);
                     col.Item().Text(identity.LeadDoctor).Bold().FontSize(11).FontFamily(FontName);
                     col.Item().Text(identity.LeadDoctorTitle).FontSize(9).FontFamily(FontName);
                     col.Item().Text(identity.LeadDoctorCredentials)
@@ -133,7 +133,7 @@ public class OrthoCaseSummaryReportPdfGenerator(AppDbContext db)
     }
 
     private static void ComposeContent(
-        IContainer container, OrthoCase orthoCase, CephReportClinicIdentity identity, FinanceSummary finance)
+        IContainer container, OrthoCase orthoCase, FinanceClinicIdentity identity, FinanceSummary finance)
     {
         container.Column(column =>
         {
@@ -286,7 +286,7 @@ public class OrthoCaseSummaryReportPdfGenerator(AppDbContext db)
         });
     }
 
-    private static void ComposeFooter(IContainer container, CephReportClinicIdentity identity)
+    private static void ComposeFooter(IContainer container, FinanceClinicIdentity identity)
     {
         container.Column(column =>
         {

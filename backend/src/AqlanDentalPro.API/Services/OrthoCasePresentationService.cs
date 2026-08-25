@@ -68,12 +68,12 @@ public sealed class OrthoCasePresentationService(AppDbContext db)
             source.Patient.FirstName,
             source.Patient.MiddleName,
             source.Patient.LastName);
-        var identity = await CephReportPdfGenerator.ResolveClinicIdentityAsync(db);
+        var identity = await FinanceClinicIdentity.ResolveAsync(db);
         var contact = string.Join("   |   ",
             new[] { identity.Phones, identity.Location }.Where(HasText));
 
         return PowerPointPresentationBuilder.Build(new OrthoCasePresentationDocument(
-            identity.ClinicName,
+            identity.Name,
             string.IsNullOrWhiteSpace(source.Doctor?.Name) ? identity.LeadDoctor : source.Doctor.Name,
             identity.LeadDoctorTitle,
             identity.LeadDoctorCredentials,

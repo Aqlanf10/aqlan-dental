@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "بوابة مرضى مركز عقلان",
+    "slug": "aqlan-dental-patient",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "aqlanpatient",
+    "userInterfaceStyle": "light",
+    "android": {
+      "package": "com.aqlandental.patient",
+      "versionCode": 1
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

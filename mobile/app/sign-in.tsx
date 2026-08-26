@@ -11,12 +11,15 @@ import { BrandLockup } from '@/components/BrandLockup';
 import { FormField } from '@/components/FormField';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { useClinicIdentity } from '@/identity/ClinicIdentityProvider';
 import { useLocale } from '@/i18n/LocaleProvider';
 import { colors, radius, spacing } from '@/theme/tokens';
 
 export default function SignInScreen() {
   const { busy, signIn, user } = useAuth();
   const { locale, t } = useLocale();
+  // العنوان والهاتف من إعدادات المركز، والنص المدمج احتياطٌ حتى تصل الاستجابة.
+  const identity = useClinicIdentity();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -104,8 +107,8 @@ export default function SignInScreen() {
         </View>
 
         <View style={styles.footer}>
-          <AppText variant="caption" color={colors.muted} style={styles.centerText}>{t('brand.address')}</AppText>
-          <AppText variant="caption" color={colors.muted} style={styles.centerText}>{t('brand.phone')}</AppText>
+          <AppText variant="caption" color={colors.muted} style={styles.centerText}>{identity?.address || t('brand.address')}</AppText>
+          <AppText variant="caption" color={colors.muted} style={styles.centerText}>{identity?.phone || t('brand.phone')}</AppText>
         </View>
       </View>
     </AppScreen>

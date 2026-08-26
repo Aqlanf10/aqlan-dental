@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 
 import { AuthProvider } from '@/auth/AuthProvider';
 import { AppErrorBoundary } from '@/errors/AppErrorBoundary';
+import { ClinicIdentityProvider } from '@/identity/ClinicIdentityProvider';
 import { LocaleProvider } from '@/i18n/LocaleProvider';
 
 export default function RootLayout() {
@@ -12,6 +13,7 @@ export default function RootLayout() {
     <LocaleProvider>
       <AppErrorBoundary>
         <AuthProvider>
+          <ClinicIdentityProvider>
           <StatusBar style="dark" />
           <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
             <Stack.Screen name="index" />
@@ -19,6 +21,7 @@ export default function RootLayout() {
             <Stack.Screen name="home" />
             <Stack.Screen name="daily-operations" />
           </Stack>
+          </ClinicIdentityProvider>
         </AuthProvider>
       </AppErrorBoundary>
     </LocaleProvider>

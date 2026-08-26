@@ -1,6 +1,7 @@
 import { Image, StyleSheet, View } from 'react-native';
 
 import { useLocale } from '@/i18n/LocaleProvider';
+import { useClinicIdentity } from '@/identity/ClinicIdentityProvider';
 import { colors, spacing } from '@/theme/tokens';
 import { AppText } from './AppText';
 
@@ -8,6 +9,9 @@ type Props = { compact?: boolean; inverse?: boolean };
 
 export function BrandLockup({ compact = false, inverse = false }: Props) {
   const { isRtl, t } = useLocale();
+  // اسم المركز من الإعدادات لا من الكود: تعديله في الإعدادات يغيّر الموقع وكل PDF،
+  // وكان التطبيق وحده يبقى على الاسم القديم حتى تُبنى نسخة جديدة.
+  const identity = useClinicIdentity();
   return (
     <View style={[styles.row, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
       <View style={[styles.logoFrame, compact && styles.logoFrameCompact, inverse && styles.logoFrameInverse]}>
@@ -18,7 +22,7 @@ export function BrandLockup({ compact = false, inverse = false }: Props) {
           {t('app.name')}
         </AppText>
         <AppText variant="caption" color={inverse ? '#DDE8F5' : colors.muted} numberOfLines={compact ? 1 : 2}>
-          {t('brand.clinicName')}
+          {identity?.clinicName ?? t('brand.clinicName')}
         </AppText>
       </View>
     </View>

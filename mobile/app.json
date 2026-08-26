@@ -2,24 +2,32 @@
   "expo": {
     "name": "Aqlan Dental Pro",
     "slug": "aqlan-dental-pro",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "scheme": "aqlandental",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.aqlan.dentalpro"
+      "bundleIdentifier": "com.aqlandental.pro"
     },
     "android": {
-      "package": "com.aqlan.dentalpro"
+      "package": "com.aqlandental.pro",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#0D2453"
+      },
+      "predictiveBackGestureEnabled": false
     },
     "plugins": [
       "expo-router",
+      "expo-secure-store",
       [
-        "expo-secure-store",
+        "expo-splash-screen",
         {
-          "configureAndroidBackup": true,
-          "faceIDPermission": "السماح لـ Aqlan Dental Pro بالتحقق من هويتك."
+          "backgroundColor": "#F4F7FB",
+          "image": "./assets/icon.png",
+          "imageWidth": 180
         }
       ]
     ],

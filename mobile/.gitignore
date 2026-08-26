@@ -1,6 +1,12 @@
-node_modules/
+node_modules
 .expo/
+dist/
 dist-android/
 dist-ios/
+android/
+ios/
+*.jks
+*.keystore
 .env
-*.log
+.env.*
+!.env.example

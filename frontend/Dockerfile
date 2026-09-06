@@ -12,6 +12,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
 
+ARG BACKEND_URL
+RUN test -n "$BACKEND_URL" || (echo "BACKEND_URL is required to build API rewrites" >&2; exit 1)
 RUN npm run build
 
 FROM node:22-alpine AS runner

@@ -1,29 +1,27 @@
 # 012 — Railway Unified Hosting Requirements
 
-- Status: Active — staging foundation
-- Owner directive: 2026-09-06
-- Scope: host the Next.js frontend beside the existing ASP.NET Core backend on Railway without changing production traffic.
+- Status: Active — direct deployment in the existing production environment.
+- Owner directive: 2026-09-06; the owner explicitly cancelled Staging and requested direct work.
+- Scope: add the Next.js frontend beside the existing ASP.NET Core backend on Railway.
 
 ## Requirements
 
-- `DEPLOY-REQ-001` Railway SHALL run the frontend, backend, PostgreSQL, and Redis as separate services rather than one combined container.
-- `DEPLOY-REQ-002` A Railway Staging environment SHALL be created and verified before production DNS, Vercel, or the current production services are changed.
-- `DEPLOY-REQ-003` The frontend SHALL use the existing Next.js standalone output and a non-root production container.
-- `DEPLOY-REQ-004` Staging browser requests SHALL remain same-origin through Next.js rewrites. `NEXT_PUBLIC_API_URL` SHALL be unset for the Railway frontend and `BACKEND_URL` SHALL identify the backend service. The value SHALL be available during the frontend build because Next.js compiles rewrites at build time.
-- `DEPLOY-REQ-005` Staging SHALL use an isolated PostgreSQL database and synthetic data. It SHALL NOT run tests that create, edit, or delete production patient or financial records.
-- `DEPLOY-REQ-006` Secrets, connection strings, tokens, passwords, and environment values SHALL NOT be committed to Git, logs, screenshots, specs, or PR text.
-- `DEPLOY-REQ-007` The frontend SHALL expose a healthcheck independent of authenticated application state. The initial healthcheck path is `/login`; backend health remains `/health`.
-- `DEPLOY-REQ-008` Vercel and the current production domain SHALL remain available as rollback paths until the owner approves production cutover after runtime verification.
-- `DEPLOY-REQ-009` Uploaded files SHALL keep using the existing production Railway volume. Staging uploads require a separate temporary volume; object-storage migration is explicitly deferred.
+- `DEPLOY-REQ-001` Frontend, backend, PostgreSQL and Redis SHALL remain separate services.
+- `DEPLOY-REQ-002` No Staging environment SHALL be created. Add only a frontend service to the existing aqlan-dental-pro production environment.
+- `DEPLOY-REQ-003` Use Next.js standalone output and a non-root container. Declare BACKEND_URL as a builder-stage ARG and fail the build if absent, preventing localhost rewrites.
+- `DEPLOY-REQ-004` Browser API, hub and upload requests SHALL remain same-origin. Leave NEXT_PUBLIC_API_URL unset. BACKEND_URL targets the existing backend and is supplied at build and runtime.
+- `DEPLOY-REQ-005` Existing PostgreSQL and Redis SHALL be reused without changing their connections or data. Synthetic write tests SHALL run only in isolated CI, never against production records.
+- `DEPLOY-REQ-006` Secrets SHALL NOT be committed or printed. The frontend requires no database, JWT or backend credentials.
+- `DEPLOY-REQ-007` Frontend healthcheck SHALL use /login; verify the proxied backend /health separately.
+- `DEPLOY-REQ-008` Keep Vercel and existing DNS available during verification and rollback. Deployment from PR #839 does not authorize automatic merging of it or unrelated PRs.
+- `DEPLOY-REQ-009` Preserve existing backend and database volumes. Object storage migration is deferred.
 
 ## Acceptance Criteria
 
-- WHEN the frontend container is built THEN it SHALL produce and run `.next/standalone/server.js` as a non-root user.
-- WHEN Railway checks the frontend THEN `/login` SHALL return a healthy response without requiring credentials.
-- WHEN the staging frontend calls `/api/*`, `/hubs/*`, or `/uploads/*` THEN the request SHALL be proxied to the configured staging backend without exposing an internal Railway hostname to the browser.
-- WHEN staging E2E runs THEN it SHALL use only staging services and synthetic credentials/data.
-- WHEN staging deployment fails THEN production, Vercel, and production DNS SHALL remain unchanged.
+- The container builds and runs standalone as a non-root user.
+- /login responds successfully and /health reaches the existing backend.
+- /api, /hubs and /uploads proxy to the configured backend; protected routes preserve authorization.
+- Failed frontend deployment does not replace Vercel or modify existing backend/database services.
+- Report authentication, SignalR, PDF and upload verification individually; a login-page 200 alone does not prove readiness.
 
-## Runtime Verification
-
-Needs runtime verification: Railway private networking, SignalR upgrade behavior through the Next.js service, authenticated staff and portal refresh flows, PDF downloads, and protected uploads.
+Needs runtime verification: authenticated staff/portal refresh, SignalR upgrades, PDFs and protected uploads.

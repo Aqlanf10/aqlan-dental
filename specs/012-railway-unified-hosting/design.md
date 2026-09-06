@@ -2,59 +2,38 @@
 
 Spec IDs: `DEPLOY-REQ-001..009`
 
-## Current Design Evidence
+## Owner decision
 
-- `frontend/next.config.mjs` already sets `output: "standalone"` and owns same-origin rewrites for `/api`, `/hubs`, `/uploads`, and `/health`.
-- `backend/railway.toml` already builds the backend Dockerfile and checks `/health`.
-- `backend/Dockerfile` runs as a non-root user and prepares `/data/uploads` for the existing Railway volume.
-- Railway production currently contains separate `aqlan-dental`, PostgreSQL, and Redis services. The backend and database have attached volumes.
-- Vercel currently serves the production frontend and remains the rollback path.
+The owner cancelled the earlier Staging requirement on 2026-09-06 and authorized direct deployment in the existing Railway project. Preserve existing services, data, volumes, Vercel and DNS.
 
-## Allowed Files — Foundation Slice
+## Allowed files
 
-- `docs/governance/MANDATORY_SPRINT_QUEUE.md`
-- `specs/012-railway-unified-hosting/*`
-- `frontend/Dockerfile`
-- `frontend/.dockerignore`
-- `frontend/railway.toml`
+- docs/governance/MANDATORY_SPRINT_QUEUE.md
+- specs/012-railway-unified-hosting/*
+- frontend/Dockerfile, frontend/.dockerignore, frontend/railway.toml
 
-## Forbidden Files — Foundation Slice
+Forbidden: backend source/migrations, finance/auth/permissions/patient-access source, package manifests/lockfiles, mobile branches, secrets and database contents.
 
-- Backend source and migrations.
-- Finance, auth, permissions, patient access, and clinical source.
-- `frontend/package.json` and `frontend/package-lock.json`.
-- Existing mobile PR branches and mobile configuration.
-- Production secrets, variables, domains, database contents, and volume contents.
+## Topology
 
-## Service Topology
-
-| Environment | Service | Responsibility |
+| Environment | Service | Action |
 |---|---|---|
-| Staging | frontend | Next.js standalone server and same-origin proxy |
-| Staging | backend | ASP.NET Core API and SignalR |
-| Staging | PostgreSQL | Isolated synthetic/test data |
-| Staging | Redis | Isolated cache/realtime dependency |
-| Production | existing services | Unchanged during this slice |
+| production | frontend | Add Next.js standalone service from PR #839 branch |
+| production | aqlan-dental | Reuse existing API |
+| production | postgres | Reuse existing database and volume |
+| production | redis | Reuse existing cache |
 
-The Railway frontend sets `BACKEND_URL` to the staging backend's private URL and leaves `NEXT_PUBLIC_API_URL` unset. This keeps browser traffic on the frontend origin while the Next.js server resolves the backend privately. The setting must exist for both build and runtime.
+Build root: /frontend; config file: /frontend/railway.toml. Builder ARG BACKEND_URL must be nonempty. NEXT_PUBLIC_API_URL remains unset to preserve same-origin cookies and API requests. The first deployment may use the existing backend public HTTPS endpoint; private networking is an optional later optimization after its port and reachability are verified. No backend secrets are copied.
 
-## Container Design
+## Container
 
-- Node.js 22 Alpine multi-stage image.
-- `npm ci` from the committed lockfile.
-- `npm run build` in the builder stage.
-- Only standalone output, static assets, and public assets copied to the runtime stage.
-- Runtime uses an unprivileged `nextjs` user and Railway's injected `PORT`.
+Node 22 Alpine multi-stage; npm ci; Next.js build; standalone/public/static copied to a non-root runner. Railway PORT and HOSTNAME=0.0.0.0. Healthcheck /login plus separate API verification.
 
-## Risks
+## Risks and rollback
 
-- A missing build-time `BACKEND_URL` can compile localhost rewrites into the frontend.
-- SignalR WebSocket proxying needs runtime verification on Railway.
-- Cloning production variables can accidentally connect Staging to production data; database references must be reviewed before the first deploy.
-- A separate staging backend/database/Redis/volume adds Railway usage cost.
-
-## Rollback Plan
-
-- Delete or stop only the new staging frontend/service resources if verification fails.
-- Revert this PR to remove deployment configuration.
-- Production Vercel, Railway backend, databases, volumes, and DNS remain unchanged; no data recovery is required for this foundation slice.
+- Docker builds require ARG to receive Railway variables: https://docs.railway.com/builds/dockerfiles#using-variables-at-build-time
+- Missing BACKEND_URL must fail before compilation. Updating it requires rebuilding compiled rewrites.
+- Authentication cookies, SignalR and protected downloads need live verification. Do not weaken authorization to pass checks.
+- Production data is shared: write tests stay in isolated CI.
+- A frontend service adds resource usage; no duplicate database/backend/Redis is provisioned.
+- If frontend verification fails, retain Vercel and correct or stop only the new frontend deployment. Existing DNS, backend and volumes remain intact.

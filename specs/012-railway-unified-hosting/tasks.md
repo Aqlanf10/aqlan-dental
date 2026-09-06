@@ -1,9 +1,11 @@
 # 012 — Railway Unified Hosting Tasks
 
-- [x] `DEPLOY-TASK-001` Inspect current GitHub main, open PRs, CI/deployment files, and live Railway topology without changing production.
-- [x] `DEPLOY-TASK-002` Record the owner priority override and create requirements/design/tasks for the hosting migration.
-- [x] `DEPLOY-TASK-003` Add a production-grade standalone Next.js Dockerfile, Docker ignore rules, and Railway healthcheck configuration.
-- [x] `DEPLOY-TASK-004` Build and run the frontend standalone artifact; Next.js generated 95/95 pages and `/login` returned 200 locally. The proxied `/health` could not be verified in the isolated runner because external DNS resolution returned `EAI_AGAIN`; backend `/health` was independently verified as 200.
-- [ ] `DEPLOY-TASK-005` Create isolated Railway Staging services and variables without copying production data connections. Requires runtime confirmation because it adds billable resources.
-- [ ] `DEPLOY-TASK-006` Verify `/login`, `/health`, same-origin API, authentication, portal refresh, SignalR, PDFs, and protected uploads using synthetic staging data.
-- [ ] `DEPLOY-TASK-007` Open a small PR with CI evidence, runtime evidence, risks, rollback, and the drift checklist. Do not merge or cut over production.
+- [x] `DEPLOY-TASK-001` Inspect main, PR #839, CI and existing Railway production topology.
+- [x] `DEPLOY-TASK-002` Record owner cancellation of Staging and update requirements/design/queue.
+- [x] `DEPLOY-TASK-003` Prepare non-root standalone Dockerfile, ignore rules and healthcheck; declare mandatory build-time BACKEND_URL.
+- [ ] `DEPLOY-TASK-004` Verify updated build and compiled rewrites. Previous foundation: 752 frontend tests, TypeScript/lint/build and standalone /login passed; CI passed on 638878d.
+- [ ] `DEPLOY-TASK-005` Add frontend to existing production environment with the existing backend; no additional database/backend/Redis.
+- [ ] `DEPLOY-TASK-006` Verify /login, /health, API and separately document authenticated/SignalR/PDF/upload coverage without synthetic writes to production.
+- [ ] `DEPLOY-TASK-007` Update PR #839 with current evidence and remaining work; do not auto-merge.
+
+The prior PR queue blob was not valid UTF-8. Restore its readable contents from the preserved local foundation, retaining the original backlog and updating only DEPLOY-RAILWAY-01.

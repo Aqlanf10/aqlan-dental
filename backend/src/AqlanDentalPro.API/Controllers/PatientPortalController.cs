@@ -32,10 +32,12 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
     // HttpOnly (no JS access) + Secure (HTTPS only, dev-configurable) +
     // SameSite (Lax by default, configurable to None for cross-site) + Essential.
     public const string RefreshTokenCookie = "portal_refresh";
+    public const string MobileRefreshTokenHeader = "X-Aqlan-Portal-Refresh-Token";
 
     // ── Auth Endpoints (No auth required) ───────────────────────────────────
 
     [HttpPost("auth/login")]
+    [HttpPost("mobile/auth/login")]
     [AllowAnonymous]
     [EnableRateLimiting("PortalAuthPolicy")]
     public async Task<IActionResult> Login([FromBody] PatientLoginRequest req)
@@ -47,6 +49,17 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
             // SEC-10: deliver the refresh token as an HttpOnly cookie so XSS
             // cannot exfiltrate it. The body field stays for one release
             // (backward compat for stale frontends).
+            if (IsMobileRoute())
+            {
+                return Ok(new
+                {
+                    response.AccessToken,
+                    refreshToken = response.RefreshToken,
+                    response.Profile,
+                    response.MustChangePassword
+                });
+            }
+
             SetRefreshTokenCookie(response.RefreshToken);
             return Ok(response);
         }
@@ -58,6 +71,7 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
     }
 
     [HttpPost("auth/forgot-password")]
+    [HttpPost("mobile/auth/forgot-password")]
     [AllowAnonymous]
     [EnableRateLimiting("PortalPasswordResetPolicy")] // SEC-04 FIX: Stricter limit on forgot-password
     public async Task<IActionResult> ForgotPassword([FromBody] PatientForgotPasswordRequest req)
@@ -87,6 +101,7 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
     }
 
     [HttpPost("auth/reset-password")]
+    [HttpPost("mobile/auth/reset-password")]
     [AllowAnonymous]
     [EnableRateLimiting("PortalPasswordResetPolicy")] // SEC-04 FIX: Stricter limit on reset-password (3/15min)
     public async Task<IActionResult> ResetPassword([FromBody] PatientResetPasswordRequest req)
@@ -95,6 +110,17 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
         {
             var (response, error) = await portalService.ResetPasswordAsync(req.PhoneNumber, req.Code, req.NewPassword);
             if (response == null) return BadRequest(new { message = error });
+            if (IsMobileRoute())
+            {
+                return Ok(new
+                {
+                    response.AccessToken,
+                    refreshToken = response.RefreshToken,
+                    response.Profile,
+                    response.MustChangePassword
+                });
+            }
+
             // SEC-10: set HttpOnly refresh-token cookie (same as login).
             SetRefreshTokenCookie(response.RefreshToken);
             return Ok(response);
@@ -107,6 +133,7 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
     }
 
     [HttpPost("auth/change-password")]
+    [HttpPost("mobile/auth/change-password")]
     [Authorize(Policy = "PatientAccess")]
     [EnableRateLimiting("PortalPasswordResetPolicy")] // SEC-16: rate-limit change-password (3/15min/IP)
     public async Task<IActionResult> ChangePassword([FromBody] PatientChangePasswordRequest req)
@@ -118,6 +145,17 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
         {
             var (response, error) = await portalService.ChangePasswordAsync(patientId.Value, req.CurrentPassword, req.NewPassword);
             if (response == null) return BadRequest(new { message = error });
+            if (IsMobileRoute())
+            {
+                return Ok(new
+                {
+                    response.AccessToken,
+                    refreshToken = response.RefreshToken,
+                    response.Profile,
+                    response.MustChangePassword
+                });
+            }
+
             // SEC-10: rotate the HttpOnly refresh-token cookie on password change.
             SetRefreshTokenCookie(response.RefreshToken);
             return Ok(response);
@@ -130,6 +168,7 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
     }
 
     [HttpPost("auth/refresh-token")]
+    [HttpPost("mobile/auth/refresh-token")]
     [AllowAnonymous]
     [EnableRateLimiting("PortalAuthPolicy")] // SEC-16: rate-limit refresh-token (5/min/IP)
     public async Task<IActionResult> RefreshToken([FromBody] PatientRefreshTokenRequest? req)
@@ -142,9 +181,18 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
         // Falls back to the request body for one release (backward compat with
         // stale frontends). When the body path is used, log a warning so
         // operators can track the remaining old-frontends.
-        var refreshToken = Request.Cookies[RefreshTokenCookie];
+        var isMobile = IsMobileRoute();
+        var refreshToken = isMobile
+            ? Request.Headers[MobileRefreshTokenHeader].FirstOrDefault()
+            : Request.Cookies[RefreshTokenCookie];
+
         if (string.IsNullOrEmpty(refreshToken))
         {
+            if (isMobile)
+            {
+                return Unauthorized(new { message = "غير مصرح — رمز التحديث غير صالح" });
+            }
+
             refreshToken = req?.RefreshToken;
             if (!string.IsNullOrEmpty(refreshToken))
             {
@@ -166,9 +214,24 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
                 // SEC-10: clear the cookie on refresh failure so the browser
                 // stops sending an invalid token. Includes the body-fallback
                 // case where the rotated-then-stolen old token fails.
-                Response.Cookies.Delete(RefreshTokenCookie);
+                if (!isMobile)
+                {
+                    Response.Cookies.Delete(RefreshTokenCookie);
+                }
+
                 return BadRequest(new { message = error });
             }
+            if (isMobile)
+            {
+                return Ok(new
+                {
+                    response.AccessToken,
+                    refreshToken = response.RefreshToken,
+                    response.Profile,
+                    response.MustChangePassword
+                });
+            }
+
             // SEC-10: rotation — issue a fresh cookie with the new token.
             SetRefreshTokenCookie(response.RefreshToken);
             return Ok(response);
@@ -181,6 +244,7 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
     }
 
     [HttpPost("auth/logout")]
+    [HttpPost("mobile/auth/logout")]
     [Authorize(Policy = "PatientAccess")]
     public async Task<IActionResult> Logout()
     {
@@ -195,7 +259,11 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
         try
         {
             await portalService.LogoutAsync(patientId.Value);
-            Response.Cookies.Delete(RefreshTokenCookie);
+            if (!IsMobileRoute())
+            {
+                Response.Cookies.Delete(RefreshTokenCookie);
+            }
+
             return Ok(new { message = "تم تسجيل الخروج بنجاح" });
         }
         catch (Exception ex)
@@ -231,6 +299,9 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
             Path = "/"
         });
     }
+
+    private bool IsMobileRoute() =>
+        Request.Path.Value?.Contains("/api/portal/mobile/auth/", StringComparison.OrdinalIgnoreCase) == true;
 
     private static SameSiteMode ParseSameSite(string? value, SameSiteMode defaultMode)
     {

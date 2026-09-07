@@ -1,0 +1,41 @@
+name: Patient Mobile
+
+on:
+  pull_request:
+    paths:
+      - "patient-mobile/**"
+      - "backend/src/AqlanDentalPro.API/Controllers/PatientPortalController.cs"
+      - "backend/tests/AqlanDentalPro.UnitTests/PortalAuth/**"
+      - ".github/workflows/patient-mobile.yml"
+  push:
+    branches: [main]
+    paths:
+      - "patient-mobile/**"
+      - "backend/src/AqlanDentalPro.API/Controllers/PatientPortalController.cs"
+      - "backend/tests/AqlanDentalPro.UnitTests/PortalAuth/**"
+      - ".github/workflows/patient-mobile.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  patient-mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: patient-mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.13"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Expo doctor
+        run: npm run doctor
+      - name: Bundle Android
+        env:
+          EXPO_PUBLIC_API_URL: https://patient-mobile-ci.invalid
+        run: npm run export:android

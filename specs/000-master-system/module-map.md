@@ -25,4 +25,7 @@ Status values: active, incomplete, legacy, duplicated, needs review.
 | MOD-019 | Messaging/SMS/WhatsApp | `/messages`, `/sms`, `/whatsapp` | messaging/SMS/WhatsApp controllers/services, SignalR | messaging pages/components/hooks | messages/templates/logs | Staff/Admin/Appointment/Finance policies | active | Avoid sending side effects in tests without mocks. |
 | MOD-020 | HR/employees | `/employees`, `/hr/*` | employee/attendance/salary/leave controllers | HR pages | `Employee`, `Attendance`, `SalaryRecord`, `LeaveRequest` | mostly `AdminOnly`/`ReportsAccess` | active | Not part of core clinical specs yet. |
 
+| MOD-021 | Staff mobile | Expo `mobile/` | Existing staff controllers; native auth aliases in `AuthController.cs` | `mobile/app/`, `mobile/src/` | Existing staff DTOs; no direct entities | Server role policies + granular permissions + patient access | active | Separate Android package and secure-store keys. Extend existing app; do not create another staff client. |
+| MOD-022 | Patient mobile | Expo `patient-mobile/` | `PatientPortalController.cs`, `PatientPortalMessagesController.cs`; native auth aliases under `/api/portal/mobile/auth/*` | `patient-mobile/app/`, `patient-mobile/src/` | Patient portal DTOs; no direct entities | `PatientAccess` only | incomplete | Separate Android package and release pipeline. Must remain under normalized `/api/portal/`; production rollout is blocked until the one-refresh-token-per-account session limitation is explicitly resolved or accepted. |
+
 Unverified interactive behavior: `Needs runtime verification`.

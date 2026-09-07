@@ -21,3 +21,5 @@
   (4) Pinned by test: `FinanceV3PR245BlockerTests` asserts the rejection when
   no session is open.
 - `DO-TASK-005`: Runtime smoke daily check-in -> call -> room -> close flow. Strong/medium with runtime.
+- `DO-TASK-006` / `QUEUE-RT-01`: Repair the observed queue SignalR token-source regression under `DO-REQ-007`; verify connection with memory-only credentials and rotated tokens, then report live verification separately.
+  — Implementation and local verification complete 2026-09-07: all 10 ClinicQueueView tests pass (including memory-only connection, token rotation and stale persisted token rejection); TypeScript passes; targeted lint has no errors and one pre-existing unused DoctorOption warning. Production deployment and live event delivery remain Needs runtime verification. No production writes were used in testing.

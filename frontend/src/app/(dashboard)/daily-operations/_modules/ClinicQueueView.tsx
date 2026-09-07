@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import api from "@/lib/api";
+import api, { getAccessToken } from "@/lib/api";
 import { extractErrorMessage } from "@/lib/errors";
 import { useDoctors } from "@/hooks/useDoctors";
 import {
@@ -261,15 +261,14 @@ export default function ClinicQueueView({ searchQuery, onContextMenu, onOpenSide
 
   // ── SignalR real-time connection ──
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    if (!user || !token) return;
+    if (!user || !getAccessToken()) return;
 
     const connect = async () => {
       if (connectionRef.current?.state === "Connected") return;
 
       try {
         const connection = new HubConnectionBuilder()
-          .withUrl(HUB_URL, { accessTokenFactory: () => token })
+          .withUrl(HUB_URL, { accessTokenFactory: () => getAccessToken() ?? "" })
           .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
           .configureLogging(LogLevel.Warning)
           .build();

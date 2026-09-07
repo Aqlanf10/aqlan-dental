@@ -13,6 +13,8 @@ Evidence: `frontend/src/app/(dashboard)/daily-operations/`, `DailyOperationsCont
 
 ## Target State
 
+- `DO-REQ-007`: Queue SignalR SHALL use the existing in-memory access-token accessor, including a fresh lookup on reconnection. An authenticated session SHALL connect without a localStorage token; no token SHALL be persisted by the queue UI.
+
 One fast daily workflow that reduces crowding and avoids parallel queue screens.
 
 ## Risks

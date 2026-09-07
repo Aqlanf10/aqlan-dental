@@ -181,4 +181,54 @@ public class OrthoReportPdfTests
         var act = async () => await new OrthoCaseSummaryReportPdfGenerator(db).GenerateAsync(Guid.NewGuid());
         await act.Should().ThrowAsync<ArgumentException>();
     }
+
+    [Theory]
+    [InlineData("USD", "$")]
+    [InlineData("SAR", "ر.س")]
+    [InlineData("YER", "ر.ي")]
+    [InlineData("yer", "ر.ي")]
+    [InlineData("", "ر.ي")]
+    [InlineData(null, "ر.ي")]
+    public void CaseSummary_CurrencySymbol_ResolvesExpectedSymbol(string? currency, string expectedSymbol)
+    {
+        OrthoCaseSummaryReportPdfGenerator.CurrencySymbol(currency).Should().Be(expectedSymbol);
+    }
+
+    [Theory]
+    [InlineData(1500, "USD", "1,500 $")]
+    [InlineData(2500, "SAR", "2,500 ر.س")]
+    [InlineData(300000, "YER", "300,000 ر.ي")]
+    [InlineData(0, "USD", "0 $")]
+    [InlineData(null, "USD", "—")]
+    public void CaseSummary_Money_FormatsWithCorrectCurrency(int? amount, string currency, string expectedText)
+    {
+        decimal? decimalAmount = amount.HasValue ? amount.Value : null;
+        OrthoCaseSummaryReportPdfGenerator.Money(decimalAmount, currency).Should().Be(expectedText);
+    }
+
+    [Fact]
+    public async Task CaseSummary_MultiCurrencyContract_ProducesValidPdf()
+    {
+        await using var db = CreateDb();
+        var patient = new Patient { Id = Guid.NewGuid(), FirstName = "سارة", LastName = "أحمد", PatientNumber = "P-45", IsActive = true };
+        var orthoCase = new OrthoCase { Id = Guid.NewGuid(), PatientId = patient.Id, CaseNumber = "OC-45", Status = OrthoCaseStatus.Active, IsActive = true };
+        var contract = new Contract
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patient.Id,
+            RelatedCaseId = orthoCase.Id,
+            Specialty = "orthodontics",
+            Currency = "USD",
+            TotalAmount = 2500m,
+            DiscountAmount = 200m,
+            IsActive = true,
+        };
+        var payment = new Payment { Id = Guid.NewGuid(), ContractId = contract.Id, PatientId = patient.Id, Amount = 1000m, Currency = "USD", IsActive = true };
+
+        db.AddRange(patient, orthoCase, contract, payment);
+        await db.SaveChangesAsync();
+
+        var pdf = await new OrthoCaseSummaryReportPdfGenerator(db).GenerateAsync(orthoCase.Id);
+        AssertPdf(pdf);
+    }
 }

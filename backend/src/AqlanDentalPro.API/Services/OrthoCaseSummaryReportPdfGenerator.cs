@@ -49,7 +49,7 @@ public class OrthoCaseSummaryReportPdfGenerator(AppDbContext db)
         return await Task.Run(() => Generate(orthoCase, identity, finance));
     }
 
-    private sealed record FinanceSummary(decimal? Total, decimal? Paid, decimal? Remaining);
+    private sealed record FinanceSummary(decimal? Total, decimal? Paid, decimal? Remaining, string? Currency = null);
 
     // Replicates the contract-selection rule of OrthoCasesController.GetOverview:
     // prefer the contract linked to this case; else the single unlinked ortho contract.
@@ -74,11 +74,11 @@ public class OrthoCaseSummaryReportPdfGenerator(AppDbContext db)
             contract = unlinked.Count == 1 ? unlinked[0] : null;
         }
 
-        if (contract is null) return new FinanceSummary(null, null, null);
+        if (contract is null) return new FinanceSummary(null, null, null, null);
 
         var total = contract.TotalAmount - contract.DiscountAmount;
         var paid = contract.Payments.Where(p => p.IsActive).Sum(p => p.Amount);
-        return new FinanceSummary(total, paid, Math.Max(0, total - paid));
+        return new FinanceSummary(total, paid, Math.Max(0, total - paid), contract.Currency);
     }
 
     private static byte[] Generate(OrthoCase orthoCase, FinanceClinicIdentity identity, FinanceSummary finance)
@@ -265,9 +265,9 @@ public class OrthoCaseSummaryReportPdfGenerator(AppDbContext db)
             if (finance.Total is null) NoData(column, "لا يوجد عقد مالي مرتبط بالحالة.");
             else Pairs(column,
             [
-                ("إجمالي العقد", Money(finance.Total)),
-                ("المدفوع", Money(finance.Paid)),
-                ("المتبقّي", Money(finance.Remaining)),
+                ("إجمالي العقد", Money(finance.Total, finance.Currency)),
+                ("المدفوع", Money(finance.Paid, finance.Currency)),
+                ("المتبقّي", Money(finance.Remaining, finance.Currency)),
             ]);
 
             // Signature
@@ -341,7 +341,15 @@ public class OrthoCaseSummaryReportPdfGenerator(AppDbContext db)
     // ── Formatting ──
     private static string Mm(decimal? v) => v.HasValue ? string.Create(Inv, $"{v.Value:0.0} مم") : "—";
     private static string Pct(decimal? v) => v.HasValue ? string.Create(Inv, $"{v.Value:0.0}%") : "—";
-    private static string Money(decimal? v) => v.HasValue ? string.Create(Inv, $"{v.Value:#,0} ريال") : "—";
+    internal static string CurrencySymbol(string? currency) => currency?.Trim().ToUpperInvariant() switch
+    {
+        "USD" => "$",
+        "SAR" => "ر.س",
+        _ => "ر.ي"
+    };
+
+    internal static string Money(decimal? v, string? currency = null) =>
+        v.HasValue ? string.Create(Inv, $"{v.Value:#,0} {CurrencySymbol(currency)}") : "—";
 
     private static string FirstNonEmpty(params string?[] values) =>
         values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v) && v != "—") ?? "—";

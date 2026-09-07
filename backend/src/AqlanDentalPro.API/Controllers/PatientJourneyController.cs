@@ -53,7 +53,7 @@ public class PatientJourneyController(
                 statusFilter = parsedStatus;
             }
 
-            return await journeyService.GetTodayAsync(queryDate, statusFilter, doctorId, serviceId, roomId);
+            return await journeyService.GetTodayAsync(User, queryDate, statusFilter, doctorId, serviceId, roomId);
         }
         catch (Exception ex)
         {

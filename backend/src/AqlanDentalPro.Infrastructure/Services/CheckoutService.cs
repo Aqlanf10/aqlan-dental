@@ -619,6 +619,9 @@ public class CheckoutService(
             // SignalR: best-effort push so daily-ops screens invalidate instantly.
             await PushJourneyUpdatedAsync("start-visit", appointment.Id, appointment.PatientId, visitId: visit.Id, branchId: currentUser.BranchId);
 
+            var canViewFinancialAmounts = !patientAccessService.IsDoctor &&
+                (patientAccessService.HasFullAccess || patientAccessService.IsReception);
+
             return Ok(new
             {
                 visit.Id,
@@ -626,7 +629,7 @@ public class CheckoutService(
                 QueueStatus = queueItem.Status.ToString(),
                 AppointmentStatus = appointment.Status.ToString(),
                 VisitStatus = visit.CheckoutStatus ?? "InProgress",
-                AmountDueReference = visit.AmountDueReference,
+                AmountDueReference = canViewFinancialAmounts ? visit.AmountDueReference : null,
                 message = "تم بدء الزيارة بنجاح"
             });
         }
@@ -787,6 +790,9 @@ public class CheckoutService(
             // SignalR: best-effort push so daily-ops screens invalidate instantly.
             await PushJourneyUpdatedAsync("handoff", visit.AppointmentId, visit.PatientId, visitId: visit.Id, branchId: currentUser.BranchId);
 
+            var canViewFinancialAmounts = !patientAccessService.IsDoctor &&
+                (patientAccessService.HasFullAccess || patientAccessService.IsReception);
+
             return Ok(new
             {
                 visit.Id,
@@ -794,7 +800,7 @@ public class CheckoutService(
                 VisitStatus = visit.CheckoutStatus ?? "InProgress",
                 CheckoutStatus = visit.CheckoutStatus,
                 ReadyForCheckoutAt = visit.ReadyForCheckoutAt,
-                AmountDueReference = visit.AmountDueReference,
+                AmountDueReference = canViewFinancialAmounts ? visit.AmountDueReference : null,
                 ProposedProcedure = visit.ProposedProcedure,
                 message = "تم تسليم المريض للاستقبال بنجاح"
             });

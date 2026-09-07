@@ -1,182 +1,141 @@
-import { useSession } from "@/auth/SessionProvider";
-import { ApiError } from "@/lib/api";
-import { colors, radius, spacing } from "@/theme";
-import { router } from "expo-router";
-import React, { useState } from "react";
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  SafeAreaView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View
-} from "react-native";
+import { Redirect, router } from 'expo-router';
+import { useState } from 'react';
+import { Platform, StyleSheet, View } from 'react-native';
+
+import { ApiError } from '@/api/client';
+import { useAuth } from '@/auth/AuthProvider';
+import { AlertBanner } from '@/components/AlertBanner';
+import { AppScreen } from '@/components/AppScreen';
+import { AppText } from '@/components/AppText';
+import { BrandLockup } from '@/components/BrandLockup';
+import { FormField } from '@/components/FormField';
+import { LanguageSwitch } from '@/components/LanguageSwitch';
+import { PrimaryButton } from '@/components/PrimaryButton';
+import { useClinicIdentity } from '@/identity/ClinicIdentityProvider';
+import { useLocale } from '@/i18n/LocaleProvider';
+import { colors, radius, spacing } from '@/theme/tokens';
 
 export default function SignInScreen() {
-  const { signIn } = useSession();
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const { busy, signIn, user } = useAuth();
+  const { locale, t } = useLocale();
+  // العنوان والهاتف من إعدادات المركز، والنص المدمج احتياطٌ حتى تصل الاستجابة.
+  const identity = useClinicIdentity();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
 
-  async function submit() {
-    if (!username.trim() || !password) {
-      setError("أدخل اسم المستخدم وكلمة المرور.");
+  const canSubmit = username.trim().length > 0 && password.length > 0;
+  if (user) return <Redirect href="/home" />;
+
+  const submit = async () => {
+    if (!canSubmit) {
+      setError(t('auth.required'));
       return;
     }
-
-    setLoading(true);
     setError(null);
     try {
-      const user = await signIn(username.trim(), password);
-      router.replace(user.mustChangePassword ? "/change-password" : "/(app)/home");
-    } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : "تعذر الاتصال بالنظام. تحقق من الإنترنت وإعداد رابط الخادم."
-      );
-    } finally {
-      setLoading(false);
+      await signIn(username, password);
+      router.replace('/home');
+    } catch (caught) {
+      if (caught instanceof ApiError) {
+        if (caught.kind === 'network' || caught.kind === 'timeout') setError(t('auth.networkError'));
+        else if (caught.kind === 'invalid-response') setError(t('auth.invalidResponse'));
+        else if (caught.status === 401) setError(t('auth.invalidCredentials'));
+        else if (caught.status === 429) setError(locale === 'ar' && caught.message ? caught.message : t('auth.accountLocked'));
+        else setError(t('auth.genericError'));
+      } else {
+        setError(t('auth.genericError'));
+      }
     }
-  }
+  };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <View style={styles.brand}>
-          <Text style={styles.logo}>ADP</Text>
-          <Text style={styles.title}>Aqlan Dental Pro</Text>
-          <Text style={styles.subtitle}>نظام إدارة مركز د. عقلان الكامل</Text>
+    <AppScreen keyboardAware>
+      <View style={styles.page}>
+        <View style={styles.topBar}>
+          <BrandLockup compact />
+          <LanguageSwitch />
         </View>
 
-        <View style={styles.form}>
-          <Text style={styles.label}>اسم المستخدم</Text>
-          <TextInput
-            value={username}
-            onChangeText={setUsername}
+        <View style={styles.hero}>
+          <View style={styles.eyebrow} />
+          <AppText variant="title" color={colors.navy950}>{t('auth.welcome')}</AppText>
+          <AppText color={colors.muted}>{t('auth.subtitle')}</AppText>
+        </View>
+
+        <View style={styles.card}>
+          <FormField
             autoCapitalize="none"
-            autoCorrect={false}
+            autoComplete="username"
+            editable={!busy}
+            label={t('auth.username')}
+            onChangeText={setUsername}
+            placeholder={t('auth.usernamePlaceholder')}
+            returnKeyType="next"
             textContentType="username"
-            style={styles.input}
-            placeholder="اسم المستخدم"
-            placeholderTextColor={colors.muted}
+            value={username}
           />
-
-          <Text style={styles.label}>كلمة المرور</Text>
-          <TextInput
-            value={password}
+          <FormField
+            actionLabel={passwordVisible ? t('auth.hidePassword') : t('auth.showPassword')}
+            autoCapitalize="none"
+            autoComplete="current-password"
+            editable={!busy}
+            label={t('auth.password')}
+            onAction={() => setPasswordVisible((value) => !value)}
             onChangeText={setPassword}
-            secureTextEntry
+            onSubmitEditing={submit}
+            placeholder={t('auth.passwordPlaceholder')}
+            returnKeyType="go"
+            secureTextEntry={!passwordVisible}
             textContentType="password"
-            style={styles.input}
-            placeholder="••••••••"
-            placeholderTextColor={colors.muted}
-            onSubmitEditing={() => void submit()}
+            value={password}
           />
-
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => void submit()}
-            disabled={loading}
-            style={({ pressed }) => [
-              styles.button,
-              loading && { opacity: 0.6 },
-              pressed && !loading && { opacity: 0.85 }
-            ]}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>تسجيل الدخول</Text>
-            )}
-          </Pressable>
+          {error ? <AlertBanner message={error} /> : null}
+          <PrimaryButton
+            busy={busy}
+            disabled={!canSubmit}
+            label={busy ? t('auth.signingIn') : t('auth.signIn')}
+            onPress={submit}
+          />
+          <View style={styles.securityLine}>
+            <View style={styles.securityDot} />
+            <AppText variant="caption" color={colors.success} style={styles.securityCopy}>
+              {t('common.secure')}
+            </AppText>
+          </View>
         </View>
 
-        <Text style={styles.security}>
-          جلسة الهاتف محفوظة في التخزين الآمن للجهاز ولا تُخزن كلمة المرور.
-        </Text>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        <View style={styles.footer}>
+          <AppText variant="caption" color={colors.muted} style={styles.centerText}>{identity?.address || t('brand.address')}</AppText>
+          <AppText variant="caption" color={colors.muted} style={styles.centerText}>{identity?.phone || t('brand.phone')}</AppText>
+        </View>
+      </View>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
-  container: {
-    flex: 1,
-    justifyContent: "center",
-    padding: spacing.lg,
-    gap: spacing.xl
-  },
-  brand: { alignItems: "center", gap: spacing.sm },
-  logo: {
-    width: 72,
-    height: 72,
-    borderRadius: 22,
-    textAlign: "center",
-    textAlignVertical: "center",
-    backgroundColor: colors.primary,
-    color: "#fff",
-    fontSize: 24,
-    fontWeight: "800",
-    paddingTop: Platform.OS === "ios" ? 20 : 0
-  },
-  title: { color: colors.text, fontSize: 27, fontWeight: "800" },
-  subtitle: { color: colors.muted, fontSize: 15, textAlign: "center" },
-  form: {
-    backgroundColor: colors.surface,
+  page: { flex: 1, justifyContent: 'center', gap: spacing.xxl, paddingVertical: Platform.OS === 'android' ? spacing.lg : 0 },
+  topBar: { gap: spacing.xl },
+  hero: { gap: spacing.sm },
+  eyebrow: { width: 52, height: 5, borderRadius: 3, backgroundColor: colors.orange500 },
+  card: {
+    gap: spacing.lg,
+    padding: spacing.xl,
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    gap: spacing.sm
+    borderRadius: radius.xl,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 4,
   },
-  label: {
-    textAlign: "right",
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "700",
-    marginTop: spacing.xs
-  },
-  input: {
-    minHeight: 50,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.md,
-    color: colors.text,
-    backgroundColor: "#fff",
-    textAlign: "right"
-  },
-  error: {
-    color: colors.danger,
-    backgroundColor: colors.dangerSoft,
-    borderRadius: radius.sm,
-    padding: spacing.sm,
-    textAlign: "right"
-  },
-  button: {
-    minHeight: 50,
-    marginTop: spacing.sm,
-    borderRadius: radius.sm,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  buttonText: { color: "#fff", fontSize: 16, fontWeight: "800" },
-  security: {
-    color: colors.muted,
-    fontSize: 12,
-    textAlign: "center",
-    lineHeight: 19
-  }
+  securityLine: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: spacing.sm },
+  securityDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.success },
+  securityCopy: { textAlign: 'center' },
+  footer: { alignItems: 'center', gap: 2 },
+  centerText: { textAlign: 'center' },
 });

@@ -174,9 +174,8 @@
            utilities are already in use, so the pattern is established. Until this is done the
            text translates but the chrome stays physically right-to-left — confirmed visually,
            not assumed.
-- [~] Migrate supported print generators to one identity/currency contract. **Identity half
-      done, 2026-08-23; currency half outstanding.**
-      - **Done:** the ceph/ortho report family (`CephReportPdfGenerator`, `OrthoCaseSummary`,
+- [~] Migrate supported print generators to one identity/currency contract. **Identity resolved across reports (2026-08-23); OrthoCaseSummary currency contract resolved (2026-09-07, CORE-P2-CURR-01).**
+      - **Done (Identity):** the ceph/ortho report family (`CephReportPdfGenerator`, `OrthoCaseSummary`,
         `OrthoModelAnalysis`, `OrthoSurgicalReport`, `PhotoAnalysisReport`,
         `OrthoCasePresentationService`) no longer keeps its own `CephReportClinicIdentity`
         reader/fallback; all six now resolve through `FinanceClinicIdentity.ResolveAsync`, the
@@ -185,11 +184,10 @@
         when Settings were unset, unlike every other document's fallback to the real clinic
         defaults. The reports also now source their logo from `identity.LogoBytes` instead of a
         second, separate `PdfLogoCache.TryGetLogo()` call.
-      - **Outstanding — currency:** `OrthoCaseSummaryReportPdfGenerator.Money()` still hardcodes
-        the "ريال" suffix, independent of `PdfDocuments.cs`'s `CurrencySymbol()` switch
-        (YER/SAR/USD) used by the finance receipt/statement. Not touched in this slice — it is a
-        separate, not-yet-scoped duplication and folding it in blind risked a larger, riskier
-        change than the identity fix above.
+      - **Done (Currency - CORE-P2-CURR-01):** `OrthoCaseSummaryReportPdfGenerator.Money()`
+        no longer hardcodes the "ريال" suffix. It resolves the contract currency via
+        `CurrencySymbol(contract.Currency)` (USD -> $, SAR -> ر.س, default/YER -> ر.ي) matching
+        the finance receipt/statement standard. Tested and verified in `OrthoReportPdfTests.cs`.
 - [ ] Phase 2 exit gate approved.
 
 ## Phase 3 - Roles And Permissions

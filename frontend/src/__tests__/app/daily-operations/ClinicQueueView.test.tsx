@@ -4,8 +4,17 @@ import ClinicQueueView from "@/app/(dashboard)/daily-operations/_modules/ClinicQ
 import api from "@/lib/api";
 
 const invalidateQueries = vi.fn();
+const queryClient = { invalidateQueries };
+const realtime = vi.hoisted(() => ({
+  user: null as { id: string } | null,
+  token: null as string | null,
+  withUrl: vi.fn(),
+  start: vi.fn().mockResolvedValue(undefined),
+  stop: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("@/lib/api", () => ({
+  getAccessToken: () => realtime.token,
   default: {
     get: vi.fn(),
     post: vi.fn(),
@@ -23,15 +32,25 @@ vi.mock("@/hooks/useDoctors", () => ({
 }));
 
 vi.mock("@tanstack/react-query", () => ({
-  useQueryClient: () => ({ invalidateQueries }),
+  useQueryClient: () => queryClient,
 }));
 
 vi.mock("@/stores/authStore", () => ({
-  useAuthStore: () => ({ user: null }),
+  useAuthStore: () => ({ user: realtime.user }),
 }));
 
 vi.mock("@microsoft/signalr", () => ({
-  HubConnectionBuilder: vi.fn(),
+  HubConnectionBuilder: class {
+    withUrl(...args: unknown[]) { realtime.withUrl(...args); return this; }
+    withAutomaticReconnect() { return this; }
+    configureLogging() { return this; }
+    build() {
+      return {
+        start: realtime.start, stop: realtime.stop,
+        on: vi.fn(), onreconnected: vi.fn(), onclose: vi.fn(),
+      };
+    }
+  },
   LogLevel: { Warning: 3 },
 }));
 
@@ -142,6 +161,35 @@ describe("SEQ-35/37/38 ClinicQueueView truth and synchronization", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    realtime.user = null;
+    realtime.token = null;
+  });
+
+  it("connects with memory-only credentials and reads the rotated token on reconnect", async () => {
+    realtime.user = { id: "staff-test" };
+    realtime.token = "test-memory-token";
+    installQueueResponses([() => Promise.resolve({ data: [] })]);
+
+    const view = render(<ClinicQueueView searchQuery="" />);
+    expect(await screen.findByTitle("متصل لحظياً (SignalR)")).toBeInTheDocument();
+    expect(realtime.start).toHaveBeenCalledTimes(1);
+    const factory = realtime.withUrl.mock.calls[0][1].accessTokenFactory;
+    expect(factory()).toBe("test-memory-token");
+    realtime.token = "test-rotated-token";
+    expect(factory()).toBe("test-rotated-token");
+    expect(localStorage.getItem("access_token")).toBeNull();
+    view.unmount();
+    expect(realtime.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not connect using a stale persisted token when memory has no session token", async () => {
+    realtime.user = { id: "staff-test" };
+    localStorage.setItem("access_token", "stale-test-token");
+    installQueueResponses([() => Promise.resolve({ data: [] })]);
+    render(<ClinicQueueView searchQuery="" />);
+    await screen.findByText("لا يوجد مرضى في الانتظار");
+    expect(realtime.start).not.toHaveBeenCalled();
+    expect(screen.getByTitle("غير متصل — تحديث كل 15 ثانية")).toBeInTheDocument();
   });
 
   it("shows an Arabic error instead of a false empty queue on initial failure", async () => {

@@ -12,3 +12,7 @@ Allowed files: daily operations folder, journey components, relevant controllers
 Forbidden files: migrations unless approved, standalone duplicate queue/dashboard screens, FinanceV3 calculations unless finance spec is updated.
 
 Rollback: revert module UI/API changes together and keep specs aligned.
+
+## QUEUE-RT-01 — runtime regression, 2026-09-07
+
+Railway smoke testing found ClinicQueueView permanently displaying its polling fallback. It reads the retired localStorage access_token, while the shared API and other SignalR hooks use getAccessToken(). Change only this component's import, connection guard and accessTokenFactory to use that accessor. Preserve the same hub URL, events, permissions and polling fallback. Regression tests must cover an authenticated session with empty localStorage and token rotation through the registered factory. This does not change authentication or token lifetime policy. Live reconnection and event delivery remain Needs runtime verification until deployed.
